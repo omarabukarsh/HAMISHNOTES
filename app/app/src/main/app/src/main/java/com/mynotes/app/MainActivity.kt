@@ -24,29 +24,82 @@ import kotlin.math.hypot
 class MainActivity : ComponentActivity() {
 override fun onCreate(savedInstanceState: Bundle?) {
 super.onCreate(savedInstanceState)
-setContent { MaterialTheme { NoteScreen() } }
+setContent { MaterialTheme { NoteApp() } }
 }
 }
 
 enum class Tool { PEN, ERASER }
 data class Pt(val x: Float, val y: Float, val p: Float)
 data class Ink(val pts: List<Pt>, val color: Color, val width: Float)
+data class Page(val id: Int, var strokes: List<Ink> = emptyList())
 
 fun eraseAt(list: List<Ink>, at: Offset): List<Ink> =
 list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < 30f } }
 
 @Composable
-fun NoteScreen() {
-var strokes by remember { mutableStateOf(listOf<Ink>()) }
+fun NoteApp() {
+var pages by remember { mutableStateOf(listOf(Page(id = 1))) }
+var currentPageIndex by remember { mutableIntStateOf(0) }
+
+val currentPage = pages.getOrNull(currentPageIndex) ?: Page(id = 1)  
+  
+Column(Modifier.fillMaxSize().statusBarsPadding()) {  
+    // شريط الأدوات العلوي  
+    Row(  
+        Modifier.fillMaxWidth().padding(8.dp),  
+        horizontalArrangement = Arrangement.spacedBy(8.dp),  
+        verticalAlignment = Alignment.CenterVertically  
+    ) {  
+        Text("صفحة ${currentPageIndex + 1} من ${pages.size}", style = MaterialTheme.typography.titleMedium)  
+          
+        IconButton(  
+            onClick = { if (currentPageIndex > 0) currentPageIndex-- },  
+            enabled = currentPageIndex > 0  
+        ) { Text("<") }  
+          
+        IconButton(  
+            onClick = { if (currentPageIndex < pages.size - 1) currentPageIndex++ },  
+            enabled = currentPageIndex < pages.size - 1  
+        ) { Text(">") }  
+
+        Button(onClick = {  
+            pages = pages + Page(id = pages.size + 1)  
+            currentPageIndex = pages.size - 1  
+        }) { Text("+ صفحة") }  
+
+        Spacer(Modifier.weight(1f))  
+    }  
+
+    // لوحة الرسم للصفحة الحالية  
+    NoteCanvas(  
+        page = currentPage,  
+        onPageUpdate = { updatedPage ->  
+            pages = pages.toMutableList().apply {  
+                set(currentPageIndex, updatedPage)  
+            }  
+        }  
+    )  
+}
+
+}
+
+@Composable
+fun NoteCanvas(page: Page, onPageUpdate: (Page) -> Unit) {
+var strokes by remember(http://page.id) { mutableStateOf(page.strokes) }
 var live by remember { mutableStateOf<Ink?>(null) }
 var tool by remember { mutableStateOf(Tool.PEN) }
 var color by remember { mutableStateOf(Color.Black) }
-val undo = remember { mutableStateListOf<List<Ink>>() }
-val redo = remember { mutableStateListOf<List<Ink>>() }
+val undo = remember(http://page.id) { mutableStateListOf<List<Ink>>() }
+val redo = remember(http://page.id) { mutableStateListOf<List<Ink>>() }
 
-Column(Modifier.fillMaxSize().statusBarsPadding()) {  
+fun updateStrokes(newStrokes: List<Ink>) {  
+    strokes = newStrokes  
+    onPageUpdate(page.copy(strokes = newStrokes))  
+}  
+
+Column(Modifier.fillMaxSize()) {  
     Row(  
-        Modifier.fillMaxWidth().padding(8.dp),  
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp),  
         horizontalArrangement = Arrangement.spacedBy(8.dp),  
         verticalAlignment = Alignment.CenterVertically  
     ) {  
@@ -62,20 +115,20 @@ Column(Modifier.fillMaxSize().statusBarsPadding()) {
         OutlinedButton(onClick = {  
             if (undo.isNotEmpty()) {  
                 redo.add(strokes)  
-                strokes = undo.removeAt(undo.lastIndex)  
+                updateStrokes(undo.removeAt(undo.lastIndex))  
             }  
         }) { Text("تراجع") }  
         OutlinedButton(onClick = {  
             if (redo.isNotEmpty()) {  
                 undo.add(strokes)  
-                strokes = redo.removeAt(redo.lastIndex)  
+                updateStrokes(redo.removeAt(redo.lastIndex))  
             }  
         }) { Text("إعادة") }  
     }  
 
     Canvas(  
         Modifier.fillMaxSize().background(Color.White)  
-            .pointerInput(tool, color) {  
+            .pointerInput(http://page.id, tool, color) {  
                 awaitPointerEventScope {  
                     while (true) {  
                         val down = awaitFirstDown()  
@@ -86,7 +139,7 @@ Column(Modifier.fillMaxSize().statusBarsPadding()) {
                             Pt(down.position.x, down.position.y,  
                                 if (down.pressure > 0f) down.pressure else 0.5f)  
                         )  
-                        if (erasing) strokes = eraseAt(strokes, down.position)  
+                        if (erasing) updateStrokes(eraseAt(strokes, down.position))  
                         else live = Ink(pts, color, 6f)  
                         down.consume()  
                         while (true) {  
@@ -94,7 +147,7 @@ Column(Modifier.fillMaxSize().statusBarsPadding()) {
                             val ch = ev.changes.first()  
                             if (!ch.pressed) break  
                             if (erasing) {  
-                                strokes = eraseAt(strokes, ch.position)  
+                                updateStrokes(eraseAt(strokes, ch.position))  
                             } else {  
                                 pts = pts + Pt(ch.position.x, ch.position.y,  
                                     if (ch.pressure > 0f) ch.pressure else 0.5f)  
@@ -102,7 +155,7 @@ Column(Modifier.fillMaxSize().statusBarsPadding()) {
                             }  
                             ch.consume()  
                         }  
-                        live?.let { strokes = strokes + it }  
+                        live?.let { updateStrokes(strokes + it) }  
                         live = null  
                     }  
                 }  

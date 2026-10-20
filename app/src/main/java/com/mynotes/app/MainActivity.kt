@@ -1206,63 +1206,45 @@ private fun PdfSymbol() {
     }
 }
 
+
 @Composable
 private fun EmptyLibrary(
-    query: String,
-    section: LibrarySection,
-    onImport: () -> Unit
+    onImportPdf: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .weight(1f),
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        PdfSymbol()
-
-        Spacer(Modifier.height(16.dp))
-
         Text(
-            text = when {
-                query.isNotBlank() -> "لم يتم العثور على نتائج"
-                section == LibrarySection.FAVORITES ->
-                    "لم تضف ملفات إلى المفضلة بعد"
-                section == LibrarySection.RECENT ->
-                    "ستظهر هنا الملفات التي تفتحها"
-                else -> "ابدأ ببناء مكتبتك الدراسية"
-            },
-            color = MainText,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 17.sp
+            text = "📚",
+            fontSize = 48.sp
         )
 
-        Spacer(Modifier.height(7.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = if (query.isNotBlank()) {
-                "جرّب البحث باسم مختلف."
-            } else {
-                "أضف ملف PDF للوصول إليه والكتابة عليه."
-            },
-            color = SecondaryText,
-            fontSize = 13.sp
+            text = "مكتبتك الدراسية بانتظار ملفاتك",
+            style = MaterialTheme.typography.titleLarge
         )
 
-        if (query.isBlank() &&
-            section != LibrarySection.FAVORITES &&
-            section != LibrarySection.RECENT
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "استورد ملف PDF لتبدأ القراءة والكتابة عليه.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Button(
+            onClick = onImportPdf
         ) {
-            Spacer(Modifier.height(16.dp))
-
-            Button(
-                onClick = onImport,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Navy
-                )
-            ) {
-                Text("+  ملف جديد")
-            }
+            Text("استيراد ملف PDF")
         }
     }
 }

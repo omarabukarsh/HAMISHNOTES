@@ -24,23 +24,6 @@ import kotlin.math.hypot
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val f = java.io.File(filesDir, "crash.txt")
-        if (f.exists()) {
-            val tv = android.widget.TextView(this)
-            tv.text = f.readText()
-            tv.textSize = 12f
-            tv.setPadding(24, 80, 24, 24)
-            val sv = android.widget.ScrollView(this)
-            sv.addView(tv)
-            setContentView(sv)
-            f.delete()
-            return
-        }
-        val old = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            try { f.writeText(android.util.Log.getStackTraceString(e)) } catch (_: Throwable) {}
-            old?.uncaughtException(t, e)
-        }
         setContent { MaterialTheme { NoteScreen() } }
     }
 }

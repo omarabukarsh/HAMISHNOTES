@@ -6,7 +6,7 @@ import android.os.ParcelFileDescriptor
 import android.util.LruCache
 import java.io.File
 
-/** ذاكرة مؤقتة للصفحات المرسومة، بحد أقصى للذاكرة حتى لا تمتلئ الذاكرة مع الملفات الكبيرة. */
+/** ذاكرة مؤقتة للصفحات المرسومة، بحد أقصى للذاكرة حتى لا تمتلئ مع الملفات الكبيرة. */
 object PageCache {
     private val cache = object : LruCache<String, Bitmap>(
         (Runtime.getRuntime().maxMemory() / 5L).coerceAtMost(160L * 1024L * 1024L).toInt()
@@ -22,6 +22,21 @@ object PageCache {
 
     fun removePrefix(prefix: String) {
         cache.snapshot().keys.filter { it.startsWith(prefix) }.forEach { cache.remove(it) }
+    }
+}
+
+/** ذاكرة مؤقتة للصور المضافة فوق الصفحات. */
+object ImageCache {
+    private val cache = object : LruCache<String, Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 8L).coerceAtMost(96L * 1024L * 1024L).toInt()
+    ) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+
+    fun get(key: String): Bitmap? = cache.get(key)
+
+    fun put(key: String, bmp: Bitmap) {
+        cache.put(key, bmp)
     }
 }
 
@@ -45,25 +60,39 @@ class PdfDoc private constructor(
 
     fun cached(index: Int, widthPx: Int): Bitmap? = PageCache.get("$id:$index:$widthPx")
 
+    private fun draw(index: Int, widthPx: Int): Bitmap {
+        val page = renderer.openPage(index)
+        try {
+            val h = (widthPx * page.height.toFloat() / page.width).toInt().coerceAtLeast(1)
+            val b = Bitmap.createBitmap(widthPx, h, Bitmap.Config.ARGB_8888)
+            b.eraseColor(android.graphics.Color.WHITE)
+            page.render(b, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            return b
+        } finally {
+            page.close()
+        }
+    }
+
+    /** للعرض على الشاشة: تُخزَّن في الذاكرة المؤقتة. */
     fun render(index: Int, widthPx: Int): Bitmap? {
         if (widthPx <= 0) return null
         val key = "$id:$index:$widthPx"
         PageCache.get(key)?.let { return it }
         val bmp: Bitmap = synchronized(this) {
             if (closed || index < 0 || index >= count) return null
-            val page = renderer.openPage(index)
-            try {
-                val h = (widthPx * page.height.toFloat() / page.width).toInt().coerceAtLeast(1)
-                val b = Bitmap.createBitmap(widthPx, h, Bitmap.Config.ARGB_8888)
-                b.eraseColor(android.graphics.Color.WHITE)
-                page.render(b, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                b
-            } finally {
-                page.close()
-            }
+            draw(index, widthPx)
         }
         PageCache.put(key, bmp)
         return bmp
+    }
+
+    /** للقراءة الضوئية: صورة جديدة غير مخزّنة، يجب على المستدعي تحريرها بـ recycle(). */
+    fun renderFresh(index: Int, widthPx: Int): Bitmap? {
+        if (widthPx <= 0) return null
+        return synchronized(this) {
+            if (closed || index < 0 || index >= count) return null
+            draw(index, widthPx)
+        }
     }
 
     fun close() {

@@ -4,10 +4,14 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -20,12 +24,17 @@ sealed interface SessionStatus {
     class Failed(val message: String) : SessionStatus
 }
 
-fun eraseStrokes(list: List<Ink>, at: Offset): List<Ink> =
-    list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < 0.015f } }
+fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float): List<Ink> =
+    list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
+
+class EditSnapshot(
+    val ink: Map<Int, List<Ink>>,
+    val images: Map<Int, List<ImageItem>>
+)
 
 /**
  * حالة مستند مفتوح في تبويب. تبقى حية عند تبديل التبويبات وعند تدوير الشاشة،
- * والكتابة تُحفظ على القرص بعد كل تعديل.
+ * والكتابة والصور تُحفظ على القرص بعد كل تعديل.
  */
 class DocSession(entry: DocEntry) {
     val id: String = entry.id
@@ -33,16 +42,34 @@ class DocSession(entry: DocEntry) {
     var title by mutableStateOf(entry.name)
     var status by mutableStateOf<SessionStatus>(SessionStatus.Loading)
     var pdf by mutableStateOf<PdfDoc?>(null)
-    var annotations by mutableStateOf<Map<Int, List<Ink>>>(emptyMap())
     var scale by mutableStateOf(1f)
 
-    val undoStack = mutableStateListOf<Map<Int, List<Ink>>>()
-    val redoStack = mutableStateListOf<Map<Int, List<Ink>>>()
+    var annotations by mutableStateOf<Map<Int, List<Ink>>>(emptyMap())
+    var images by mutableStateOf<Map<Int, List<ImageItem>>>(emptyMap())
+    var selectedImageId by mutableStateOf<String?>(null)
+
+    val undoStack = mutableStateListOf<EditSnapshot>()
+    val redoStack = mutableStateListOf<EditSnapshot>()
 
     val listState = LazyListState(entry.lastPage.coerceIn(0, maxOf(0, entry.pageCount - 1)), 0)
     val hScroll = ScrollState(0)
 
-    private var snapshot: Map<Int, List<Ink>>? = null
+    // ---- القراءة الضوئية والتحديد والبحث ----
+    val ocr = mutableStateMapOf<Int, OcrPage>()
+    var ocrRunning by mutableStateOf(false)
+    var ocrDone by mutableStateOf(0)
+    var ocrTotal by mutableStateOf(0)
+    var pageBusy by mutableStateOf<Int?>(null)
+    var selection by mutableStateOf<TextSelection?>(null)
+
+    var searchOpen by mutableStateOf(false)
+    var searchQuery by mutableStateOf("")
+    var hits by mutableStateOf<List<SearchHit>>(emptyList())
+    var hitIndex by mutableStateOf(0)
+    var hitNav by mutableStateOf(0)
+
+    private var ocrJob: Job? = null
+    private var snapshot: EditSnapshot? = null
     private var disposed = false
 
     suspend fun load(file: File, repo: LibraryRepository) {
@@ -50,14 +77,16 @@ class DocSession(entry: DocEntry) {
             val loaded = withContext(Dispatchers.IO) {
                 if (!file.exists()) throw FileNotFoundException()
                 val doc = PdfDoc.open(id, file)
-                Pair(doc, repo.loadAnnotations(id))
+                Triple(doc, repo.loadDocData(id), repo.loadOcrAll(id))
             }
             if (disposed) {
                 loaded.first.close()
                 return
             }
             pdf = loaded.first
-            annotations = loaded.second
+            annotations = loaded.second.ink
+            images = loaded.second.images
+            ocr.putAll(loaded.third)
             status = SessionStatus.Ready
         } catch (e: FileNotFoundException) {
             status = SessionStatus.Failed("الملف غير موجود، ربما حُذف أو نُقل.")
@@ -68,19 +97,19 @@ class DocSession(entry: DocEntry) {
         }
     }
 
-    // ---------- التحرير ----------
+    // ---------- التحرير والتراجع ----------
 
     fun beginEdit() {
-        snapshot = annotations
+        snapshot = EditSnapshot(annotations, images)
     }
 
     fun addInk(page: Int, ink: Ink) {
         annotations = annotations + (page to ((annotations[page] ?: emptyList()) + ink))
     }
 
-    fun eraseAt(page: Int, at: Offset) {
+    fun eraseAt(page: Int, at: Offset, radius: Float) {
         val cur = annotations[page] ?: return
-        val next = eraseStrokes(cur, at)
+        val next = eraseStrokes(cur, at, radius)
         if (next.size != cur.size) annotations = annotations + (page to next)
     }
 
@@ -88,7 +117,7 @@ class DocSession(entry: DocEntry) {
     fun endEdit() {
         val s = snapshot ?: return
         snapshot = null
-        if (s === annotations) return
+        if (s.ink === annotations && s.images === images) return
         undoStack.add(s)
         if (undoStack.size > 100) undoStack.removeAt(0)
         redoStack.clear()
@@ -97,25 +126,192 @@ class DocSession(entry: DocEntry) {
 
     fun undo() {
         if (undoStack.isEmpty()) return
-        redoStack.add(annotations)
-        annotations = undoStack.removeAt(undoStack.lastIndex)
+        redoStack.add(EditSnapshot(annotations, images))
+        val s = undoStack.removeAt(undoStack.lastIndex)
+        annotations = s.ink
+        images = s.images
+        selectedImageId = null
         persist()
     }
 
     fun redo() {
         if (redoStack.isEmpty()) return
-        undoStack.add(annotations)
-        annotations = redoStack.removeAt(redoStack.lastIndex)
+        undoStack.add(EditSnapshot(annotations, images))
+        val s = redoStack.removeAt(redoStack.lastIndex)
+        annotations = s.ink
+        images = s.images
+        selectedImageId = null
         persist()
     }
 
+    // ---------- الصور ----------
+
+    fun addImage(item: ImageItem) {
+        beginEdit()
+        images = images + (item.page to ((images[item.page] ?: emptyList()) + item))
+        selectedImageId = item.id
+        endEdit()
+    }
+
+    /** يعدّل صورة دون تسجيلها في التراجع؛ يجب لفّها بـ beginEdit/endEdit. */
+    fun updateImage(imageId: String, transform: (ImageItem) -> ImageItem) {
+        val page = images.entries.firstOrNull { e -> e.value.any { it.id == imageId } }?.key ?: return
+        val list = images[page] ?: return
+        images = images + (page to list.map { if (it.id == imageId) transform(it) else it })
+    }
+
+    fun deleteSelectedImage() {
+        val imageId = selectedImageId ?: return
+        val page = images.entries.firstOrNull { e -> e.value.any { it.id == imageId } }?.key
+        if (page == null) {
+            selectedImageId = null
+            return
+        }
+        beginEdit()
+        images = images + (page to (images[page] ?: emptyList()).filter { it.id != imageId })
+        selectedImageId = null
+        endEdit()
+    }
+
+    // ---------- القراءة الضوئية ----------
+
+    /** يقرأ صفحة واحدة (إن لم تكن مقروءة أو تغيّرت كتابة المستخدم عليها). */
+    suspend fun ocrPage(page: Int): OcrPage? {
+        val doc = pdf ?: return null
+        val strokes = annotations[page] ?: emptyList()
+        val ver = OcrEngine.versionOf(strokes)
+        val existing = ocr[page]
+        if (existing != null && existing.version == ver) return existing
+
+        val result: OcrPage? = try {
+            withContext(Dispatchers.Default) {
+                val base = doc.renderFresh(page, 1800) ?: return@withContext null
+                try {
+                    val src = OcrEngine.compose(base, strokes)
+                    try {
+                        OcrPage(OcrEngine.recognize(src), ver)
+                    } finally {
+                        if (src !== base) src.recycle()
+                    }
+                } finally {
+                    base.recycle()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            null
+        }
+
+        if (result != null) {
+            ocr[page] = result
+            withContext(Dispatchers.IO) { AppController.repo.saveOcrPage(id, page, result) }
+        }
+        return result
+    }
+
+    fun startOcr() {
+        if (ocrJob?.isActive == true) return
+        val doc = pdf ?: return
+        ocrJob = AppController.scope.launch {
+            ocrRunning = true
+            ocrTotal = doc.count
+            ocrDone = 0
+            for (p in 0 until doc.count) {
+                if (!isActive || disposed) break
+                ocrPage(p)
+                ocrDone = p + 1
+                if (searchOpen && searchQuery.isNotBlank() && p % 5 == 4) runSearch(searchQuery, navigate = false)
+            }
+            ocrRunning = false
+            if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false)
+        }
+    }
+
+    fun stopOcr() {
+        ocrJob?.cancel()
+        ocrRunning = false
+    }
+
+    // ---------- التحديد والنسخ ----------
+
+    fun selectionText(): String {
+        val sel = selection ?: return ""
+        val words = ocr[sel.page]?.words ?: return ""
+        val a = minOf(sel.start, sel.end)
+        val b = maxOf(sel.start, sel.end)
+        val sb = StringBuilder()
+        var lastLine = -1
+        for (i in a..b) {
+            val w = words.getOrNull(i) ?: continue
+            if (lastLine != -1) sb.append(if (w.line == lastLine) " " else "\n")
+            sb.append(w.text)
+            lastLine = w.line
+        }
+        return sb.toString()
+    }
+
+    // ---------- البحث ----------
+
+    fun runSearch(q: String, navigate: Boolean = true) {
+        searchQuery = q
+        val tokens = q.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) {
+            hits = emptyList()
+            hitIndex = 0
+            return
+        }
+        val out = ArrayList<SearchHit>()
+        for (page in ocr.keys.sorted()) {
+            val words = ocr[page]?.words ?: continue
+            var i = 0
+            while (i + tokens.size <= words.size) {
+                var ok = true
+                for (j in tokens.indices) {
+                    if (!words[i + j].text.lowercase().contains(tokens[j])) {
+                        ok = false
+                        break
+                    }
+                }
+                if (ok) {
+                    out.add(SearchHit(page, i, i + tokens.size - 1))
+                    i += tokens.size
+                } else {
+                    i++
+                }
+            }
+        }
+        hits = out
+        if (navigate) {
+            hitIndex = 0
+            hitNav++
+        } else if (hitIndex >= out.size) {
+            hitIndex = 0
+        }
+    }
+
+    fun stepHit(delta: Int) {
+        if (hits.isEmpty()) return
+        hitIndex = (hitIndex + delta + hits.size) % hits.size
+        hitNav++
+    }
+
+    fun closeSearch() {
+        searchOpen = false
+        searchQuery = ""
+        hits = emptyList()
+        hitIndex = 0
+    }
+
     private fun persist() {
-        val data = annotations
-        AppController.scope.launch { AppController.repo.saveAnnotations(id, data) }
+        val ink = annotations
+        val imgs = images
+        AppController.scope.launch { AppController.repo.saveDocData(id, ink, imgs) }
     }
 
     fun dispose() {
         disposed = true
+        ocrJob?.cancel()
         pdf?.close()
         pdf = null
     }

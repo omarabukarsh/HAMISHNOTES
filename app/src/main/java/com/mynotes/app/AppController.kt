@@ -5,15 +5,18 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 /**
  * حالة التطبيق كاملة. كائن وحيد يعيش مع العملية، لذلك تبقى التبويبات وسجل التراجع
@@ -43,17 +46,74 @@ object AppController {
     var librarySort by mutableStateOf(SortMode.LAST_OPENED)
     var libraryQuery by mutableStateOf("")
 
-    var tool by mutableStateOf(Tool.PEN)
-    val penColors = listOf(
+    // ---------- إعدادات الأدوات ----------
+
+    var tool by mutableStateOf(Tool.FOUNTAIN)
+        private set
+    var lastPen by mutableStateOf(Tool.FOUNTAIN)
+        private set
+
+    private val colorOf = mutableStateMapOf<Tool, Color>()
+    private val sizeOf = mutableStateMapOf<Tool, Int>()
+
+    val penPalette = listOf(
         Color(0xFF000000),
+        Color(0xFF455A64),
         Color(0xFF1565C0),
         Color(0xFFC62828),
         Color(0xFF2E7D32),
-        Color(0xFF6A1B9A)
+        Color(0xFFEF6C00),
+        Color(0xFF6A1B9A),
+        Color(0xFF795548)
     )
-    var penColor by mutableStateOf(penColors[0])
-    val penWidths = listOf(0.0018f, 0.003f, 0.0055f)
-    var widthIndex by mutableStateOf(1)
+    val highlightPalette = listOf(
+        Color(0xFFFFEB3B),
+        Color(0xFF69F0AE),
+        Color(0xFFFF80AB),
+        Color(0xFF40C4FF),
+        Color(0xFFFFAB40)
+    )
+    val customColors = mutableStateListOf<Color>()
+
+    fun paletteFor(t: Tool): List<Color> =
+        if (t == Tool.HIGHLIGHTER) highlightPalette else penPalette
+
+    fun colorFor(t: Tool): Color = colorOf[t] ?: when (t) {
+        Tool.HIGHLIGHTER -> Color(0xFFFFEB3B)
+        Tool.LASER -> Color(0xFFFF1744)
+        else -> Color(0xFF000000)
+    }
+
+    fun sizeFor(t: Tool): Int = sizeOf[t] ?: when (t) {
+        Tool.HIGHLIGHTER -> 4
+        Tool.ERASER -> 3
+        Tool.LASER -> 4
+        else -> 2
+    }
+
+    fun selectTool(t: Tool) {
+        tool = t
+        if (t.isPen()) lastPen = t
+    }
+
+    fun setColor(c: Color) {
+        if (tool != Tool.ERASER) colorOf[tool] = c
+    }
+
+    fun setSize(i: Int) {
+        sizeOf[tool] = i.coerceIn(0, Sizes.COUNT - 1)
+    }
+
+    fun addCustomColor(c: Color) {
+        customColors.remove(c)
+        customColors.add(0, c)
+        while (customColors.size > 10) customColors.removeAt(customColors.lastIndex)
+        prefs.edit()
+            .putString("custom_colors", customColors.joinToString(",") { it.toArgb().toString() })
+            .apply()
+    }
+
+    // ---------- التهيئة ----------
 
     fun initialize(context: Context) {
         if (initialized) return
@@ -61,6 +121,12 @@ object AppController {
         val app = context.applicationContext
         repo = LibraryRepository(app)
         prefs = app.getSharedPreferences("mynotes_session", Context.MODE_PRIVATE)
+
+        (prefs.getString("custom_colors", "") ?: "")
+            .split(",")
+            .mapNotNull { it.toIntOrNull() }
+            .forEach { customColors.add(Color(it)) }
+
         scope.launch {
             val list = withContext(Dispatchers.IO) { repo.loadIndex() }
             library.clear()
@@ -130,6 +196,30 @@ object AppController {
         tabs.forEach { recordPage(it.id) }
         saveLibrary()
         saveSession()
+    }
+
+    // ---------- الصور ----------
+
+    fun insertImage(s: DocSession, uri: Uri, page: Int) {
+        scope.launch {
+            try {
+                val res = withContext(Dispatchers.IO) { repo.importImage(s.id, uri) }
+                s.addImage(
+                    ImageItem(
+                        id = UUID.randomUUID().toString(),
+                        file = res.first,
+                        page = page,
+                        x = 0.275f,
+                        y = 0.15f,
+                        w = 0.45f,
+                        aspect = res.second
+                    )
+                )
+                messages.tryEmit("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها")
+            } catch (t: Throwable) {
+                messages.tryEmit("تعذر إضافة الصورة")
+            }
+        }
     }
 
     // ---------- المكتبة ----------

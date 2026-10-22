@@ -599,8 +599,13 @@ class DocSession(entry: DocEntry) {
         changeEdits { it.copy(order = next) }
     }
 
+    /** يجمع أجزاء مختارة في جدول بعدد أعمدة cols (0 = كل نص صف). */
+    fun makeTable(keys: List<String>, cols: Int) = makeTableImpl(keys, oneRow = false, cols = cols)
+
     /** يجمع أجزاء مختارة في جدول. الجداول التي كانت تضم أحدها تُدمج فيه. */
-    fun makeTable(keys: List<String>, oneRow: Boolean) {
+    fun makeTable(keys: List<String>, oneRow: Boolean) = makeTableImpl(keys, oneRow, 0)
+
+    private fun makeTableImpl(keys: List<String>, oneRow: Boolean, cols: Int) {
         if (keys.isEmpty()) return
         changeEdits { e ->
             val expanded = ArrayList<String>()
@@ -614,7 +619,7 @@ class DocSession(entry: DocEntry) {
                     expanded.add(k)
                 }
             }
-            val group = TableGroup(UUID.randomUUID().toString(), expanded.distinct(), oneRow)
+            val group = TableGroup(UUID.randomUUID().toString(), expanded.distinct(), oneRow = oneRow, cols = cols)
             val gKey = "g:" + group.id
             // إن كان هناك ترتيب يدوي: الجدول يأخذ مكان أول عضو فيه
             val memberKeys = keys.toSet() + expanded
@@ -630,6 +635,42 @@ class DocSession(entry: DocEntry) {
                 tables = e.tables.filter { it.id !in absorbed && it.keys.none { k -> k in expanded } } + group,
                 order = order
             )
+        }
+    }
+
+    /** يحفظ محتوى جدول عدّله المستخدم في محرر الجدول (لجدول تلقائي أو جدول من صنعه). */
+    fun saveTable(blockKey: String, rows: List<List<String>>, header: Boolean) = changeEdits { e ->
+        if (blockKey.startsWith("g:")) {
+            e.copy(tables = e.tables.map { g ->
+                if ("g:" + g.id == blockKey) g.copy(rows = rows, header = header) else g
+            })
+        } else {
+            val g = TableGroup(UUID.randomUUID().toString(), listOf(blockKey), rows = rows, header = header)
+            e.copy(
+                tables = e.tables + g,
+                order = e.order.map { if (it == blockKey) "g:" + g.id else it }
+            )
+        }
+    }
+
+    /** يضم أجزاء أخرى إلى جدول موجود كصفوف جديدة. newRows = نصوصها كصفوف (لجدول معدَّل يدويًا). */
+    fun addToTable(tableKey: String, keys: List<String>, newRows: List<List<String>>) = changeEdits { e ->
+        val add = keys.filter { it != tableKey }
+        if (add.isEmpty()) return@changeEdits e
+        val order = e.order.filter { it !in add }
+        if (tableKey.startsWith("g:")) {
+            e.copy(
+                tables = e.tables.map { g ->
+                    if ("g:" + g.id == tableKey) g.copy(
+                        keys = (g.keys + add).distinct(),
+                        rows = g.rows?.let { it + newRows }
+                    ) else g
+                },
+                order = order
+            )
+        } else {
+            val g = TableGroup(UUID.randomUUID().toString(), listOf(tableKey) + add)
+            e.copy(tables = e.tables + g, order = order.map { if (it == tableKey) "g:" + g.id else it })
         }
     }
 

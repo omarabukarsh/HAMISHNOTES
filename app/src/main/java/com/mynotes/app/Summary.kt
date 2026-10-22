@@ -21,10 +21,29 @@ data class SPara(
     override val key: String = ""
 ) : SBlock
 
-data class STable(val rows: List<List<String>>, override val marks: List<TextMark>, override val key: String = "") : SBlock
+/** header = الصف الأول عناوين أعمدة. */
+data class STable(
+    val rows: List<List<String>>,
+    override val marks: List<TextMark>,
+    override val key: String = "",
+    val header: Boolean = true
+) : SBlock
 
-/** جدول صنعه المستخدم من أجزاء مختارة. oneRow = النصوص خلايا في صف واحد، وإلا كل نص صف. */
-data class TableGroup(val id: String, val keys: List<String>, val oneRow: Boolean)
+/**
+ * جدول من صنع المستخدم أو جدول عدّله.
+ *  keys    الأجزاء التي يضمها (تختفي من مكانها ويظهر الجدول مكان أولها)
+ *  cols    عدد الأعمدة عند توزيع النصوص المختارة (0 = كل نص صف بخلاياه)
+ *  oneRow  (قديم) كل النصوص في صف واحد
+ *  rows    محتوى عدّله المستخدم يدويًا في محرر الجدول (إن وُجد يُعرض كما هو)
+ */
+data class TableGroup(
+    val id: String,
+    val keys: List<String>,
+    val oneRow: Boolean = false,
+    val cols: Int = 0,
+    val rows: List<List<String>>? = null,
+    val header: Boolean = true
+)
 
 /**
  * تعديلات المستخدم على الملخص، تُطبَّق فوق الترتيب التلقائي (الذي يبقى يعمل كما هو):
@@ -179,16 +198,26 @@ object Summary {
             val members = g.keys.mapNotNull { k -> list.firstOrNull { it.key == k } }
             if (members.isEmpty()) continue
             val rows = ArrayList<List<String>>()
-            val single = ArrayList<String>()
-            for (m in members) {
-                when (m) {
-                    is STable -> rows.addAll(m.rows)
-                    is SHeading -> if (g.oneRow) single.add(m.text) else rows.add(cellsOf(m.text))
-                    is SPara -> if (g.oneRow) single.add(m.text) else rows.add(cellsOf(m.text))
+            if (g.rows != null) {
+                rows.addAll(g.rows)
+            } else {
+                val texts = ArrayList<String>()
+                for (m in members) {
+                    when (m) {
+                        is STable -> rows.addAll(m.rows)
+                        is SHeading -> texts.add(m.text)
+                        is SPara -> texts.add(m.text)
+                    }
+                }
+                when {
+                    g.cols > 0 -> texts.chunked(g.cols).forEach { r -> rows.add(r + List(g.cols - r.size) { "" }) }
+                    g.oneRow -> if (texts.isNotEmpty()) rows.add(texts)
+                    else -> texts.forEach { rows.add(cellsOf(it)) }
                 }
             }
-            if (single.isNotEmpty()) rows.add(single)
-            val table = STable(rows, members.flatMap { it.marks }.distinctBy { it.id }, "g:" + g.id)
+            val table = STable(
+                rows, members.flatMap { it.marks }.distinctBy { it.id }, "g:" + g.id, g.header
+            )
             val out = ArrayList<SBlock>()
             var placed = false
             for (b in list) {

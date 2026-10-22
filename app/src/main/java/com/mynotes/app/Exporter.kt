@@ -294,14 +294,14 @@ object Exporter {
                         val colW = contentW / cols
                         y += 4f
                         b.rows.forEachIndexed { ri, row ->
-                            val paint = if (ri == 0) cellHeadPaint else cellPaint
+                            val paint = if (b.header && ri == 0) cellHeadPaint else cellPaint
                             val cells = (0 until cols).map { ci ->
                                 layoutOf(row.getOrNull(ci) ?: "", paint, (colW - 10).coerceAtLeast(10), 1.25f)
                             }
                             val rowH = (cells.maxOf { it.height } + 10).toFloat()
                             ensure(rowH)
                             val c = page!!.canvas
-                            if (ri == 0) c.drawRect(margin, y, margin + colW * cols, y + rowH, headFill)
+                            if (b.header && ri == 0) c.drawRect(margin, y, margin + colW * cols, y + rowH, headFill)
                             cells.forEachIndexed { ci, l ->
                                 val x = margin + ci * colW
                                 c.drawRect(x, y, x + colW, y + rowH, grid)

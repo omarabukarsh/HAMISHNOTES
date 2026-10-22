@@ -118,34 +118,112 @@ object TextLayout {
             MarkRect(l - padX, t - padY, r + padX, b + padY)
         }
 
-    private class Row(val words: List<OcrWord>) {
+    private fun isArabicChar(c: Char) = c in '\u0600'..'\u06FF' || c in '\u0750'..'\u077F' || c in '\uFB50'..'\uFEFF'
+
+    /** خلية: نصها وحافتاها. edge = الحافة التي يبدأ منها السطر (اليسار، أو اليمين في العربية). */
+    private class Cell(val text: String, val l: Float, val r: Float, rtl: Boolean) {
+        val edge: Float = if (rtl) r else l
+    }
+
+    private class Row(input: List<OcrWord>) {
+        /** صف عربي: الكلمات تُقرأ من اليمين لليسار. */
+        val rtl: Boolean = run {
+            var ar = 0
+            var la = 0
+            for (w in input) for (ch in w.text) {
+                if (isArabicChar(ch)) ar++ else if (ch.isLetter()) la++
+            }
+            ar > la
+        }
+        val words: List<OcrWord> = if (rtl) input.sortedByDescending { it.r } else input.sortedBy { it.l }
         val l = words.minOf { it.l }
         val r = words.maxOf { it.r }
         val t = median(words.map { it.t })
         val b = median(words.map { it.b })
         val height: Float = median(words.map { it.b - it.t })
-        /** خلايا الصف: فراغ أفقي أكبر من 1.4 ضعف ارتفاع السطر يبدأ خلية جديدة. */
-        val cells: List<String> = run {
-            val out = ArrayList<String>()
-            val sb = StringBuilder()
+        /** خلايا الصف: فراغ أفقي كبير (أو تغيّر سطر القراءة مع فراغ) يبدأ خلية جديدة. */
+        val cells: List<Cell> = run {
+            val out = ArrayList<Cell>()
+            var group = ArrayList<OcrWord>()
+            fun flush() {
+                if (group.isEmpty()) return
+                out.add(Cell(group.joinToString(" ") { it.text }, group.minOf { it.l }, group.maxOf { it.r }, rtl))
+                group = ArrayList()
+            }
             for ((k, w) in words.withIndex()) {
                 if (k > 0) {
                     val prev = words[k - 1]
-                    val gap = w.l - prev.r
+                    val gap = if (rtl) prev.l - w.r else w.l - prev.r
                     val lineChanged = w.line != prev.line
-                    if (gap > 1.4f * height || (lineChanged && gap > 1.0f * height)) {
-                        out.add(sb.toString())
-                        sb.setLength(0)
-                    } else {
-                        sb.append(' ')
-                    }
+                    if (gap > 1.4f * height || (lineChanged && gap > 1.0f * height)) flush()
                 }
-                sb.append(w.text)
+                group.add(w)
             }
-            out.add(sb.toString())
+            flush()
             out
         }
-        val text: String get() = cells.joinToString(" ")
+        val text: String get() = cells.joinToString(" ") { it.text }
+        val numberedHeading: Boolean get() =
+            Regex("^\\d+(\\.\\d+)*\\.?\\s+\\S").containsMatchIn(text) &&
+                text.split(' ').size <= 10 && text.trimEnd().lastOrNull() != '.'
+    }
+
+    /**
+     * جدول من صفوف متتالية: الأعمدة تُعرف من حواف خلايا أول صف. الصف ذو الخلية الواحدة الواقعة
+     * تحت عمود معيّن يُعدّ تكملة لخلية الصف السابق (خلية من عدة أسطر). خلية لا تقع تحت أي عمود،
+     * أو فراغ رأسي كبير، يعني بداية جدول جديد. يعيد عدد الصفوف المستهلكة.
+     */
+    private fun readTable(rows: List<Row>, start: Int, out: MutableList<MutableList<String>>): Int {
+        val first = rows[start]
+        val anchors = first.cells.map { it.edge }.toMutableList()
+        val lh0 = first.height
+        val tol = 2.2f * lh0
+        out.add(first.cells.map { it.text }.toMutableList())
+        val gaps = ArrayList<Float>()
+        var j = start + 1
+        fun colOf(c: Cell): Int {
+            var best = -1
+            var bestD = Float.MAX_VALUE
+            for ((k, a) in anchors.withIndex()) {
+                val d = abs(c.edge - a)
+                if (d < bestD) {
+                    bestD = d
+                    best = k
+                }
+            }
+            return if (bestD <= tol) best else -1
+        }
+        while (j < rows.size) {
+            val row = rows[j]
+            val prev = rows[j - 1]
+            val lh = max(row.height, prev.height)
+            val gap = row.t - prev.b
+            if (gap > 1.8f * lh) break
+            // فراغ أكبر بوضوح من فراغات هذا الجدول = جدول آخر
+            if (gaps.size >= 2 && gap > 1.4f * median(gaps) && gap > 1.0f * lh && row.cells.size >= 2) break
+            if (row.rtl != first.rtl) break
+            val cols = row.cells.map { colOf(it) }
+            if (row.cells.size >= 2) {
+                if (cols.any { it < 0 }) break
+                val cells = MutableList(anchors.size) { "" }
+                row.cells.forEachIndexed { k, c ->
+                    val col = cols[k]
+                    cells[col] = if (cells[col].isEmpty()) c.text else cells[col] + " " + c.text
+                }
+                out.add(cells)
+            } else {
+                val col = cols[0]
+                // خلية واحدة: تكملة لخلية في الصف السابق إن كانت تحت عمود وقريبة رأسيًا
+                if (col < 0 || gap > 0.9f * lh) break
+                if (col == 0 && anchors.size > 1 && gap > 0.5f * lh) break
+                val last = out.last()
+                while (last.size < anchors.size) last.add("")
+                last[col] = if (last[col].isEmpty()) row.cells[0].text else last[col] + " " + row.cells[0].text
+            }
+            gaps.add(gap)
+            j++
+        }
+        return j - start
     }
 
     /**
@@ -158,17 +236,20 @@ object TextLayout {
         val rows = rowsIdx.map { r -> Row(r.map { pageWords[it] }) }
         val body = bodyHeight(pageWords)
 
-        // الجدول: صفّان متتاليان على الأقل فيهما أكثر من خلية، أو صف واحد بثلاث خلايا أو أكثر
-        val isTable = BooleanArray(rows.size)
-        for (i in rows.indices) {
+        // بداية جدول: صف بخليتين أو أكثر يليه صف بعدة خلايا، أو صف واحد بثلاث خلايا أو أكثر
+        val startsTable = BooleanArray(rows.size) { i ->
             val multi = rows[i].cells.size >= 2
-            val prevMulti = i > 0 && rows[i - 1].cells.size >= 2
             val nextMulti = i < rows.lastIndex && rows[i + 1].cells.size >= 2
-            isTable[i] = multi && (prevMulti || nextMulti || rows[i].cells.size >= 3)
+            val nextCont = i < rows.lastIndex && rows[i + 1].cells.size == 1 &&
+                rows[i + 1].t - rows[i].b < 0.9f * rows[i].height
+            multi && (nextMulti || nextCont || rows[i].cells.size >= 3)
         }
         val isHeading = BooleanArray(rows.size) { i ->
-            val ratio = if (rows[i].words.size >= 2) 1.3f else 1.6f
-            !isTable[i] && rows[i].height >= ratio * body
+            val ratio = if (rows[i].words.size >= 2) 1.25f else 1.6f
+            !startsTable[i] && (
+                rows[i].height >= ratio * body ||
+                    (rows[i].numberedHeading && rows[i].height >= 1.08f * body)
+                )
         }
 
         val blockL = rows.minOf { it.l }
@@ -178,15 +259,14 @@ object TextLayout {
         while (i < rows.size) {
             if (out.isNotEmpty()) out.append("\n\n")
             when {
-                isTable[i] -> {
-                    var j = i
-                    val lines = ArrayList<String>()
-                    while (j < rows.size && isTable[j]) {
-                        lines.add(rows[j].cells.joinToString(" | ") { it.trim() })
-                        j++
-                    }
-                    out.append(lines.joinToString("\n"))
-                    i = j
+                startsTable[i] -> {
+                    val table = ArrayList<MutableList<String>>()
+                    val used = readTable(rows, i, table)
+                    val cols = table.maxOf { it.size }
+                    out.append(table.joinToString("\n") { r ->
+                        (0 until cols).joinToString(" | ") { k -> r.getOrElse(k) { "" }.trim() }
+                    })
+                    i += used
                 }
                 isHeading[i] -> {
                     // أسطر العنوان المتتالية بنفس الحجم تُجمع في عنوان واحد
@@ -204,7 +284,7 @@ object TextLayout {
                 else -> {
                     var j = i
                     val lines = ArrayList<String>()
-                    while (j < rows.size && !isTable[j] && !isHeading[j]) {
+                    while (j < rows.size && !startsTable[j] && !isHeading[j]) {
                         if (j > i && startsNewParagraph(rows[j - 1], rows[j], blockL, blockR)) break
                         lines.add(rows[j].text)
                         j++
@@ -226,9 +306,14 @@ object TextLayout {
         val prevEnd = prev.text.trimEnd().lastOrNull()
         val ended = prevEnd != null && prevEnd in TERMINAL
         // سطر قصير منتهٍ بنقطة = نهاية فقرة
-        if (ended && prev.r < blockR - 2.5f * lh) return true
-        // بداية سطر بإزاحة بعد سطر منتهٍ = فقرة جديدة
-        if (ended && next.l > blockL + 1.5f * lh) return true
+        if (prev.rtl) {
+            if (ended && prev.l > blockL + 2.5f * lh) return true
+            if (ended && next.r < blockR - 1.5f * lh) return true
+        } else {
+            if (ended && prev.r < blockR - 2.5f * lh) return true
+            // بداية سطر بإزاحة بعد سطر منتهٍ = فقرة جديدة
+            if (ended && next.l > blockL + 1.5f * lh) return true
+        }
         return false
     }
 

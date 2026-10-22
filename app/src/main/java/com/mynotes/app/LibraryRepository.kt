@@ -543,7 +543,20 @@ class LibraryRepository(context: Context) {
                 (0 until a.length()).map { i ->
                     val t = a.getJSONObject(i)
                     val ks = t.getJSONArray("keys")
-                    TableGroup(t.getString("id"), (0 until ks.length()).map { ks.getString(it) }, t.optBoolean("row"))
+                    val rowsArr = t.optJSONArray("rows")
+                    TableGroup(
+                        id = t.getString("id"),
+                        keys = (0 until ks.length()).map { ks.getString(it) },
+                        oneRow = t.optBoolean("row"),
+                        cols = t.optInt("cols", 0),
+                        rows = rowsArr?.let { ra ->
+                            (0 until ra.length()).map { r ->
+                                val cells = ra.getJSONArray(r)
+                                (0 until cells.length()).map { cells.getString(it) }
+                            }
+                        },
+                        header = t.optBoolean("header", true)
+                    )
                 }
             } ?: emptyList()
             SummaryEdits(order, kinds, tables)
@@ -558,8 +571,14 @@ class LibraryRepository(context: Context) {
         val tables = JSONArray()
         e.tables.forEach { g ->
             tables.put(
-                JSONObject().put("id", g.id).put("row", g.oneRow)
+                JSONObject().put("id", g.id).put("row", g.oneRow).put("cols", g.cols).put("header", g.header)
                     .put("keys", JSONArray().apply { g.keys.forEach { put(it) } })
+                    .apply {
+                        val rows = g.rows
+                        if (rows != null) {
+                            put("rows", JSONArray().apply { rows.forEach { r -> put(JSONArray().apply { r.forEach { put(it) } }) } })
+                        }
+                    }
             )
         }
         return JSONObject()

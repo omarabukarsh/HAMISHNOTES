@@ -75,6 +75,10 @@ fun SummaryDrawer(
     // وضع اختيار أجزاء لصنع جدول
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(listOf<String>()) }
+    // null = صنع جدول جديد، وإلا مفتاح جدول تُضم إليه النصوص المختارة
+    var tableTarget by remember { mutableStateOf<String?>(null) }
+    var tableCols by remember { mutableStateOf(2) }
+    var editingTable by remember { mutableStateOf<STable?>(null) }
 
     Surface(
         modifier.fillMaxHeight().width(420.dp),
@@ -133,26 +137,56 @@ fun SummaryDrawer(
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Gold.copy(alpha = 0.45f)))
             if (selecting) {
                 Column(Modifier.fillMaxWidth().background(Palette.NavySoft).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    val target = tableTarget
                     Text(
-                        if (selected.isEmpty()) "اختر النصوص التي تريدها في الجدول"
-                        else "اخترت ${selected.size}، ثم حدد شكل الجدول",
+                        when {
+                            target != null && selected.isEmpty() -> "اختر النصوص التي تريد ضمها إلى الجدول"
+                            target != null -> "اخترت ${selected.size}، وستُضاف كصفوف في آخر الجدول"
+                            selected.isEmpty() -> "اختر النصوص بالترتيب الذي تريده في الجدول"
+                            else -> "اخترت ${selected.size}. النصوص تملأ الصفوف بالترتيب حسب عدد الأعمدة"
+                        },
                         fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Bold
                     )
+                    if (target == null) {
+                        Row(
+                            Modifier.padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("الأعمدة:", fontSize = 13.sp, color = Palette.TextSecondary)
+                            listOf(1, 2, 3, 4).forEach { n ->
+                                ChoiceChip("$n", tableCols == n) { tableCols = n }
+                            }
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(enabled = selected.size >= 2, onClick = {
-                            s.makeTable(blocks.map { it.key }.filter { it in selected }, oneRow = true)
-                            selecting = false
-                            selected = emptyList()
-                        }) { Text("في صف واحد", fontSize = 13.sp) }
-                        TextButton(enabled = selected.isNotEmpty(), onClick = {
-                            s.makeTable(blocks.map { it.key }.filter { it in selected }, oneRow = false)
-                            selecting = false
-                            selected = emptyList()
-                        }) { Text("كل نص صف", fontSize = 13.sp) }
+                        if (target == null) {
+                            TextButton(enabled = selected.isNotEmpty(), onClick = {
+                                // ترتيب الاختيار نفسه هو ترتيب الخلايا
+                                s.makeTable(selected, cols = tableCols)
+                                selecting = false
+                                selected = emptyList()
+                            }) { Text("إنشاء الجدول", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        } else {
+                            TextButton(enabled = selected.isNotEmpty(), onClick = {
+                                val newRows = selected.mapNotNull { k -> blocks.firstOrNull { it.key == k } }.flatMap { b ->
+                                    when (b) {
+                                        is STable -> b.rows
+                                        is SHeading -> listOf(listOf(b.text))
+                                        is SPara -> listOf(b.text.split('|').map { it.trim() })
+                                    }
+                                }
+                                s.addToTable(target, selected, newRows)
+                                selecting = false
+                                selected = emptyList()
+                                tableTarget = null
+                            }) { Text("إضافة إلى الجدول", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = {
                             selecting = false
                             selected = emptyList()
+                            tableTarget = null
                         }) { Text("إلغاء", fontSize = 13.sp, color = Palette.TextSecondary) }
                     }
                 }
@@ -194,12 +228,23 @@ fun SummaryDrawer(
                                     shownKeys = blocks.map { it.key },
                                     selecting = selecting,
                                     onToggleSelect = {
-                                        selected = if (isSel) selected - b.key else selected + b.key
+                                        if (b.key != tableTarget) {
+                                            selected = if (isSel) selected - b.key else selected + b.key
+                                        }
                                     },
+                                    selectable = !(selecting && b.key == tableTarget),
+                                    selectionIndex = selected.indexOf(b.key),
                                     onStartTable = {
                                         selecting = true
+                                        tableTarget = null
                                         selected = listOf(b.key)
                                     },
+                                    onAddToTable = {
+                                        selecting = true
+                                        tableTarget = b.key
+                                        selected = emptyList()
+                                    },
+                                    onEditTable = { editingTable = it },
                                     onJump = onJump,
                                     onEdit = { editing = it }
                                 )
@@ -215,6 +260,19 @@ fun SummaryDrawer(
                 }
             }
         }
+    }
+
+    val et = editingTable
+    if (et != null) {
+        TableEditorDialog(
+            initial = et.rows,
+            initialHeader = et.header,
+            onSave = { rows, header ->
+                s.saveTable(et.key, rows, header)
+                editingTable = null
+            },
+            onDismiss = { editingTable = null }
+        )
     }
 
     val e = editing
@@ -253,8 +311,12 @@ private fun BlockView(
     b: SBlock,
     shownKeys: List<String>,
     selecting: Boolean,
+    selectable: Boolean,
+    selectionIndex: Int,
     onToggleSelect: () -> Unit,
     onStartTable: () -> Unit,
+    onAddToTable: () -> Unit,
+    onEditTable: (STable) -> Unit,
     onJump: (TextMark) -> Unit,
     onEdit: (TextMark) -> Unit
 ) {
@@ -271,6 +333,16 @@ private fun BlockView(
                 .clickable { if (selecting) onToggleSelect() else menu = true }
                 .padding(vertical = 5.dp)
         ) {
+            if (selecting && selectionIndex >= 0) {
+                Text(
+                    "${selectionIndex + 1}", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Palette.GoldDeep)
+                        .padding(horizontal = 7.dp, vertical = 1.dp)
+                )
+            }
+            if (selecting && !selectable) {
+                Text("الجدول الذي تضم إليه", fontSize = 11.sp, color = Palette.GoldDeep)
+            }
             when (b) {
                 is SHeading -> Text(
                     b.text, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
@@ -281,7 +353,7 @@ private fun BlockView(
                     emphasized(b.text, b.emphasis),
                     fontSize = 15.sp, lineHeight = 25.sp, color = Palette.TextPrimary
                 )
-                is STable -> TableView(b.rows)
+                is STable -> TableView(b.rows, b.header)
             }
         }
         // تبويب صغير يظهر عند الضغط على الجزء
@@ -293,9 +365,13 @@ private fun BlockView(
                     MenuRow("تحويل إلى نص", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
                 }
             }
+            if (b is STable) {
+                MenuRow("تحرير الجدول", R.drawable.ph_sliders) { menu = false; onEditTable(b) }
+                MenuRow("ضم نصوص إلى هذا الجدول", R.drawable.ph_plus) { menu = false; onAddToTable() }
+            }
             if (userTable) {
                 MenuRow("فك الجدول", R.drawable.ph_close) { menu = false; s.removeTable(b.key) }
-            } else {
+            } else if (b !is STable) {
                 MenuRow("ضعه في جدول…", R.drawable.ph_pages) { menu = false; onStartTable() }
             }
             if (pos > 0) MenuRow("تحريك لأعلى", R.drawable.ph_caret_up) { menu = false; s.moveBlock(shownKeys, b.key, -1) }
@@ -332,7 +408,7 @@ private fun MenuRow(label: String, icon: Int, color: Color = Palette.TextPrimary
 }
 
 @Composable
-private fun TableView(rows: List<List<String>>) {
+private fun TableView(rows: List<List<String>>, header: Boolean = true) {
     val cols = rows.maxOfOrNull { it.size } ?: 1
     val line = Palette.Divider
     Column(
@@ -342,7 +418,7 @@ private fun TableView(rows: List<List<String>>) {
         rows.forEachIndexed { ri, row ->
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-                    .background(if (ri == 0) Palette.NavySoft else Color.Transparent)
+                    .background(if (header && ri == 0) Palette.NavySoft else Color.Transparent)
             ) {
                 for (ci in 0 until cols) {
                     Box(
@@ -353,7 +429,7 @@ private fun TableView(rows: List<List<String>>) {
                         Text(
                             row.getOrNull(ci) ?: "",
                             fontSize = 12.sp, lineHeight = 17.sp,
-                            fontWeight = if (ri == 0) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (header && ri == 0) FontWeight.Bold else FontWeight.Normal,
                             color = Palette.TextPrimary
                         )
                     }

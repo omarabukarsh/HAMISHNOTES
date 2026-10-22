@@ -173,14 +173,40 @@ class DocSession(entry: DocEntry) {
             val next = eraseStrokes(cur, at, radius)
             if (next.size != cur.size) annotations = annotations + (page to next)
         }
-        // الممحاة تزيل أيضًا التمييز الملتقط الذي تمرّ عليه (ويختفي من الملخصات)
+        // الممحاة تزيل من التمييز الملتقط الكلمات التي تمرّ عليها فقط، ويبقى باقي التمييز ونصه في الملخص
         val ms = marks[page] ?: return
-        val keep = ms.filterNot { m ->
-            m.rects.any { r ->
+        val words = ocr[page]?.words
+        var changed = false
+        val next = ms.mapNotNull { m ->
+            val touched = m.rects.any { r ->
                 at.x >= r.l - radius && at.x <= r.r + radius && at.y >= r.t - radius && at.y <= r.b + radius
             }
+            if (!touched) return@mapNotNull m
+            if (words == null) {
+                // بدون كلمات الصفحة: نزيل المقاطع التي لمستها الممحاة فقط
+                val rest = m.rects.filterNot { r ->
+                    at.x >= r.l - radius && at.x <= r.r + radius && at.y >= r.t - radius && at.y <= r.b + radius
+                }
+                changed = true
+                return@mapNotNull if (rest.isEmpty()) null else m.copy(rects = rest)
+            }
+            val inside = TextLayout.wordsInside(words, m.rects)
+            val erased = inside.filter { i ->
+                val w = words[i]
+                at.x >= w.l - radius && at.x <= w.r + radius && at.y >= w.t - radius && at.y <= w.b + radius
+            }.toSet()
+            if (erased.isEmpty()) return@mapNotNull m
+            changed = true
+            val remaining = inside.filter { it !in erased }
+            if (remaining.isEmpty()) return@mapNotNull null
+            val rects = TextLayout.rectsFor(words, remaining)
+            m.copy(
+                rects = rects,
+                text = TextLayout.buildText(words, remaining).trim(),
+                strongRects = m.strongRects.filter { s -> TextLayout.overlap(listOf(s), rects) > 0f }
+            )
         }
-        if (keep.size != ms.size) marks = marks + (page to keep)
+        if (changed) marks = marks + (page to next)
     }
 
     /** يثبّت العملية في سجل التراجع فقط إذا تغيّر شيء فعلًا، ثم يحفظ على القرص. */

@@ -107,16 +107,33 @@ object TextLayout {
 
     /** مستطيل واحد لكل صف مرئي يغطي كلماته المختارة. */
     fun rectsFor(words: List<OcrWord>, idx: Collection<Int>): List<MarkRect> =
-        visualRows(words, idx).map { row ->
-            val ws = row.map { words[it] }
-            val l = ws.minOf { it.l }
-            val t = ws.minOf { it.t }
-            val r = ws.maxOf { it.r }
-            val b = ws.maxOf { it.b }
-            val padY = (b - t) * 0.12f
-            val padX = (b - t) * 0.10f
-            MarkRect(l - padX, t - padY, r + padX, b + padY)
+        visualRows(words, idx).flatMap { row ->
+            // مستطيل لكل مقطع متصل في الصف: الفراغ الكبير (بين خلايا جدول أو مربعات) لا يُظلَّل
+            val ws = row.map { words[it] }.sortedBy { it.l }
+            val h = median(ws.map { it.b - it.t })
+            val segs = ArrayList<MutableList<OcrWord>>()
+            for (w in ws) {
+                val last = segs.lastOrNull()
+                if (last != null && w.l - last.last().r <= 1.4f * h) last.add(w) else segs.add(mutableListOf(w))
+            }
+            segs.map { seg ->
+                val l = seg.minOf { it.l }
+                val t = seg.minOf { it.t }
+                val r = seg.maxOf { it.r }
+                val b = seg.maxOf { it.b }
+                val padY = (b - t) * 0.12f
+                val padX = (b - t) * 0.10f
+                MarkRect(l - padX, t - padY, r + padX, b + padY)
+            }
         }
+
+    /** الكلمات التي تقع مراكزها داخل مستطيلات تمييز. */
+    fun wordsInside(words: List<OcrWord>, rects: List<MarkRect>): List<Int> = words.indices.filter { i ->
+        val w = words[i]
+        val cx = (w.l + w.r) / 2f
+        val cy = (w.t + w.b) / 2f
+        rects.any { r -> cx >= r.l && cx <= r.r && cy >= r.t && cy <= r.b }
+    }
 
     private fun isArabicChar(c: Char) = c in '\u0600'..'\u06FF' || c in '\u0750'..'\u077F' || c in '\uFB50'..'\uFEFF'
 

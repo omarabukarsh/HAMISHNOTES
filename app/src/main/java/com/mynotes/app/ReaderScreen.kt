@@ -59,6 +59,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -125,7 +127,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.sin
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -300,8 +304,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     val scope = rememberCoroutineScope()
     var jump by remember { mutableStateOf(false) }
     var exportMenu by remember { mutableStateOf(false) }
-    var penMenu by remember { mutableStateOf(false) }
-    var colorMenu by remember { mutableStateOf(false) }
+    var settingsFor by remember { mutableStateOf<String?>(null) }
     var showPicker by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
     var pdfAfter by remember { mutableStateOf(0) }
@@ -388,88 +391,39 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
 
                 ToolbarSep()
 
-                // الأدوات
+                // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
                 val penSelected = c.tool.isPen()
                 val shownPen = if (penSelected) c.tool else c.lastPen
-                Box {
-                    TBtn(
-                        selected = penSelected,
-                        onClick = { if (penSelected) penMenu = true else c.selectTool(c.lastPen) }
-                    ) { ToolGlyph(shownPen, tintFor(penSelected), c.colorFor(shownPen)) }
-                    DropdownMenu(expanded = penMenu, onDismissRequest = { penMenu = false }) {
-                        listOf(
-                            Tool.BALLPOINT to "قلم جاف",
-                            Tool.FOUNTAIN to "قلم حبر",
-                            Tool.PENCIL to "قلم رصاص"
-                        ).forEach { (t, label) ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        ToolGlyph(t, Palette.Navy, c.colorFor(t), Modifier.size(24.dp))
-                                        Spacer(Modifier.width(10.dp))
-                                        Text(label)
-                                    }
-                                },
-                                onClick = {
-                                    c.selectTool(t)
-                                    penMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
-                TBtn(selected = c.tool == Tool.HIGHLIGHTER, onClick = { c.selectTool(Tool.HIGHLIGHTER) }) {
-                    ToolGlyph(
-                        Tool.HIGHLIGHTER, tintFor(c.tool == Tool.HIGHLIGHTER),
-                        c.colorFor(Tool.HIGHLIGHTER)
-                    )
-                }
-                // التقاط النص: يظهر عند اختيار الهايلايتر
+                ToolSlot(
+                    tool = shownPen, selected = penSelected, open = settingsFor == "pen",
+                    onTap = { if (penSelected) settingsFor = "pen" else c.selectToolWithHint(c.lastPen) },
+                    onDismiss = { settingsFor = null },
+                    onCustomColor = { settingsFor = null; showPicker = true }
+                )
+                ToolSlot(
+                    tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER, open = settingsFor == "hl",
+                    onTap = { if (c.tool == Tool.HIGHLIGHTER) settingsFor = "hl" else c.selectToolWithHint(Tool.HIGHLIGHTER) },
+                    onDismiss = { settingsFor = null },
+                    onCustomColor = { settingsFor = null; showPicker = true }
+                )
+                // التقاط النص: اختصار سريع يظهر عند اختيار الهايلايتر (وموجود أيضًا في إعداداته)
                 if (c.tool == Tool.HIGHLIGHTER) {
                     TBtn(selected = c.highlightSnap, onClick = { c.toggleHighlightSnap() }) {
                         SnapGlyph(tintFor(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
                     }
                 }
-                TBtn(selected = c.tool == Tool.ERASER, onClick = { c.selectTool(Tool.ERASER) }) {
-                    ToolGlyph(Tool.ERASER, tintFor(c.tool == Tool.ERASER), Palette.Navy)
-                }
-                TBtn(selected = c.tool == Tool.LASER, onClick = { c.selectTool(Tool.LASER) }) {
-                    ToolGlyph(Tool.LASER, tintFor(c.tool == Tool.LASER), c.colorFor(Tool.LASER))
-                }
-
-                ToolbarSep()
-
-                // اللون
-                if (c.tool != Tool.ERASER) {
-                    Box {
-                        Box(
-                            Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
-                                .clickable { colorMenu = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                Modifier.size(26.dp).clip(CircleShape)
-                                    .background(c.colorFor(c.tool))
-                                    .border(2.dp, Color.White, CircleShape)
-                                    .border(3.dp, Palette.Divider, CircleShape)
-                            )
-                        }
-                        DropdownMenu(expanded = colorMenu, onDismissRequest = { colorMenu = false }) {
-                            ColorMenuContent(
-                                onCustom = {
-                                    colorMenu = false
-                                    showPicker = true
-                                },
-                                onDone = { colorMenu = false }
-                            )
-                        }
-                    }
-                }
-
-                // الحجم: شريط من 10 أقسام، اسحب لتغيير الحجم
-                Box(Modifier.padding(horizontal = 6.dp)) {
-                    SizeBar(c.sizeFor(c.tool), { c.setSize(it) }, Modifier.width(150.dp))
-                }
+                ToolSlot(
+                    tool = Tool.ERASER, selected = c.tool == Tool.ERASER, open = settingsFor == "er",
+                    onTap = { if (c.tool == Tool.ERASER) settingsFor = "er" else c.selectToolWithHint(Tool.ERASER) },
+                    onDismiss = { settingsFor = null },
+                    onCustomColor = {}
+                )
+                ToolSlot(
+                    tool = Tool.LASER, selected = c.tool == Tool.LASER, open = settingsFor == "ls",
+                    onTap = { if (c.tool == Tool.LASER) settingsFor = "ls" else c.selectToolWithHint(Tool.LASER) },
+                    onDismiss = { settingsFor = null },
+                    onCustomColor = { settingsFor = null; showPicker = true }
+                )
 
                 ToolbarSep()
 
@@ -584,6 +538,157 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
             },
             onDismiss = { addDialog = false }
         )
+    }
+}
+
+private fun toolName(t: Tool): String = when (t) {
+    Tool.BALLPOINT -> "قلم جاف"
+    Tool.FOUNTAIN -> "قلم حبر"
+    Tool.PENCIL -> "قلم رصاص"
+    Tool.HIGHLIGHTER -> "هايلايتر"
+    Tool.ERASER -> "ممحاة"
+    Tool.LASER -> "مؤشر ليزر"
+}
+
+/** زر أداة في الشريط، ولوحة إعداداتها تنسدل تحته. */
+@Composable
+private fun ToolSlot(
+    tool: Tool,
+    selected: Boolean,
+    open: Boolean,
+    onTap: () -> Unit,
+    onDismiss: () -> Unit,
+    onCustomColor: () -> Unit
+) {
+    val c = AppController
+    Box {
+        TBtn(selected = selected, onClick = onTap) {
+            ToolGlyph(
+                tool, tintFor(selected),
+                if (tool == Tool.ERASER) tintFor(selected) else c.colorFor(tool),
+                filled = selected
+            )
+        }
+        DropdownMenu(
+            expanded = open && selected,
+            onDismissRequest = onDismiss,
+            shape = RoundedCornerShape(18.dp),
+            containerColor = Color.White,
+            shadowElevation = 12.dp
+        ) {
+            ToolSettingsPanel(onCustomColor)
+        }
+    }
+}
+
+/** إعدادات الأداة الحالية: النوع (للأقلام)، اللون، الحجم مع معاينة، وخيارات خاصة. */
+@Composable
+private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
+    val c = AppController
+    val t = c.tool
+    Column(Modifier.width(312.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PhIcon(toolIcon(t, true), Palette.Navy, 22.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(toolName(t), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+        }
+        Spacer(Modifier.height(12.dp))
+
+        if (t.isPen()) {
+            PanelLabel("نوع القلم")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(Tool.BALLPOINT, Tool.FOUNTAIN, Tool.PENCIL).forEach { pt ->
+                    val sel = pt == t
+                    val shape = RoundedCornerShape(12.dp)
+                    Column(
+                        Modifier.weight(1f).clip(shape)
+                            .background(if (sel) Palette.Navy else Palette.Background)
+                            .clickable { c.selectTool(pt) }
+                            .padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PhIcon(toolIcon(pt, sel), if (sel) Color.White else Palette.TextPrimary, 22.dp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            toolName(pt), fontSize = 12.sp,
+                            color = if (sel) Color.White else Palette.TextPrimary
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+
+        if (t != Tool.ERASER) {
+            ColorMenuContent(onCustom = onCustomColor, onDone = {})
+            Spacer(Modifier.height(10.dp))
+        }
+
+        PanelLabel(if (t == Tool.ERASER) "حجم الممحاة" else "الحجم")
+        SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        ToolPreview(t)
+
+        if (t == Tool.HIGHLIGHTER) {
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("التقاط النص", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(
+                        "يلتصق التمييز بالكلمات ويوضع خلفها، ويُضاف النص إلى الملخصات",
+                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Switch(
+                    checked = c.highlightSnap,
+                    onCheckedChange = { c.toggleHighlightSnap() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Palette.Navy,
+                        checkedBorderColor = Palette.Navy
+                    )
+                )
+            }
+        }
+        if (t == Tool.ERASER) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.",
+                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun PanelLabel(text: String) {
+    Text(text, fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(bottom = 6.dp))
+}
+
+/** معاينة الخط بالحجم واللون الحاليين. */
+@Composable
+private fun ToolPreview(t: Tool) {
+    val c = AppController
+    val color = c.colorFor(t)
+    val width = Sizes.width(t, c.sizeFor(t))
+    Canvas(
+        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(10.dp)).background(Palette.Ivory)
+    ) {
+        val w = size.width
+        if (t == Tool.ERASER) {
+            drawCircle(Palette.TextSecondary, width * w, Offset(w / 2f, size.height / 2f), style = Stroke(1.5.dp.toPx()))
+            return@Canvas
+        }
+        val cy = size.height / 2f / w
+        val amp = size.height * 0.22f / w
+        val pts = (0..48).map { i ->
+            val f = i / 48f
+            Pt(0.08f + 0.84f * f, cy + amp * sin(f * 2f * PI.toFloat()), 0.3f + 0.5f * f)
+        }
+        drawInk(pts, color, width, if (t == Tool.LASER) Tool.BALLPOINT else t)
     }
 }
 
@@ -718,7 +823,7 @@ private fun ReaderSearchBar(s: DocSession) {
             TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.TextPrimary, up = true) }
             TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.TextPrimary, up = false) }
             IconButton(onClick = { s.closeSearch() }, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Default.Close, "إغلاق البحث", tint = Palette.TextSecondary)
+                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق البحث")
             }
         }
         if (!s.ocrRunning && s.ocr.size < total) {
@@ -952,6 +1057,19 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
                 onJump = { m -> s.jumpHook?.invoke(m) },
                 onExport = onExportSummary
             )
+        }
+
+        // عداد وقت القراءة لهذا المستند
+        if (!s.drawerOpen) {
+            Row(
+                Modifier.align(Alignment.BottomStart).padding(14.dp)
+                    .shadow(3.dp, RoundedCornerShape(14.dp))
+                    .background(Color.White, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ReadingTimeBadge(AppController.readMsOf(s.id), Palette.Navy, 12)
+            }
         }
 
         Column(
@@ -1235,11 +1353,28 @@ private fun PageView(
             Canvas(Modifier.fillMaxSize()) {
                 val w = size.width
                 for (m in pageMarks) {
-                    val col = Exporter.markColor(m.color)
+                    val col = Exporter.markColor(m.color, strong = m.level >= 2)
                     for (r in m.rects) {
                         drawRect(
                             col, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
                             blendMode = BlendMode.Multiply
+                        )
+                    }
+                    if (m.level < 2) {
+                        val strong = Exporter.markColor(m.color, strong = true)
+                        for (r in m.strongRects) {
+                            drawRect(
+                                strong, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
+                                blendMode = BlendMode.Multiply
+                            )
+                        }
+                    }
+                    // خط ذهبي تحت النص المهم (المظلل مرتين)
+                    val important = if (m.level >= 2) m.rects else m.strongRects
+                    for (r in important) {
+                        drawRect(
+                            Palette.GoldDeep, Offset(r.l * w, r.b * w - 2.dp.toPx()),
+                            Size((r.r - r.l) * w, 2.dp.toPx())
                         )
                     }
                 }

@@ -14,6 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -126,6 +128,15 @@ object AppController {
         if (t.isPen()) lastPen = t
     }
 
+    /** يختار الأداة، ويذكّر مرة واحدة فقط بأن النقرة الثانية تفتح إعداداتها. */
+    fun selectToolWithHint(t: Tool) {
+        selectTool(t)
+        if (!prefs.getBoolean("tool_hint_shown", false)) {
+            prefs.edit().putBoolean("tool_hint_shown", true).apply()
+            messages.tryEmit("اضغط على الأداة مرة ثانية لفتح إعداداتها: النوع واللون والحجم")
+        }
+    }
+
     fun setColor(c: Color) {
         if (tool != Tool.ERASER) colorOf[tool] = c
     }
@@ -213,6 +224,7 @@ object AppController {
         if (id != null && tabs.none { it.id == id }) return
         recordPage(activeId)
         activeId = id
+        noteInteraction()
         saveLibrary()
         saveSession()
     }
@@ -244,6 +256,45 @@ object AppController {
         saveLibrary()
         saveSession()
     }
+
+    // ---------- عداد وقت القراءة ----------
+
+    /** آخر لمسة أو حركة قلم في التطبيق؛ يتوقف العداد إن لم يتفاعل المستخدم 5 دقائق. */
+    @Volatile
+    var lastInteractionAt: Long = 0L
+
+    private var clockJob: Job? = null
+    private const val IDLE_MS = 5L * 60L * 1000L
+    private const val TICK_MS = 15_000L
+
+    fun noteInteraction() {
+        lastInteractionAt = System.currentTimeMillis()
+    }
+
+    /** يُستدعى من MainActivity عند ظهور التطبيق واختفائه. يحسب الوقت للمستند المفتوح فقط. */
+    fun setVisible(visible: Boolean) {
+        clockJob?.cancel()
+        clockJob = null
+        if (!visible) return
+        noteInteraction()
+        clockJob = scope.launch {
+            var last = System.currentTimeMillis()
+            var ticks = 0
+            while (isActive) {
+                delay(TICK_MS)
+                val now = System.currentTimeMillis()
+                val dt = (now - last).coerceIn(0L, TICK_MS * 2)
+                last = now
+                val id = activeId ?: continue
+                if (now - lastInteractionAt > IDLE_MS) continue
+                updateEntry(id) { it.copy(readMs = it.readMs + dt) }
+                ticks++
+                if (ticks % 4 == 0) saveLibrary()
+            }
+        }
+    }
+
+    fun readMsOf(id: String): Long = library.firstOrNull { it.id == id }?.readMs ?: 0L
 
     // ---------- قراءة النص في الخلفية للملفات المستوردة ----------
 
@@ -357,13 +408,13 @@ object AppController {
 
     fun exportSummary(context: Context, s: DocSession, uri: Uri) {
         if (exporting != null) return
-        val groups = Exporter.summaryGroups(s.allMarks(), summaryTidy)
+        val blocks = Summary.build(s.allMarks(), summaryTidy)
         val title = s.title
         exporting = "جارٍ حفظ الملخصات…"
         scope.launch {
             try {
                 val pages = withContext(Dispatchers.IO) {
-                    Exporter.exportSummary(context.applicationContext, title, groups, uri)
+                    Exporter.exportSummary(context.applicationContext, title, blocks, uri)
                 }
                 messages.tryEmit("تم حفظ الملخصات ($pages صفحة)")
             } catch (t: Throwable) {

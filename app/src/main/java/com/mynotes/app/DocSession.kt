@@ -372,90 +372,70 @@ class DocSession(entry: DocEntry) {
 
     // ---------- التمييز الملتقط والملخصات ----------
 
-    /** نص كلمات صفحة من فهارس مرتبة، مع فاصل سطر عند تغيّر السطر. */
-    private fun wordsText(words: List<OcrWord>, idx: List<Int>): String {
-        val sb = StringBuilder()
-        var lastLine = -1
-        for (i in idx) {
-            val w = words.getOrNull(i) ?: continue
-            if (lastLine != -1) sb.append(if (w.line == lastLine) " " else "\n")
-            sb.append(w.text)
-            lastLine = w.line
-        }
-        return sb.toString()
-    }
-
-    /** مستطيل واحد لكل سطر يغطي كلماته المختارة، بهامش بسيط. */
-    private fun rectsFor(words: List<OcrWord>, idx: List<Int>): List<MarkRect> =
-        idx.mapNotNull { words.getOrNull(it) }
-            .groupBy { it.line }
-            .values
-            .map { ws ->
-                val l = ws.minOf { it.l }
-                val t = ws.minOf { it.t }
-                val r = ws.maxOf { it.r }
-                val b = ws.maxOf { it.b }
-                val padY = (b - t) * 0.12f
-                val padX = (b - t) * 0.10f
-                MarkRect(l - padX, t - padY, r + padX, b + padY)
-            }
-
     /**
-     * الكلمات التي مرّ عليها خط الهايلايتر. تُعدّ الكلمة مغطاة إذا مرّ الخط داخل عرضها
-     * وتداخل شريطه مع ارتفاعها، ثم تُملأ الفجوات بين أول وآخر كلمة مغطاة في كل سطر.
+     * يضيف تمييزًا ملتقطًا. إن ظُلّل نفس النص مرة ثانية لا يُكرَّر في الملخص؛ بل يصبح «مهمًا»:
+     *  - نفس المساحة تقريبًا  → التمييز القديم كله مهم (خط عريض وتظليل أقوى)
+     *  - جزء داخل تمييز قديم → هذا الجزء وحده يُبرز داخل التمييز القديم
+     *  - تمييز أكبر يحتوي القديم → يحلّ محلّه، ويبقى الجزء القديم بارزًا
      */
-    private fun wordsUnder(words: List<OcrWord>, pts: List<Pt>, band: Float): List<Int> {
-        if (words.isEmpty() || pts.isEmpty()) return emptyList()
-        val samples = ArrayList<Pt>(pts.size * 2)
-        samples.add(pts[0])
-        for (i in 1 until pts.size) {
-            val a = pts[i - 1]
-            val c = pts[i]
-            val d = hypot(c.x - a.x, c.y - a.y)
-            val n = (d / 0.003f).toInt().coerceIn(0, 200)
-            for (k in 1..n) {
-                val f = k.toFloat() / (n + 1)
-                samples.add(Pt(a.x + (c.x - a.x) * f, a.y + (c.y - a.y) * f, c.p))
-            }
-            samples.add(c)
-        }
-        val half = band / 2f
-        val hit = HashSet<Int>()
-        for (i in words.indices) {
-            val w = words[i]
-            val h = w.b - w.t
-            val slack = minOf(half, h * 0.6f)
-            if (samples.any { p ->
-                    p.x >= w.l && p.x <= w.r && p.y >= w.t - slack && p.y <= w.b + slack
-                }
-            ) hit.add(i)
-        }
-        if (hit.isEmpty()) return emptyList()
-        val out = HashSet<Int>()
-        hit.groupBy { words[it].line }.forEach { (line, list) ->
-            val a = list.min()
-            val b = list.max()
-            for (i in a..b) if (words[i].line == line) out.add(i)
-        }
-        return out.sorted()
-    }
-
     private fun addMark(page: Int, words: List<OcrWord>, idx: List<Int>, color: Color) {
-        val text = wordsText(words, idx).trim()
+        val text = TextLayout.buildText(words, idx).trim()
         if (text.isEmpty()) return
-        val m = TextMark(
+        val rects = TextLayout.rectsFor(words, idx)
+        val newArea = TextLayout.area(rects).coerceAtLeast(1e-9f)
+        val existing = marks[page] ?: emptyList()
+
+        var next: List<TextMark>? = null
+        var message: String? = null
+        for (old in existing) {
+            val ov = TextLayout.overlap(rects, old.rects)
+            if (ov <= 0f) continue
+            val oldArea = TextLayout.area(old.rects).coerceAtLeast(1e-9f)
+            val ofNew = ov / newArea
+            val ofOld = ov / oldArea
+            when {
+                ofNew >= 0.6f && ofOld >= 0.6f -> {
+                    next = existing.map { if (it.id == old.id) it.copy(level = 2, strongRects = it.rects) else it }
+                    message = "ظُلّل النص مرة ثانية، فصار مهمًا في الملخص"
+                }
+                ofNew >= 0.6f -> {
+                    val flat = TextTidy.clean(text.replace("# ", "").replace(" | ", " "))
+                    next = existing.map {
+                        if (it.id == old.id) it.copy(
+                            emphasis = (it.emphasis + flat).distinct(),
+                            strongRects = it.strongRects + rects
+                        ) else it
+                    }
+                    message = "أُبرز هذا الجزء كمهم في الملخص"
+                }
+                ofOld >= 0.6f -> {
+                    val oldFlat = TextTidy.clean(old.text.replace("# ", "").replace(" | ", " "))
+                    val merged = TextMark(
+                        id = UUID.randomUUID().toString(), page = page, rects = rects, color = color,
+                        text = text, createdAt = old.createdAt,
+                        level = 1,
+                        emphasis = if (old.level >= 2) (old.emphasis + oldFlat).distinct() else old.emphasis,
+                        strongRects = if (old.level >= 2) old.strongRects + old.rects else old.strongRects
+                    )
+                    next = existing.filter { it.id != old.id } + merged
+                }
+            }
+            if (next != null) break
+        }
+        val list = next ?: (existing + TextMark(
             id = UUID.randomUUID().toString(),
             page = page,
-            rects = rectsFor(words, idx),
+            rects = rects,
             color = color,
             text = text,
             createdAt = System.currentTimeMillis()
-        )
+        ))
         // قد يكتمل هذا بعد قراءة الصفحة في الخلفية أثناء حركة أخرى للمستخدم؛ لا نكسر لقطتها
         val nested = snapshot != null
         if (!nested) beginEdit()
-        marks = marks + (page to ((marks[page] ?: emptyList()) + m))
+        marks = marks + (page to list)
         if (!nested) endEdit()
+        message?.let { AppController.messages.tryEmit(it) }
     }
 
     /**
@@ -464,7 +444,7 @@ class DocSession(entry: DocEntry) {
      */
     fun snapHighlight(page: Int, pts: List<Pt>, color: Color, width: Float) {
         fun applyTo(words: List<OcrWord>?) {
-            val idx = if (words == null) emptyList() else wordsUnder(words, pts, width)
+            val idx = if (words == null) emptyList() else TextLayout.wordsUnder(words, pts, width)
             if (words != null && idx.isNotEmpty()) {
                 addMark(page, words, idx, color)
             } else {

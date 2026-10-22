@@ -271,7 +271,7 @@ private fun Monogram(size: Int, onDark: Boolean) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            "M", color = Palette.Gold, fontFamily = Fonts.Serif, fontWeight = FontWeight.Bold,
+            "M", color = Palette.Gold, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
             fontSize = (size * 0.5f).sp, modifier = Modifier.offset(y = (size * 0.03f).dp)
         )
     }
@@ -291,7 +291,7 @@ private fun Spine() {
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(
-                    "MyNotes", color = Palette.OnInk, fontFamily = Fonts.Serif,
+                    "MyNotes", color = Palette.OnInk, fontFamily = Fonts.Display,
                     fontWeight = FontWeight.Bold, fontSize = 23.sp, lineHeight = 26.sp
                 )
                 Text("مكتبة الدراسة", color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 16.sp)
@@ -301,13 +301,13 @@ private fun Spine() {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.InkLine))
         Spacer(Modifier.height(16.dp))
 
-        SpineItem("الأحدث", Icons.Default.DateRange, null, c.libraryFilter == LibraryFilter.RECENT) {
+        SpineItem("الأحدث", R.drawable.ph_recent, null, c.libraryFilter == LibraryFilter.RECENT) {
             c.libraryFilter = LibraryFilter.RECENT
         }
-        SpineItem("كل المستندات", Icons.Default.Home, c.library.size, c.libraryFilter == LibraryFilter.ALL) {
+        SpineItem("كل المستندات", R.drawable.ph_books, c.library.size, c.libraryFilter == LibraryFilter.ALL) {
             c.libraryFilter = LibraryFilter.ALL
         }
-        SpineItem("المفضلة", Icons.Default.Star, favCount, c.libraryFilter == LibraryFilter.FAVORITES) {
+        SpineItem("المفضلة", R.drawable.ph_star, favCount, c.libraryFilter == LibraryFilter.FAVORITES) {
             c.libraryFilter = LibraryFilter.FAVORITES
         }
 
@@ -320,7 +320,7 @@ private fun Spine() {
 }
 
 @Composable
-private fun SpineItem(label: String, icon: ImageVector, count: Int?, selected: Boolean, onClick: () -> Unit) {
+private fun SpineItem(label: String, icon: Int, count: Int?, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp).height(46.dp).clip(shape)
@@ -334,9 +334,9 @@ private fun SpineItem(label: String, icon: ImageVector, count: Int?, selected: B
                 .background(if (selected) Palette.Gold else Color.Transparent)
         )
         Spacer(Modifier.width(11.dp))
-        Icon(
-            icon, null, Modifier.size(19.dp),
-            tint = if (selected) Palette.Gold else Palette.OnInkMuted
+        PhIcon(
+            if (selected) filledOf(icon) else icon,
+            if (selected) Palette.Gold else Palette.OnInkMuted, 20.dp
         )
         Spacer(Modifier.width(12.dp))
         Text(
@@ -401,7 +401,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 Monogram(36, onDark = false)
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "MyNotes", fontFamily = Fonts.Serif, fontWeight = FontWeight.Bold,
+                    "MyNotes", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                 )
                 NewNoteButton(onNewNote)
@@ -429,7 +429,7 @@ private fun ImportButton(onClick: () -> Unit) {
         colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
     ) {
-        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+        PhIcon(R.drawable.ph_plus, Color.White, 18.dp)
         Spacer(Modifier.width(6.dp))
         Text("استيراد PDF", fontWeight = FontWeight.Medium)
     }
@@ -444,7 +444,7 @@ private fun NewNoteButton(onClick: () -> Unit) {
         colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.GoldDeep),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
     ) {
-        Icon(Icons.Default.Create, null, Modifier.size(17.dp))
+        PhIcon(R.drawable.ph_note, Palette.GoldDeep, 18.dp)
         Spacer(Modifier.width(6.dp))
         Text("ملاحظة جديدة", fontWeight = FontWeight.Medium)
     }
@@ -461,7 +461,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.Search, null, Modifier.size(19.dp), tint = Palette.TextSecondary)
+        PhIcon(R.drawable.ph_search, Palette.TextSecondary, 19.dp)
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
@@ -478,7 +478,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
         }
         if (value.isNotEmpty()) {
             IconButton(onClick = { onChange("") }, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Default.Close, "مسح البحث", Modifier.size(16.dp), tint = Palette.TextSecondary)
+                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 16.dp, "مسح البحث")
             }
         }
     }
@@ -496,7 +496,7 @@ private fun SortMenu(sort: SortMode, onSelect: (SortMode) -> Unit) {
             modifier = Modifier.height(44.dp)
         ) {
             Text("الترتيب: " + sortLabel(sort), fontSize = 13.sp)
-            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(18.dp))
+            PhIcon(R.drawable.ph_caret_down, Palette.TextSecondary, 16.dp)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             SortMode.values().forEach { m ->
@@ -543,7 +543,7 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("تابع من حيث توقفت", fontSize = 12.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Medium)
             Text(
-                entry.name, fontFamily = Fonts.Serif, fontWeight = FontWeight.Bold,
+                entry.name, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                 fontSize = if (wide) 24.sp else 20.sp, lineHeight = if (wide) 34.sp else 28.sp,
                 color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
@@ -562,6 +562,10 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
                 Text(
                     "الصفحة $page من $total", fontSize = 12.sp, color = Palette.TextSecondary
                 )
+                if (entry.readMs >= 60_000L) {
+                    Spacer(Modifier.width(14.dp))
+                    ReadingTimeBadge(entry.readMs, Palette.GoldDeep)
+                }
             }
         }
         if (wide) {
@@ -656,7 +660,7 @@ private fun DocCard(
             }
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.MoreVert, "خيارات المستند", Modifier.size(19.dp), tint = Palette.TextSecondary)
+                    PhIcon(R.drawable.ph_more, Palette.TextSecondary, 20.dp, "خيارات المستند")
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
@@ -675,7 +679,13 @@ private fun DocCard(
                 }
             }
         }
-        Text(formatSize(entry.sizeBytes), fontSize = 11.sp, color = Palette.TextSecondary.copy(alpha = 0.75f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                formatSize(entry.sizeBytes), fontSize = 11.sp,
+                color = Palette.TextSecondary.copy(alpha = 0.75f), modifier = Modifier.weight(1f)
+            )
+            if (entry.readMs >= 60_000L) ReadingTimeBadge(entry.readMs, Palette.GoldDeep, 11)
+        }
     }
 }
 

@@ -42,8 +42,21 @@ data class TextMark(
     val rects: List<MarkRect>,
     val color: Color,
     val text: String,
-    val createdAt: Long
+    val createdAt: Long,
+    /** 1 عادي، 2 مهم (ظُلّل مرتين): يظهر بخط عريض وتظليل أقوى. */
+    val level: Int = 1,
+    /** أجزاء من النص ظُلّلت مرة ثانية؛ تظهر بخط عريض في الملخص. */
+    val emphasis: List<String> = emptyList(),
+    /** مستطيلات الأجزاء المظللة مرة ثانية (تظليل أقوى على الصفحة). */
+    val strongRects: List<MarkRect> = emptyList()
 )
+
+/*
+ * صيغة نص التمييز (قابلة للتعديل من الملخصات):
+ *   فقرة عن فقرة بسطر فارغ، والسطر داخل الفقرة يُدمج عند الترتيب.
+ *   "# " في أول الفقرة = عنوان (نص أكبر من نص الصفحة).
+ *   صفوف الجدول: الخلايا يفصلها " | ".
+ */
 
 /** مربع نص مكتوب بالكيبورد فوق صفحة. x و y الزاوية العليا، w العرض، size حجم الخط نسبةً لعرض الصفحة. */
 data class TextBox(
@@ -117,7 +130,9 @@ data class DocEntry(
     val lastOpened: Long,
     val favorite: Boolean,
     val lastPage: Int,
-    val isNote: Boolean = false
+    val isNote: Boolean = false,
+    /** مجموع وقت القراءة الفعلي بالمللي ثانية. */
+    val readMs: Long = 0L
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

@@ -116,7 +116,8 @@ class LibraryRepository(context: Context) {
                         lastOpened = o.optLong("opened"),
                         favorite = o.optBoolean("fav"),
                         lastPage = o.optInt("page"),
-                        isNote = o.optBoolean("note")
+                        isNote = o.optBoolean("note"),
+                        readMs = o.optLong("read")
                     )
                 } catch (e: Throwable) {
                     null
@@ -149,6 +150,7 @@ class LibraryRepository(context: Context) {
                             .put("fav", e.favorite)
                             .put("page", e.lastPage)
                             .put("note", e.isNote)
+                            .put("read", e.readMs)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
@@ -220,7 +222,8 @@ class LibraryRepository(context: Context) {
             addedAt = System.currentTimeMillis(),
             lastOpened = 0L,
             favorite = false,
-            lastPage = 0
+            lastPage = 0,
+            readMs = 0L
         )
     }
 
@@ -365,6 +368,21 @@ class LibraryRepository(context: Context) {
                             )
                             j += 4
                         }
+                        val em = o.optJSONArray("em")
+                        val sr = o.optJSONArray("sr")
+                        val strong = ArrayList<MarkRect>()
+                        if (sr != null) {
+                            var k = 0
+                            while (k + 3 < sr.length()) {
+                                strong.add(
+                                    MarkRect(
+                                        sr.getDouble(k).toFloat(), sr.getDouble(k + 1).toFloat(),
+                                        sr.getDouble(k + 2).toFloat(), sr.getDouble(k + 3).toFloat()
+                                    )
+                                )
+                                k += 4
+                            }
+                        }
                         all.add(
                             TextMark(
                                 id = o.getString("id"),
@@ -372,7 +390,10 @@ class LibraryRepository(context: Context) {
                                 rects = rects,
                                 color = Color(o.getInt("c")),
                                 text = o.optString("t", ""),
-                                createdAt = o.optLong("at")
+                                createdAt = o.optLong("at"),
+                                level = o.optInt("lv", 1),
+                                emphasis = if (em == null) emptyList() else (0 until em.length()).map { em.getString(it) },
+                                strongRects = strong
                             )
                         )
                     } catch (e: Throwable) {
@@ -475,6 +496,13 @@ class LibraryRepository(context: Context) {
                                 .put("t", m.text)
                                 .put("at", m.createdAt)
                                 .put("r", flat)
+                                .put("lv", m.level)
+                                .put("em", JSONArray().apply { m.emphasis.forEach { put(it) } })
+                                .put("sr", JSONArray().apply {
+                                    m.strongRects.forEach {
+                                        put(it.l.toDouble()); put(it.t.toDouble()); put(it.r.toDouble()); put(it.b.toDouble())
+                                    }
+                                })
                         )
                     }
                 }

@@ -41,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +55,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyNotesTheme { MyNotesApp() }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AppController.setVisible(true)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        AppController.setVisible(false)
     }
 
     override fun onStop() {
@@ -73,7 +85,18 @@ fun MyNotesApp() {
     // زر الرجوع من المستند يعيد إلى المكتبة بدل إغلاق التطبيق
     BackHandler(enabled = c.activeId != null) { c.activate(null) }
 
-    Box(Modifier.fillMaxSize().background(Palette.Background).systemBarsPadding()) {
+    Box(
+        Modifier.fillMaxSize().background(Palette.Background).systemBarsPadding()
+            // أي لمسة تعني أن المستخدم حاضر (لعداد القراءة)، دون التأثير على اللمس نفسه
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        c.noteInteraction()
+                    }
+                }
+            }
+    ) {
         Column(Modifier.fillMaxSize()) {
             if (c.tabs.isNotEmpty()) TabBar()
             val active = c.tabs.firstOrNull { it.id == c.activeId }
@@ -145,9 +168,9 @@ private fun TabItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (home) {
-                Icon(
-                    Icons.Default.Home, null, Modifier.size(17.dp),
-                    tint = if (active) Palette.Navy else Palette.OnInkMuted
+                PhIcon(
+                    if (active) R.drawable.ph_books_fill else R.drawable.ph_books,
+                    if (active) Palette.Navy else Palette.OnInkMuted, 18.dp
                 )
                 Spacer(Modifier.width(7.dp))
             } else if (active) {
@@ -170,9 +193,9 @@ private fun TabItem(
                     onClick = onClose,
                     modifier = Modifier.size(30.dp).clip(CircleShape)
                 ) {
-                    Icon(
-                        Icons.Default.Close, "إغلاق التبويب", Modifier.size(15.dp),
-                        tint = if (active) Palette.TextSecondary else Palette.OnInkMuted
+                    PhIcon(
+                        R.drawable.ph_close,
+                        if (active) Palette.TextSecondary else Palette.OnInkMuted, 15.dp, "إغلاق التبويب"
                     )
                 }
             }

@@ -52,17 +52,20 @@ object Palette {
     val Danger = Color(0xFFB3261E)
 }
 
-/** الخطوط: Plex Sans Arabic للواجهة، وAmiri (نسخ) للعناوين وأسماء المستندات. */
+/**
+ * الخط: Almarai لكل التطبيق (عربي ولاتيني بتصميم واحد).
+ * Display = نفس العائلة بوزن أثقل للعناوين وأسماء المستندات.
+ */
 object Fonts {
     val Sans = FontFamily(
-        Font(R.font.plex_regular, FontWeight.Normal),
-        Font(R.font.plex_medium, FontWeight.Medium),
-        Font(R.font.plex_semibold, FontWeight.SemiBold),
-        Font(R.font.plex_bold, FontWeight.Bold)
+        Font(R.font.almarai_light, FontWeight.Light),
+        Font(R.font.almarai_regular, FontWeight.Normal),
+        Font(R.font.almarai_bold, FontWeight.Bold),
+        Font(R.font.almarai_extrabold, FontWeight.ExtraBold)
     )
-    val Serif = FontFamily(
-        Font(R.font.amiri_regular, FontWeight.Normal),
-        Font(R.font.amiri_bold, FontWeight.Bold)
+    val Display = FontFamily(
+        Font(R.font.almarai_bold, FontWeight.Normal),
+        Font(R.font.almarai_extrabold, FontWeight.Bold)
     )
 }
 
@@ -94,7 +97,7 @@ private fun sans(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
     TextStyle(fontFamily = Fonts.Sans, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
 
 private fun serif(size: Int, line: Int, weight: FontWeight = FontWeight.Bold) =
-    TextStyle(fontFamily = Fonts.Serif, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
+    TextStyle(fontFamily = Fonts.Display, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
 
 /** مقياس الخطوط: العربية تحتاج ارتفاع سطر أكبر من اللاتينية. */
 private val AppType = Typography(

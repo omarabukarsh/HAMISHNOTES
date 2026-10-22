@@ -44,13 +44,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * درج «ملخصات»: كل نص التُقط بالهايلايتر في هذا المستند فقط، مرتبًا حسب صفحاته،
- * وكل صفحة من المستند لها صفحة ملخص مستقلة. يعرض النص مرتبًا (جمل منظمة) أو كما التُقط.
+ * درج «ملخصات»: كل ما ظُلّل في هذا المستند فقط، كمستند واحد متصل على ورق عاجي.
+ * لا تظهر أسماء الصفحات؛ النص الأكبر على الصفحة يظهر عنوانًا، والجداول جداول،
+ * والنص المظلل مرتين يظهر بخط عريض وتظليل.
  */
 @Composable
 fun SummaryDrawer(
@@ -63,34 +69,32 @@ fun SummaryDrawer(
     val context = LocalContext.current
     val all = s.allMarks()
     val tidy = c.summaryTidy
-    val groups = remember(all, tidy) { Exporter.summaryGroups(all, tidy) }
+    val blocks = remember(all, tidy) { Summary.build(all, tidy) }
     var editing by remember { mutableStateOf<TextMark?>(null) }
 
     Surface(
-        modifier.fillMaxHeight().width(400.dp),
+        modifier.fillMaxHeight().width(420.dp),
         color = Palette.DrawerBg,
         shadowElevation = 14.dp
     ) {
         Column(Modifier.fillMaxSize()) {
-            // الترويسة
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SummaryGlyph(Palette.Navy, Palette.Gold)
+                SummaryGlyph(Palette.Navy, Palette.Gold, filled = true)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "ملخصات", fontFamily = Fonts.Serif, fontSize = 24.sp, lineHeight = 30.sp,
+                        "ملخصات", fontFamily = Fonts.Display, fontSize = 22.sp, lineHeight = 28.sp,
                         fontWeight = FontWeight.Bold, color = Palette.Navy
                     )
                     Text(
-                        "${s.title}، ${all.size} تمييز",
-                        fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
+                        s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
                     )
                 }
                 IconButton(onClick = { s.summaryOpen = false }) {
-                    Icon(Icons.Default.Close, "إغلاق الملخصات", tint = Palette.TextSecondary)
+                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق الملخصات")
                 }
             }
             Row(
@@ -101,34 +105,43 @@ fun SummaryDrawer(
                 ChoiceChip("مرتّب", tidy) { if (!tidy) c.toggleSummaryTidy() }
                 ChoiceChip("كما التُقط", !tidy) { if (tidy) c.toggleSummaryTidy() }
                 Spacer(Modifier.weight(1f))
-                TextButton(enabled = groups.isNotEmpty(), onClick = {
-                    copy(context, Exporter.summaryText(s.title, groups))
+                TextButton(enabled = blocks.isNotEmpty(), onClick = {
+                    copy(context, Summary.plainText(s.title, blocks))
                 }) { Text("نسخ الكل", fontSize = 13.sp) }
-                TextButton(enabled = groups.isNotEmpty(), onClick = onExport) {
+                TextButton(enabled = blocks.isNotEmpty(), onClick = onExport) {
                     Text("PDF", fontSize = 13.sp)
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Gold.copy(alpha = 0.45f)))
 
-            if (groups.isEmpty()) {
+            if (blocks.isEmpty()) {
                 EmptySummary()
             } else {
+                // ورقة واحدة متصلة
+                val paper = RoundedCornerShape(8.dp)
                 LazyColumn(
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(14.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    groups.forEach { g ->
-                        item(key = "p${g.page}") {
-                            SummaryPage(
-                                s = s,
-                                group = g,
-                                marks = all.filter { it.page == g.page },
-                                tidy = tidy,
-                                onJump = onJump,
-                                onEdit = { editing = it }
-                            )
+                    item(key = "top") {
+                        Box(
+                            Modifier.fillMaxWidth().height(18.dp)
+                                .shadow(2.dp, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                .background(Palette.Ivory, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                        )
+                    }
+                    blocks.forEachIndexed { i, b ->
+                        item(key = "b$i") {
+                            Box(Modifier.fillMaxWidth().background(Palette.Ivory).padding(horizontal = 20.dp)) {
+                                BlockView(s, b, onJump, onEdit = { editing = it })
+                            }
                         }
+                    }
+                    item(key = "end") {
+                        Box(
+                            Modifier.fillMaxWidth().height(22.dp)
+                                .background(Palette.Ivory, RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                        )
                     }
                 }
             }
@@ -154,6 +167,93 @@ private fun copy(context: Context, text: String) {
     AppController.messages.tryEmit("تم النسخ")
 }
 
+/** نص الفقرة مع إبراز الأجزاء المهمة بخط عريض وتظليل ذهبي فاتح. */
+fun emphasized(text: String, emphasis: List<String>): AnnotatedString = buildAnnotatedString {
+    append(text)
+    for (r in Summary.emphasisRanges(text, emphasis)) {
+        addStyle(
+            SpanStyle(fontWeight = FontWeight.ExtraBold, background = Palette.GoldSoft, color = Palette.TextPrimary),
+            r.first, r.last + 1
+        )
+    }
+}
+
+@Composable
+private fun BlockView(s: DocSession, b: SBlock, onJump: (TextMark) -> Unit, onEdit: (TextMark) -> Unit) {
+    val context = LocalContext.current
+    var menu by remember { mutableStateOf(false) }
+    val first = b.marks.firstOrNull()
+    Box {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                .clickable { menu = true }
+                .padding(vertical = 5.dp)
+        ) {
+            when (b) {
+                is SHeading -> Text(
+                    b.text, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp, lineHeight = 30.sp, color = Palette.Navy,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+                is SPara -> Text(
+                    emphasized(b.text, b.emphasis),
+                    fontSize = 15.sp, lineHeight = 25.sp, color = Palette.TextPrimary
+                )
+                is STable -> TableView(b.rows)
+            }
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (first != null) {
+                DropdownMenuItem(text = { Text("انتقال إلى الموضع") }, onClick = { menu = false; onJump(first) })
+                DropdownMenuItem(text = { Text("تعديل النص") }, onClick = { menu = false; onEdit(first) })
+            }
+            DropdownMenuItem(text = { Text("نسخ") }, onClick = {
+                menu = false
+                copy(context, Summary.plainText("", listOf(b)).trim())
+            })
+            DropdownMenuItem(
+                text = { Text("حذف التمييز", color = Palette.Danger) },
+                onClick = {
+                    menu = false
+                    b.marks.forEach { s.deleteMark(it.id) }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TableView(rows: List<List<String>>) {
+    val cols = rows.maxOfOrNull { it.size } ?: 1
+    val line = Palette.Divider
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(6.dp)).border(1.dp, line, RoundedCornerShape(6.dp))
+    ) {
+        rows.forEachIndexed { ri, row ->
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+                    .background(if (ri == 0) Palette.NavySoft else Color.Transparent)
+            ) {
+                for (ci in 0 until cols) {
+                    Box(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .border(0.5.dp, line)
+                            .padding(horizontal = 6.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            row.getOrNull(ci) ?: "",
+                            fontSize = 12.sp, lineHeight = 17.sp,
+                            fontWeight = if (ri == 0) FontWeight.Bold else FontWeight.Normal,
+                            color = Palette.TextPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun EmptySummary() {
     Column(
@@ -163,111 +263,18 @@ private fun EmptySummary() {
     ) {
         Text(
             "لا توجد ملخصات بعد",
-            fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary
+            fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "اختر الهايلايتر وفعّل «التقاط النص» بجانبه، ثم مرّر على أي سطر. " +
-                "أو اضغط مطولًا على النص واختر «إلى الملخصات».\n" +
-                "يعمل مع النص الإنجليزي فقط حاليًا.",
-            fontSize = 13.sp, color = Palette.TextSecondary, lineHeight = 20.sp
+            "اختر الهايلايتر، واضغط عليه مرة ثانية وفعّل «التقاط النص»، ثم مرّر على أي سطر. " +
+                "ظلّل نفس النص مرتين ليظهر مهمًا بخط عريض.\nيعمل مع النص الإنجليزي فقط حاليًا.",
+            fontSize = 13.sp, color = Palette.TextSecondary, lineHeight = 21.sp
         )
     }
 }
 
-/** صفحة ملخص واحدة على ورق عاجي، تخص صفحة واحدة من المستند. */
-@Composable
-private fun SummaryPage(
-    s: DocSession,
-    group: Exporter.SummaryGroup,
-    marks: List<TextMark>,
-    tidy: Boolean,
-    onJump: (TextMark) -> Unit,
-    onEdit: (TextMark) -> Unit
-) {
-    val context = LocalContext.current
-    val shape = RoundedCornerShape(6.dp)
-    Column(
-        Modifier.fillMaxWidth()
-            .shadow(3.dp, shape)
-            .background(Palette.Ivory, shape)
-            .heightIn(min = 120.dp)
-            .padding(14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "الصفحة ${group.page + 1}",
-                fontFamily = Fonts.Serif, fontSize = 19.sp, lineHeight = 26.sp,
-                fontWeight = FontWeight.Bold, color = Palette.Navy,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = { marks.firstOrNull()?.let(onJump) }) {
-                Text("انتقال", fontSize = 12.sp, color = Palette.GoldDeep)
-            }
-        }
-        Box(Modifier.width(36.dp).height(2.dp).background(Palette.Gold))
-        Spacer(Modifier.height(10.dp))
-
-        if (tidy) {
-            group.items.forEach { line ->
-                Row(Modifier.padding(vertical = 3.dp)) {
-                    Text("•", fontSize = 15.sp, color = Palette.GoldDeep, modifier = Modifier.padding(end = 8.dp))
-                    Text(line, fontSize = 15.sp, color = Palette.TextPrimary, lineHeight = 22.sp)
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = {
-                    copy(context, group.items.joinToString("\n") { "• $it" })
-                }) { Text("نسخ الصفحة", fontSize = 12.sp) }
-            }
-        } else {
-            marks.forEach { m -> MarkEntry(s, m, onJump, onEdit) }
-        }
-    }
-}
-
-@Composable
-private fun MarkEntry(
-    s: DocSession,
-    m: TextMark,
-    onJump: (TextMark) -> Unit,
-    onEdit: (TextMark) -> Unit
-) {
-    val context = LocalContext.current
-    var menu by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .clickable { onJump(m) },
-        verticalAlignment = Alignment.Top
-    ) {
-        Box(
-            Modifier.padding(top = 3.dp).width(4.dp).height(18.dp)
-                .clip(RoundedCornerShape(2.dp)).background(m.color)
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            m.text, fontSize = 15.sp, color = Palette.TextPrimary, lineHeight = 22.sp,
-            modifier = Modifier.weight(1f)
-        )
-        Box {
-            IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.MoreVert, "خيارات", tint = Palette.TextSecondary, modifier = Modifier.size(18.dp))
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("انتقال إلى الموضع") }, onClick = { menu = false; onJump(m) })
-                DropdownMenuItem(text = { Text("تعديل وترتيب النص") }, onClick = { menu = false; onEdit(m) })
-                DropdownMenuItem(text = { Text("نسخ") }, onClick = { menu = false; copy(context, m.text) })
-                DropdownMenuItem(
-                    text = { Text("حذف التمييز", color = Palette.Danger) },
-                    onClick = { menu = false; s.deleteMark(m.id) }
-                )
-            }
-        }
-    }
-}
-
-/** تعديل نص تمييز، مع زر «ترتيب» يصلح الأسطر والترقيم ويقسم النص إلى جمل. */
+/** تعديل نص تمييز، مع زر «ترتيب» يصلح الأسطر والترقيم. */
 @Composable
 private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(initial) }
@@ -279,15 +286,25 @@ private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss:
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)
+                )
+                Text(
+                    "سطر يبدأ بـ # يصبح عنوانًا. خلايا الجدول يفصلها |. سطر فارغ يبدأ فقرة جديدة.",
+                    fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
                 )
                 Box(
                     Modifier.clip(RoundedCornerShape(18.dp))
                         .border(1.dp, Palette.Gold, RoundedCornerShape(18.dp))
-                        .clickable { text = TextTidy.tidy(text) }
+                        .clickable {
+                            text = text.split(Regex("\\n\\s*\\n")).joinToString("\n\n") { para ->
+                                val t = para.trim()
+                                if (t.startsWith("#") || t.split('\n').all { it.contains('|') }) t
+                                else TextTidy.sentences(TextTidy.clean(t)).joinToString(" ")
+                            }
+                        }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text("ترتيب النص", fontSize = 14.sp, color = Palette.GoldDeep, fontWeight = FontWeight.SemiBold)
+                    Text("ترتيب النص", fontSize = 14.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                 }
             }
         },

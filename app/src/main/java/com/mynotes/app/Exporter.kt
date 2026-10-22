@@ -14,7 +14,13 @@ import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.text.Layout
 import android.text.StaticLayout
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextPaint
+import android.text.style.BackgroundColorSpan
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
+import android.os.Build
 import androidx.compose.ui.graphics.toArgb
 import kotlin.math.max
 
@@ -83,9 +89,17 @@ object Exporter {
         if (marks.isEmpty()) return
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
+        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Palette.GoldDeep.toArgb() }
         for (m in marks) {
-            p.color = markColor(m.color).toArgb()
+            p.color = markColor(m.color, strong = m.level >= 2).toArgb()
             for (r in m.rects) c.drawRect(r.l * w, r.t * w, r.r * w, r.b * w, p)
+            if (m.level < 2) {
+                p.color = markColor(m.color, strong = true).toArgb()
+                for (r in m.strongRects) c.drawRect(r.l * w, r.t * w, r.r * w, r.b * w, p)
+            }
+            // خط ذهبي تحت النص المهم
+            val important = if (m.level >= 2) m.rects else m.strongRects
+            for (r in important) c.drawRect(r.l * w, r.b * w - w * 0.0016f, r.r * w, r.b * w, line)
         }
     }
 
@@ -184,48 +198,33 @@ object Exporter {
 
     // ---------------------------------------------------------------- الملخصات
 
-    /** مجموعة ملخص صفحة: رقم الصفحة (من 0) والفقرات. */
-    class SummaryGroup(val page: Int, val items: List<String>)
-
-    /** يبني مجموعات الملخص بنفس ترتيب الدرج؛ tidy = ترتيب النص في جمل. */
-    fun summaryGroups(marks: List<TextMark>, tidy: Boolean): List<SummaryGroup> =
-        marks.groupBy { it.page }.toSortedMap().map { (page, list) ->
-            val texts = list.map { it.text }
-            SummaryGroup(page, if (tidy) TextTidy.organize(texts) else texts.map { it.trim() }.filter { it.isNotEmpty() })
-        }.filter { it.items.isNotEmpty() }
-
-    /** نص الملخص كاملًا للنسخ والمشاركة. */
-    fun summaryText(title: String, groups: List<SummaryGroup>): String {
-        val sb = StringBuilder()
-        sb.append("ملخص: ").append(title).append('\n')
-        for (g in groups) {
-            sb.append('\n').append("الصفحة ").append(g.page + 1).append('\n')
-            g.items.forEach { sb.append("• ").append(it).append('\n') }
-        }
-        return sb.toString().trimEnd()
-    }
-
-    fun exportSummary(context: Context, title: String, groups: List<SummaryGroup>, uri: Uri): Int {
+    /** يحفظ الملخص بنفس شكل الدرج: عناوين، فقرات (المهم بخط عريض وتظليل)، وجداول. */
+    fun exportSummary(context: Context, title: String, blocks: List<SBlock>, uri: Uri): Int {
         val pageW = PDF_W
         val pageH = 842
-        val margin = 48f
+        val margin = 50f
         val contentW = (pageW - 2 * margin).toInt()
+        val sans = context.resources.getFont(R.font.almarai_regular)
+        val bold = context.resources.getFont(R.font.almarai_extrabold)
 
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.Navy.toArgb()
-            textSize = 19f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = Palette.Navy.toArgb(); textSize = 21f; typeface = bold
         }
         val headPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.Navy.toArgb()
-            textSize = 13f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = Palette.Navy.toArgb(); textSize = 15f; typeface = bold
         }
         val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.TextPrimary.toArgb()
-            textSize = 11.5f
+            color = Palette.TextPrimary.toArgb(); textSize = 11.5f; typeface = sans
         }
+        val cellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Palette.TextPrimary.toArgb(); textSize = 10f; typeface = sans
+        }
+        val cellHeadPaint = TextPaint(cellPaint).apply { typeface = bold }
         val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Palette.Gold.toArgb(); strokeWidth = 1.2f }
+        val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Palette.Divider.toArgb(); strokeWidth = 0.8f; style = Paint.Style.STROKE
+        }
+        val headFill = Paint().apply { color = Palette.NavySoft.toArgb() }
         val bg = Palette.Ivory.toArgb()
 
         val out = PdfDocument()
@@ -242,8 +241,13 @@ object Exporter {
             y = margin
         }
 
-        fun put(layout: StaticLayout, gapAfter: Float) {
-            if (page == null || y + layout.height > pageH - margin) newPage()
+        fun ensure(hgt: Float) {
+            if (page == null || y + hgt > pageH - margin) newPage()
+        }
+
+        fun put(layout: StaticLayout, gapBefore: Float, gapAfter: Float) {
+            ensure(gapBefore + layout.height)
+            if (y > margin) y += gapBefore
             val c = page!!.canvas
             c.save()
             c.translate(margin, y)
@@ -252,15 +256,51 @@ object Exporter {
             y += layout.height + gapAfter
         }
 
+        fun spanned(text: String, emphasis: List<String>): CharSequence {
+            val sp = SpannableString(text)
+            for (r in Summary.emphasisRanges(text, emphasis)) {
+                val boldSpan: Any = if (Build.VERSION.SDK_INT >= 28) TypefaceSpan(bold) else StyleSpan(Typeface.BOLD)
+                sp.setSpan(boldSpan, r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sp.setSpan(BackgroundColorSpan(Palette.GoldSoft.toArgb()), r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            return sp
+        }
+
         try {
             newPage()
-            put(layoutOf("ملخص: $title", titlePaint, contentW, 1.2f), 6f)
+            put(layoutOf(title, titlePaint, contentW, 1.2f), 0f, 6f)
             page!!.canvas.drawLine(margin, y, pageW - margin, y, rule)
             y += 14f
-            for (g in groups) {
-                put(layoutOf("الصفحة ${g.page + 1}", headPaint, contentW, 1.2f), 6f)
-                for (item in g.items) put(layoutOf("•  $item", bodyPaint, contentW, 1.35f), 5f)
-                y += 10f
+            for (b in blocks) {
+                when (b) {
+                    is SHeading -> put(layoutOf(b.text, headPaint, contentW, 1.25f), 10f, 4f)
+                    is SPara -> put(layoutOf(spanned(b.text, b.emphasis), bodyPaint, contentW, 1.45f), 2f, 7f)
+                    is STable -> {
+                        val cols = b.rows.maxOfOrNull { it.size }?.coerceAtLeast(1) ?: 1
+                        val colW = contentW / cols
+                        y += 4f
+                        b.rows.forEachIndexed { ri, row ->
+                            val paint = if (ri == 0) cellHeadPaint else cellPaint
+                            val cells = (0 until cols).map { ci ->
+                                layoutOf(row.getOrNull(ci) ?: "", paint, (colW - 10).coerceAtLeast(10), 1.25f)
+                            }
+                            val rowH = (cells.maxOf { it.height } + 10).toFloat()
+                            ensure(rowH)
+                            val c = page!!.canvas
+                            if (ri == 0) c.drawRect(margin, y, margin + colW * cols, y + rowH, headFill)
+                            cells.forEachIndexed { ci, l ->
+                                val x = margin + ci * colW
+                                c.drawRect(x, y, x + colW, y + rowH, grid)
+                                c.save()
+                                c.translate(x + 5f, y + 5f)
+                                l.draw(c)
+                                c.restore()
+                            }
+                            y += rowH
+                        }
+                        y += 8f
+                    }
+                }
             }
             page?.let { out.finishPage(it) }
             page = null
@@ -279,8 +319,8 @@ object Exporter {
      * لون التمييز ممزوجًا مسبقًا بالأبيض وبشفافية كاملة، ليُرسم بمزج «ضرب»:
      * الورق الأبيض يأخذ لون التمييز والنص الداكن يبقى داكنًا تمامًا (على كل إصدارات أندرويد).
      */
-    fun markColor(c: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
-        val k = MARK_ALPHA
+    fun markColor(c: androidx.compose.ui.graphics.Color, strong: Boolean = false): androidx.compose.ui.graphics.Color {
+        val k = if (strong) 0.9f else MARK_ALPHA
         return androidx.compose.ui.graphics.Color(
             red = 1f - k + k * c.red,
             green = 1f - k + k * c.green,

@@ -69,3 +69,26 @@ fun PaperColorRow(selected: Int, onSelect: (Int) -> Unit, onCustom: () -> Unit) 
         }
     }
 }
+
+/** وقت القراءة بصيغة مختصرة: «45 د»، «2 س 15 د». */
+fun formatReading(ms: Long): String {
+    val m = ms / 60_000L
+    if (m < 1L) return "أقل من دقيقة"
+    val h = m / 60L
+    val mm = m % 60L
+    return when {
+        h == 0L -> "$mm د"
+        mm == 0L -> "$h س"
+        else -> "$h س $mm د"
+    }
+}
+
+/** شارة صغيرة: أيقونة المؤقت + الوقت. */
+@Composable
+fun ReadingTimeBadge(ms: Long, tint: Color = Palette.TextSecondary, fontSize: Int = 12) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TimerGlyph(tint, (fontSize + 3).dp)
+        androidx.compose.foundation.layout.Spacer(Modifier.size(4.dp))
+        Text(formatReading(ms), fontSize = fontSize.sp, color = tint)
+    }
+}

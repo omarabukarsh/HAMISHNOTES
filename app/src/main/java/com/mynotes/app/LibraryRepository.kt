@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.media.ExifInterface
 import android.net.Uri
@@ -43,6 +44,8 @@ class LibraryRepository(context: Context) {
     private val thumbDir = File(root, "thumbs").apply { mkdirs() }
     private val imgRoot = File(root, "images").apply { mkdirs() }
     private val ocrRoot = File(root, "ocr").apply { mkdirs() }
+    private val partsRoot = File(root, "parts").apply { mkdirs() }
+    private val pagesDir = File(root, "pages").apply { mkdirs() }
     private val indexFile = File(root, "library.json")
 
     private val writer = Executors.newSingleThreadExecutor { r ->
@@ -54,6 +57,8 @@ class LibraryRepository(context: Context) {
     fun file(entry: DocEntry): File = File(docsDir, entry.fileName)
 
     fun imageFile(docId: String, name: String): File = File(File(imgRoot, docId), name)
+
+    fun partsDir(docId: String): File = File(partsRoot, docId)
 
     // ---------- أدوات مساعدة ----------
 
@@ -108,7 +113,8 @@ class LibraryRepository(context: Context) {
                         addedAt = o.optLong("added"),
                         lastOpened = o.optLong("opened"),
                         favorite = o.optBoolean("fav"),
-                        lastPage = o.optInt("page")
+                        lastPage = o.optInt("page"),
+                        isNote = o.optBoolean("note")
                     )
                 } catch (e: Throwable) {
                     null
@@ -140,6 +146,7 @@ class LibraryRepository(context: Context) {
                             .put("opened", e.lastOpened)
                             .put("fav", e.favorite)
                             .put("page", e.lastPage)
+                            .put("note", e.isNote)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
@@ -202,6 +209,8 @@ class LibraryRepository(context: Context) {
         File(thumbDir, "${src.id}.jpg").takeIf { it.exists() }?.copyTo(File(thumbDir, "$id.jpg"))
         File(imgRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(imgRoot, id))
         File(ocrRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(ocrRoot, id))
+        File(pagesDir, "${src.id}.json").takeIf { it.exists() }?.copyTo(File(pagesDir, "$id.json"))
+        File(partsRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(partsRoot, id))
         return src.copy(
             id = id,
             name = src.name + suffix,
@@ -219,6 +228,8 @@ class LibraryRepository(context: Context) {
         File(thumbDir, "${entry.id}.jpg").delete()
         File(imgRoot, entry.id).deleteRecursively()
         File(ocrRoot, entry.id).deleteRecursively()
+        File(pagesDir, "${entry.id}.json").delete()
+        File(partsRoot, entry.id).deleteRecursively()
         thumbCache.remove(entry.id)
         PageCache.removePrefix("${entry.id}:")
     }
@@ -439,6 +450,103 @@ class LibraryRepository(context: Context) {
         val aspect = bmp.width.toFloat() / bmp.height.toFloat()
         bmp.recycle()
         return Pair(name, aspect)
+    }
+
+    // ---------- القراءة الضوئية ----------
+
+    // ---------- بنية الصفحات (إضافة صفحات وملفات) ----------
+
+    suspend fun savePages(id: String, pages: List<PageRef>) {
+        withContext(writer) {
+            try {
+                val arr = JSONArray()
+                pages.forEach {
+                    arr.put(
+                        JSONObject()
+                            .put("s", it.src)
+                            .put("i", it.index)
+                            .put("r", it.ratio.toDouble())
+                    )
+                }
+                atomicWrite(
+                    File(pagesDir, "$id.json"),
+                    JSONObject().put("version", 1).put("pages", arr).toString()
+                )
+            } catch (e: Throwable) {
+            }
+        }
+    }
+
+    fun loadPages(id: String): List<PageRef>? {
+        val f = File(pagesDir, "$id.json")
+        if (!f.exists()) return null
+        return try {
+            val arr = JSONObject(f.readText()).getJSONArray("pages")
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                PageRef(o.getString("s"), o.getInt("i"), o.getDouble("r").toFloat())
+            }
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /** ينسخ ملف PDF مضافًا إلى مجلد المستند. يعيد (اسم الملف، عدد الصفحات). خارج الخيط الرئيسي. */
+    fun importPart(docId: String, uri: Uri): Pair<String, Int> {
+        val dir = partsDir(docId).apply { mkdirs() }
+        val name = UUID.randomUUID().toString() + ".pdf"
+        val dest = File(dir, name)
+        try {
+            val input = resolver.openInputStream(uri) ?: throw IOException("تعذر قراءة الملف")
+            input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
+            val pages = probePageCount(dest)
+            if (pages <= 0) throw IOException("الملف فارغ")
+            return Pair(name, pages)
+        } catch (t: Throwable) {
+            dest.delete()
+            throw t
+        }
+    }
+
+    /** ينشئ ملاحظة جديدة: ملف PDF من صفحة A4 واحدة بالقالب المختار. خارج الخيط الرئيسي. */
+    fun createNote(name: String, template: String, color: Int): DocEntry {
+        val id = UUID.randomUUID().toString()
+        val fileName = "$id.pdf"
+        val dest = File(docsDir, fileName)
+        val pdf = PdfDocument()
+        try {
+            val info = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+            val page = pdf.startPage(info)
+            Templates.draw(page.canvas, 595f, 842f, template, color)
+            pdf.finishPage(page)
+            dest.outputStream().use { out -> pdf.writeTo(out) }
+        } catch (t: Throwable) {
+            dest.delete()
+            throw t
+        } finally {
+            pdf.close()
+        }
+        val entry = DocEntry(
+            id = id,
+            name = name.trim().ifBlank { "ملاحظة جديدة" },
+            type = DocType.PDF,
+            fileName = fileName,
+            sizeBytes = dest.length(),
+            pageCount = 1,
+            addedAt = System.currentTimeMillis(),
+            lastOpened = 0L,
+            favorite = false,
+            lastPage = 0,
+            isNote = true
+        )
+        makeThumbnail(entry)
+        return entry
+    }
+
+    /** يعيد كتابة نتائج القراءة الضوئية كلها (بعد إزاحة أرقام الصفحات). خارج الخيط الرئيسي. */
+    fun rewriteOcr(id: String, data: Map<Int, OcrPage>) {
+        File(ocrRoot, id).deleteRecursively()
+        data.forEach { (page, ocrPage) -> saveOcrPage(id, page, ocrPage) }
     }
 
     // ---------- القراءة الضوئية ----------

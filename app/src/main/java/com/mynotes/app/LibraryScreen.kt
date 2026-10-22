@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -65,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
@@ -97,6 +99,7 @@ fun LibraryScreen() {
 
     var renameTarget by remember { mutableStateOf<DocEntry?>(null) }
     var deleteTarget by remember { mutableStateOf<DocEntry?>(null) }
+    var showNewNote by remember { mutableStateOf(false) }
 
     val query = c.libraryQuery.trim()
     val base = c.library.toList().filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
@@ -114,7 +117,7 @@ fun LibraryScreen() {
                 Box(Modifier.width(1.dp).fillMaxHeight().background(Palette.Divider))
             }
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                LibraryHeader(wide, startImport)
+                LibraryHeader(wide, startImport) { showNewNote = true }
                 if (!wide) FilterRow()
                 if (c.importing) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -122,7 +125,7 @@ fun LibraryScreen() {
                         !c.libraryLoaded -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                             CircularProgressIndicator()
                         }
-                        c.library.isEmpty() -> EmptyLibrary(startImport)
+                        c.library.isEmpty() -> EmptyLibrary(startImport) { showNewNote = true }
                         docs.isEmpty() -> NoResults(
                             if (c.libraryFilter == LibraryFilter.FAVORITES && query.isEmpty())
                                 "لا توجد مستندات مفضلة بعد"
@@ -175,6 +178,16 @@ fun LibraryScreen() {
             dismissButton = {
                 TextButton(onClick = { renameTarget = null }) { Text("إلغاء") }
             }
+        )
+    }
+
+    if (showNewNote) {
+        NewNoteDialog(
+            onCreate = { n, t, col ->
+                showNewNote = false
+                c.createNote(n, t, col)
+            },
+            onDismiss = { showNewNote = false }
         )
     }
 
@@ -306,7 +319,7 @@ private fun FilterRow() {
 }
 
 @Composable
-private fun LibraryHeader(wide: Boolean, onImport: () -> Unit) {
+private fun LibraryHeader(wide: Boolean, onImport: () -> Unit, onNewNote: () -> Unit) {
     val c = AppController
     if (wide) {
         Row(
@@ -323,6 +336,7 @@ private fun LibraryHeader(wide: Boolean, onImport: () -> Unit) {
             if (c.libraryFilter != LibraryFilter.RECENT) {
                 SortMenu(c.librarySort) { c.librarySort = it }
             }
+            NewNoteButton(onNewNote)
             ImportButton(onImport)
         }
     } else {
@@ -333,6 +347,8 @@ private fun LibraryHeader(wide: Boolean, onImport: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Brand()
                 Spacer(Modifier.weight(1f))
+                NewNoteButton(onNewNote)
+                Spacer(Modifier.width(8.dp))
                 ImportButton(onImport)
             }
             Row(
@@ -459,7 +475,7 @@ private fun DocCard(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    entry.type.ext.uppercase(), color = Color.White,
+                    if (entry.isNote) "NOTE" else entry.type.ext.uppercase(), color = Color.White,
                     fontSize = 10.sp, fontWeight = FontWeight.Bold
                 )
             }
@@ -542,7 +558,7 @@ private fun Thumbnail(entry: DocEntry) {
 // ---------------------------------------------------------------- الحالات الفارغة
 
 @Composable
-private fun EmptyLibrary(onImport: () -> Unit) {
+private fun EmptyLibrary(onImport: () -> Unit, onNewNote: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -562,7 +578,10 @@ private fun EmptyLibrary(onImport: () -> Unit) {
             fontSize = 14.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(16.dp))
-        ImportButton(onImport)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            NewNoteButton(onNewNote)
+            ImportButton(onImport)
+        }
     }
 }
 
@@ -574,6 +593,66 @@ private fun NoResults(text: String) {
 }
 
 // ---------------------------------------------------------------- تنسيق
+
+@Composable
+private fun NewNoteButton(onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, shape = RoundedCornerShape(12.dp)) {
+        Icon(Icons.Default.Create, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("ملاحظة جديدة")
+    }
+}
+
+/** إنشاء ملاحظة فارغة بالكامل داخل المكتبة: الاسم، التخطيط، ولون الورقة. */
+@Composable
+private fun NewNoteDialog(onCreate: (String, String, Int) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("ملاحظة جديدة") }
+    var template by remember { mutableStateOf("lined") }
+    var paper by remember { mutableStateOf(Templates.paperColors[0].first) }
+    var picker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ملاحظة جديدة") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("الاسم") }
+                )
+                Text("التخطيط", fontSize = 13.sp, color = Palette.TextSecondary)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Templates.options.forEach { (k, label) ->
+                        ChoiceChip(label, template == k) { template = k }
+                    }
+                }
+                Text("لون الورقة", fontSize = 13.sp, color = Palette.TextSecondary)
+                PaperColorRow(paper, { paper = it }, { picker = true })
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onCreate(name, template, paper) }) { Text("إنشاء") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
+    if (picker) {
+        ColorPickerDialog(
+            initial = Color(paper),
+            onPick = {
+                paper = it.toArgb()
+                picker = false
+            },
+            onDismiss = { picker = false }
+        )
+    }
+}
 
 private fun formatSize(b: Long): String =
     if (b >= 1024L * 1024L) String.format(Locale.US, "%.1f MB", b / 1048576.0)

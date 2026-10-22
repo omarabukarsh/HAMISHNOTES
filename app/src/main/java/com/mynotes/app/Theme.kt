@@ -16,6 +16,8 @@ object Palette {
     val Gold = Color(0xFFE0A100)
     val ReaderBackground = Color(0xFFD9DEE5)
     val TabBar = Color(0xFFE4E9F0)
+    val Desk = Color(0xFFE9E4DA)
+    val DrawerBg = Color(0xFFF7F4EE)
 }
 
 private val AppColors = lightColorScheme(

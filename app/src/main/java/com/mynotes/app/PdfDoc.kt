@@ -66,7 +66,7 @@ class PdfDoc private constructor(private val id: String) {
 
     fun ratio(i: Int): Float = pages.getOrNull(i)?.ratio ?: 0.707f
 
-    fun setPages(list: List<PageRef>) {
+    fun replacePages(list: List<PageRef>) {
         pages = list
     }
 
@@ -178,7 +178,7 @@ class PdfDoc private constructor(private val id: String) {
             try {
                 val mainPages = doc.addSource("main", main)
                 if (saved == null) {
-                    doc.setPages(mainPages)
+                    doc.replacePages(mainPages)
                 } else {
                     val failed = HashSet<String>()
                     saved.map { it.src }
@@ -192,7 +192,7 @@ class PdfDoc private constructor(private val id: String) {
                             }
                         }
                     val valid = saved.filter { it.src !in failed }
-                    doc.setPages(if (valid.isEmpty()) mainPages else valid)
+                    doc.replacePages(if (valid.isEmpty()) mainPages else valid)
                 }
                 return doc
             } catch (t: Throwable) {

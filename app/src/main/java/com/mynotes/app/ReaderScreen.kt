@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -25,7 +26,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,9 +40,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -72,19 +70,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -94,22 +93,29 @@ import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -118,9 +124,9 @@ import kotlin.math.roundToInt
 @Composable
 fun ReaderScreen(session: DocSession) {
     when (val st = session.status) {
-        is SessionStatus.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-            CircularProgressIndicator()
-        }
+        is SessionStatus.Loading -> Box(
+            Modifier.fillMaxSize().background(Palette.Desk), Alignment.Center
+        ) { CircularProgressIndicator() }
         is SessionStatus.Failed -> FailedView(session, st.message)
         is SessionStatus.Ready -> ReaderContent(session)
     }
@@ -129,7 +135,7 @@ fun ReaderScreen(session: DocSession) {
 @Composable
 private fun FailedView(session: DocSession, message: String) {
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
+        Modifier.fillMaxSize().background(Palette.Desk).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -150,9 +156,8 @@ private fun FailedView(session: DocSession, message: String) {
 @Composable
 private fun ReaderContent(s: DocSession) {
     val pdf = s.pdf ?: return
-    Column(Modifier.fillMaxSize()) {
-        ReaderToolbar(s, pdf.count)
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+    Column(Modifier.fillMaxSize().background(Palette.Desk)) {
+        ReaderTopBar(s, pdf.count)
         if (s.searchOpen) ReaderSearchBar(s)
         if (s.ocrRunning) OcrStatusBar(s)
         PageArea(s, pdf)
@@ -164,167 +169,225 @@ private fun ReaderContent(s: DocSession) {
 private fun tintFor(selected: Boolean): Color = if (selected) Palette.Navy else Palette.TextSecondary
 
 @Composable
-private fun ReaderToolbar(s: DocSession, count: Int) {
+private fun TBtn(
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Box(
+        Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (selected) Palette.NavySoft else Color.Transparent)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
+
+@Composable
+private fun ToolbarSep() {
+    Box(
+        Modifier.padding(horizontal = 6.dp).width(1.dp).height(26.dp).background(Palette.Divider)
+    )
+}
+
+@Composable
+private fun ReaderTopBar(s: DocSession, count: Int) {
     val c = AppController
     val scope = rememberCoroutineScope()
     var jump by remember { mutableStateOf(false) }
     var penMenu by remember { mutableStateOf(false) }
     var colorMenu by remember { mutableStateOf(false) }
-    var sizeMenu by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
+    var addDialog by remember { mutableStateOf(false) }
+    var pdfAfter by remember { mutableStateOf(0) }
     val cur = s.listState.firstVisibleItemIndex
+    val pill = RoundedCornerShape(28.dp)
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) c.insertImage(s, uri, s.listState.firstVisibleItemIndex)
     }
+    val pdfPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) c.addPdfPages(s, uri, pdfAfter)
+    }
 
-    Row(
-        Modifier.fillMaxWidth().height(52.dp).background(Color.White)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // التنقل بين الصفحات
-        IconButton(onClick = {
-            scope.launch { s.listState.animateScrollToItem((cur - 1).coerceAtLeast(0)) }
-        }) { Icon(Icons.Default.KeyboardArrowUp, "الصفحة السابقة", tint = Palette.TextPrimary) }
+    Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
+        // زر درج الصفحات في الزاوية اليسرى
         Box(
-            Modifier.clip(RoundedCornerShape(8.dp)).background(Palette.Background)
-                .clickable { jump = true }
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+            Modifier.align(Alignment.CenterStart).size(46.dp)
+                .shadow(5.dp, CircleShape)
+                .background(if (s.drawerOpen) Palette.NavySoft else Color.White, CircleShape)
+                .clip(CircleShape)
+                .clickable { s.drawerOpen = !s.drawerOpen },
+            contentAlignment = Alignment.Center
+        ) { PagesGlyph(tintFor(s.drawerOpen)) }
+
+        // شريط الأدوات في المنتصف
+        Box(
+            Modifier.align(Alignment.Center).padding(horizontal = 58.dp)
+                .shadow(6.dp, pill)
+                .background(Color.White, pill)
+                .clip(pill)
         ) {
-            Text("${cur + 1} / $count", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Palette.TextPrimary)
-        }
-        IconButton(onClick = {
-            scope.launch { s.listState.animateScrollToItem((cur + 1).coerceAtMost(count - 1)) }
-        }) { Icon(Icons.Default.KeyboardArrowDown, "الصفحة التالية", tint = Palette.TextPrimary) }
-
-        ToolbarSep()
-
-        // الأقلام
-        val penSelected = c.tool.isPen()
-        Box {
-            ToolToggle(penSelected, {
-                if (penSelected) penMenu = true else c.selectTool(c.lastPen)
-            }) {
-                ToolGlyph(if (penSelected) c.tool else c.lastPen, tintFor(penSelected))
-            }
-            DropdownMenu(expanded = penMenu, onDismissRequest = { penMenu = false }) {
-                listOf(
-                    Tool.BALLPOINT to "قلم جاف",
-                    Tool.FOUNTAIN to "قلم حبر",
-                    Tool.PENCIL to "قلم رصاص"
-                ).forEach { (t, label) ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                ToolGlyph(t, Palette.Navy, Modifier.size(20.dp))
-                                Spacer(Modifier.width(10.dp))
-                                Text(label)
-                            }
-                        },
-                        onClick = {
-                            c.selectTool(t)
-                            penMenu = false
-                        }
-                    )
-                }
-            }
-        }
-        ToolToggle(c.tool == Tool.HIGHLIGHTER, { c.selectTool(Tool.HIGHLIGHTER) }) {
-            ToolGlyph(Tool.HIGHLIGHTER, tintFor(c.tool == Tool.HIGHLIGHTER))
-        }
-        ToolToggle(c.tool == Tool.ERASER, { c.selectTool(Tool.ERASER) }) {
-            ToolGlyph(Tool.ERASER, tintFor(c.tool == Tool.ERASER))
-        }
-        ToolToggle(c.tool == Tool.LASER, { c.selectTool(Tool.LASER) }) {
-            ToolGlyph(Tool.LASER, tintFor(c.tool == Tool.LASER))
-        }
-
-        ToolbarSep()
-
-        // اللون
-        if (c.tool != Tool.ERASER) {
-            Box {
-                Box(
-                    Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable { colorMenu = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        Modifier.size(24.dp).clip(CircleShape).background(c.colorFor(c.tool))
-                            .border(1.dp, Palette.Divider, CircleShape)
-                    )
-                }
-                DropdownMenu(expanded = colorMenu, onDismissRequest = { colorMenu = false }) {
-                    ColorMenuContent(
-                        onCustom = {
-                            colorMenu = false
-                            showPicker = true
-                        },
-                        onDone = { colorMenu = false }
-                    )
-                }
-            }
-        }
-
-        // الحجم (10 أحجام)
-        Box {
-            Box(
-                Modifier.height(40.dp).clip(RoundedCornerShape(10.dp)).clickable { sizeMenu = true }
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center
+            Row(
+                Modifier.horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "${c.sizeFor(c.tool) + 1}", fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary
-                )
+                // التنقل بين الصفحات
+                TBtn(onClick = {
+                    scope.launch { s.listState.animateScrollToItem((cur - 1).coerceAtLeast(0)) }
+                }) { ChevronGlyph(Palette.TextPrimary, up = true) }
+                Box(
+                    Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
+                        .clickable { jump = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        "${cur + 1} / $count", fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium, color = Palette.TextPrimary
+                    )
+                }
+                TBtn(onClick = {
+                    scope.launch { s.listState.animateScrollToItem((cur + 1).coerceAtMost(count - 1)) }
+                }) { ChevronGlyph(Palette.TextPrimary, up = false) }
+
+                ToolbarSep()
+
+                // الأدوات
+                val penSelected = c.tool.isPen()
+                val shownPen = if (penSelected) c.tool else c.lastPen
+                Box {
+                    TBtn(
+                        selected = penSelected,
+                        onClick = { if (penSelected) penMenu = true else c.selectTool(c.lastPen) }
+                    ) { ToolGlyph(shownPen, tintFor(penSelected), c.colorFor(shownPen)) }
+                    DropdownMenu(expanded = penMenu, onDismissRequest = { penMenu = false }) {
+                        listOf(
+                            Tool.BALLPOINT to "قلم جاف",
+                            Tool.FOUNTAIN to "قلم حبر",
+                            Tool.PENCIL to "قلم رصاص"
+                        ).forEach { (t, label) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        ToolGlyph(t, Palette.Navy, c.colorFor(t), Modifier.size(24.dp))
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(label)
+                                    }
+                                },
+                                onClick = {
+                                    c.selectTool(t)
+                                    penMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                TBtn(selected = c.tool == Tool.HIGHLIGHTER, onClick = { c.selectTool(Tool.HIGHLIGHTER) }) {
+                    ToolGlyph(
+                        Tool.HIGHLIGHTER, tintFor(c.tool == Tool.HIGHLIGHTER),
+                        c.colorFor(Tool.HIGHLIGHTER)
+                    )
+                }
+                TBtn(selected = c.tool == Tool.ERASER, onClick = { c.selectTool(Tool.ERASER) }) {
+                    ToolGlyph(Tool.ERASER, tintFor(c.tool == Tool.ERASER), Palette.Navy)
+                }
+                TBtn(selected = c.tool == Tool.LASER, onClick = { c.selectTool(Tool.LASER) }) {
+                    ToolGlyph(Tool.LASER, tintFor(c.tool == Tool.LASER), c.colorFor(Tool.LASER))
+                }
+
+                ToolbarSep()
+
+                // اللون
+                if (c.tool != Tool.ERASER) {
+                    Box {
+                        Box(
+                            Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
+                                .clickable { colorMenu = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                Modifier.size(26.dp).clip(CircleShape)
+                                    .background(c.colorFor(c.tool))
+                                    .border(2.dp, Color.White, CircleShape)
+                                    .border(3.dp, Palette.Divider, CircleShape)
+                            )
+                        }
+                        DropdownMenu(expanded = colorMenu, onDismissRequest = { colorMenu = false }) {
+                            ColorMenuContent(
+                                onCustom = {
+                                    colorMenu = false
+                                    showPicker = true
+                                },
+                                onDone = { colorMenu = false }
+                            )
+                        }
+                    }
+                }
+
+                // الحجم: شريط من 10 أقسام، اسحب لتغيير الحجم
+                Box(Modifier.padding(horizontal = 6.dp)) {
+                    SizeBar(c.sizeFor(c.tool), { c.setSize(it) }, Modifier.width(150.dp))
+                }
+
+                ToolbarSep()
+
+                // صورة / إضافة صفحة / قراءة النص / بحث
+                TBtn(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
+                    ImageGlyph(Palette.TextSecondary)
+                }
+                TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.TextSecondary) }
+                TBtn(selected = s.ocrRunning, onClick = {
+                    if (s.ocrRunning) {
+                        s.stopOcr()
+                    } else {
+                        s.startOcr()
+                        c.messages.tryEmit("قراءة النص تدعم الإنجليزية فقط، ولا تدعم العربية")
+                    }
+                }) { OcrGlyph(tintFor(s.ocrRunning)) }
+                TBtn(selected = s.searchOpen, onClick = {
+                    if (s.searchOpen) s.closeSearch() else s.searchOpen = true
+                }) { SearchGlyph(tintFor(s.searchOpen)) }
+
+                ToolbarSep()
+
+                // تراجع وإعادة
+                val canUndo = s.undoStack.isNotEmpty()
+                val canRedo = s.redoStack.isNotEmpty()
+                TBtn(enabled = canUndo, onClick = { s.undo() }) {
+                    UndoGlyph(if (canUndo) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f))
+                }
+                TBtn(enabled = canRedo, onClick = { s.redo() }) {
+                    UndoGlyph(
+                        if (canRedo) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f),
+                        redo = true
+                    )
+                }
+
+                ToolbarSep()
+
+                // التكبير
+                val canOut = s.scale > 1.01f
+                val canIn = s.scale < 3.99f
+                TBtn(enabled = canOut, onClick = { s.zoomHook?.invoke(1f / 1.25f) }) {
+                    ZoomGlyph(if (canOut) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f), plus = false)
+                }
+                Box(
+                    Modifier.clip(RoundedCornerShape(8.dp))
+                        .clickable { s.zoomHook?.invoke(1f / s.scale) }
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.TextPrimary)
+                }
+                TBtn(enabled = canIn, onClick = { s.zoomHook?.invoke(1.25f) }) {
+                    ZoomGlyph(if (canIn) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f), plus = true)
+                }
             }
-            DropdownMenu(expanded = sizeMenu, onDismissRequest = { sizeMenu = false }) {
-                SizeMenuContent(onDone = { sizeMenu = false })
-            }
         }
-
-        ToolbarSep()
-
-        // صورة / قراءة النص / بحث
-        ToolToggle(false, { imagePicker.launch(arrayOf("image/*")) }) {
-            ImageGlyph(Palette.TextSecondary)
-        }
-        ToolToggle(s.ocrRunning, {
-            if (s.ocrRunning) {
-                s.stopOcr()
-            } else {
-                s.startOcr()
-                c.messages.tryEmit("القراءة تدعم الإنجليزية واللاتينية فقط، ولا تدعم العربية")
-            }
-        }) {
-            Text("OCR", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = tintFor(s.ocrRunning))
-        }
-        ToolToggle(s.searchOpen, {
-            if (s.searchOpen) s.closeSearch() else s.searchOpen = true
-        }) {
-            Icon(Icons.Default.Search, "بحث", Modifier.size(22.dp), tint = tintFor(s.searchOpen))
-        }
-
-        ToolbarSep()
-
-        // تراجع وإعادة
-        TextAction("↶", s.undoStack.isNotEmpty()) { s.undo() }
-        TextAction("↷", s.redoStack.isNotEmpty()) { s.redo() }
-
-        ToolbarSep()
-
-        // التكبير
-        TextAction("−", s.scale > 1.01f) { s.scale = (s.scale / 1.25f).coerceAtLeast(1f) }
-        Box(
-            Modifier.clip(RoundedCornerShape(8.dp)).clickable { s.scale = 1f }
-                .padding(horizontal = 8.dp, vertical = 8.dp)
-        ) {
-            Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.TextPrimary)
-        }
-        TextAction("+", s.scale < 3.99f) { s.scale = (s.scale * 1.25f).coerceAtMost(4f) }
     }
 
     if (jump) {
@@ -346,35 +409,78 @@ private fun ReaderToolbar(s: DocSession, count: Int) {
             onDismiss = { showPicker = false }
         )
     }
+    if (addDialog) {
+        AddPagesDialog(
+            onBlank = { template, atEnd, color ->
+                addDialog = false
+                val after = if (atEnd) count - 1 else cur
+                c.addBlankPage(s, after, template, color)
+            },
+            onPdf = { atEnd ->
+                addDialog = false
+                pdfAfter = if (atEnd) count - 1 else cur
+                pdfPicker.launch(arrayOf("application/pdf"))
+            },
+            onDismiss = { addDialog = false }
+        )
+    }
 }
 
 @Composable
-private fun ToolbarSep() {
-    Box(
-        Modifier.padding(horizontal = 6.dp).width(1.dp).height(24.dp).background(Palette.Divider)
+private fun AddPagesDialog(
+    onBlank: (String, Boolean, Int) -> Unit,
+    onPdf: (Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var template by remember { mutableStateOf("lined") }
+    var atEnd by remember { mutableStateOf(false) }
+    var paper by remember { mutableStateOf(Templates.paperColors[0].first) }
+    var picker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة صفحة") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("المكان", fontSize = 13.sp, color = Palette.TextSecondary)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ChoiceChip("بعد الصفحة الحالية", !atEnd) { atEnd = false }
+                    ChoiceChip("في نهاية الملف", atEnd) { atEnd = true }
+                }
+                Text("التخطيط", fontSize = 13.sp, color = Palette.TextSecondary)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Templates.options.forEach { (k, label) ->
+                        ChoiceChip(label, template == k) { template = k }
+                    }
+                }
+                Text("لون الورقة", fontSize = 13.sp, color = Palette.TextSecondary)
+                PaperColorRow(paper, { paper = it }, { picker = true })
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onBlank(template, atEnd, paper) }) { Text("إضافة صفحة") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onPdf(atEnd) }) { Text("إضافة ملف PDF…") }
+                TextButton(onClick = onDismiss) { Text("إلغاء") }
+            }
+        }
     )
-}
-
-@Composable
-private fun ToolToggle(selected: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
-    Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
-            .background(if (selected) Palette.NavySoft else Color.Transparent)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) { content() }
-}
-
-@Composable
-private fun TextAction(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label, fontSize = 22.sp,
-            color = if (enabled) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.4f)
+    if (picker) {
+        ColorPickerDialog(
+            initial = Color(paper),
+            onPick = {
+                paper = it.toArgb()
+                picker = false
+            },
+            onDismiss = { picker = false }
         )
     }
 }
@@ -448,13 +554,9 @@ private fun ReaderSearchBar(s: DocSession) {
                 },
                 fontSize = 13.sp, color = Palette.TextSecondary
             )
-            IconButton(onClick = { s.stepHit(-1) }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.KeyboardArrowUp, "السابق", tint = Palette.TextPrimary)
-            }
-            IconButton(onClick = { s.stepHit(1) }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.KeyboardArrowDown, "التالي", tint = Palette.TextPrimary)
-            }
-            IconButton(onClick = { s.closeSearch() }, modifier = Modifier.size(36.dp)) {
+            TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.TextPrimary, up = true) }
+            TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.TextPrimary, up = false) }
+            IconButton(onClick = { s.closeSearch() }, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Default.Close, "إغلاق البحث", tint = Palette.TextSecondary)
             }
         }
@@ -467,10 +569,7 @@ private fun ReaderSearchBar(s: DocSession) {
                     "البحث يشمل ${s.ocr.size} من $total صفحة تمت قراءتها",
                     fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
                 )
-                TextButton(onClick = {
-                    s.startOcr()
-                    AppController.messages.tryEmit("القراءة تدعم الإنجليزية واللاتينية فقط، ولا تدعم العربية")
-                }) { Text("قراءة الكل", fontSize = 13.sp) }
+                TextButton(onClick = { s.startOcr() }) { Text("قراءة الكل", fontSize = 13.sp) }
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
@@ -486,32 +585,57 @@ private fun OcrStatusBar(s: DocSession) {
         ) {
             Text(
                 "جارٍ قراءة النص: ${s.ocrDone} / ${s.ocrTotal}",
-                fontSize = 13.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
+                fontSize = 12.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
             )
-            TextButton(onClick = { s.stopOcr() }) { Text("إيقاف", fontSize = 13.sp) }
+            TextButton(onClick = { s.stopOcr() }) { Text("إيقاف", fontSize = 12.sp) }
         }
         LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
 
-// ---------------------------------------------------------------- منطقة الصفحات
+// ---------------------------------------------------------------- التكبير والتحريك
 
-/** تكبير بإصبعين فقط. لا يتدخل في القلم ولا في التمرير بإصبع واحد. */
-private fun Modifier.pinchToZoom(onScale: (Float) -> Unit): Modifier = pointerInput(Unit) {
+/**
+ * قرصة بإصبعين للتكبير حول نقطة الأصابع، وسحب أفقي بإصبع واحد عند التكبير.
+ * لا يتدخل في القلم، ولا في التمرير الرأسي بإصبع واحد.
+ */
+private fun Modifier.zoomAndPan(
+    zoomed: () -> Boolean,
+    onPinch: (Float, Offset, Offset) -> Unit,
+    onPanX: (Float) -> Unit
+): Modifier = pointerInput(Unit) {
     awaitEachGesture {
         awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-        var prev = 0f
+        var prevDist = 0f
+        var prevCentroid = Offset.Zero
+        var mode = 0 // 0 غير محدد، 1 سحب أفقي، 2 تمرير رأسي، 3 قرصة
+        var total = Offset.Zero
         do {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val stylusDown = event.changes.any { it.pressed && it.type != PointerType.Touch }
             val touches = event.changes.filter { it.pressed && it.type == PointerType.Touch }
             if (!stylusDown && touches.size >= 2) {
+                mode = 3
+                val c = (touches[0].position + touches[1].position) / 2f
                 val d = (touches[0].position - touches[1].position).getDistance()
-                if (prev > 0f && d > 0f) onScale(d / prev)
-                prev = d
+                if (prevDist > 0f && d > 0f) onPinch(d / prevDist, prevCentroid, c)
+                prevDist = d
+                prevCentroid = c
                 touches.forEach { it.consume() }
             } else {
-                prev = 0f
+                prevDist = 0f
+                if (!stylusDown && touches.size == 1 && mode != 3 && zoomed()) {
+                    val t = touches[0]
+                    val delta = t.positionChange()
+                    total += delta
+                    if (mode == 0 && total.getDistance() > viewConfiguration.touchSlop) {
+                        mode = if (abs(total.x) > abs(total.y)) 1 else 2
+                    }
+                    if (mode == 1) {
+                        onPanX(delta.x)
+                        t.consume()
+                    }
+                }
             }
         } while (event.changes.any { it.pressed })
     }
@@ -520,43 +644,120 @@ private fun Modifier.pinchToZoom(onScale: (Float) -> Unit): Modifier = pointerIn
 @Composable
 private fun PageArea(s: DocSession, pdf: PdfDoc) {
     val density = LocalDensity.current
-    BoxWithConstraints(
-        Modifier.fillMaxSize().background(Palette.ReaderBackground)
-            .pinchToZoom { f -> s.scale = (s.scale * f).coerceIn(1f, 4f) }
-    ) {
-        val viewportW = maxWidth
-        val viewportWpx = constraints.maxWidth
-        val viewportHpx = constraints.maxHeight
+    val scope = rememberCoroutineScope()
+
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+        val vw = constraints.maxWidth.toFloat()
+        val vh = constraints.maxHeight.toFloat()
+        val pad = with(density) { 12.dp.toPx() }
+        val gap = with(density) { 14.dp.toPx() }
+
+        fun pageH(i: Int, sc: Float): Float = (vw * sc - 2f * pad).coerceAtLeast(1f) / pdf.ratio(i)
+
+        /**
+         * تكبير/تصغير بنسبة rIn مع إبقاء نقطة المحتوى التي كانت تحت prev
+         * تحت now (مركز الأصابع). الحساب مطلق (فهرس صفحة + إزاحة) فلا يتأثر بتأخر التخطيط.
+         */
+        fun applyZoom(rIn: Float, prev: Offset, now: Offset) {
+            val s0 = s.scale
+            val s1 = (s0 * rIn).coerceIn(1f, 4f)
+            val r = s1 / s0
+            val n = pdf.count
+            if (n <= 0) return
+
+            // أفقي
+            val newPan = if (s1 <= 1.001f) 0f
+            else ((s.panX + prev.x) * r - now.x).coerceIn(0f, vw * (s1 - 1f))
+
+            // رأسي: نحدد الصفحة والنسبة داخلها تحت أصابعنا قبل التكبير
+            val first = s.listState.firstVisibleItemIndex.coerceIn(0, n - 1)
+            var dFirst = 0f
+            for (k in 0 until first) dFirst += pageH(k, s0) + gap
+            val sPos = dFirst + s.listState.firstVisibleItemScrollOffset
+            val yc = sPos + prev.y - pad
+            var p = 0
+            var d = 0f
+            while (p < n - 1 && d + pageH(p, s0) + gap <= yc) {
+                d += pageH(p, s0) + gap
+                p++
+            }
+            val frac = if (yc <= 0f) 0f else ((yc - d) / pageH(p, s0)).coerceIn(0f, 1f)
+
+            // ثم نحسب موضع التمرير الجديد بحيث تبقى نفس النقطة تحت now
+            var d1 = 0f
+            for (k in 0 until p) d1 += pageH(k, s1) + gap
+            val yc1 = d1 + frac * pageH(p, s1)
+            val newPos = (yc1 - now.y + pad).coerceAtLeast(0f)
+            var q = 0
+            var dq = 0f
+            while (q < n - 1 && dq + pageH(q, s1) + gap <= newPos) {
+                dq += pageH(q, s1) + gap
+                q++
+            }
+            val off = (newPos - dq).roundToInt().coerceAtLeast(0)
+
+            s.scale = s1
+            s.panX = newPan
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { s.listState.scrollToItem(q, off) }
+        }
+
+        val zoomFn = rememberUpdatedState<(Float, Offset, Offset) -> Unit>(
+            { r, a, b -> applyZoom(r, a, b) }
+        )
+        val panFn = rememberUpdatedState<(Float) -> Unit>(
+            { dx -> s.panX = (s.panX - dx).coerceIn(0f, vw * (s.scale - 1f)) }
+        )
+        SideEffect {
+            s.zoomHook = { f ->
+                val center = Offset(vw / 2f, vh / 2f)
+                applyZoom(f, center, center)
+            }
+        }
 
         // الانتقال إلى نتيجة البحث (عند التنقل فقط، لا عند تقدّم القراءة في الخلفية)
         LaunchedEffect(s.hitNav) {
             val h = s.hits.getOrNull(s.hitIndex) ?: return@LaunchedEffect
             val top = s.ocr[h.page]?.words?.getOrNull(h.start)?.t ?: 0f
-            val pageW = viewportWpx * s.scale - with(density) { 24.dp.toPx() }
-            val off = (top * pageW - viewportHpx / 3f).toInt().coerceAtLeast(0)
+            val pageW = vw * s.scale - 2f * pad
+            val off = (top * pageW - vh / 3f).toInt().coerceAtLeast(0)
             s.listState.animateScrollToItem(h.page, off)
         }
 
         Box(
-            Modifier.fillMaxSize().horizontalScroll(s.hScroll, enabled = s.scale > 1.01f)
+            Modifier.fillMaxSize().zoomAndPan(
+                zoomed = { s.scale > 1.01f },
+                onPinch = { r, a, b -> zoomFn.value(r, a, b) },
+                onPanX = { dx -> panFn.value(dx) }
+            )
         ) {
             LazyColumn(
                 state = s.listState,
-                modifier = Modifier.width(viewportW * s.scale).fillMaxHeight(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.layout { measurable, constraints ->
+                    val w = (constraints.maxWidth * s.scale).roundToInt().coerceAtLeast(1)
+                    val placeable = measurable.measure(Constraints.fixed(w, constraints.maxHeight))
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        placeable.place(-s.panX.roundToInt(), 0)
+                    }
+                },
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 items(pdf.count, key = { it }) { i ->
                     PageView(
                         pdf = pdf,
                         index = i,
-                        ratio = pdf.ratios.getOrElse(i) { 0.707f },
+                        ref = pdf.pages.getOrNull(i),
+                        ratio = pdf.ratio(i),
                         strokes = s.annotations[i] ?: emptyList(),
                         pageImages = s.images[i] ?: emptyList(),
                         session = s
                     )
                 }
             }
+        }
+
+        if (s.drawerOpen) {
+            PagesDrawer(s, pdf, Modifier.align(Alignment.CenterStart))
         }
 
         Column(
@@ -574,7 +775,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc) {
 private fun SelectionBar(s: DocSession) {
     val context = LocalContext.current
     val sel = s.selection ?: return
-    Surface(shape = RoundedCornerShape(14.dp), color = Color.White, shadowElevation = 8.dp) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -598,7 +799,7 @@ private fun SelectionBar(s: DocSession) {
 
 @Composable
 private fun ImageBar(s: DocSession) {
-    Surface(shape = RoundedCornerShape(14.dp), color = Color.White, shadowElevation = 8.dp) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -627,73 +828,27 @@ private fun ImageBar(s: DocSession) {
     }
 }
 
-// ---------------------------------------------------------------- الرسم
+// ---------------------------------------------------------------- الصفحة
 
 private class LiveInk {
     var tool: Tool = Tool.FOUNTAIN
     var color: Color = Color.Black
     var width: Float = 0.003f
+    var hasPred: Boolean = false
+    var predX: Float = 0f
+    var predY: Float = 0f
+    var predP: Float = 0.5f
 }
 
-private class LaserPt(val x: Float, val y: Float, var t: Long)
+private class LaserPt(val x: Float, val y: Float, var t: Long, val seg: Int)
+
+private class LaserState {
+    var seg: Int = 0
+    var lastEvt: Long = 0L
+    var present: Boolean = false
+}
 
 private fun pressureOf(c: PointerInputChange): Float = if (c.pressure > 0f) c.pressure else 0.5f
-
-private fun buildPath(pts: List<Pt>, w: Float): Path {
-    val path = Path()
-    path.moveTo(pts[0].x * w, pts[0].y * w)
-    if (pts.size == 1) {
-        path.lineTo(pts[0].x * w + 0.01f, pts[0].y * w)
-        return path
-    }
-    for (i in 1 until pts.size - 1) {
-        val mx = (pts[i].x + pts[i + 1].x) / 2f * w
-        val my = (pts[i].y + pts[i + 1].y) / 2f * w
-        path.quadraticBezierTo(pts[i].x * w, pts[i].y * w, mx, my)
-    }
-    path.lineTo(pts.last().x * w, pts.last().y * w)
-    return path
-}
-
-private fun DrawScope.drawInk(pts: List<Pt>, color: Color, width: Float, tool: Tool) {
-    if (pts.isEmpty()) return
-    val w = size.width
-    when (tool) {
-        Tool.FOUNTAIN -> {
-            if (pts.size == 1) {
-                val a = pts[0]
-                drawCircle(color, width * w / 2f, Offset(a.x * w, a.y * w))
-                return
-            }
-            for (j in 1 until pts.size) {
-                val a = pts[j - 1]
-                val c = pts[j]
-                drawLine(
-                    color,
-                    Offset(a.x * w, a.y * w),
-                    Offset(c.x * w, c.y * w),
-                    strokeWidth = width * w * (0.4f + c.p),
-                    cap = StrokeCap.Round
-                )
-            }
-        }
-        Tool.HIGHLIGHTER -> drawPath(
-            buildPath(pts, w),
-            color.copy(alpha = 0.35f),
-            style = Stroke(width = width * w, cap = StrokeCap.Square, join = StrokeJoin.Round)
-        )
-        Tool.PENCIL -> drawPath(
-            buildPath(pts, w),
-            color.copy(alpha = 0.78f),
-            style = Stroke(width = width * w * 0.85f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-        else -> drawPath(
-            buildPath(pts, w),
-            color,
-            style = Stroke(width = width * w, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-    }
-}
 
 private fun nearestWord(words: List<OcrWord>, x: Float, y: Float, maxDist: Float): Int {
     var best = -1
@@ -724,27 +879,39 @@ private fun nearestWord(words: List<OcrWord>, x: Float, y: Float, maxDist: Float
 private fun PageView(
     pdf: PdfDoc,
     index: Int,
+    ref: PageRef?,
     ratio: Float,
     strokes: List<Ink>,
     pageImages: List<ImageItem>,
     session: DocSession
 ) {
     val scope = rememberCoroutineScope()
+    val view = LocalView.current
     var wPx by remember { mutableStateOf(0) }
     val renderW = if (wPx <= 0) 0 else (((wPx + 299) / 300) * 300).coerceAtMost(2400)
 
-    val bmp by produceState<Bitmap?>(pdf.cached(index, renderW), pdf, index, renderW) {
+    val lastRef = remember { arrayOfNulls<PageRef>(1) }
+    val bmp by produceState<Bitmap?>(pdf.cached(ref, renderW), pdf, ref, renderW) {
+        if (lastRef[0] != ref) {
+            value = pdf.cached(ref, renderW)
+            lastRef[0] = ref
+        }
         if (renderW > 0) {
             val b = withContext(Dispatchers.IO) {
                 ensureActive()
                 try {
-                    pdf.render(index, renderW)
+                    pdf.render(ref, renderW)
                 } catch (t: Throwable) {
                     null
                 }
             }
             if (b != null) value = b
         }
+    }
+
+    val paperColor = remember(ref) {
+        val src = ref?.src
+        if (src != null && src.startsWith("blank:")) Color(Templates.parse(src).second) else Color.White
     }
 
     // الصور المضافة
@@ -776,20 +943,19 @@ private fun PageView(
     val live = remember { LiveInk() }
     val livePts = remember { ArrayList<Pt>() }
     val laser = remember { ArrayList<LaserPt>() }
-    val lastLaserEvent = remember { LongArray(1) }
+    val lz = remember { LaserState() }
     var laserOn by remember { mutableStateOf(false) }
     var tick by remember { mutableStateOf(0) }
 
-    // تلاشي أثر الليزر
+    // تلاشي أثر الليزر وإبقاء نقطته حاضرة طالما القلم فوق الشاشة
     LaunchedEffect(laserOn) {
         if (laserOn) {
             while (true) {
                 withFrameNanos { }
                 val now = System.currentTimeMillis()
-                if (laser.isNotEmpty() && now - lastLaserEvent[0] < 1200L) {
-                    laser[laser.lastIndex].t = now
-                }
-                laser.removeAll { now - it.t > 900L }
+                if (lz.present && now - lz.lastEvt > 2500L) lz.present = false
+                if (lz.present && laser.isNotEmpty()) laser[laser.lastIndex].t = now
+                laser.removeAll { now - it.t > 260L }
                 tick++
                 if (laser.isEmpty()) {
                     laserOn = false
@@ -806,10 +972,12 @@ private fun PageView(
     val curHit = session.hits.getOrNull(session.hitIndex)
     val selImg = session.selectedImageId?.let { id -> pageImages.firstOrNull { it.id == id } }
 
+    val paper = RoundedCornerShape(4.dp)
     Box(
         Modifier.fillMaxWidth().aspectRatio(ratio)
             .onSizeChanged { wPx = it.width }
-            .background(Color.White)
+            .shadow(6.dp, paper)
+            .background(paperColor)
     ) {
         val b = bmp
         if (b != null) {
@@ -821,6 +989,14 @@ private fun PageView(
                 contentScale = ContentScale.FillBounds
             )
         }
+
+        // رقم الصفحة (صغير في الزاوية، مثل دفتر الملاحظات)
+        Text(
+            "${index + 1}",
+            fontSize = 11.sp,
+            color = Palette.TextSecondary.copy(alpha = 0.7f),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp)
+        )
 
         // طبقة الصور
         Canvas(Modifier.fillMaxSize()) {
@@ -886,6 +1062,16 @@ private fun PageView(
         // الخط الحي + الليزر + استقبال القلم والإصبع
         Canvas(
             Modifier.fillMaxSize()
+                // طلب إرسال أحداث القلم دون تجميع/تأخير لتقليل زمن الاستجابة
+                .pointerInteropFilter { ev ->
+                    if (ev.actionMasked == MotionEvent.ACTION_DOWN &&
+                        (ev.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS ||
+                            ev.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER)
+                    ) {
+                        view.requestUnbufferedDispatch(ev)
+                    }
+                    false
+                }
                 .pointerInput(Unit) {
                     // ---------- القلم ----------
                     awaitPointerEventScope {
@@ -896,19 +1082,32 @@ private fun PageView(
                                 val lc = ev.changes.firstOrNull {
                                     it.type == PointerType.Stylus || it.type == PointerType.Mouse
                                 }
-                                if (lc != null && size.width > 0 &&
-                                    (ev.type == PointerEventType.Move ||
+                                if (lc != null && size.width > 0) {
+                                    if (ev.type == PointerEventType.Exit) {
+                                        lz.present = false
+                                    } else if (ev.type == PointerEventType.Move ||
                                         ev.type == PointerEventType.Press ||
-                                        ev.type == PointerEventType.Enter)
-                                ) {
-                                    val w = size.width.toFloat()
-                                    val now = System.currentTimeMillis()
-                                    laser.add(LaserPt(lc.position.x / w, lc.position.y / w, now))
-                                    if (laser.size > 240) laser.removeAt(0)
-                                    lastLaserEvent[0] = now
-                                    laserOn = true
-                                    tick++
-                                    if (lc.pressed) lc.consume()
+                                        ev.type == PointerEventType.Enter
+                                    ) {
+                                        val w = size.width.toFloat()
+                                        val nx = lc.position.x / w
+                                        val ny = lc.position.y / w
+                                        val now = System.currentTimeMillis()
+                                        val prev = laser.lastOrNull()
+                                        // قفزة أو توقف طويل = بداية مقطع جديد، فلا يُرسم خط بين الموضعين
+                                        if (prev == null || now - lz.lastEvt > 160L ||
+                                            hypot(nx - prev.x, ny - prev.y) > 0.12f
+                                        ) {
+                                            lz.seg++
+                                        }
+                                        laser.add(LaserPt(nx, ny, now, lz.seg))
+                                        if (laser.size > 120) laser.removeAt(0)
+                                        lz.lastEvt = now
+                                        lz.present = true
+                                        laserOn = true
+                                        tick++
+                                        if (lc.pressed) lc.consume()
+                                    }
                                 }
                                 continue
                             }
@@ -932,8 +1131,10 @@ private fun PageView(
                             live.tool = toolNow
                             live.color = colorNow
                             live.width = widthNow
+                            live.hasPred = false
                             val eraseR = eraserNow
 
+                            AppController.lastInkAt = System.currentTimeMillis()
                             if (session.selection != null) session.selection = null
                             session.beginEdit()
                             livePts.clear()
@@ -945,6 +1146,14 @@ private fun PageView(
                             }
                             down.consume()
 
+                            // آخر عيّنتين (للتنبؤ بموضع القلم وتقليل التأخر الظاهر)
+                            var tA = down.uptimeMillis
+                            var xA = down.position.x
+                            var yA = down.position.y
+                            var tB = tA
+                            var xB = xA
+                            var yB = yA
+
                             try {
                                 while (true) {
                                     val e = awaitPointerEvent()
@@ -953,22 +1162,52 @@ private fun PageView(
                                         ch.consume()
                                         break
                                     }
+                                    AppController.lastInkAt = System.currentTimeMillis()
+                                    val pr = pressureOf(ch)
                                     if (erasing) {
                                         for (h in ch.historical) {
                                             session.eraseAt(index, Offset(h.position.x / w, h.position.y / w), eraseR)
                                         }
                                         session.eraseAt(index, Offset(ch.position.x / w, ch.position.y / w), eraseR)
                                     } else {
-                                        val pr = pressureOf(ch)
                                         for (h in ch.historical) {
                                             livePts.add(Pt(h.position.x / w, h.position.y / w, pr))
+                                            tA = tB
+                                            xA = xB
+                                            yA = yB
+                                            tB = h.uptimeMillis
+                                            xB = h.position.x
+                                            yB = h.position.y
                                         }
                                         livePts.add(Pt(ch.position.x / w, ch.position.y / w, pr))
+                                        tA = tB
+                                        xA = xB
+                                        yA = yB
+                                        tB = ch.uptimeMillis
+                                        xB = ch.position.x
+                                        yB = ch.position.y
+
+                                        val dt = (tB - tA).toFloat()
+                                        if (dt > 0f) {
+                                            var dx = (xB - xA) / dt * 14f
+                                            var dy = (yB - yA) / dt * 14f
+                                            val len = hypot(dx, dy)
+                                            val cap = w * 0.03f
+                                            if (len > cap) {
+                                                dx *= cap / len
+                                                dy *= cap / len
+                                            }
+                                            live.predX = (xB + dx) / w
+                                            live.predY = (yB + dy) / w
+                                            live.predP = pr
+                                            live.hasPred = true
+                                        }
                                         tick++
                                     }
                                     ch.consume()
                                 }
                             } finally {
+                                live.hasPred = false
                                 if (!erasing && livePts.isNotEmpty()) {
                                     session.addInk(index, Ink(livePts.toList(), live.color, live.width, live.tool))
                                 }
@@ -1092,39 +1331,46 @@ private fun PageView(
         ) {
             @Suppress("UNUSED_VARIABLE")
             val t = tick
-            drawInk(livePts, live.color, live.width, live.tool)
+            val extra = if (live.hasPred) Pt(live.predX, live.predY, live.predP) else null
+            drawInk(livePts, live.color, live.width, live.tool, extra)
 
-            // أثر الليزر
+            // ليزر: نقطة حمراء متوهجة، مع أثر قصير جدًا داخل المقطع الواحد فقط
             if (laser.isNotEmpty()) {
                 val w = size.width
                 val now = System.currentTimeMillis()
                 val r = laserSizeNow * w
+                val col = laserColorNow
                 for (i in 1 until laser.size) {
                     val a = laser[i - 1]
                     val c = laser[i]
-                    val alpha = (1f - (now - c.t) / 900f).coerceIn(0f, 1f)
+                    if (a.seg != c.seg) continue
+                    val alpha = (1f - (now - c.t) / 260f).coerceIn(0f, 1f)
                     drawLine(
-                        laserColorNow.copy(alpha = alpha * 0.7f),
+                        col.copy(alpha = alpha * 0.55f),
                         Offset(a.x * w, a.y * w),
                         Offset(c.x * w, c.y * w),
-                        strokeWidth = r * 1.1f,
+                        strokeWidth = r * 0.9f,
                         cap = StrokeCap.Round
                     )
                 }
                 val head = laser.last()
-                val headAlpha = (1f - (now - head.t) / 900f).coerceIn(0f, 1f)
+                val headAlpha = (1f - (now - head.t) / 300f).coerceIn(0f, 1f)
+                val center = Offset(head.x * w, head.y * w)
                 drawCircle(
-                    laserColorNow.copy(alpha = 0.25f * headAlpha), r * 2.2f,
-                    Offset(head.x * w, head.y * w)
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            col.copy(alpha = 0.60f * headAlpha),
+                            col.copy(alpha = 0.22f * headAlpha),
+                            Color.Transparent
+                        ),
+                        center = center,
+                        radius = r * 3.4f
+                    ),
+                    radius = r * 3.4f,
+                    center = center
                 )
-                drawCircle(
-                    laserColorNow.copy(alpha = headAlpha), r,
-                    Offset(head.x * w, head.y * w)
-                )
-                drawCircle(
-                    Color.White.copy(alpha = 0.8f * headAlpha), r * 0.35f,
-                    Offset(head.x * w, head.y * w)
-                )
+                drawCircle(col.copy(alpha = headAlpha), r * 0.9f, center)
+                drawCircle(Color.White.copy(alpha = 0.92f * headAlpha), r * 0.38f, center)
             }
         }
 

@@ -394,6 +394,14 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 TBtn(onClick = {
                     scope.launch { s.listState.animateScrollToItem((cur + 1).coerceAtMost(count - 1)) }
                 }) { ChevronGlyph(Palette.TextPrimary, up = false) }
+                // علامة مرجعية للصفحة الحالية
+                val marked = cur in s.bookmarks
+                TBtn(selected = marked, onClick = { s.toggleBookmark(cur) }) {
+                    PhIcon(
+                        if (marked) R.drawable.ph_bookmark_fill else R.drawable.ph_bookmark,
+                        if (marked) Palette.GoldDeep else Palette.TextSecondary
+                    )
+                }
 
                 ToolbarSep()
 
@@ -1142,6 +1150,19 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
 private fun SelectionBar(s: DocSession) {
     val context = LocalContext.current
     val sel = s.selection ?: return
+    var cardBack by remember { mutableStateOf<String?>(null) }
+    cardBack?.let { back ->
+        AddCardDialog(
+            initialFront = "",
+            initialBack = back,
+            onSave = { f, b ->
+                s.addCustomCard(f, b)
+                cardBack = null
+                s.selection = null
+            },
+            onDismiss = { cardBack = null }
+        )
+    }
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -1158,6 +1179,10 @@ private fun SelectionBar(s: DocSession) {
             TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
                 Text("إلى الملخصات", color = Palette.GoldDeep)
             }
+            TextButton(onClick = {
+                val text = s.selectionText()
+                if (text.isNotEmpty()) cardBack = TextTidy.clean(text)
+            }) { Text("اجعله بطاقة") }
             TextButton(onClick = {
                 val n = s.ocr[sel.page]?.words?.size ?: 0
                 if (n > 0) s.selection = TextSelection(sel.page, 0, n - 1)
@@ -1445,6 +1470,14 @@ private fun PageView(
                     }
                 }
             }
+        }
+
+        // شريط علامة ذهبي على الصفحة المعلَّمة
+        if (index in session.bookmarks) {
+            PhIcon(
+                R.drawable.ph_bookmark_fill, Palette.Gold, 30.dp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(end = 18.dp)
+            )
         }
 
         // رقم الصفحة (صغير في الزاوية، مثل دفتر الملاحظات)

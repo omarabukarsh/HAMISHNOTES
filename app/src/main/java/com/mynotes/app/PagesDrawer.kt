@@ -27,6 +27,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,17 +69,32 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
             color = Palette.DrawerBg,
             shadowElevation = 14.dp
         ) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(cols),
-                state = gridState,
-                contentPadding = PaddingValues(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(pdf.count, key = { it }) { i ->
-                    PageThumb(s, pdf, i, i == cur) {
-                        scope.launch { s.listState.scrollToItem(i) }
+            Column(Modifier.fillMaxSize()) {
+                // تبديل بين كل الصفحات والصفحات المعلَّمة فقط
+                var onlyMarks by remember { mutableStateOf(false) }
+                if (s.bookmarks.isNotEmpty() || onlyMarks) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ChoiceChip("الكل", !onlyMarks) { onlyMarks = false }
+                        ChoiceChip("العلامات ${s.bookmarks.size}", onlyMarks) { onlyMarks = true }
+                    }
+                }
+                val shown = if (onlyMarks) s.bookmarks.filter { it < pdf.count }.sorted() else (0 until pdf.count).toList()
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(cols),
+                    state = gridState,
+                    contentPadding = PaddingValues(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(shown.size, key = { shown[it] }) { k ->
+                        val i = shown[k]
+                        PageThumb(s, pdf, i, i == cur) {
+                            scope.launch { s.listState.scrollToItem(i) }
+                        }
                     }
                 }
             }
@@ -147,12 +164,14 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
                 strokes.forEach { drawInk(it.pts, it.color, it.width, it.tool) }
             }
         }
-        Text(
-            "${i + 1}",
-            fontSize = 12.sp,
-            fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-            color = if (current) Palette.GoldDeep else Palette.TextSecondary,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (i in s.bookmarks) PhIcon(R.drawable.ph_bookmark_fill, Palette.Gold, 13.dp)
+            Text(
+                "${i + 1}",
+                fontSize = 12.sp,
+                fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
+                color = if (current) Palette.GoldDeep else Palette.TextSecondary
+            )
+        }
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -193,7 +194,11 @@ object Flashcards {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
-    var deck by remember { mutableStateOf(cards) }
+    var shuffled by remember { mutableStateOf<List<String>?>(null) }
+    var hardOnly by remember { mutableStateOf(false) }
+    // البطاقات المعروضة: كل البطاقات أو المميزة بنجمة فقط، بترتيب الخلط إن وُجد
+    val base = if (hardOnly) cards.filter { it.id in s.starred } else cards
+    val deck = shuffled?.let { order -> order.mapNotNull { id -> base.firstOrNull { it.id == id } } + base.filter { it.id !in order } } ?: base
     val pager = rememberPagerState(pageCount = { deck.size })
     val scope = rememberCoroutineScope()
     // البطاقات المقلوبة حاليًا (حسب المعرّف)
@@ -214,9 +219,14 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                         )
                         Text(s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1)
                     }
+                    ChoiceChip("الصعبة فقط (${cards.count { it.id in s.starred }})", hardOnly) {
+                        hardOnly = !hardOnly
+                        flipped = emptySet()
+                        scope.launch { pager.scrollToPage(0) }
+                    }
                     if (deck.size > 1) {
                         TextButton(onClick = {
-                            deck = deck.shuffled()
+                            shuffled = deck.map { it.id }.shuffled()
                             flipped = emptySet()
                             scope.launch { pager.scrollToPage(0) }
                         }) { Text("خلط", color = Palette.GoldDeep, fontWeight = FontWeight.Bold) }
@@ -227,8 +237,9 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
 
                 if (deck.isEmpty()) {
                     EmptyCards(
-                        "لا توجد بطاقات بعد. البطاقات تُصنع من العناوين وما تحتها، ومن صفوف الجداول، " +
-                            "ومن النص المظلل مرتين في الملخص."
+                        if (hardOnly) "لا توجد بطاقات مميزة بنجمة. اضغط النجمة على أي بطاقة صعبة لتظهر هنا."
+                        else "لا توجد بطاقات بعد. البطاقات تُصنع من العناوين وما تحتها، ومن صفوف الجداول، " +
+                            "ومن النص المظلل مرتين، أو حدد نصًا واختر «اجعله بطاقة»."
                     )
                 } else {
                     HorizontalPager(
@@ -238,8 +249,20 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                     ) { i ->
                         val card = deck[i]
                         val isFlipped = card.id in flipped
-                        FlipCard(card, isFlipped) {
-                            flipped = if (isFlipped) flipped - card.id else flipped + card.id
+                        Box {
+                            FlipCard(card, isFlipped) {
+                                flipped = if (isFlipped) flipped - card.id else flipped + card.id
+                            }
+                            Row(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                                if (card.id.startsWith("u:")) {
+                                    IconButton(onClick = { s.deleteCustomCard(card.id) }) {
+                                        PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 20.dp, "حذف البطاقة")
+                                    }
+                                }
+                                IconButton(onClick = { s.toggleStar(card.id) }) {
+                                    StarGlyph(card.id in s.starred, Palette.Gold, Modifier.size(24.dp))
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(14.dp))
@@ -319,4 +342,31 @@ private fun EmptyCards(text: String) {
     Box(Modifier.fillMaxWidth().heightIn(min = 200.dp), contentAlignment = Alignment.Center) {
         Text(text, fontSize = 15.sp, lineHeight = 24.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center)
     }
+}
+
+/** إضافة بطاقة يدويًا: الظهر هو النص المحدد، والوجه يكتبه المستخدم. */
+@Composable
+fun AddCardDialog(initialFront: String, initialBack: String, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var front by remember { mutableStateOf(initialFront) }
+    var back by remember { mutableStateOf(initialBack) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("بطاقة جديدة") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = front, onValueChange = { front = it },
+                    label = { Text("الوجه: عنوان أو مصطلح") }, modifier = Modifier.fillMaxWidth()
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = back, onValueChange = { back = it },
+                    label = { Text("الظهر: الشرح") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = front.isNotBlank() && back.isNotBlank(), onClick = { onSave(front, back) }) { Text("إضافة") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
 }

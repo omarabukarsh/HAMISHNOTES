@@ -79,6 +79,40 @@ class DocSession(entry: DocEntry) {
     /** تعديلات المستخدم على الملخص (عنوان/نص، جداول، ترتيب) فوق الترتيب التلقائي. */
     var summaryEdits by mutableStateOf(SummaryEdits())
 
+    // ---- بطاقات المستخدم، والنجوم، والعلامات المرجعية ----
+    var customCards by mutableStateOf<List<Card>>(emptyList())
+    var starred by mutableStateOf<Set<String>>(emptySet())
+    var bookmarks by mutableStateOf<Set<Int>>(emptySet())
+
+    /** نص يُبحث عنه فور فتح المستند (من البحث في كل المكتبة). */
+    var pendingQuery: String? = null
+
+    fun addCustomCard(front: String, back: String) {
+        val f = front.trim()
+        val b = back.trim()
+        if (f.isEmpty() || b.isEmpty()) return
+        customCards = customCards + Card("u:" + UUID.randomUUID().toString(), f, b)
+        persist()
+        AppController.messages.tryEmit("أُضيفت البطاقة")
+    }
+
+    fun deleteCustomCard(cardId: String) {
+        customCards = customCards.filter { it.id != cardId }
+        starred = starred - cardId
+        persist()
+    }
+
+    fun toggleStar(cardId: String) {
+        starred = if (cardId in starred) starred - cardId else starred + cardId
+        persist()
+    }
+
+    fun toggleBookmark(page: Int) {
+        bookmarks = if (page in bookmarks) bookmarks - page else bookmarks + page
+        persist()
+        AppController.messages.tryEmit(if (page in bookmarks) "أُضيفت علامة على الصفحة ${page + 1}" else "أُزيلت العلامة")
+    }
+
     /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
     var jumpHook: ((TextMark) -> Unit)? = null
     var fitHook: (() -> Unit)? = null
@@ -134,6 +168,9 @@ class DocSession(entry: DocEntry) {
             marks = loaded.second.marks
             texts = loaded.second.texts
             summaryEdits = loaded.second.edits
+            customCards = loaded.second.cards
+            starred = loaded.second.starred
+            bookmarks = loaded.second.bookmarks
             ocr.putAll(loaded.third)
             status = SessionStatus.Ready
         } catch (e: FileNotFoundException) {
@@ -301,6 +338,7 @@ class DocSession(entry: DocEntry) {
             movedTexts[nk] = list.map { it.copy(page = nk) }
         }
         texts = movedTexts
+        bookmarks = bookmarks.map { shift(it) }.toSet()
         val shiftedOcr = HashMap<Int, OcrPage>()
         ocr.forEach { (k, v) -> shiftedOcr[shift(k)] = v }
         ocr.clear()
@@ -315,7 +353,7 @@ class DocSession(entry: DocEntry) {
         if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
 
         val pagesSnap = doc.pages
-        val data = DocData(annotations, images, marks, texts, summaryEdits)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks)
         val ocrSnap = ocr.toMap()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
@@ -841,8 +879,8 @@ class DocSession(entry: DocEntry) {
         hitIndex = 0
     }
 
-    private fun persist() {
-        val data = DocData(annotations, images, marks, texts, summaryEdits)
+    fun persist() {
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks)
         AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 

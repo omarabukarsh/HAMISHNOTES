@@ -81,7 +81,9 @@ fun SummaryDrawer(
     var editingTable by remember { mutableStateOf<STable?>(null) }
     var studying by remember { mutableStateOf(false) }
     // البطاقات تُصنع دائمًا من الملخص المرتب (مع تعديلات المستخدم)
-    val cards = remember(all, edits) { Flashcards.generate(Summary.view(all, true, edits)) }
+    val custom = s.customCards
+    val cards = remember(all, edits, custom) { custom + Flashcards.generate(Summary.view(all, true, edits)) }
+    var cardFrom by remember { mutableStateOf<SBlock?>(null) }
 
     Surface(
         modifier.fillMaxHeight().width(420.dp),
@@ -104,7 +106,7 @@ fun SummaryDrawer(
                         s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
                     )
                 }
-                if (cards.isNotEmpty()) {
+                run {
                     Row(
                         Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, Palette.Gold, RoundedCornerShape(16.dp))
                             .clickable { studying = true }.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -259,6 +261,7 @@ fun SummaryDrawer(
                                         selected = emptyList()
                                     },
                                     onEditTable = { editingTable = it },
+                                    onMakeCard = { cardFrom = it },
                                     onJump = onJump,
                                     onEdit = { editing = it }
                                 )
@@ -277,6 +280,17 @@ fun SummaryDrawer(
     }
 
     if (studying) StudyDialog(s, cards, onDismiss = { studying = false })
+
+    val cf = cardFrom
+    if (cf != null) {
+        val body = Summary.plainText("", listOf(cf)).trim()
+        AddCardDialog(
+            initialFront = if (cf is SHeading) cf.text else "",
+            initialBack = if (cf is SHeading) "" else body,
+            onSave = { f, bk -> s.addCustomCard(f, bk); cardFrom = null },
+            onDismiss = { cardFrom = null }
+        )
+    }
 
     val et = editingTable
     if (et != null) {
@@ -333,6 +347,7 @@ private fun BlockView(
     onStartTable: () -> Unit,
     onAddToTable: () -> Unit,
     onEditTable: (STable) -> Unit,
+    onMakeCard: (SBlock) -> Unit,
     onJump: (TextMark) -> Unit,
     onEdit: (TextMark) -> Unit
 ) {
@@ -402,6 +417,7 @@ private fun BlockView(
                 MenuRow("انتقال إلى الموضع", R.drawable.ph_search) { menu = false; onJump(first) }
                 MenuRow("تعديل النص", R.drawable.ph_note) { menu = false; onEdit(first) }
             }
+            MenuRow("اجعله بطاقة", R.drawable.ph_cards) { menu = false; onMakeCard(b) }
             MenuRow("نسخ", R.drawable.ph_copy) {
                 menu = false
                 copy(context, Summary.plainText("", listOf(b)).trim())

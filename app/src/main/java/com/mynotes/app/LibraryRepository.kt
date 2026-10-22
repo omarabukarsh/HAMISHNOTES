@@ -27,7 +27,13 @@ class DocData(
     val images: Map<Int, List<ImageItem>>,
     val marks: Map<Int, List<TextMark>> = emptyMap(),
     val texts: Map<Int, List<TextBox>> = emptyMap(),
-    val edits: SummaryEdits = SummaryEdits()
+    val edits: SummaryEdits = SummaryEdits(),
+    /** بطاقات صنعها المستخدم بنفسه. */
+    val cards: List<Card> = emptyList(),
+    /** معرّفات البطاقات المميزة بنجمة (صعبة). */
+    val starred: Set<String> = emptySet(),
+    /** الصفحات المعلَّمة (أرقام من 0). */
+    val bookmarks: Set<Int> = emptySet()
 )
 
 /**
@@ -489,7 +495,19 @@ class LibraryRepository(context: Context) {
                 }
                 all.groupBy { it.page }.forEach { (p, l) -> texts[p] = l }
             }
-            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")))
+            val cards = root.optJSONArray("cards")?.let { a ->
+                (0 until a.length()).mapNotNull { i ->
+                    try {
+                        val o = a.getJSONObject(i)
+                        Card(o.getString("id"), o.getString("f"), o.getString("b"))
+                    } catch (e: Throwable) {
+                        null
+                    }
+                }
+            } ?: emptyList()
+            val starred = root.optJSONArray("starred")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+            val bookmarks = root.optJSONArray("bookmarks")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() } ?: emptySet()
+            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks)
         } catch (e: Throwable) {
             try {
                 f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
@@ -588,7 +606,13 @@ class LibraryRepository(context: Context) {
                 atomicWrite(
                     File(annDir, "$id.json"),
                     JSONObject().put("version", 3).put("pages", pages).put("images", imgs)
-                        .put("marks", marks).put("texts", texts).put("summary", editsJson(data.edits)).toString()
+                        .put("marks", marks).put("texts", texts).put("summary", editsJson(data.edits))
+                        .put("cards", JSONArray().apply {
+                            data.cards.forEach { c -> put(JSONObject().put("id", c.id).put("f", c.front).put("b", c.back)) }
+                        })
+                        .put("starred", JSONArray().apply { data.starred.forEach { put(it) } })
+                        .put("bookmarks", JSONArray().apply { data.bookmarks.sorted().forEach { put(it) } })
+                        .toString()
                 )
             } catch (e: Throwable) {
             }

@@ -133,6 +133,10 @@ import kotlin.math.sin
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
+/** «الخط المستمر» لليزر: يبقى ظاهرًا بعد آخر رسم ثم يتلاشى خلال مدة التلاشي. */
+private const val LASER_LINE_HOLD = 1500L
+private const val LASER_LINE_FADE = 450L
+
 /** أدنى مقياس للتصغير (25%). غيّر الرقم لتقليل أو زيادة التصغير. */
 private const val MIN_SCALE = 0.25f
 
@@ -655,12 +659,60 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                 )
             }
         }
+        if (t == Tool.LASER) {
+            Spacer(Modifier.height(12.dp))
+            PanelLabel("نمط الليزر")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    LaserMode.DOT to "نقطة",
+                    LaserMode.LINE to "خط مستمر"
+                ).forEach { (m, label) ->
+                    val sel = c.laserMode == m
+                    val shape = RoundedCornerShape(12.dp)
+                    Column(
+                        Modifier.weight(1f).clip(shape)
+                            .background(if (sel) Palette.Navy else Palette.Background)
+                            .clickable { c.updateLaserMode(m) }
+                            .padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        LaserModeSample(m, if (sel) Color.White else c.colorFor(Tool.LASER))
+                        Spacer(Modifier.height(4.dp))
+                        Text(label, fontSize = 12.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (c.laserMode == LaserMode.DOT) "نقطة متوهجة تتبع القلم، مع أثر قصير يختفي فورًا."
+                else "اضغط بالقلم وارسم: يبقى الخط متوهجًا ثانية ونصف ثم يختفي. بدون لمس تظهر النقطة فقط.",
+                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+            )
+        }
         if (t == Tool.ERASER) {
             Spacer(Modifier.height(8.dp))
             Text(
                 "تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.",
                 fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
             )
+        }
+    }
+}
+
+@Composable
+private fun LaserModeSample(m: LaserMode, col: Color) {
+    Canvas(Modifier.width(56.dp).height(22.dp)) {
+        val y = size.height / 2f
+        if (m == LaserMode.DOT) {
+            drawCircle(col.copy(alpha = 0.25f), size.height * 0.5f, Offset(size.width / 2f, y))
+            drawCircle(col, size.height * 0.22f, Offset(size.width / 2f, y))
+        } else {
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(4f, y + 4f)
+                cubicTo(size.width * 0.3f, y - 10f, size.width * 0.6f, y + 12f, size.width - 4f, y - 4f)
+            }
+            drawPath(p, col.copy(alpha = 0.25f), style = Stroke(width = 9f, cap = StrokeCap.Round))
+            drawPath(p, col, style = Stroke(width = 3.5f, cap = StrokeCap.Round))
         }
     }
 }
@@ -1200,9 +1252,11 @@ private class LiveInk {
     var predP: Float = 0.5f
 }
 
-private class LaserPt(val x: Float, val y: Float, var t: Long, val seg: Int)
+/** ink = نقطة من «الخط المستمر» (القلم ملامس للشاشة في نمط الخط). */
+private class LaserPt(val x: Float, val y: Float, var t: Long, val seg: Int, val ink: Boolean = false)
 
 private class LaserState {
+    var lastInkAt: Long = 0L
     var seg: Int = 0
     var lastEvt: Long = 0L
     var present: Boolean = false
@@ -1298,6 +1352,7 @@ private fun PageView(
     val eraserNow by rememberUpdatedState(Sizes.width(Tool.ERASER, AppController.sizeFor(Tool.ERASER)))
     val laserColorNow by rememberUpdatedState(AppController.colorFor(Tool.LASER))
     val laserSizeNow by rememberUpdatedState(Sizes.width(Tool.LASER, AppController.sizeFor(Tool.LASER)))
+    val laserModeNow by rememberUpdatedState(AppController.laserMode)
     val imagesNow by rememberUpdatedState(pageImages)
 
     val live = remember { LiveInk() }
@@ -1315,7 +1370,10 @@ private fun PageView(
                 val now = System.currentTimeMillis()
                 if (lz.present && now - lz.lastEvt > 2500L) lz.present = false
                 if (lz.present && laser.isNotEmpty()) laser[laser.lastIndex].t = now
-                laser.removeAll { now - it.t > 260L }
+                // نقاط «الخط المستمر» تبقى 1.5 ثانية بعد آخر رسم ثم تتلاشى؛ أثر النقطة يختفي سريعًا
+                laser.removeAll { p ->
+                    if (p.ink) now - lz.lastInkAt > LASER_LINE_HOLD + LASER_LINE_FADE else now - p.t > 260L
+                }
                 tick++
                 if (laser.isEmpty()) {
                     laserOn = false
@@ -1530,14 +1588,20 @@ private fun PageView(
                                         val ny = lc.position.y / w
                                         val now = System.currentTimeMillis()
                                         val prev = laser.lastOrNull()
-                                        // قفزة أو توقف طويل = بداية مقطع جديد، فلا يُرسم خط بين الموضعين
-                                        if (prev == null || now - lz.lastEvt > 160L ||
-                                            hypot(nx - prev.x, ny - prev.y) > 0.12f
+                                        val ink = laserModeNow == LaserMode.LINE && lc.pressed
+                                        // قفزة أو توقف طويل أو تغيّر النوع = بداية مقطع جديد
+                                        if (prev == null || prev.ink != ink || now - lz.lastEvt > 160L ||
+                                            (!ink && hypot(nx - prev.x, ny - prev.y) > 0.12f)
                                         ) {
                                             lz.seg++
                                         }
-                                        laser.add(LaserPt(nx, ny, now, lz.seg))
-                                        if (laser.size > 120) laser.removeAt(0)
+                                        laser.add(LaserPt(nx, ny, now, lz.seg, ink))
+                                        if (ink) lz.lastInkAt = now
+                                        if (laser.size > 3000) laser.removeAt(0)
+                                        if (!ink && laser.count { !it.ink } > 120) {
+                                            val k = laser.indexOfFirst { !it.ink }
+                                            if (k >= 0) laser.removeAt(k)
+                                        }
                                         lz.lastEvt = now
                                         lz.present = true
                                         laserOn = true
@@ -1842,10 +1906,33 @@ private fun PageView(
                 val now = System.currentTimeMillis()
                 val r = laserSizeNow * w
                 val col = laserColorNow
+                // نمط «الخط المستمر»: خط متوهج يبقى قليلًا ثم يتلاشى
+                val inkAge = now - lz.lastInkAt
+                val inkAlpha = if (inkAge <= LASER_LINE_HOLD) 1f
+                else (1f - (inkAge - LASER_LINE_HOLD) / LASER_LINE_FADE.toFloat()).coerceIn(0f, 1f)
+                for (pass in 0..2) {
+                    val (wMul, aMul, pc) = when (pass) {
+                        0 -> Triple(2.8f, 0.22f, col)
+                        1 -> Triple(1.1f, 0.95f, col)
+                        else -> Triple(0.35f, 0.85f, Color.White)
+                    }
+                    for (i in 1 until laser.size) {
+                        val a = laser[i - 1]
+                        val c = laser[i]
+                        if (!c.ink || !a.ink || a.seg != c.seg) continue
+                        drawLine(
+                            pc.copy(alpha = inkAlpha * aMul),
+                            Offset(a.x * w, a.y * w),
+                            Offset(c.x * w, c.y * w),
+                            strokeWidth = r * wMul,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
                 for (i in 1 until laser.size) {
                     val a = laser[i - 1]
                     val c = laser[i]
-                    if (a.seg != c.seg) continue
+                    if (a.seg != c.seg || c.ink) continue
                     val alpha = (1f - (now - c.t) / 260f).coerceIn(0f, 1f)
                     drawLine(
                         col.copy(alpha = alpha * 0.55f),

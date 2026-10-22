@@ -266,7 +266,7 @@ private fun pagesCount(n: Int): String = when {
 private fun Monogram(size: Int, onDark: Boolean) {
     Box(
         Modifier.size(size.dp).clip(CircleShape)
-            .background(if (onDark) Palette.InkRaised else Palette.Ink)
+            .background(if (onDark && !ThemeState.light) Palette.InkRaised else Palette.Navy)
             .border(1.5.dp, Palette.Gold, CircleShape),
         contentAlignment = Alignment.Center
     ) {
@@ -283,7 +283,7 @@ private fun Spine() {
     val favCount = c.library.count { it.favorite }
     val pages = c.library.sumOf { it.pageCount }
     Column(
-        Modifier.width(248.dp).fillMaxHeight().background(Palette.Ink)
+        Modifier.width(248.dp).fillMaxHeight().background(Palette.Spine)
             .padding(horizontal = 16.dp, vertical = 22.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -316,6 +316,8 @@ private fun Spine() {
         Spacer(Modifier.height(14.dp))
         Text(docsCount(c.library.size), color = Palette.OnInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Text(pagesCount(pages), color = Palette.OnInkMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(14.dp))
+        ThemeSwitch()
     }
 }
 
@@ -349,6 +351,38 @@ private fun SpineItem(label: String, icon: Int, count: Int?, selected: Boolean, 
                 "$count", fontSize = 12.sp, color = Palette.OnInkMuted,
                 modifier = Modifier.padding(end = 12.dp)
             )
+        }
+    }
+}
+
+/** اختيار الثيم: كحلي فاخر أو فاتح كلاسيكي. */
+@Composable
+private fun ThemeSwitch() {
+    val c = AppController
+    Text("المظهر", color = Palette.OnInkMuted, fontSize = 12.sp)
+    Spacer(Modifier.height(6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            AppTheme.NAVY to "كحلي",
+            AppTheme.LIGHT to "فاتح"
+        ).forEach { (t, label) ->
+            val sel = ThemeState.theme == t
+            val shape = RoundedCornerShape(10.dp)
+            Row(
+                Modifier.weight(1f).clip(shape)
+                    .border(if (sel) 1.5.dp else 1.dp, if (sel) Palette.Gold else Palette.InkLine, shape)
+                    .clickable { c.setTheme(t) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(14.dp).clip(CircleShape)
+                        .background(if (t == AppTheme.NAVY) Color(0xFF13233B) else Color(0xFFE4E9F0))
+                        .border(1.dp, Palette.Gold, CircleShape)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(label, fontSize = 13.sp, color = Palette.OnInk)
+            }
         }
     }
 }
@@ -404,6 +438,11 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                     "MyNotes", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = {
+                    c.setTheme(if (ThemeState.light) AppTheme.NAVY else AppTheme.LIGHT)
+                }) {
+                    PhIcon(R.drawable.ph_palette, Palette.TextSecondary, 21.dp, "تبديل المظهر")
+                }
                 NewNoteButton(onNewNote)
                 Spacer(Modifier.width(8.dp))
                 ImportButton(onImport)
@@ -613,7 +652,7 @@ private fun DocCard(
                 if (entry.favorite) {
                     Box(
                         Modifier.align(Alignment.TopEnd).padding(6.dp).size(26.dp)
-                            .clip(CircleShape).background(Palette.Ink.copy(alpha = 0.82f))
+                            .clip(CircleShape).background(Color(0xD113233B))
                             .clickable(onClick = onFavorite),
                         contentAlignment = Alignment.Center
                     ) { StarGlyph(filled = true, tint = Palette.Gold, modifier = Modifier.size(15.dp)) }

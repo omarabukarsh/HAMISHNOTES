@@ -128,6 +128,19 @@ object AppController {
         if (t.isPen()) lastPen = t
     }
 
+    fun setTheme(t: AppTheme) {
+        ThemeState.theme = t
+        prefs.edit().putString("theme", t.name).apply()
+    }
+
+    var laserMode by mutableStateOf(LaserMode.DOT)
+        private set
+
+    fun updateLaserMode(m: LaserMode) {
+        laserMode = m
+        prefs.edit().putString("laser_mode", m.name).apply()
+    }
+
     /** يختار الأداة، ويذكّر مرة واحدة فقط بأن النقرة الثانية تفتح إعداداتها. */
     fun selectToolWithHint(t: Tool) {
         selectTool(t)
@@ -168,6 +181,16 @@ object AppController {
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
         highlightSnap = prefs.getBoolean("hl_snap", false)
+        ThemeState.theme = try {
+            AppTheme.valueOf(prefs.getString("theme", "NAVY") ?: "NAVY")
+        } catch (e: Throwable) {
+            AppTheme.NAVY
+        }
+        laserMode = try {
+            LaserMode.valueOf(prefs.getString("laser_mode", "DOT") ?: "DOT")
+        } catch (e: Throwable) {
+            LaserMode.DOT
+        }
         summaryTidy = prefs.getBoolean("sum_tidy", true)
 
         scope.launch {

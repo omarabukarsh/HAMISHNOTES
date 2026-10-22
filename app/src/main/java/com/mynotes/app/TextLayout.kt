@@ -27,27 +27,42 @@ object TextLayout {
         return hs[hs.size / 2]
     }
 
-    /** يجمع الكلمات في صفوف مرئية (من الأعلى للأسفل)، وكل صف مرتب أفقيًا. */
+    private fun median(v: List<Float>): Float = v.sorted()[v.size / 2]
+
+    /**
+     * يجمع الكلمات في صفوف مرئية (من الأعلى للأسفل). الأساس هو أسطر القراءة الضوئية نفسها
+     * (فلا تخرج كلمة ذات صندوق أطول مثل «β-lactams» من سطرها)، ثم تُجمع الأسطر المتقابلة
+     * أفقيًا (خلايا صف الجدول) في صف واحد مرتب من اليسار لليمين.
+     */
     fun visualRows(words: List<OcrWord>, idx: Collection<Int>): List<List<Int>> {
-        val sorted = idx.filter { it in words.indices }.sortedBy { cy(words[it]) }
-        val rows = ArrayList<MutableList<Int>>()
-        val centers = ArrayList<Float>()
-        val heights = ArrayList<Float>()
-        for (i in sorted) {
-            val w = words[i]
-            val last = rows.lastIndex
-            if (last >= 0 && abs(cy(w) - centers[last]) < 0.5f * min(h(w), heights[last])) {
-                rows[last].add(i)
-                val n = rows[last].size
-                centers[last] = (centers[last] * (n - 1) + cy(w)) / n
-                heights[last] = max(heights[last], h(w))
-            } else {
-                rows.add(mutableListOf(i))
-                centers.add(cy(w))
-                heights.add(h(w))
+        val valid = idx.filter { it in words.indices }
+        if (valid.isEmpty()) return emptyList()
+        class Ln(val ids: List<Int>, val t: Float, val b: Float, val l: Float)
+        val lines = valid.groupBy { words[it].line }.values.map { g ->
+            val ids = g.sortedBy { words[it].l }
+            Ln(
+                ids,
+                median(ids.map { words[it].t }),
+                median(ids.map { words[it].b }),
+                ids.minOf { words[it].l }
+            )
+        }.sortedBy { (it.t + it.b) / 2f }
+
+        val rows = ArrayList<MutableList<Ln>>()
+        for (ln in lines) {
+            val row = rows.lastOrNull()
+            if (row != null) {
+                val first = row[0]
+                val ov = min(ln.b, first.b) - max(ln.t, first.t)
+                val minH = min(ln.b - ln.t, first.b - first.t).coerceAtLeast(1e-6f)
+                if (ov >= 0.5f * minH) {
+                    row.add(ln)
+                    continue
+                }
             }
+            rows.add(mutableListOf(ln))
         }
-        return rows.map { r -> r.sortedBy { words[it].l } }
+        return rows.map { r -> r.sortedBy { it.l }.flatMap { it.ids } }
     }
 
     /**
@@ -106,17 +121,19 @@ object TextLayout {
     private class Row(val words: List<OcrWord>) {
         val l = words.minOf { it.l }
         val r = words.maxOf { it.r }
-        val t = words.minOf { it.t }
-        val b = words.maxOf { it.b }
-        val height: Float = words.map { it.b - it.t }.sorted()[words.size / 2]
+        val t = median(words.map { it.t })
+        val b = median(words.map { it.b })
+        val height: Float = median(words.map { it.b - it.t })
         /** خلايا الصف: فراغ أفقي أكبر من 1.4 ضعف ارتفاع السطر يبدأ خلية جديدة. */
         val cells: List<String> = run {
             val out = ArrayList<String>()
             val sb = StringBuilder()
             for ((k, w) in words.withIndex()) {
                 if (k > 0) {
-                    val gap = w.l - words[k - 1].r
-                    if (gap > 1.4f * height) {
+                    val prev = words[k - 1]
+                    val gap = w.l - prev.r
+                    val lineChanged = w.line != prev.line
+                    if (gap > 1.4f * height || (lineChanged && gap > 0.6f * height)) {
                         out.add(sb.toString())
                         sb.setLength(0)
                     } else {

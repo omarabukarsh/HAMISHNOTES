@@ -437,6 +437,45 @@ class DocSession(entry: DocEntry) {
                 next = existing.filter { it.id !in ids } + merged
             }
         }
+        // 3) تمييز ملاصق لتمييز سابق (جزء ثم الجزء الذي يليه): يُدمجان في تمييز واحد يُعاد بناء نصه
+        //    من كلمات الصفحة بترتيبها الصحيح، بدل أن يظهرا مقطعين معكوسين في الملخص
+        if (next == null) {
+            fun touches(old: TextMark): Boolean = old.rects.any { o ->
+                val h = (o.b - o.t).coerceAtLeast(1e-6f)
+                val ex = 1.2f * h
+                val ey = 0.9f * h
+                rects.any { n -> n.l < o.r + ex && n.r > o.l - ex && n.t < o.b + ey && n.b > o.t - ey }
+            }
+            val adjacent = existing.filter { touches(it) }
+            if (adjacent.isNotEmpty()) {
+                val union = HashSet<Int>(idx)
+                for (old in adjacent) {
+                    for (i in words.indices) {
+                        val w = words[i]
+                        val cx = (w.l + w.r) / 2f
+                        val cyw = (w.t + w.b) / 2f
+                        if (old.rects.any { r -> cx >= r.l && cx <= r.r && cyw >= r.t && cyw <= r.b }) union.add(i)
+                    }
+                }
+                val first = adjacent.minByOrNull { it.createdAt }!!
+                val merged = TextMark(
+                    id = UUID.randomUUID().toString(),
+                    page = page,
+                    rects = TextLayout.rectsFor(words, union),
+                    color = first.color,
+                    text = TextLayout.buildText(words, union).trim(),
+                    createdAt = first.createdAt,
+                    // ما كان مهمًا قبل الدمج يبقى مهمًا كجزء بارز داخل التمييز الجديد
+                    emphasis = adjacent.flatMap {
+                        if (it.level >= 2) listOf(TextTidy.clean(it.text.replace("# ", "").replace(" | ", " ")))
+                        else it.emphasis
+                    }.distinct(),
+                    strongRects = adjacent.flatMap { if (it.level >= 2) it.rects else it.strongRects }.distinct()
+                )
+                val ids = adjacent.map { it.id }.toSet()
+                next = existing.filter { it.id !in ids } + merged
+            }
+        }
         val list = next ?: (existing + TextMark(
             id = UUID.randomUUID().toString(),
             page = page,

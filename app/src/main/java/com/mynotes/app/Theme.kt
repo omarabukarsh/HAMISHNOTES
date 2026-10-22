@@ -6,6 +6,9 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -15,16 +18,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
+ * الثيم المختار. NAVY = كحلي فاخر (افتراضي)، LIGHT = فاتح كلاسيكي بأشرطة رمادية فاتحة.
+ * الأيقونات والخطوط والذهبي نفسها في الثيمين؛ تتغير ألوان الأشرطة والخلفيات فقط.
+ */
+enum class AppTheme { NAVY, LIGHT }
+
+object ThemeState {
+    var theme by mutableStateOf(AppTheme.NAVY)
+    val light: Boolean get() = theme == AppTheme.LIGHT
+}
+
+/**
  * هوية MyNotes: مجلد دراسة فاخر. كحلي داكن مثل جلد الكعب، ذهبي كختم رقيق، وورق عاجي.
  * الذهبي للخطوط الرفيعة والتحديد فقط، لا للمساحات الكبيرة.
  */
 object Palette {
     // الكحلي
     val Navy = Color(0xFF1B365D)
-    /** كعب المجلد: الشريط الجانبي وشريط التبويبات. */
-    val Ink = Color(0xFF13233B)
-    val InkRaised = Color(0xFF1E3250)
-    val InkLine = Color(0xFF2A4064)
+    /** كعب المجلد: شريط التبويبات (وفي الكحلي الشريط الجانبي أيضًا). */
+    val Ink: Color get() = if (ThemeState.light) Color(0xFFE4E9F0) else Color(0xFF13233B)
+    /** الشريط الجانبي للمكتبة. */
+    val Spine: Color get() = if (ThemeState.light) Color.White else Color(0xFF13233B)
+    val InkRaised: Color get() = if (ThemeState.light) Color(0xFFE8EDF5) else Color(0xFF1E3250)
+    val InkLine: Color get() = if (ThemeState.light) Color(0xFFE2E6EC) else Color(0xFF2A4064)
     val NavySoft = Color(0xFFE8EDF5)
 
     // الذهبي
@@ -33,21 +49,21 @@ object Palette {
     val GoldSoft = Color(0xFFF4E9CB)
 
     // الورق والأسطح
-    val Background = Color(0xFFF6F4EF)
+    val Background: Color get() = if (ThemeState.light) Color(0xFFF3F5F8) else Color(0xFFF6F4EF)
     val Ivory = Color(0xFFFFFBF2)
     val DrawerBg = Color(0xFFF9F6EF)
     val Divider = Color(0xFFE4DFD3)
 
     /** مكتب القراءة: رمادي أزرق هادئ يُظهر بياض الصفحات. */
-    val Desk = Color(0xFFDCE1E8)
+    val Desk: Color get() = if (ThemeState.light) Color(0xFFEBEEF2) else Color(0xFFDCE1E8)
     val ReaderBackground = Color(0xFFD9DEE5)
-    val TabBar = Ink
+    val TabBar: Color get() = Ink
 
     // النص
     val TextPrimary = Color(0xFF1A2230)
     val TextSecondary = Color(0xFF667085)
-    val OnInk = Color(0xFFEDE6D4)
-    val OnInkMuted = Color(0xFF94A2B8)
+    val OnInk: Color get() = if (ThemeState.light) Color(0xFF1A2230) else Color(0xFFEDE6D4)
+    val OnInkMuted: Color get() = if (ThemeState.light) Color(0xFF667085) else Color(0xFF94A2B8)
 
     val Danger = Color(0xFFB3261E)
 }

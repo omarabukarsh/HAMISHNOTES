@@ -4,6 +4,9 @@ import androidx.compose.ui.graphics.Color
 
 enum class Tool { BALLPOINT, FOUNTAIN, PENCIL, HIGHLIGHTER, ERASER, LASER }
 
+/** نمط الليزر: نقطة متوهجة، أو خط مستمر يتلاشى بعد ثانية ونصف. */
+enum class LaserMode { DOT, LINE }
+
 /** الأقلام العادية الثلاثة (جاف، حبر، رصاص). */
 fun Tool.isPen(): Boolean =
     this == Tool.BALLPOINT || this == Tool.FOUNTAIN || this == Tool.PENCIL

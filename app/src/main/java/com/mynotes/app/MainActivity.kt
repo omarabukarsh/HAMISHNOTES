@@ -1,6 +1,7 @@
 package com.mynotes.app
 
 import android.os.Bundle
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -41,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -53,8 +56,24 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)
         setContent {
+            val light = ThemeState.light
+            SideEffect { applySystemBars(light) }
             MyNotesTheme { MyNotesApp() }
         }
+    }
+
+    /** شريطا النظام بلون شريط التبويبات: كحلي بأيقونات فاتحة، أو رمادي فاتح بأيقونات داكنة. */
+    @Suppress("DEPRECATION")
+    private fun applySystemBars(light: Boolean) {
+        val bar = (if (light) Color(0xFFE4E9F0) else Color(0xFF13233B)).toArgb()
+        window.statusBarColor = bar
+        window.navigationBarColor = bar
+        var flags = window.decorView.systemUiVisibility
+        flags = if (light) flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        else flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        flags = if (light) flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        else flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        window.decorView.systemUiVisibility = flags
     }
 
     override fun onResume() {
@@ -120,8 +139,8 @@ private fun TabBar() {
     Row(
         Modifier.fillMaxWidth().background(Palette.Ink)
             .horizontalScroll(rememberScrollState())
-            .padding(start = 10.dp, end = 10.dp, top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = if (ThemeState.light) 8.dp else 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (ThemeState.light) 8.dp else 4.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         TabItem(
@@ -157,12 +176,22 @@ private fun TabItem(
     onClick: () -> Unit,
     onClose: (() -> Unit)?
 ) {
-    val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+    // الكحلي: ألسنة ملفات متصلة بالصفحة. الفاتح: حبوب بيضاء والنشط بإطار ذهبي
+    val light = ThemeState.light
+    val shape = if (light) RoundedCornerShape(50) else RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
     Column(Modifier.width(IntrinsicSize.Max)) {
         Row(
             Modifier.height(38.dp)
                 .clip(shape)
-                .background(if (active) activeBg else Color.Transparent)
+                .background(
+                    when {
+                        light && active -> Color.White
+                        light -> Color.White.copy(alpha = 0.55f)
+                        active -> activeBg
+                        else -> Color.Transparent
+                    }
+                )
+                .border(if (light && active) 1.5.dp else 0.dp, if (light && active) Palette.Gold else Color.Transparent, shape)
                 .clickable(onClick = onClick)
                 .padding(start = 14.dp, end = if (onClose == null) 16.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically

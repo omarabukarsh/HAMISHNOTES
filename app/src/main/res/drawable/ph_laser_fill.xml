@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Phosphor Icons (MIT) — cursor-click-fill.svg -->
+<!-- مؤشر ليزر (ممتلئ للأداة المختارة) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="256" android:viewportHeight="256">
-    <path android:fillColor="#FF000000" android:pathData="M220.49,190.83a12,12,0,0,1,0,17L207.8,220.49a12,12,0,0,1-17,0l-56.56-56.57L115,214.09c0,.1-.08.21-.13.32a15.83,15.83,0,0,1-14.6,9.59l-.79,0a15.83,15.83,0,0,1-14.41-11L32.8,52.92A16,16,0,0,1,52.92,32.8L213,85.07a16,16,0,0,1,1.41,29.8l-.32.13-50.17,19.27ZM96,32a8,8,0,0,0,8-8V16a8,8,0,0,0-16,0v8A8,8,0,0,0,96,32ZM16,104h8a8,8,0,0,0,0-16H16a8,8,0,0,0,0,16ZM124.42,39.16a8,8,0,0,0,10.74-3.58l8-16a8,8,0,0,0-14.31-7.16l-8,16A8,8,0,0,0,124.42,39.16Zm-96,81.69-16,8a8,8,0,0,0,7.16,14.31l16-8a8,8,0,1,0-7.16-14.31Z"/>
+    <group android:rotation="-45" android:pivotX="128" android:pivotY="128">
+        <path android:fillColor="#FF000000"
+            android:pathData="M42,104 H136 A24,24 0 0 1 160,128 A24,24 0 0 1 136,152 H42 A24,24 0 0 1 18,128 A24,24 0 0 1 42,104 Z"/>
+        <path android:strokeColor="#FF000000" android:strokeWidth="16" android:strokeLineCap="round"
+            android:pathData="M160,128 H172"/>
+    </group>
+    <path android:strokeColor="#FF000000" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M172,84 L180,76"/>
+    <path android:fillColor="#FF000000"
+        android:pathData="M196,60 m-20,0 a20,20 0 1 1 40,0 a20,20 0 1 1 -40,0"/>
+    <path android:strokeColor="#FF000000" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M234,60 H246 M196,22 V10 M223,33 L232,24 M223,87 L232,96 M169,33 L160,24"/>
 </vector>

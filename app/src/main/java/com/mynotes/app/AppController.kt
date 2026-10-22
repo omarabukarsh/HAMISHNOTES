@@ -12,10 +12,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 /**
@@ -30,6 +32,12 @@ object AppController {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /** آخر لحظة كتب فيها المستخدم بالقلم؛ تتوقف القراءة الضوئية مؤقتًا بعدها كي لا تؤخّر الكتابة. */
+    @Volatile
+    var lastInkAt: Long = 0L
+
+    private var ocrNoticeShown = false
 
     val library = mutableStateListOf<DocEntry>()
     val tabs = mutableStateListOf<DocSession>()
@@ -158,8 +166,23 @@ object AppController {
         val s = DocSession(entry)
         tabs.add(s)
         if (activate) activeId = entry.id
-        scope.launch { s.load(repo.file(entry), repo) }
+        scope.launch {
+            s.load(repo.file(entry), repo)
+            if (s.status is SessionStatus.Ready) {
+                // قراءة النص تبدأ تلقائيًا دون انتظار المستخدم
+                s.startOcr()
+                noteOcrLimits(s)
+            }
+        }
         saveSession()
+    }
+
+    private fun noteOcrLimits(s: DocSession) {
+        val total = s.pdf?.count ?: 0
+        if (!ocrNoticeShown && s.ocr.size < total) {
+            ocrNoticeShown = true
+            messages.tryEmit("قراءة النص التلقائية تدعم الإنجليزية فقط، ولا تدعم العربية")
+        }
     }
 
     fun activate(id: String?) {
@@ -198,6 +221,32 @@ object AppController {
         saveSession()
     }
 
+    // ---------- قراءة النص في الخلفية للملفات المستوردة ----------
+
+    private val ocrQueue = ArrayDeque<DocEntry>()
+    private var ocrWorker: Job? = null
+
+    /** يضع مستندًا مستوردًا في طابور القراءة الضوئية؛ يُقرأ تباعًا في الخلفية دون فتحه. */
+    fun queueOcr(entry: DocEntry) {
+        if (entry.isNote) return
+        ocrQueue.addLast(entry)
+        if (ocrWorker?.isActive == true) return
+        ocrWorker = scope.launch {
+            while (ocrQueue.isNotEmpty()) {
+                val e = ocrQueue.removeFirst()
+                if (library.none { it.id == e.id }) continue
+                if (tabs.any { it.id == e.id }) continue
+                val s = DocSession(e)
+                try {
+                    s.load(repo.file(e), repo)
+                    if (s.status is SessionStatus.Ready) s.startOcr()?.join()
+                } finally {
+                    s.dispose()
+                }
+            }
+        }
+    }
+
     // ---------- الصور ----------
 
     fun insertImage(s: DocSession, uri: Uri, page: Int) {
@@ -218,6 +267,54 @@ object AppController {
                 messages.tryEmit("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها")
             } catch (t: Throwable) {
                 messages.tryEmit("تعذر إضافة الصورة")
+            }
+        }
+    }
+
+    // ---------- الصفحات والملاحظات ----------
+
+    fun createNote(name: String, template: String, color: Int) {
+        scope.launch {
+            try {
+                val e = withContext(Dispatchers.IO) { repo.createNote(name, template, color) }
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+            } catch (t: Throwable) {
+                messages.tryEmit("تعذر إنشاء الملاحظة")
+            }
+        }
+    }
+
+    fun onPagesChanged(id: String, count: Int) {
+        updateEntry(id) { it.copy(pageCount = count) }
+        saveLibrary()
+    }
+
+    /** يضيف صفحة فارغة كاملة بعد الصفحة رقم after (من 0). */
+    fun addBlankPage(s: DocSession, after: Int, template: String, color: Int) {
+        val doc = s.pdf ?: return
+        val base = after.coerceIn(0, maxOf(0, doc.count - 1))
+        val ratio = doc.ratio(base)
+        s.insertPages(after, listOf(PageRef(Templates.src(template, color), 0, ratio)))
+        scope.launch { s.listState.scrollToItem((after + 1).coerceAtLeast(0)) }
+        messages.tryEmit("أُضيفت صفحة جديدة (${doc.count} صفحة الآن)")
+    }
+
+    /** يضيف كل صفحات ملف PDF آخر إلى هذا المستند بعد الصفحة رقم after. */
+    fun addPdfPages(s: DocSession, uri: Uri, after: Int) {
+        val doc = s.pdf ?: return
+        scope.launch {
+            try {
+                val refs = withContext(Dispatchers.IO) {
+                    val part = repo.importPart(s.id, uri)
+                    doc.addSource("part:" + part.first, File(repo.partsDir(s.id), part.first))
+                }
+                s.insertPages(after, refs)
+                s.listState.scrollToItem((after + 1).coerceAtLeast(0))
+                messages.tryEmit("أُضيفت ${refs.size} صفحة من الملف (${doc.count} صفحة الآن)")
+            } catch (t: Throwable) {
+                messages.tryEmit("تعذر إضافة الملف. تأكد أنه PDF سليم.")
             }
         }
     }
@@ -250,10 +347,12 @@ object AppController {
             importing = true
             var ok = 0
             var failed = 0
+            val added = ArrayList<DocEntry>()
             for (u in uris) {
                 try {
                     val e = withContext(Dispatchers.IO) { repo.importFile(u) }
                     library.add(0, e)
+                    added.add(e)
                     ok++
                 } catch (t: Throwable) {
                     failed++
@@ -262,12 +361,13 @@ object AppController {
             saveLibrary()
             importing = false
             val msg = when {
-                failed == 0 && ok == 1 -> "تم استيراد المستند"
-                failed == 0 -> "تم استيراد $ok مستندات"
+                failed == 0 && ok == 1 -> "تم استيراد المستند، وتبدأ قراءة نصه تلقائيًا"
+                failed == 0 -> "تم استيراد $ok مستندات، وتبدأ قراءة نصوصها تلقائيًا"
                 ok == 0 -> "تعذر الاستيراد. تأكد أن الملف PDF سليم."
                 else -> "تم استيراد $ok وتعذر استيراد $failed"
             }
             messages.tryEmit(msg)
+            added.forEach { queueOcr(it) }
         }
     }
 

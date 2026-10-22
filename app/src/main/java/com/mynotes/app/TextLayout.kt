@@ -133,7 +133,7 @@ object TextLayout {
                     val prev = words[k - 1]
                     val gap = w.l - prev.r
                     val lineChanged = w.line != prev.line
-                    if (gap > 1.4f * height || (lineChanged && gap > 0.6f * height)) {
+                    if (gap > 1.4f * height || (lineChanged && gap > 1.0f * height)) {
                         out.add(sb.toString())
                         sb.setLength(0)
                     } else {

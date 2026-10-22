@@ -266,7 +266,13 @@ private fun pagesCount(n: Int): String = when {
 private fun Monogram(size: Int, onDark: Boolean) {
     Box(
         Modifier.size(size.dp).clip(CircleShape)
-            .background(if (onDark && !ThemeState.light) Palette.InkRaised else Palette.Navy)
+            .background(
+                when {
+                    ThemeState.light -> Palette.Navy
+                    onDark -> Palette.InkRaised
+                    else -> Palette.Ink
+                }
+            )
             .border(1.5.dp, Palette.Gold, CircleShape),
         contentAlignment = Alignment.Center
     ) {

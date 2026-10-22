@@ -1910,23 +1910,33 @@ private fun PageView(
                 val inkAge = now - lz.lastInkAt
                 val inkAlpha = if (inkAge <= LASER_LINE_HOLD) 1f
                 else (1f - (inkAge - LASER_LINE_HOLD) / LASER_LINE_FADE.toFloat()).coerceIn(0f, 1f)
-                for (pass in 0..2) {
-                    val (wMul, aMul, pc) = when (pass) {
-                        0 -> Triple(2.8f, 0.22f, col)
-                        1 -> Triple(1.1f, 0.95f, col)
-                        else -> Triple(0.35f, 0.85f, Color.White)
+                if (inkAlpha > 0f) {
+                    // مسار واحد لكل خط حتى لا تظهر حبيبات عند تداخل المقاطع الشفافة
+                    val paths = ArrayList<androidx.compose.ui.graphics.Path>()
+                    var curSeg = -1
+                    var path: androidx.compose.ui.graphics.Path? = null
+                    for (p in laser) {
+                        if (!p.ink) continue
+                        if (p.seg != curSeg || path == null) {
+                            path = androidx.compose.ui.graphics.Path().also { paths.add(it) }
+                            path.moveTo(p.x * w, p.y * w)
+                            curSeg = p.seg
+                        } else {
+                            path.lineTo(p.x * w, p.y * w)
+                        }
                     }
-                    for (i in 1 until laser.size) {
-                        val a = laser[i - 1]
-                        val c = laser[i]
-                        if (!c.ink || !a.ink || a.seg != c.seg) continue
-                        drawLine(
-                            pc.copy(alpha = inkAlpha * aMul),
-                            Offset(a.x * w, a.y * w),
-                            Offset(c.x * w, c.y * w),
-                            strokeWidth = r * wMul,
-                            cap = StrokeCap.Round
-                        )
+                    for (pass in 0..2) {
+                        val (wMul, aMul, pc) = when (pass) {
+                            0 -> Triple(2.8f, 0.22f, col)
+                            1 -> Triple(1.1f, 0.95f, col)
+                            else -> Triple(0.35f, 0.85f, Color.White)
+                        }
+                        for (pth in paths) {
+                            drawPath(
+                                pth, pc.copy(alpha = inkAlpha * aMul),
+                                style = Stroke(width = r * wMul, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+                            )
+                        }
                     }
                 }
                 for (i in 1 until laser.size) {

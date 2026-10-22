@@ -7,6 +7,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -144,5 +145,7 @@ private val AppShapes = Shapes(
 
 @Composable
 fun MyNotesTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = AppColors, typography = AppType, shapes = AppShapes, content = content)
+    val theme = ThemeState.theme
+    val scheme = remember(theme) { AppColors.copy(background = Palette.Background) }
+    MaterialTheme(colorScheme = scheme, typography = AppType, shapes = AppShapes, content = content)
 }

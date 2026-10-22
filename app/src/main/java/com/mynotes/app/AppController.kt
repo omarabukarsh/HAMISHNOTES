@@ -174,6 +174,10 @@ object AppController {
         initialized = true
         val app = context.applicationContext
         repo = LibraryRepository(app)
+        try {
+            com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
+        } catch (t: Throwable) {
+        }
         prefs = app.getSharedPreferences("mynotes_session", Context.MODE_PRIVATE)
 
         (prefs.getString("custom_colors", "") ?: "")
@@ -239,7 +243,7 @@ object AppController {
         val total = s.pdf?.count ?: 0
         if (!ocrNoticeShown && s.ocr.size < total) {
             ocrNoticeShown = true
-            messages.tryEmit("قراءة النص التلقائية تدعم الإنجليزية فقط، ولا تدعم العربية")
+            messages.tryEmit("يُقرأ نص الملف مباشرة (العربية مدعومة). الصفحات الممسوحة ضوئيًا تُقرأ بالإنجليزية فقط")
         }
     }
 

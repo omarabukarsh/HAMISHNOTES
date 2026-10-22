@@ -444,7 +444,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         s.stopOcr()
                     } else {
                         s.startOcr()
-                        c.messages.tryEmit("قراءة النص تدعم الإنجليزية فقط، ولا تدعم العربية")
+                        c.messages.tryEmit("يُقرأ نص الملف مباشرة، والعربية مدعومة في ملفات PDF الرقمية")
                     }
                 }) { OcrGlyph(tintFor(s.ocrRunning)) }
                 TBtn(selected = s.searchOpen, onClick = {

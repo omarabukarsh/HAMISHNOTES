@@ -103,6 +103,9 @@ class DocSession(entry: DocEntry) {
     var hitNav by mutableStateOf(0)
 
     private var ocrJob: Job? = null
+
+    /** النص الرقمي داخل ملفات PDF (يدعم العربية). يُنشأ عند فتح المستند. */
+    private var textLayer: PdfTextLayer? = null
     private var snapshot: EditSnapshot? = null
     private var disposed = false
 
@@ -118,6 +121,14 @@ class DocSession(entry: DocEntry) {
                 return
             }
             pdf = loaded.first
+            val partsDir = repo.partsDir(id)
+            textLayer = PdfTextLayer { src ->
+                when {
+                    src == "main" -> file
+                    src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
+                    else -> null
+                }
+            }
             annotations = loaded.second.ink
             images = loaded.second.images
             marks = loaded.second.marks
@@ -295,18 +306,40 @@ class DocSession(entry: DocEntry) {
     suspend fun ocrPage(page: Int): OcrPage? {
         val doc = pdf ?: return null
         val strokes = annotations[page] ?: emptyList()
-        val ver = OcrEngine.versionOf(strokes)
+        // الإصدار يشمل مصدر القراءة (طبقة النص)، فتُعاد قراءة الصفحات المحفوظة بالطريقة القديمة مرة واحدة
+        val ver = OcrEngine.versionOf(strokes) * 31 + 2
         val existing = ocr[page]
         if (existing != null && existing.version == ver) return existing
 
         val result: OcrPage? = try {
             withContext(Dispatchers.Default) {
                 val ref = doc.pages.getOrNull(page) ?: return@withContext null
+                // 1) النص الرقمي داخل الملف: دقيق ويدعم العربية
+                val layerWords = try {
+                    textLayer?.words(ref) ?: emptyList()
+                } catch (t: Throwable) {
+                    emptyList()
+                }
+                val handwriting = strokes.any { it.tool != Tool.HIGHLIGHTER }
+                if (layerWords.size >= 3 && !handwriting) return@withContext OcrPage(layerWords, ver)
+                // 2) القراءة الضوئية: للصفحات الممسوحة ضوئيًا، ولخط اليد فوق صفحة رقمية
                 val base = doc.renderFresh(ref, 1800) ?: return@withContext null
                 try {
                     val src = OcrEngine.compose(base, strokes)
                     try {
-                        OcrPage(OcrEngine.recognize(src), ver)
+                        val seen = OcrEngine.recognize(src)
+                        if (layerWords.size >= 3) {
+                            // نص الملف + ما قرأته القراءة الضوئية من خط اليد فقط (الكلمات التي لا تقع على نص الملف)
+                            val offset = (layerWords.maxOfOrNull { it.line } ?: 0) + 1
+                            val extra = seen.filter { w ->
+                                val cx = (w.l + w.r) / 2f
+                                val cy = (w.t + w.b) / 2f
+                                layerWords.none { o -> cx >= o.l && cx <= o.r && cy >= o.t && cy <= o.b }
+                            }.map { it.copy(line = it.line + offset) }
+                            OcrPage(layerWords + extra, ver)
+                        } else {
+                            OcrPage(seen, ver)
+                        }
                     } finally {
                         if (src !== base) src.recycle()
                     }
@@ -777,6 +810,8 @@ class DocSession(entry: DocEntry) {
     fun dispose() {
         disposed = true
         ocrJob?.cancel()
+        textLayer?.close()
+        textLayer = null
         pdf?.close()
         pdf = null
     }

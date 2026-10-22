@@ -45,4 +45,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // قراءة النص الرقمي داخل PDF (يدعم العربية) والكتابة على PDF عند الحفظ
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }

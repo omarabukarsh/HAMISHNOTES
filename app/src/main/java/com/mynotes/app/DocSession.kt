@@ -196,7 +196,7 @@ class DocSession(entry: DocEntry) {
         stopOcr()
         val old = doc.pages
         val at = (after + 1).coerceIn(0, old.size)
-        doc.setPages(old.subList(0, at) + refs + old.subList(at, old.size))
+        doc.replacePages(old.subList(0, at) + refs + old.subList(at, old.size))
 
         fun shift(k: Int): Int = if (k >= at) k + n else k
         annotations = annotations.mapKeys { shift(it.key) }

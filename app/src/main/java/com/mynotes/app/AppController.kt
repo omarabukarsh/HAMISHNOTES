@@ -53,6 +53,79 @@ object AppController {
         private set
 
     var libraryFilter by mutableStateOf(LibraryFilter.RECENT)
+
+    // ---------- المواد (مجلدات المكتبة) ----------
+
+    /** أسماء المواد بالترتيب. null في libraryFolder = كل المواد. */
+    val folders = mutableStateListOf<String>()
+    var libraryFolder by mutableStateOf<String?>(null)
+
+    private fun saveFolders() {
+        prefs.edit().putString("folders", org.json.JSONArray(folders.toList()).toString()).apply()
+    }
+
+    fun addFolder(name: String): String? {
+        val n = name.trim()
+        if (n.isEmpty()) return null
+        if (n !in folders) {
+            folders.add(n)
+            saveFolders()
+        }
+        return n
+    }
+
+    fun renameFolder(old: String, new: String) {
+        val n = new.trim()
+        if (n.isEmpty() || n == old) return
+        val i = folders.indexOf(old)
+        if (i < 0) return
+        if (n in folders) folders.removeAt(i) else folders[i] = n
+        for (k in library.indices) if (library[k].folder == old) library[k] = library[k].copy(folder = n)
+        if (libraryFolder == old) libraryFolder = n
+        saveFolders()
+        saveLibrary()
+    }
+
+    fun deleteFolder(name: String) {
+        folders.remove(name)
+        for (k in library.indices) if (library[k].folder == name) library[k] = library[k].copy(folder = "")
+        if (libraryFolder == name) libraryFolder = null
+        saveFolders()
+        saveLibrary()
+    }
+
+    fun moveToFolder(id: String, folder: String) {
+        if (folder.isNotEmpty()) addFolder(folder)
+        updateEntry(id) { it.copy(folder = folder) }
+        saveLibrary()
+        messages.tryEmit(if (folder.isEmpty()) "أُزيل المستند من المادة" else "نُقل المستند إلى «$folder»")
+    }
+
+    // ---------- إحصاءات الدراسة ----------
+
+    /** "yyyy-MM-dd" ← مللي ثانية لذلك اليوم، و"yyyy-MM-dd|id" ← وقت المستند في اليوم. */
+    val stats = mutableStateMapOf<String, Long>()
+    var goalMinutes by mutableStateOf(60)
+        private set
+
+    fun setGoal(minutes: Int) {
+        goalMinutes = minutes.coerceIn(10, 600)
+        prefs.edit().putInt("goal_min", goalMinutes).apply()
+    }
+
+    fun todayKey(): String = java.time.LocalDate.now().toString()
+
+    private fun addStudy(id: String, dt: Long) {
+        val day = todayKey()
+        stats[day] = (stats[day] ?: 0L) + dt
+        val k = "$day|$id"
+        stats[k] = (stats[k] ?: 0L) + dt
+    }
+
+    private fun saveStats() {
+        val snap = stats.toMap()
+        scope.launch { repo.saveStats(snap) }
+    }
     var librarySort by mutableStateOf(SortMode.LAST_OPENED)
     var libraryQuery by mutableStateOf("")
 
@@ -185,6 +258,12 @@ object AppController {
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
         highlightSnap = prefs.getBoolean("hl_snap", false)
+        goalMinutes = prefs.getInt("goal_min", 60)
+        try {
+            val arr = org.json.JSONArray(prefs.getString("folders", "[]") ?: "[]")
+            for (i in 0 until arr.length()) folders.add(arr.getString(i))
+        } catch (e: Throwable) {
+        }
         ThemeState.theme = try {
             AppTheme.valueOf(prefs.getString("theme", "NAVY") ?: "NAVY")
         } catch (e: Throwable) {
@@ -201,6 +280,9 @@ object AppController {
             val list = withContext(Dispatchers.IO) { repo.loadIndex() }
             library.clear()
             library.addAll(list)
+            // مواد موجودة في المستندات ولم تُسجَّل بعد
+            list.map { it.folder }.filter { it.isNotEmpty() && it !in folders }.distinct().forEach { folders.add(it) }
+            stats.putAll(withContext(Dispatchers.IO) { repo.loadStats() })
             val ids = (prefs.getString("open", "") ?: "").split(",").filter { it.isNotBlank() }
             val active = prefs.getString("active", null)
             ids.forEach { id ->
@@ -281,6 +363,7 @@ object AppController {
     fun flush() {
         tabs.forEach { recordPage(it.id) }
         saveLibrary()
+        if (stats.isNotEmpty()) saveStats()
         saveSession()
     }
 
@@ -315,8 +398,12 @@ object AppController {
                 val id = activeId ?: continue
                 if (now - lastInteractionAt > IDLE_MS) continue
                 updateEntry(id) { it.copy(readMs = it.readMs + dt) }
+                addStudy(id, dt)
                 ticks++
-                if (ticks % 4 == 0) saveLibrary()
+                if (ticks % 4 == 0) {
+                    saveLibrary()
+                    saveStats()
+                }
             }
         }
     }
@@ -419,12 +506,31 @@ object AppController {
         exporting = "جارٍ حفظ PDF…"
         scope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
-                        exporting = "جارٍ حفظ PDF: صفحة ${i + 1} من $total"
+                val selectable = withContext(Dispatchers.IO) {
+                    val entry = library.firstOrNull { it.id == s.id }
+                    val partsDir = repo.partsDir(s.id)
+                    try {
+                        // أولًا: نص قابل للتحديد فوق صفحات الملف الأصلية
+                        Exporter.exportVector(context.applicationContext, snap, { src ->
+                            when {
+                                src == "main" && entry != null -> repo.file(entry)
+                                src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
+                                else -> null
+                            }
+                        }, uri) { i -> exporting = "جارٍ حفظ PDF: صفحة ${i + 1} من $total" }
+                        true
+                    } catch (t: Throwable) {
+                        // احتياط: صفحات كصور (الطريقة السابقة)
+                        Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
+                            exporting = "جارٍ حفظ PDF كصور: صفحة ${i + 1} من $total"
+                        }
+                        false
                     }
                 }
-                messages.tryEmit("تم حفظ المستند مع التعليقات ($total صفحة)")
+                messages.tryEmit(
+                    if (selectable) "تم حفظ المستند مع التعليقات ($total صفحة)، والنص قابل للتحديد"
+                    else "تم حفظ المستند مع التعليقات ($total صفحة) كصور"
+                )
             } catch (t: Throwable) {
                 messages.tryEmit("تعذر حفظ ملف PDF")
             } finally {

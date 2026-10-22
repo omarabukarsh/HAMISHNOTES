@@ -85,6 +85,188 @@ object Exporter {
         }
     }
 
+    /**
+     * حفظ بنص قابل للتحديد: تُنسخ صفحات الملف الأصلية كما هي (نصها يبقى نصًا)، وتُرسم فوقها
+     * التمييزات والكتابة اليدوية والصور ومربعات النص. الصفحات الفارغة والمدوّرة تُرسم كصورة.
+     * إن فشل أي شيء يرجع المستدعي للحفظ كصور.
+     */
+    fun exportVector(
+        context: Context,
+        snap: Snapshot,
+        fileFor: (String) -> java.io.File?,
+        uri: Uri,
+        onPage: (Int) -> Unit
+    ): Int {
+        val out = com.tom_roush.pdfbox.pdmodel.PDDocument()
+        val sources = HashMap<String, com.tom_roush.pdfbox.pdmodel.PDDocument>()
+        try {
+            snap.pages.forEachIndexed { i, ref ->
+                onPage(i)
+                var page: com.tom_roush.pdfbox.pdmodel.PDPage? = null
+                if (!ref.src.startsWith("blank:")) {
+                    val src = sources.getOrPut(ref.src) {
+                        val f = fileFor(ref.src) ?: throw IllegalStateException("source")
+                        com.tom_roush.pdfbox.pdmodel.PDDocument.load(f)
+                    }
+                    val original = src.getPage(ref.index)
+                    if (original.rotation % 360 == 0) page = out.importPage(original)
+                }
+                if (page == null) {
+                    // صفحة فارغة أو مدوّرة: صورة الصفحة كاملة
+                    val ph = PDF_W / ref.ratio
+                    page = com.tom_roush.pdfbox.pdmodel.PDPage(
+                        com.tom_roush.pdfbox.pdmodel.common.PDRectangle(PDF_W.toFloat(), ph)
+                    )
+                    out.addPage(page)
+                    val bmp = snap.pdf.renderFresh(ref, RENDER_W) ?: throw IllegalStateException("render")
+                    try {
+                        val img = com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory.createFromImage(out, bmp)
+                        com.tom_roush.pdfbox.pdmodel.PDPageContentStream(out, page).use { cs ->
+                            cs.drawImage(img, 0f, 0f, PDF_W.toFloat(), ph)
+                        }
+                    } finally {
+                        bmp.recycle()
+                    }
+                }
+                drawOverlay(out, page, snap, i)
+            }
+            val os = context.contentResolver.openOutputStream(uri) ?: throw IllegalStateException("output")
+            os.use { out.save(it) }
+            return snap.pages.size
+        } finally {
+            try {
+                out.close()
+            } catch (e: Throwable) {
+            }
+            sources.values.forEach {
+                try {
+                    it.close()
+                } catch (e: Throwable) {
+                }
+            }
+        }
+    }
+
+    /** يرسم تعليقات صفحة فوق محتواها الأصلي بإحداثيات PDF (الأصل أسفل اليسار). */
+    private fun drawOverlay(
+        doc: com.tom_roush.pdfbox.pdmodel.PDDocument,
+        page: com.tom_roush.pdfbox.pdmodel.PDPage,
+        snap: Snapshot,
+        i: Int
+    ) {
+        val box = page.cropBox
+        val w = box.width
+        val x0 = box.lowerLeftX
+        val top = box.upperRightY
+        fun px(nx: Float) = x0 + nx * w
+        fun py(ny: Float) = top - ny * w
+
+        val marks = snap.marks[i] ?: emptyList()
+        val images = snap.images[i] ?: emptyList()
+        val ink = snap.ink[i] ?: emptyList()
+        val texts = snap.texts[i] ?: emptyList()
+        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty()) return
+
+        com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+            doc, page, com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND, true, true
+        ).use { cs ->
+            // التمييز الملتقط: مستطيلات بمزج «ضرب» خلف النص
+            if (marks.isNotEmpty()) {
+                val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                gs.blendMode = com.tom_roush.pdfbox.pdmodel.graphics.blend.BlendMode.MULTIPLY
+                cs.saveGraphicsState()
+                cs.setGraphicsStateParameters(gs)
+                for (m in marks) {
+                    val col = markColor(m.color, strong = m.level >= 2)
+                    cs.setNonStrokingColor(col.red, col.green, col.blue)
+                    for (r in m.rects) cs.addRect(px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
+                    cs.fill()
+                    val important = if (m.level >= 2) m.rects else m.strongRects
+                    if (important.isNotEmpty()) {
+                        cs.setNonStrokingColor(Palette.GoldDeep.red, Palette.GoldDeep.green, Palette.GoldDeep.blue)
+                        for (r in important) cs.addRect(px(r.l), py(r.b), (r.r - r.l) * w, w * 0.0016f)
+                        cs.fill()
+                    }
+                }
+                cs.restoreGraphicsState()
+            }
+            // الصور
+            for (item in images) {
+                val f = AppController.repo.imageFile(snap.docId, item.file)
+                val bmp = BitmapFactory.decodeFile(f.absolutePath) ?: continue
+                try {
+                    val img = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bmp)
+                    val h = item.w / item.aspect
+                    cs.drawImage(img, px(item.x), py(item.y + h), item.w * w, h * w)
+                } finally {
+                    bmp.recycle()
+                }
+            }
+            // مربعات النص: تُرسم كصورة شفافة حتى يبقى شكل الحروف العربية صحيحًا
+            for (tb in texts) {
+                if (tb.text.isBlank()) continue
+                val scale = 3f
+                val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = tb.color.toArgb()
+                    textSize = tb.size * w * scale
+                }
+                val lw = (tb.w * w * scale).toInt().coerceAtLeast(10)
+                val layout = layoutOf(tb.text, tp, lw, 1.25f)
+                val bmp = Bitmap.createBitmap(lw, layout.height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                try {
+                    layout.draw(Canvas(bmp))
+                    val img = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bmp)
+                    val hh = layout.height / scale
+                    cs.drawImage(img, px(tb.x), py(tb.y) - hh, tb.w * w, hh)
+                } finally {
+                    bmp.recycle()
+                }
+            }
+            // الكتابة اليدوية
+            for (s in ink) {
+                if (s.pts.isEmpty()) continue
+                val alpha = when (s.tool) {
+                    Tool.HIGHLIGHTER -> 0.35f
+                    Tool.PENCIL -> 0.78f
+                    else -> 1f
+                }
+                cs.saveGraphicsState()
+                if (alpha < 1f) {
+                    val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                    gs.strokingAlphaConstant = alpha
+                    cs.setGraphicsStateParameters(gs)
+                }
+                cs.setStrokingColor(s.color.red, s.color.green, s.color.blue)
+                cs.setLineCapStyle(if (s.tool == Tool.HIGHLIGHTER) 2 else 1)
+                cs.setLineJoinStyle(1)
+                val base = s.width * w * when (s.tool) {
+                    Tool.PENCIL -> 0.85f
+                    else -> 1f
+                }
+                val pts = s.pts
+                if (s.tool == Tool.FOUNTAIN && pts.size > 1) {
+                    // قلم الحبر: سماكة تتغير مع الضغط، فكل مقطع بخطه
+                    for (j in 1 until pts.size) {
+                        cs.setLineWidth(s.width * w * (0.4f + pts[j].p))
+                        cs.moveTo(px(pts[j - 1].x), py(pts[j - 1].y))
+                        cs.lineTo(px(pts[j].x), py(pts[j].y))
+                        cs.stroke()
+                    }
+                } else {
+                    cs.setLineWidth(base)
+                    cs.moveTo(px(pts[0].x), py(pts[0].y))
+                    if (pts.size == 1) {
+                        cs.lineTo(px(pts[0].x) + 0.01f, py(pts[0].y))
+                    } else {
+                        for (j in 1 until pts.size) cs.lineTo(px(pts[j].x), py(pts[j].y))
+                    }
+                    cs.stroke()
+                }
+                cs.restoreGraphicsState()
+            }
+        }
+    }
+
     private fun drawMarks(c: Canvas, marks: List<TextMark>, w: Float) {
         if (marks.isEmpty()) return
         val p = Paint(Paint.ANTI_ALIAS_FLAG)

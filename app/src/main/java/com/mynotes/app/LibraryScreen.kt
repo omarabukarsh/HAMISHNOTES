@@ -5,6 +5,9 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -105,10 +108,14 @@ fun LibraryScreen() {
 
     var renameTarget by remember { mutableStateOf<DocEntry?>(null) }
     var deleteTarget by remember { mutableStateOf<DocEntry?>(null) }
+    var moveTarget by remember { mutableStateOf<DocEntry?>(null) }
     var showNewNote by remember { mutableStateOf(false) }
 
     val query = c.libraryQuery.trim()
-    val base = c.library.toList().filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
+    val folder = c.libraryFolder
+    val base = c.library.toList().filter {
+        (query.isEmpty() || it.name.contains(query, ignoreCase = true)) && (folder == null || it.folder == folder)
+    }
     val docs: List<DocEntry> = when (c.libraryFilter) {
         LibraryFilter.RECENT -> base.sortedByDescending { it.activityAt() }.take(24)
         LibraryFilter.ALL -> sortDocs(base, c.librarySort)
@@ -161,6 +168,7 @@ fun LibraryScreen() {
                                     onFavorite = { c.toggleFavorite(e.id) },
                                     onRename = { renameTarget = e },
                                     onDuplicate = { c.duplicate(e) },
+                                    onMove = { moveTarget = e },
                                     onDelete = { deleteTarget = e }
                                 )
                             }
@@ -204,6 +212,11 @@ fun LibraryScreen() {
             },
             onDismiss = { showNewNote = false }
         )
+    }
+
+    val mt = moveTarget
+    if (mt != null) {
+        MoveToFolderDialog(mt, onDismiss = { moveTarget = null })
     }
 
     val dt = deleteTarget
@@ -307,33 +320,50 @@ private fun Spine() {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.InkLine))
         Spacer(Modifier.height(16.dp))
 
-        SpineItem("الأحدث", R.drawable.ph_recent, null, c.libraryFilter == LibraryFilter.RECENT) {
+        val noFolder = c.libraryFolder == null
+        SpineItem("الأحدث", R.drawable.ph_recent, null, noFolder && c.libraryFilter == LibraryFilter.RECENT) {
+            c.libraryFolder = null
             c.libraryFilter = LibraryFilter.RECENT
         }
-        SpineItem("كل المستندات", R.drawable.ph_books, c.library.size, c.libraryFilter == LibraryFilter.ALL) {
+        SpineItem("كل المستندات", R.drawable.ph_books, c.library.size, noFolder && c.libraryFilter == LibraryFilter.ALL) {
+            c.libraryFolder = null
             c.libraryFilter = LibraryFilter.ALL
         }
-        SpineItem("المفضلة", R.drawable.ph_star, favCount, c.libraryFilter == LibraryFilter.FAVORITES) {
+        SpineItem("المفضلة", R.drawable.ph_star, favCount, noFolder && c.libraryFilter == LibraryFilter.FAVORITES) {
+            c.libraryFolder = null
             c.libraryFilter = LibraryFilter.FAVORITES
         }
 
-        Spacer(Modifier.weight(1f))
+        // المواد
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            FolderSection()
+        }
+
+        StudyCard()
+        Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.InkLine))
-        Spacer(Modifier.height(14.dp))
-        Text(docsCount(c.library.size), color = Palette.OnInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Text(pagesCount(pages), color = Palette.OnInkMuted, fontSize = 12.sp)
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(docsCount(c.library.size) + "، " + pagesCount(pages), color = Palette.OnInkMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(10.dp))
         ThemeSwitch()
     }
 }
 
 @Composable
-private fun SpineItem(label: String, icon: Int, count: Int?, selected: Boolean, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun SpineItem(
+    label: String,
+    icon: Int,
+    count: Int?,
+    selected: Boolean,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
     val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp).height(46.dp).clip(shape)
             .background(if (selected) Palette.InkRaised else Color.Transparent)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // شريط ذهبي على حافة العنصر المختار
@@ -359,6 +389,130 @@ private fun SpineItem(label: String, icon: Int, count: Int?, selected: Boolean, 
             )
         }
     }
+}
+
+/** قائمة المواد في الشريط الجانبي: اختيار، إضافة، إعادة تسمية، حذف. */
+@Composable
+private fun FolderSection() {
+    val c = AppController
+    var adding by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("المواد", color = Palette.OnInkMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(
+            "+ مادة", color = Palette.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { adding = true }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+    if (c.folders.isEmpty()) {
+        Text(
+            "رتّب مستنداتك حسب المادة: أضف مادة، ثم «نقل إلى مادة» من قائمة أي مستند.",
+            color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 18.sp,
+            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+        )
+    }
+    c.folders.toList().forEach { f ->
+        var menu by remember(f) { mutableStateOf(false) }
+        Box {
+            SpineItem(
+                f, R.drawable.ph_note, c.library.count { it.folder == f }, c.libraryFolder == f,
+                onLongClick = { menu = true }
+            ) {
+                c.libraryFolder = f
+                c.libraryFilter = LibraryFilter.ALL
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("إعادة تسمية") }, onClick = { menu = false; renaming = f })
+                DropdownMenuItem(
+                    text = { Text("حذف المادة (تبقى المستندات)", color = Palette.Danger) },
+                    onClick = { menu = false; c.deleteFolder(f) }
+                )
+            }
+        }
+    }
+    if (adding) {
+        NameDialog("مادة جديدة", "", onSave = { c.addFolder(it); adding = false }, onDismiss = { adding = false })
+    }
+    val r = renaming
+    if (r != null) {
+        NameDialog("إعادة تسمية المادة", r, onSave = { c.renameFolder(r, it); renaming = null }, onDismiss = { renaming = null })
+    }
+}
+
+@Composable
+private fun NameDialog(title: String, initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("الاسم") }) },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("حفظ") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+/** نقل مستند إلى مادة موجودة أو جديدة، أو إزالته من مادته. */
+@Composable
+private fun MoveToFolderDialog(entry: DocEntry, onDismiss: () -> Unit) {
+    val c = AppController
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("نقل «${entry.name}» إلى مادة") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ChoiceChip("بدون مادة", entry.folder.isEmpty()) { c.moveToFolder(entry.id, ""); onDismiss() }
+                    c.folders.toList().forEach { f ->
+                        ChoiceChip(f, entry.folder == f) { c.moveToFolder(entry.id, f); onDismiss() }
+                    }
+                }
+                OutlinedTextField(
+                    value = newName, onValueChange = { newName = it }, singleLine = true,
+                    label = { Text("أو اكتب اسم مادة جديدة") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = newName.isNotBlank(), onClick = { c.moveToFolder(entry.id, newName.trim()); onDismiss() }) {
+                Text("نقل")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+/** بطاقة الدراسة في الشريط الجانبي: هدف اليوم والسلسلة، وتفتح الإحصاءات. */
+@Composable
+private fun StudyCard() {
+    var open by remember { mutableStateOf(false) }
+    val c = AppController
+    val today = c.stats[c.todayKey()] ?: 0L
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).border(1.dp, Palette.InkLine, shape)
+            .clickable { open = true }.padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        GoalRing(34.dp, 4.dp, Palette.InkLine)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("اليوم ${formatReading(today)}", color = Palette.OnInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            val streak = studyStreak()
+            Text(
+                if (streak > 0) "سلسلة $streak ${if (streak == 1) "يوم" else "أيام"}، الهدف ${formatReading(c.goalMinutes * 60_000L)}"
+                else "الهدف ${formatReading(c.goalMinutes * 60_000L)}",
+                color = Palette.OnInkMuted, fontSize = 11.sp
+            )
+        }
+        PhIcon(R.drawable.ph_caret_down, Palette.OnInkMuted, 14.dp)
+    }
+    if (open) StatsDialog(onDismiss = { open = false })
 }
 
 /** اختيار الثيم: كحلي فاخر أو فاتح كلاسيكي. */
@@ -404,7 +558,16 @@ private fun FilterRow() {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         LibraryFilter.values().forEach { f ->
-            ChoiceChip(filterTitle(f), c.libraryFilter == f) { c.libraryFilter = f }
+            ChoiceChip(filterTitle(f), c.libraryFolder == null && c.libraryFilter == f) {
+                c.libraryFolder = null
+                c.libraryFilter = f
+            }
+        }
+        c.folders.toList().forEach { f ->
+            ChoiceChip(f, c.libraryFolder == f) {
+                c.libraryFolder = f
+                c.libraryFilter = LibraryFilter.ALL
+            }
         }
     }
 }
@@ -420,7 +583,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    filterTitle(c.libraryFilter),
+                    c.libraryFolder ?: filterTitle(c.libraryFilter),
                     style = MaterialTheme.typography.headlineLarge, color = Palette.TextPrimary
                 )
                 Text(docsCount(shown), fontSize = 13.sp, color = Palette.TextSecondary)
@@ -444,6 +607,9 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                     "MyNotes", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                 )
+                var stats by remember { mutableStateOf(false) }
+                IconButton(onClick = { stats = true }) { GoalRing(26.dp, 3.dp) }
+                if (stats) StatsDialog(onDismiss = { stats = false })
                 IconButton(onClick = {
                     c.setTheme(if (ThemeState.light) AppTheme.NAVY else AppTheme.LIGHT)
                 }) {
@@ -634,6 +800,7 @@ private fun DocCard(
     onFavorite: () -> Unit,
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
+    onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -717,6 +884,10 @@ private fun DocCard(
                     )
                     DropdownMenuItem(text = { Text("إعادة تسمية") }, onClick = { menu = false; onRename() })
                     DropdownMenuItem(text = { Text("إنشاء نسخة") }, onClick = { menu = false; onDuplicate() })
+                    DropdownMenuItem(
+                        text = { Text(if (entry.folder.isEmpty()) "نقل إلى مادة…" else "المادة: ${entry.folder}…") },
+                        onClick = { menu = false; onMove() }
+                    )
                     DropdownMenuItem(
                         text = { Text("حذف", color = Palette.Danger) },
                         onClick = { menu = false; onDelete() }

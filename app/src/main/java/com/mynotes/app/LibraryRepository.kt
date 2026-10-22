@@ -50,6 +50,8 @@ class LibraryRepository(context: Context) {
     private val partsRoot = File(root, "parts").apply { mkdirs() }
     private val pagesDir = File(root, "pages").apply { mkdirs() }
     private val indexFile = File(root, "library.json")
+    private val statsFile = File(root, "stats.json")
+    private val srsDir = File(root, "srs").apply { mkdirs() }
 
     private val writer = Executors.newSingleThreadExecutor { r ->
         Thread(r, "mynotes-writer").apply { isDaemon = true }
@@ -118,7 +120,8 @@ class LibraryRepository(context: Context) {
                         favorite = o.optBoolean("fav"),
                         lastPage = o.optInt("page"),
                         isNote = o.optBoolean("note"),
-                        readMs = o.optLong("read")
+                        readMs = o.optLong("read"),
+                        folder = o.optString("folder", "")
                     )
                 } catch (e: Throwable) {
                     null
@@ -152,9 +155,67 @@ class LibraryRepository(context: Context) {
                             .put("page", e.lastPage)
                             .put("note", e.isNote)
                             .put("read", e.readMs)
+                            .put("folder", e.folder)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
+            } catch (e: Throwable) {
+            }
+        }
+    }
+
+    // ---------- إحصاءات الدراسة ----------
+
+    /** مفاتيح: "2026-10-22" مجموع اليوم، و"2026-10-22|<id>" وقت مستند في ذلك اليوم (مللي ثانية). */
+    fun loadStats(): Map<String, Long> {
+        if (!statsFile.exists()) return emptyMap()
+        return try {
+            val o = JSONObject(statsFile.readText())
+            val out = HashMap<String, Long>()
+            for (k in o.keys()) out[k] = o.optLong(k)
+            out
+        } catch (e: Throwable) {
+            emptyMap()
+        }
+    }
+
+    suspend fun saveStats(stats: Map<String, Long>) {
+        withContext(writer) {
+            try {
+                val o = JSONObject()
+                stats.forEach { (k, v) -> o.put(k, v) }
+                atomicWrite(statsFile, o.toString())
+            } catch (e: Throwable) {
+            }
+        }
+    }
+
+    // ---------- بطاقات المراجعة (المراجعة المتباعدة) ----------
+
+    fun loadSrs(docId: String): Map<String, SrsState> {
+        val f = File(srsDir, "$docId.json")
+        if (!f.exists()) return emptyMap()
+        return try {
+            val o = JSONObject(f.readText())
+            val out = HashMap<String, SrsState>()
+            for (k in o.keys()) {
+                val a = o.getJSONArray(k)
+                out[k] = SrsState(a.getDouble(0).toFloat(), a.getInt(1), a.getLong(2), a.getInt(3))
+            }
+            out
+        } catch (e: Throwable) {
+            emptyMap()
+        }
+    }
+
+    suspend fun saveSrs(docId: String, data: Map<String, SrsState>) {
+        withContext(writer) {
+            try {
+                val o = JSONObject()
+                data.forEach { (k, s) ->
+                    o.put(k, JSONArray().put(s.ease.toDouble()).put(s.interval).put(s.due).put(s.reps))
+                }
+                atomicWrite(File(srsDir, "$docId.json"), o.toString())
             } catch (e: Throwable) {
             }
         }
@@ -236,6 +297,7 @@ class LibraryRepository(context: Context) {
         File(ocrRoot, entry.id).deleteRecursively()
         File(pagesDir, "${entry.id}.json").delete()
         File(partsRoot, entry.id).deleteRecursively()
+        File(srsDir, "${entry.id}.json").delete()
         thumbCache.remove(entry.id)
         PageCache.removePrefix("${entry.id}:")
     }

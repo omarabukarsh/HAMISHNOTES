@@ -79,6 +79,9 @@ fun SummaryDrawer(
     var tableTarget by remember { mutableStateOf<String?>(null) }
     var tableCols by remember { mutableStateOf(2) }
     var editingTable by remember { mutableStateOf<STable?>(null) }
+    var studying by remember { mutableStateOf(false) }
+    // البطاقات تُصنع دائمًا من الملخص المرتب (مع تعديلات المستخدم)
+    val cards = remember(all, edits) { Flashcards.generate(Summary.view(all, true, edits)) }
 
     Surface(
         modifier.fillMaxHeight().width(420.dp),
@@ -100,6 +103,17 @@ fun SummaryDrawer(
                     Text(
                         s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
                     )
+                }
+                if (cards.isNotEmpty()) {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, Palette.Gold, RoundedCornerShape(16.dp))
+                            .clickable { studying = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PhIcon(R.drawable.ph_books, Palette.GoldDeep, 16.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("مراجعة ${cards.size}", fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                    }
                 }
                 IconButton(onClick = { s.summaryOpen = false }) {
                     PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق الملخصات")
@@ -261,6 +275,8 @@ fun SummaryDrawer(
             }
         }
     }
+
+    if (studying) StudyDialog(s, cards, onDismiss = { studying = false })
 
     val et = editingTable
     if (et != null) {

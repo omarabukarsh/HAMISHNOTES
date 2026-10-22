@@ -135,7 +135,9 @@ data class DocEntry(
     val lastPage: Int,
     val isNote: Boolean = false,
     /** مجموع وقت القراءة الفعلي بالمللي ثانية. */
-    val readMs: Long = 0L
+    val readMs: Long = 0L,
+    /** المادة (المجلد) التي ينتمي إليها المستند؛ فارغ = بدون مادة. */
+    val folder: String = ""
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

@@ -7,14 +7,38 @@ package com.mynotes.app
 sealed interface SBlock {
     /** التمييزات التي جاء منها هذا الجزء (للانتقال إلى موضعها). */
     val marks: List<TextMark>
+    /** مفتاح ثابت للجزء (أول تمييز + رقمه) تُربط به تعديلات المستخدم. */
+    val key: String
 }
 
-data class SHeading(val text: String, override val marks: List<TextMark>) : SBlock
+data class SHeading(val text: String, override val marks: List<TextMark>, override val key: String = "") : SBlock
 
 /** فقرة؛ emphasis = أجزاء تظهر بخط عريض وتظليل (نص ظُلّل مرتين). */
-data class SPara(val text: String, val emphasis: List<String>, override val marks: List<TextMark>) : SBlock
+data class SPara(
+    val text: String,
+    val emphasis: List<String>,
+    override val marks: List<TextMark>,
+    override val key: String = ""
+) : SBlock
 
-data class STable(val rows: List<List<String>>, override val marks: List<TextMark>) : SBlock
+data class STable(val rows: List<List<String>>, override val marks: List<TextMark>, override val key: String = "") : SBlock
+
+/** جدول صنعه المستخدم من أجزاء مختارة. oneRow = النصوص خلايا في صف واحد، وإلا كل نص صف. */
+data class TableGroup(val id: String, val keys: List<String>, val oneRow: Boolean)
+
+/**
+ * تعديلات المستخدم على الملخص، تُطبَّق فوق الترتيب التلقائي (الذي يبقى يعمل كما هو):
+ *  order  ترتيب يدوي للأجزاء
+ *  kinds  "h" عنوان، "p" نص عادي
+ *  tables جداول من أجزاء مختارة
+ */
+data class SummaryEdits(
+    val order: List<String> = emptyList(),
+    val kinds: Map<String, String> = emptyMap(),
+    val tables: List<TableGroup> = emptyList()
+) {
+    fun isEmpty(): Boolean = order.isEmpty() && kinds.isEmpty() && tables.isEmpty()
+}
 
 object Summary {
     private const val TERMINAL = ".!?؟…"
@@ -108,6 +132,101 @@ object Summary {
         return out.map { b ->
             if (b is SPara) b.copy(text = TextTidy.sentences(b.text).joinToString(" ")) else b
         }
+    }
+
+    private fun withKey(b: SBlock, k: String): SBlock = when (b) {
+        is SHeading -> b.copy(key = k)
+        is SPara -> b.copy(key = k)
+        is STable -> b.copy(key = k)
+    }
+
+    private fun tableText(t: STable): String =
+        t.rows.joinToString("; ") { r -> r.filter { it.isNotBlank() }.joinToString(" — ") }
+
+    private fun cellsOf(text: String): List<String> =
+        if (text.contains('|')) text.split('|').map { it.trim() } else listOf(text)
+
+    /** الملخص كما يُعرض: البناء التلقائي ثم تعديلات المستخدم. */
+    fun view(marksInOrder: List<TextMark>, tidy: Boolean, edits: SummaryEdits): List<SBlock> {
+        // مفاتيح ثابتة: معرّف أول تمييز في الجزء + رقم الجزء بين أجزاء نفس التمييز
+        val counts = HashMap<String, Int>()
+        var list: List<SBlock> = build(marksInOrder, tidy).map { b ->
+            val base = b.marks.firstOrNull()?.id ?: "x"
+            val n = counts.getOrDefault(base, 0)
+            counts[base] = n + 1
+            withKey(b, "$base#$n")
+        }
+        if (edits.isEmpty()) return list
+
+        // 1) عنوان / نص عادي
+        list = list.map { b ->
+            when (edits.kinds[b.key]) {
+                "h" -> when (b) {
+                    is SPara -> SHeading(b.text, b.marks, b.key)
+                    is STable -> SHeading(tableText(b), b.marks, b.key)
+                    else -> b
+                }
+                "p" -> when (b) {
+                    is SHeading -> SPara(b.text, emptyList(), b.marks, b.key)
+                    is STable -> SPara(tableText(b), emptyList(), b.marks, b.key)
+                    else -> b
+                }
+                else -> b
+            }
+        }
+
+        // 2) جداول المستخدم
+        for (g in edits.tables) {
+            val keySet = g.keys.toSet()
+            val members = g.keys.mapNotNull { k -> list.firstOrNull { it.key == k } }
+            if (members.isEmpty()) continue
+            val rows = ArrayList<List<String>>()
+            val single = ArrayList<String>()
+            for (m in members) {
+                when (m) {
+                    is STable -> rows.addAll(m.rows)
+                    is SHeading -> if (g.oneRow) single.add(m.text) else rows.add(cellsOf(m.text))
+                    is SPara -> if (g.oneRow) single.add(m.text) else rows.add(cellsOf(m.text))
+                }
+            }
+            if (single.isNotEmpty()) rows.add(single)
+            val table = STable(rows, members.flatMap { it.marks }.distinctBy { it.id }, "g:" + g.id)
+            val out = ArrayList<SBlock>()
+            var placed = false
+            for (b in list) {
+                if (b.key in keySet) {
+                    if (!placed) {
+                        out.add(table)
+                        placed = true
+                    }
+                } else {
+                    out.add(b)
+                }
+            }
+            list = out
+        }
+
+        // 3) الترتيب اليدوي: الأجزاء المرتبة يدويًا بترتيبها، والجديدة تبقى بعد الجزء الذي سبقها تلقائيًا
+        if (edits.order.isNotEmpty()) {
+            val rank = HashMap<String, Int>()
+            edits.order.forEachIndexed { i, k -> rank[k] = i }
+            var last = -1.0
+            var step = 0
+            val weighted = list.map { b ->
+                val r = rank[b.key]
+                val v = if (r != null) {
+                    last = r.toDouble()
+                    step = 0
+                    last
+                } else {
+                    step++
+                    last + step * 1e-4
+                }
+                v to b
+            }
+            list = weighted.sortedBy { it.first }.map { it.second }
+        }
+        return list
     }
 
     /** نطاقات الأجزاء المهمة داخل نص الفقرة (بدون حساسية لحالة الأحرف). */

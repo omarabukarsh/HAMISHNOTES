@@ -36,7 +36,8 @@ class EditSnapshot(
     val ink: Map<Int, List<Ink>>,
     val images: Map<Int, List<ImageItem>>,
     val marks: Map<Int, List<TextMark>>,
-    val texts: Map<Int, List<TextBox>>
+    val texts: Map<Int, List<TextBox>>,
+    val edits: SummaryEdits
 )
 
 /**
@@ -74,6 +75,9 @@ class DocSession(entry: DocEntry) {
 
     // ---- درج الملخصات ----
     var summaryOpen by mutableStateOf(false)
+
+    /** تعديلات المستخدم على الملخص (عنوان/نص، جداول، ترتيب) فوق الترتيب التلقائي. */
+    var summaryEdits by mutableStateOf(SummaryEdits())
 
     /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
     var jumpHook: ((TextMark) -> Unit)? = null
@@ -118,6 +122,7 @@ class DocSession(entry: DocEntry) {
             images = loaded.second.images
             marks = loaded.second.marks
             texts = loaded.second.texts
+            summaryEdits = loaded.second.edits
             ocr.putAll(loaded.third)
             status = SessionStatus.Ready
         } catch (e: FileNotFoundException) {
@@ -131,13 +136,14 @@ class DocSession(entry: DocEntry) {
 
     // ---------- التحرير والتراجع ----------
 
-    private fun snap() = EditSnapshot(annotations, images, marks, texts)
+    private fun snap() = EditSnapshot(annotations, images, marks, texts, summaryEdits)
 
     private fun restore(s: EditSnapshot) {
         annotations = s.ink
         images = s.images
         marks = s.marks
         texts = s.texts
+        summaryEdits = s.edits
         selectedImageId = null
         selectedTextId = null
     }
@@ -170,7 +176,9 @@ class DocSession(entry: DocEntry) {
     fun endEdit() {
         val s = snapshot ?: return
         snapshot = null
-        if (s.ink === annotations && s.images === images && s.marks === marks && s.texts === texts) return
+        if (s.ink === annotations && s.images === images && s.marks === marks && s.texts === texts &&
+            s.edits === summaryEdits
+        ) return
         undoStack.add(s)
         if (undoStack.size > 100) undoStack.removeAt(0)
         redoStack.clear()
@@ -270,7 +278,7 @@ class DocSession(entry: DocEntry) {
         if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
 
         val pagesSnap = doc.pages
-        val data = DocData(annotations, images, marks, texts)
+        val data = DocData(annotations, images, marks, texts, summaryEdits)
         val ocrSnap = ocr.toMap()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
@@ -565,6 +573,64 @@ class DocSession(entry: DocEntry) {
         endEdit()
     }
 
+    // ---------- تحرير الملخص ----------
+
+    private fun changeEdits(f: (SummaryEdits) -> SummaryEdits) {
+        beginEdit()
+        summaryEdits = f(summaryEdits)
+        endEdit()
+    }
+
+    /** kind: "h" عنوان، "p" نص عادي، null = كما يكتشفه البرنامج. */
+    fun setBlockKind(key: String, kind: String?) = changeEdits { e ->
+        e.copy(kinds = if (kind == null) e.kinds - key else e.kinds + (key to kind))
+    }
+
+    /** يحرك جزءًا خطوة لأعلى (-1) أو لأسفل (+1) في الترتيب المعروض حاليًا. */
+    fun moveBlock(shown: List<String>, key: String, delta: Int) {
+        val i = shown.indexOf(key)
+        val j = i + delta
+        if (i < 0 || j < 0 || j >= shown.size) return
+        val next = shown.toMutableList()
+        next[i] = shown[j]
+        next[j] = key
+        changeEdits { it.copy(order = next) }
+    }
+
+    /** يجمع أجزاء مختارة في جدول. الجداول التي كانت تضم أحدها تُدمج فيه. */
+    fun makeTable(keys: List<String>, oneRow: Boolean) {
+        if (keys.isEmpty()) return
+        changeEdits { e ->
+            val expanded = ArrayList<String>()
+            val absorbed = HashSet<String>()
+            for (k in keys) {
+                val g = if (k.startsWith("g:")) e.tables.firstOrNull { "g:" + it.id == k } else null
+                if (g != null) {
+                    expanded.addAll(g.keys)
+                    absorbed.add(g.id)
+                } else {
+                    expanded.add(k)
+                }
+            }
+            val group = TableGroup(UUID.randomUUID().toString(), expanded.distinct(), oneRow)
+            e.copy(tables = e.tables.filter { it.id !in absorbed && it.keys.none { k -> k in expanded } } + group)
+        }
+    }
+
+    fun removeTable(groupKey: String) = changeEdits { e ->
+        e.copy(tables = e.tables.filter { "g:" + it.id != groupKey })
+    }
+
+    /** يعيد جزءًا واحدًا إلى ما اكتشفه البرنامج تلقائيًا. */
+    fun resetBlock(key: String) = changeEdits { e ->
+        e.copy(
+            kinds = e.kinds - key,
+            tables = e.tables.filter { "g:" + it.id != key }.map { g -> g.copy(keys = g.keys - key) }.filter { it.keys.isNotEmpty() }
+        )
+    }
+
+    fun resetSummaryEdits() = changeEdits { SummaryEdits() }
+
     // ---------- مربعات النص ----------
 
     fun addTextBox(item: TextBox) {
@@ -646,7 +712,7 @@ class DocSession(entry: DocEntry) {
     }
 
     private fun persist() {
-        val data = DocData(annotations, images, marks, texts)
+        val data = DocData(annotations, images, marks, texts, summaryEdits)
         AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 

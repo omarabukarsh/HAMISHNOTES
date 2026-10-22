@@ -11,8 +11,24 @@ android {
         applicationId = "com.mynotes.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // رقم يزيد مع كل بناء على GitHub Actions، فيُثبَّت كل APK جديد كتحديث فوق القديم
+        val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = 100 + run
+        versionName = "1.0.$run"
+    }
+    // مفتاح توقيع ثابت (keystore/mynotes.jks) بدل مفتاح debug العشوائي الذي يتغير في كل بناء
+    signingConfigs {
+        create("stable") {
+            storeFile = rootProject.file("keystore/mynotes.jks")
+            storePassword = "mynotes-update-key"
+            keyAlias = "mynotes"
+            keyPassword = "mynotes-update-key"
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("stable")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

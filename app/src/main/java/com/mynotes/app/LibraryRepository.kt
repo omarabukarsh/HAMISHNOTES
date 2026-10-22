@@ -26,7 +26,8 @@ class DocData(
     val ink: Map<Int, List<Ink>>,
     val images: Map<Int, List<ImageItem>>,
     val marks: Map<Int, List<TextMark>> = emptyMap(),
-    val texts: Map<Int, List<TextBox>> = emptyMap()
+    val texts: Map<Int, List<TextBox>> = emptyMap(),
+    val edits: SummaryEdits = SummaryEdits()
 )
 
 /**
@@ -426,7 +427,7 @@ class LibraryRepository(context: Context) {
                 }
                 all.groupBy { it.page }.forEach { (p, l) -> texts[p] = l }
             }
-            DocData(ink, images, marks, texts)
+            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")))
         } catch (e: Throwable) {
             try {
                 f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
@@ -525,11 +526,46 @@ class LibraryRepository(context: Context) {
                 atomicWrite(
                     File(annDir, "$id.json"),
                     JSONObject().put("version", 3).put("pages", pages).put("images", imgs)
-                        .put("marks", marks).put("texts", texts).toString()
+                        .put("marks", marks).put("texts", texts).put("summary", editsJson(data.edits)).toString()
                 )
             } catch (e: Throwable) {
             }
         }
+    }
+
+    private fun parseEdits(o: JSONObject?): SummaryEdits {
+        if (o == null) return SummaryEdits()
+        return try {
+            val order = o.optJSONArray("order")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+            val kinds = HashMap<String, String>()
+            o.optJSONObject("kinds")?.let { k -> for (key in k.keys()) kinds[key] = k.getString(key) }
+            val tables = o.optJSONArray("tables")?.let { a ->
+                (0 until a.length()).map { i ->
+                    val t = a.getJSONObject(i)
+                    val ks = t.getJSONArray("keys")
+                    TableGroup(t.getString("id"), (0 until ks.length()).map { ks.getString(it) }, t.optBoolean("row"))
+                }
+            } ?: emptyList()
+            SummaryEdits(order, kinds, tables)
+        } catch (e: Throwable) {
+            SummaryEdits()
+        }
+    }
+
+    private fun editsJson(e: SummaryEdits): JSONObject {
+        val kinds = JSONObject()
+        e.kinds.forEach { (k, v) -> kinds.put(k, v) }
+        val tables = JSONArray()
+        e.tables.forEach { g ->
+            tables.put(
+                JSONObject().put("id", g.id).put("row", g.oneRow)
+                    .put("keys", JSONArray().apply { g.keys.forEach { put(it) } })
+            )
+        }
+        return JSONObject()
+            .put("order", JSONArray().apply { e.order.forEach { put(it) } })
+            .put("kinds", kinds)
+            .put("tables", tables)
     }
 
     /** ينسخ الصورة إلى مساحة التطبيق بعد تصغيرها وتصحيح اتجاهها. خارج الخيط الرئيسي. */

@@ -69,8 +69,12 @@ fun SummaryDrawer(
     val context = LocalContext.current
     val all = s.allMarks()
     val tidy = c.summaryTidy
-    val blocks = remember(all, tidy) { Summary.build(all, tidy) }
+    val edits = s.summaryEdits
+    val blocks = remember(all, tidy, edits) { Summary.view(all, tidy, edits) }
     var editing by remember { mutableStateOf<TextMark?>(null) }
+    // وضع اختيار أجزاء لصنع جدول
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(listOf<String>()) }
 
     Surface(
         modifier.fillMaxHeight().width(420.dp),
@@ -112,7 +116,47 @@ fun SummaryDrawer(
                     Text("PDF", fontSize = 13.sp)
                 }
             }
+            if (!edits.isEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "فيه تعديلات يدوية على الترتيب التلقائي",
+                        fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { s.resetSummaryEdits() }) {
+                        Text("استعادة التلقائي", fontSize = 12.sp, color = Palette.GoldDeep)
+                    }
+                }
+            }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Gold.copy(alpha = 0.45f)))
+            if (selecting) {
+                Column(Modifier.fillMaxWidth().background(Palette.NavySoft).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    Text(
+                        if (selected.isEmpty()) "اختر النصوص التي تريدها في الجدول"
+                        else "اخترت ${selected.size}، ثم حدد شكل الجدول",
+                        fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Bold
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(enabled = selected.size >= 2, onClick = {
+                            s.makeTable(blocks.map { it.key }.filter { it in selected }, oneRow = true)
+                            selecting = false
+                            selected = emptyList()
+                        }) { Text("في صف واحد", fontSize = 13.sp) }
+                        TextButton(enabled = selected.isNotEmpty(), onClick = {
+                            s.makeTable(blocks.map { it.key }.filter { it in selected }, oneRow = false)
+                            selecting = false
+                            selected = emptyList()
+                        }) { Text("كل نص صف", fontSize = 13.sp) }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = {
+                            selecting = false
+                            selected = emptyList()
+                        }) { Text("إلغاء", fontSize = 13.sp, color = Palette.TextSecondary) }
+                    }
+                }
+            }
 
             if (blocks.isEmpty()) {
                 EmptySummary()
@@ -132,8 +176,33 @@ fun SummaryDrawer(
                     }
                     blocks.forEachIndexed { i, b ->
                         item(key = "b$i") {
-                            Box(Modifier.fillMaxWidth().background(Palette.Ivory).padding(horizontal = 20.dp)) {
-                                BlockView(s, b, onJump, onEdit = { editing = it })
+                            val isSel = b.key in selected
+                            Box(
+                                Modifier.fillMaxWidth().background(Palette.Ivory)
+                                    .padding(horizontal = 14.dp)
+                                    .then(
+                                        if (selecting) Modifier.clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSel) Palette.GoldSoft else Color.Transparent)
+                                            .border(1.dp, if (isSel) Palette.Gold else Palette.Divider, RoundedCornerShape(8.dp))
+                                        else Modifier
+                                    )
+                                    .padding(horizontal = 6.dp)
+                            ) {
+                                BlockView(
+                                    s = s,
+                                    b = b,
+                                    shownKeys = blocks.map { it.key },
+                                    selecting = selecting,
+                                    onToggleSelect = {
+                                        selected = if (isSel) selected - b.key else selected + b.key
+                                    },
+                                    onStartTable = {
+                                        selecting = true
+                                        selected = listOf(b.key)
+                                    },
+                                    onJump = onJump,
+                                    onEdit = { editing = it }
+                                )
                             }
                         }
                     }
@@ -179,14 +248,27 @@ fun emphasized(text: String, emphasis: List<String>): AnnotatedString = buildAnn
 }
 
 @Composable
-private fun BlockView(s: DocSession, b: SBlock, onJump: (TextMark) -> Unit, onEdit: (TextMark) -> Unit) {
+private fun BlockView(
+    s: DocSession,
+    b: SBlock,
+    shownKeys: List<String>,
+    selecting: Boolean,
+    onToggleSelect: () -> Unit,
+    onStartTable: () -> Unit,
+    onJump: (TextMark) -> Unit,
+    onEdit: (TextMark) -> Unit
+) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     val first = b.marks.firstOrNull()
+    val edits = s.summaryEdits
+    val userTable = b.key.startsWith("g:")
+    val overridden = userTable || edits.kinds.containsKey(b.key)
+    val pos = shownKeys.indexOf(b.key)
     Box {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-                .clickable { menu = true }
+                .clickable { if (selecting) onToggleSelect() else menu = true }
                 .padding(vertical = 5.dp)
         ) {
             when (b) {
@@ -202,24 +284,51 @@ private fun BlockView(s: DocSession, b: SBlock, onJump: (TextMark) -> Unit, onEd
                 is STable -> TableView(b.rows)
             }
         }
+        // تبويب صغير يظهر عند الضغط على الجزء
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            if (first != null) {
-                DropdownMenuItem(text = { Text("انتقال إلى الموضع") }, onClick = { menu = false; onJump(first) })
-                DropdownMenuItem(text = { Text("تعديل النص") }, onClick = { menu = false; onEdit(first) })
+            when (b) {
+                is SHeading -> MenuRow("نص عادي", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
+                is SPara -> MenuRow("اجعله عنوانًا", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "h") }
+                is STable -> if (!userTable) {
+                    MenuRow("تحويل إلى نص", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
+                }
             }
-            DropdownMenuItem(text = { Text("نسخ") }, onClick = {
+            if (userTable) {
+                MenuRow("فك الجدول", R.drawable.ph_close) { menu = false; s.removeTable(b.key) }
+            } else {
+                MenuRow("ضعه في جدول…", R.drawable.ph_pages) { menu = false; onStartTable() }
+            }
+            if (pos > 0) MenuRow("تحريك لأعلى", R.drawable.ph_caret_up) { menu = false; s.moveBlock(shownKeys, b.key, -1) }
+            if (pos >= 0 && pos < shownKeys.lastIndex) {
+                MenuRow("تحريك لأسفل", R.drawable.ph_caret_down) { menu = false; s.moveBlock(shownKeys, b.key, 1) }
+            }
+            if (overridden) {
+                MenuRow("كما اكتشفه البرنامج", R.drawable.ph_recent) { menu = false; s.resetBlock(b.key) }
+            }
+            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Palette.Divider))
+            if (first != null) {
+                MenuRow("انتقال إلى الموضع", R.drawable.ph_search) { menu = false; onJump(first) }
+                MenuRow("تعديل النص", R.drawable.ph_note) { menu = false; onEdit(first) }
+            }
+            MenuRow("نسخ", R.drawable.ph_copy) {
                 menu = false
                 copy(context, Summary.plainText("", listOf(b)).trim())
-            })
-            DropdownMenuItem(
-                text = { Text("حذف التمييز", color = Palette.Danger) },
-                onClick = {
-                    menu = false
-                    b.marks.forEach { s.deleteMark(it.id) }
-                }
-            )
+            }
+            MenuRow("حذف التمييز", R.drawable.ph_trash, Palette.Danger) {
+                menu = false
+                b.marks.forEach { s.deleteMark(it.id) }
+            }
         }
     }
+}
+
+@Composable
+private fun MenuRow(label: String, icon: Int, color: Color = Palette.TextPrimary, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, fontSize = 14.sp, color = color) },
+        leadingIcon = { PhIcon(icon, if (color == Palette.TextPrimary) Palette.TextSecondary else color, 18.dp) },
+        onClick = onClick
+    )
 }
 
 @Composable

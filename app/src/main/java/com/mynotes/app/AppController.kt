@@ -431,7 +431,7 @@ object AppController {
 
     fun exportSummary(context: Context, s: DocSession, uri: Uri) {
         if (exporting != null) return
-        val blocks = Summary.build(s.allMarks(), summaryTidy)
+        val blocks = Summary.view(s.allMarks(), summaryTidy, s.summaryEdits)
         val title = s.title
         exporting = "جارٍ حفظ الملخصات…"
         scope.launch {

@@ -112,7 +112,7 @@ fun SummaryDrawer(
                     ) {
                         PhIcon(R.drawable.ph_books, Palette.GoldDeep, 16.dp)
                         Spacer(Modifier.width(6.dp))
-                        Text("مراجعة ${cards.size}", fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                        Text("بطاقات ${cards.size}", fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                     }
                 }
                 IconButton(onClick = { s.summaryOpen = false }) {

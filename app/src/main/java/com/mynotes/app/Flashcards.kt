@@ -1,6 +1,13 @@
 package com.mynotes.app
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,10 +93,10 @@ object Flashcards {
                     for (r in Summary.emphasisRanges(b.text, b.emphasis)) {
                         val phrase = b.text.substring(r.first, r.last + 1)
                         if (phrase.length > 80) continue
-                        val s = sentenceAround(b.text, r.first, r.last + 1)
-                        if (s.first.length < phrase.length + 12) continue
-                        val front = s.first.replaceRange(s.second, s.second + phrase.length, "_____")
-                        out.add(Card(idOf("c", front, phrase), front, phrase, cloze = true))
+                        // بطاقة مباشرة: النص المهم في الوجه، وجملته كاملة في الظهر
+                        val sentence = sentenceAround(b.text, r.first, r.last + 1).first
+                        if (sentence.length < phrase.length + 12) continue
+                        out.add(Card(idOf("c", phrase, sentence), phrase, sentence))
                     }
                 }
                 is STable -> {
@@ -179,25 +186,22 @@ object Flashcards {
     }
 }
 
-/** شاشة المراجعة: البطاقة، «أظهر الإجابة»، ثم تقييم يحدد موعد ظهورها التالي. */
+/**
+ * بطاقات مباشرة (Flashcards): الوجه عنوان أو مصطلح، والظهر شرحه. انقر البطاقة لقلبها،
+ * واسحب يمينًا أو يسارًا للتنقل. بدون أسئلة ولا تقييم.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
-    val repo = AppController.repo
-    var state by remember { mutableStateOf<Map<String, SrsState>?>(null) }
-    var queue by remember { mutableStateOf<List<Card>>(emptyList()) }
-    var shown by remember { mutableStateOf(false) }
-    var done by remember { mutableStateOf(0) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        val st = withContext(Dispatchers.IO) { repo.loadSrs(s.id) }
-        state = st
-        queue = Flashcards.dueCards(cards, st)
-    }
+    var deck by remember { mutableStateOf(cards) }
+    val pager = rememberPagerState(pageCount = { deck.size })
+    val scope = rememberCoroutineScope()
+    // البطاقات المقلوبة حاليًا (حسب المعرّف)
+    var flipped by remember { mutableStateOf(setOf<String>()) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            Modifier.fillMaxWidth(0.82f).heightIn(min = 420.dp, max = 680.dp),
+            Modifier.fillMaxWidth(0.82f).heightIn(min = 460.dp, max = 700.dp),
             shape = RoundedCornerShape(24.dp),
             color = Palette.Background
         ) {
@@ -205,113 +209,107 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "مراجعة البطاقات", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                            "بطاقات المراجعة", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                             fontSize = 20.sp, color = Palette.Navy
                         )
-                        Text(
-                            "${cards.size} بطاقة من ملخص «${s.title}»", fontSize = 12.sp,
-                            color = Palette.TextSecondary, maxLines = 1
-                        )
+                        Text(s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1)
+                    }
+                    if (deck.size > 1) {
+                        TextButton(onClick = {
+                            deck = deck.shuffled()
+                            flipped = emptySet()
+                            scope.launch { pager.scrollToPage(0) }
+                        }) { Text("خلط", color = Palette.GoldDeep, fontWeight = FontWeight.Bold) }
                     }
                     IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق") }
                 }
-                val total = done + queue.size
-                if (total > 0) {
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { done.toFloat() / total },
-                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                        color = Palette.Gold, trackColor = Palette.Divider
-                    )
-                    Text("باقي ${queue.size}", fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.padding(top = 4.dp))
-                }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(12.dp))
 
-                val st = state
-                val card = queue.firstOrNull()
-                when {
-                    st == null -> Text("جارٍ التحميل…", color = Palette.TextSecondary)
-                    cards.isEmpty() -> EmptyCards(
+                if (deck.isEmpty()) {
+                    EmptyCards(
                         "لا توجد بطاقات بعد. البطاقات تُصنع من العناوين وما تحتها، ومن صفوف الجداول، " +
                             "ومن النص المظلل مرتين في الملخص."
                     )
-                    card == null -> EmptyCards(
-                        if (done > 0) "أنهيت مراجعة اليوم: $done بطاقة. ستظهر البطاقات مجددًا في مواعيدها."
-                        else "لا توجد بطاقات مستحقة اليوم. عُد غدًا."
-                    )
-                    else -> {
-                        AnimatedContent(targetState = card to shown, label = "card") { (cd, sh) ->
-                            CardFace(cd, sh) { shown = true }
-                        }
-                        Spacer(Modifier.height(14.dp))
-                        if (!shown) {
-                            Box(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Navy)
-                                    .clickable { shown = true }.padding(14.dp),
-                                contentAlignment = Alignment.Center
-                            ) { Text("أظهر الإجابة", color = Color.White, fontWeight = FontWeight.Bold) }
-                        } else {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf(
-                                    Triple(0, "مرة أخرى", Palette.Danger),
-                                    Triple(1, "صعب", Palette.GoldDeep),
-                                    Triple(2, "جيد", Palette.Navy),
-                                    Triple(3, "سهل", Color(0xFF2E7D32))
-                                ).forEach { (rating, label, col) ->
-                                    val next = Flashcards.schedule(st[card.id], rating)
-                                    Column(
-                                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                                            .border(1.5.dp, col, RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                val ns = st + (card.id to next)
-                                                state = ns
-                                                // الحفظ على نطاق التطبيق حتى لا يضيع آخر تقييم عند إغلاق النافذة
-                                                AppController.scope.launch { repo.saveSrs(s.id, ns) }
-                                                queue = if (rating == 0) queue.drop(1) + card else queue.drop(1)
-                                                if (rating != 0) done++
-                                                shown = false
-                                            }
-                                            .padding(vertical = 10.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(label, color = col, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text(Flashcards.intervalLabel(next.interval), color = Palette.TextSecondary, fontSize = 11.sp)
-                                    }
-                                }
-                            }
+                } else {
+                    HorizontalPager(
+                        state = pager,
+                        pageSpacing = 16.dp,
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                    ) { i ->
+                        val card = deck[i]
+                        val isFlipped = card.id in flipped
+                        FlipCard(card, isFlipped) {
+                            flipped = if (isFlipped) flipped - card.id else flipped + card.id
                         }
                     }
+                    Spacer(Modifier.height(14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            enabled = pager.currentPage > 0,
+                            onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
+                        ) { Text("السابقة") }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "${pager.currentPage + 1} / ${deck.size}",
+                            fontSize = 14.sp, color = Palette.TextSecondary, fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            enabled = pager.currentPage < deck.lastIndex,
+                            onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }
+                        ) { Text("التالية") }
+                    }
+                    Text(
+                        "انقر البطاقة لقلبها، واسحب للتنقل",
+                        fontSize = 12.sp, color = Palette.TextSecondary,
+                        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
+                    )
                 }
             }
         }
     }
 }
 
+/** بطاقة تنقلب ثلاثيًا عند النقر: الوجه ثم الظهر. */
 @Composable
-private fun CardFace(card: Card, shown: Boolean, onReveal: () -> Unit) {
-    val shape = RoundedCornerShape(18.dp)
-    Column(
-        Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp)
-            .clip(shape).background(Palette.Ivory).border(1.dp, Palette.Divider, shape)
-            .clickable(enabled = !shown, onClick = onReveal)
-            .verticalScroll(rememberScrollState())
-            .padding(22.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun FlipCard(card: Card, flipped: Boolean, onFlip: () -> Unit) {
+    val angle by animateFloatAsState(if (flipped) 180f else 0f, tween(380), label = "flip")
+    val showBack = angle > 90f
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 460.dp)
+            .graphicsLayer {
+                rotationY = angle
+                cameraDistance = 14f * density
+            }
+            .clip(shape)
+            .background(if (showBack) Palette.Ivory else Color.White)
+            .border(1.5.dp, if (showBack) Palette.Gold else Palette.Divider, shape)
+            .clickable(onClick = onFlip),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            if (card.cloze) "أكمل الفراغ" else "السؤال",
-            fontSize = 12.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            card.front, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold,
-            color = Palette.TextPrimary, textAlign = TextAlign.Center
-        )
-        if (shown) {
-            Spacer(Modifier.height(14.dp))
-            Box(Modifier.width(48.dp).height(2.dp).background(Palette.Gold))
-            Spacer(Modifier.height(14.dp))
-            Text(card.back, fontSize = 16.sp, lineHeight = 26.sp, color = Palette.TextPrimary, textAlign = TextAlign.Center)
+        // الظهر يُعكس مرة ثانية حتى لا يظهر النص مقلوبًا
+        Column(
+            Modifier.graphicsLayer { rotationY = if (showBack) 180f else 0f }
+                .verticalScroll(rememberScrollState())
+                .padding(26.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (!showBack) {
+                Text(
+                    card.front, fontSize = 22.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = Fonts.Display, color = Palette.Navy, textAlign = TextAlign.Center
+                )
+            } else {
+                Text(
+                    card.front.lineSequence().first(), fontSize = 13.sp, color = Palette.GoldDeep,
+                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.width(48.dp).height(2.dp).background(Palette.Gold))
+                Spacer(Modifier.height(12.dp))
+                Text(card.back, fontSize = 17.sp, lineHeight = 28.sp, color = Palette.TextPrimary, textAlign = TextAlign.Center)
+            }
         }
     }
 }

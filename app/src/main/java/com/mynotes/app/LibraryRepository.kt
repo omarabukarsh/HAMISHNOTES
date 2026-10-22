@@ -200,7 +200,7 @@ class LibraryRepository(context: Context) {
             val out = HashMap<String, SrsState>()
             for (k in o.keys()) {
                 val a = o.getJSONArray(k)
-                out[k] = SrsState(a.getDouble(0).toFloat(), a.getInt(1), a.getLong(2), a.getInt(3))
+                out[k] = SrsState(a.getDouble(0).toFloat(), a.getInt(1), a.getLong(2), a.getInt(3), a.optLong(4, -1L))
             }
             out
         } catch (e: Throwable) {
@@ -213,7 +213,7 @@ class LibraryRepository(context: Context) {
             try {
                 val o = JSONObject()
                 data.forEach { (k, s) ->
-                    o.put(k, JSONArray().put(s.ease.toDouble()).put(s.interval).put(s.due).put(s.reps))
+                    o.put(k, JSONArray().put(s.ease.toDouble()).put(s.interval).put(s.due).put(s.reps).put(s.intro))
                 }
                 atomicWrite(File(srsDir, "$docId.json"), o.toString())
             } catch (e: Throwable) {

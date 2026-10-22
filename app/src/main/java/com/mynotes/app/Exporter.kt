@@ -77,7 +77,7 @@ object Exporter {
                     base.recycle()
                 }
             }
-            val os = context.contentResolver.openOutputStream(uri) ?: throw IllegalStateException("output")
+            val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
             os.use { out.writeTo(it) }
             return snap.pages.size
         } finally {
@@ -109,7 +109,14 @@ object Exporter {
                         com.tom_roush.pdfbox.pdmodel.PDDocument.load(f)
                     }
                     val original = src.getPage(ref.index)
-                    if (original.rotation % 360 == 0) page = out.importPage(original)
+                    if (original.rotation % 360 == 0) {
+                        val imported = out.importPage(original)
+                        // الموارد (الخطوط والصور) قد تكون موروثة من شجرة الصفحات في الملف الأصلي
+                        if (!original.cosObject.containsKey(com.tom_roush.pdfbox.cos.COSName.RESOURCES)) {
+                            imported.resources = original.resources
+                        }
+                        page = imported
+                    }
                 }
                 if (page == null) {
                     // صفحة فارغة أو مدوّرة: صورة الصفحة كاملة
@@ -130,7 +137,7 @@ object Exporter {
                 }
                 drawOverlay(out, page, snap, i)
             }
-            val os = context.contentResolver.openOutputStream(uri) ?: throw IllegalStateException("output")
+            val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
             os.use { out.save(it) }
             return snap.pages.size
         } finally {
@@ -181,6 +188,12 @@ object Exporter {
                     cs.setNonStrokingColor(col.red, col.green, col.blue)
                     for (r in m.rects) cs.addRect(px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
                     cs.fill()
+                    if (m.level < 2 && m.strongRects.isNotEmpty()) {
+                        val strong = markColor(m.color, strong = true)
+                        cs.setNonStrokingColor(strong.red, strong.green, strong.blue)
+                        for (r in m.strongRects) cs.addRect(px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
+                        cs.fill()
+                    }
                     val important = if (m.level >= 2) m.rects else m.strongRects
                     if (important.isNotEmpty()) {
                         cs.setNonStrokingColor(Palette.GoldDeep.red, Palette.GoldDeep.green, Palette.GoldDeep.blue)

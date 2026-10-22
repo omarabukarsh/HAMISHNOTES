@@ -41,7 +41,7 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
                 val rot = page.rotation % 360
                 // الصفحات المدوّرة نتركها للقراءة الضوئية حتى لا تنحرف المواضع
                 if (rot != 0) return emptyList()
-                val collector = Collector(box.width, box.lowerLeftX, box.upperRightY)
+                val collector = Collector(box.width)
                 collector.sortByPosition = true
                 collector.startPage = ref.index + 1
                 collector.endPage = ref.index + 1
@@ -65,24 +65,48 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
     }
 
     /** يجمع الكلمات بمواضعها. PDFBox يستدعي writeString لكل كلمة بنصها المنطقي (يصلح العربية). */
-    private class Collector(
-        private val pageW: Float,
-        private val originX: Float,
-        @Suppress("unused") private val topY: Float
-    ) : PDFTextStripper() {
+    private class Collector(private val pageW: Float) : PDFTextStripper() {
         val out = ArrayList<OcrWord>()
         private var line = 0
         private var lineHasWords = false
 
         override fun writeString(text: String, textPositions: MutableList<TextPosition>) {
-            val clean = normalize(text)
-            if (clean.isBlank() || textPositions.isEmpty() || pageW <= 0f) return
+            if (textPositions.isEmpty() || pageW <= 0f) return
+            // قد يحمل الاستدعاء الواحد عدة كلمات بينها مسافات: نقسم المواضع عند كل مسافة
+            val groups = ArrayList<List<TextPosition>>()
+            var cur = ArrayList<TextPosition>()
+            for (p in textPositions) {
+                val u = p.unicode ?: ""
+                if (u.isBlank()) {
+                    if (cur.isNotEmpty()) groups.add(cur)
+                    cur = ArrayList()
+                } else {
+                    cur.add(p)
+                }
+            }
+            if (cur.isNotEmpty()) groups.add(cur)
+            if (groups.isEmpty()) return
+            val parts = normalize(text).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val rtl = parts.any { w -> w.any { it in '\u0600'..'\u06FF' } }
+            // المواضع بترتيب بصري؛ في العربية الكلمات المنطقية بالعكس
+            val ordered = if (rtl) parts.reversed() else parts
+            if (ordered.size == groups.size) {
+                groups.forEachIndexed { k, g -> emit(ordered[k], g) }
+            } else {
+                emit(parts.joinToString(" "), textPositions.filter { !(it.unicode ?: "").isBlank() })
+            }
+            lineHasWords = true
+        }
+
+        private fun emit(word: String, ps: List<TextPosition>) {
+            if (word.isBlank() || ps.isEmpty()) return
             var l = Float.MAX_VALUE
             var r = -Float.MAX_VALUE
             var t = Float.MAX_VALUE
             var b = -Float.MAX_VALUE
-            for (p in textPositions) {
-                val x = p.xDirAdj - originX
+            for (p in ps) {
+                // إحداثيات PDFBox نسبية لصندوق القص أصلًا
+                val x = p.xDirAdj
                 val h = p.heightDir.coerceAtLeast(p.fontSizeInPt * 0.6f)
                 val base = p.yDirAdj
                 l = minOf(l, x)
@@ -91,8 +115,7 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
                 b = maxOf(b, base + h * 0.22f)
             }
             if (r <= l || b <= t) return
-            out.add(OcrWord(clean.trim(), l / pageW, t / pageW, r / pageW, b / pageW, line))
-            lineHasWords = true
+            out.add(OcrWord(word, l / pageW, t / pageW, r / pageW, b / pageW, line))
         }
 
         override fun writeLineSeparator() {

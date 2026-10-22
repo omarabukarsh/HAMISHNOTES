@@ -687,10 +687,23 @@ class DocSession(entry: DocEntry) {
     }
 
     /** يضم أجزاء أخرى إلى جدول موجود كصفوف جديدة. newRows = نصوصها كصفوف (لجدول معدَّل يدويًا). */
-    fun addToTable(tableKey: String, keys: List<String>, newRows: List<List<String>>) = changeEdits { e ->
-        val add = keys.filter { it != tableKey }
-        if (add.isEmpty()) return@changeEdits e
-        val order = e.order.filter { it !in add }
+    fun addToTable(tableKey: String, keys: List<String>, newRows: List<List<String>>) = changeEdits { e0 ->
+        // جداول من صنع المستخدم ضمن الاختيار: تُفك إلى أجزائها وتُحذف كجداول مستقلة
+        val absorbed = HashSet<String>()
+        val add = ArrayList<String>()
+        for (k in keys) {
+            if (k == tableKey) continue
+            val g = if (k.startsWith("g:")) e0.tables.firstOrNull { "g:" + it.id == k } else null
+            if (g != null) {
+                absorbed.add(g.id)
+                add.addAll(g.keys)
+            } else {
+                add.add(k)
+            }
+        }
+        if (add.isEmpty()) return@changeEdits e0
+        val e = e0.copy(tables = e0.tables.filter { it.id !in absorbed })
+        val order = e.order.filter { it !in add && it.removePrefix("g:") !in absorbed }
         if (tableKey.startsWith("g:")) {
             e.copy(
                 tables = e.tables.map { g ->

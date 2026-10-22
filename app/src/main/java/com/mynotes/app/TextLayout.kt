@@ -126,15 +126,18 @@ object TextLayout {
     }
 
     private class Row(input: List<OcrWord>) {
-        /** صف عربي: الكلمات تُقرأ من اليمين لليسار. */
-        val rtl: Boolean = run {
+        /** حروف عربية / لاتينية في الصف. صف بلا حروف (أرقام ورموز) محايد. */
+        private val counts: Pair<Int, Int> = run {
             var ar = 0
             var la = 0
             for (w in input) for (ch in w.text) {
                 if (isArabicChar(ch)) ar++ else if (ch.isLetter()) la++
             }
-            ar > la
+            ar to la
         }
+        val neutral: Boolean get() = counts.first == 0 && counts.second == 0
+        /** صف عربي: الكلمات تُقرأ من اليمين لليسار. */
+        val rtl: Boolean = counts.first > counts.second
         val words: List<OcrWord> = if (rtl) input.sortedByDescending { it.r } else input.sortedBy { it.l }
         val l = words.minOf { it.l }
         val r = words.maxOf { it.r }
@@ -164,7 +167,7 @@ object TextLayout {
         }
         val text: String get() = cells.joinToString(" ") { it.text }
         val numberedHeading: Boolean get() =
-            Regex("^\\d+(\\.\\d+)*\\.?\\s+\\S").containsMatchIn(text) &&
+            Regex("^\\p{Nd}+([.٫]\\p{Nd}+)*[.٫]?\\s+\\S").containsMatchIn(text) &&
                 text.split(' ').size <= 10 && text.trimEnd().lastOrNull() != '.'
     }
 
@@ -201,7 +204,8 @@ object TextLayout {
             if (gap > 1.8f * lh) break
             // فراغ أكبر بوضوح من فراغات هذا الجدول = جدول آخر
             if (gaps.size >= 2 && gap > 1.4f * median(gaps) && gap > 1.0f * lh && row.cells.size >= 2) break
-            if (row.rtl != first.rtl) break
+            // صف بلا حروف أو بلغة أخرى داخل جدول (أسماء أدوية لاتينية في جدول عربي) لا يقطع الجدول
+            if (!row.neutral && !first.neutral && row.rtl != first.rtl && row.cells.size >= 2) break
             val cols = row.cells.map { colOf(it) }
             if (row.cells.size >= 2) {
                 if (cols.any { it < 0 }) break

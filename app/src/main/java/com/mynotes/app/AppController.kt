@@ -122,7 +122,10 @@ object AppController {
         stats[k] = (stats[k] ?: 0L) + dt
     }
 
+    private var statsLoaded = false
+
     private fun saveStats() {
+        if (!statsLoaded) return
         val snap = stats.toMap()
         scope.launch { repo.saveStats(snap) }
     }
@@ -282,7 +285,9 @@ object AppController {
             library.addAll(list)
             // مواد موجودة في المستندات ولم تُسجَّل بعد
             list.map { it.folder }.filter { it.isNotEmpty() && it !in folders }.distinct().forEach { folders.add(it) }
-            stats.putAll(withContext(Dispatchers.IO) { repo.loadStats() })
+            // دمج بالجمع: لا يضيع وقت سُجّل قبل انتهاء التحميل
+            withContext(Dispatchers.IO) { repo.loadStats() }.forEach { (k, v) -> stats[k] = (stats[k] ?: 0L) + v }
+            statsLoaded = true
             val ids = (prefs.getString("open", "") ?: "").split(",").filter { it.isNotBlank() }
             val active = prefs.getString("active", null)
             ids.forEach { id ->

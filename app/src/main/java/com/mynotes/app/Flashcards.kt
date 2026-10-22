@@ -44,7 +44,7 @@ import java.time.LocalDate
 import kotlin.math.roundToInt
 
 /** حالة بطاقة في المراجعة المتباعدة: سهولة، فاصل بالأيام، يوم الاستحقاق (epochDay)، عدد مرات النجاح. */
-data class SrsState(val ease: Float, val interval: Int, val due: Long, val reps: Int)
+data class SrsState(val ease: Float, val interval: Int, val due: Long, val reps: Int, val intro: Long = -1L)
 
 /** بطاقة: وجه (سؤال) وظهر (إجابة). id ثابت من نصها، فتبقى حالتها إن أعيد توليد البطاقات. */
 data class Card(val id: String, val front: String, val back: String, val cloze: Boolean = false)
@@ -136,7 +136,7 @@ object Flashcards {
 
     /** 0 مرة أخرى، 1 صعب، 2 جيد، 3 سهل. */
     fun schedule(s: SrsState?, rating: Int): SrsState {
-        val cur = s ?: SrsState(2.5f, 0, today(), 0)
+        val cur = s ?: SrsState(2.5f, 0, today(), 0, intro = today())
         return when (rating) {
             0 -> cur.copy(ease = (cur.ease - 0.2f).coerceAtLeast(1.3f), interval = 0, due = today(), reps = 0)
             1 -> {
@@ -169,11 +169,12 @@ object Flashcards {
         else -> "${days / 30} شهر"
     }
 
-    /** البطاقات المستحقة اليوم (الجديدة محدودة بـ 20 يوميًا). */
+    /** البطاقات المستحقة اليوم، والجديدة بحد 20 بطاقة جديدة في اليوم (لا في كل جلسة). */
     fun dueCards(cards: List<Card>, state: Map<String, SrsState>): List<Card> {
         val t = today()
         val due = cards.filter { c -> state[c.id]?.let { it.due <= t } ?: false }
-        val fresh = cards.filter { it.id !in state }.take(20)
+        val introducedToday = state.values.count { it.intro == t }
+        val fresh = cards.filter { it.id !in state }.take((20 - introducedToday).coerceAtLeast(0))
         return due + fresh
     }
 }
@@ -239,8 +240,8 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                         else "لا توجد بطاقات مستحقة اليوم. عُد غدًا."
                     )
                     else -> {
-                        AnimatedContent(targetState = card.id + shown, label = "card") { _ ->
-                            CardFace(card, shown) { shown = true }
+                        AnimatedContent(targetState = card to shown, label = "card") { (cd, sh) ->
+                            CardFace(cd, sh) { shown = true }
                         }
                         Spacer(Modifier.height(14.dp))
                         if (!shown) {
@@ -264,7 +265,8 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                                             .clickable {
                                                 val ns = st + (card.id to next)
                                                 state = ns
-                                                scope.launch { repo.saveSrs(s.id, ns) }
+                                                // الحفظ على نطاق التطبيق حتى لا يضيع آخر تقييم عند إغلاق النافذة
+                                                AppController.scope.launch { repo.saveSrs(s.id, ns) }
                                                 queue = if (rating == 0) queue.drop(1) + card else queue.drop(1)
                                                 if (rating != 0) done++
                                                 shown = false

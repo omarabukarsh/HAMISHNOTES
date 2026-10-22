@@ -387,40 +387,55 @@ class DocSession(entry: DocEntry) {
 
         var next: List<TextMark>? = null
         var message: String? = null
+        fun addStrong(list: List<MarkRect>, add: List<MarkRect>): List<MarkRect> =
+            if (TextLayout.overlap(add, list) / newArea >= 0.6f) list else list + add
+
+        // 1) نفس المساحة أو جزء داخل تمييز قديم
         for (old in existing) {
             val ov = TextLayout.overlap(rects, old.rects)
             if (ov <= 0f) continue
             val oldArea = TextLayout.area(old.rects).coerceAtLeast(1e-9f)
             val ofNew = ov / newArea
             val ofOld = ov / oldArea
-            when {
-                ofNew >= 0.6f && ofOld >= 0.6f -> {
-                    next = existing.map { if (it.id == old.id) it.copy(level = 2, strongRects = it.rects) else it }
-                    message = "ظُلّل النص مرة ثانية، فصار مهمًا في الملخص"
-                }
-                ofNew >= 0.6f -> {
-                    val flat = TextTidy.clean(text.replace("# ", "").replace(" | ", " "))
-                    next = existing.map {
-                        if (it.id == old.id) it.copy(
-                            emphasis = (it.emphasis + flat).distinct(),
-                            strongRects = it.strongRects + rects
-                        ) else it
-                    }
-                    message = "أُبرز هذا الجزء كمهم في الملخص"
-                }
-                ofOld >= 0.6f -> {
-                    val oldFlat = TextTidy.clean(old.text.replace("# ", "").replace(" | ", " "))
-                    val merged = TextMark(
-                        id = UUID.randomUUID().toString(), page = page, rects = rects, color = color,
-                        text = text, createdAt = old.createdAt,
-                        level = 1,
-                        emphasis = if (old.level >= 2) (old.emphasis + oldFlat).distinct() else old.emphasis,
-                        strongRects = if (old.level >= 2) old.strongRects + old.rects else old.strongRects
-                    )
-                    next = existing.filter { it.id != old.id } + merged
-                }
+            if (ofNew >= 0.6f && ofOld >= 0.6f) {
+                next = existing.map { if (it.id == old.id) it.copy(level = 2, strongRects = it.rects) else it }
+                message = "ظُلّل النص مرة ثانية، فصار مهمًا في الملخص"
+                break
             }
-            if (next != null) break
+            if (ofNew >= 0.6f) {
+                val flat = TextTidy.clean(text.replace("# ", "").replace(" | ", " "))
+                next = existing.map {
+                    if (it.id == old.id) it.copy(
+                        emphasis = (it.emphasis + flat).distinct(),
+                        strongRects = if (it.level >= 2) it.strongRects else addStrong(it.strongRects, rects)
+                    ) else it
+                }
+                message = "أُبرز هذا الجزء كمهم في الملخص"
+                break
+            }
+        }
+        // 2) تمييز أكبر يحتوي تمييزات قديمة: يحلّ محلّها كلها ويحتفظ بما كان مهمًا فيها
+        if (next == null) {
+            val contained = existing.filter { old ->
+                val oldArea = TextLayout.area(old.rects).coerceAtLeast(1e-9f)
+                TextLayout.overlap(rects, old.rects) / oldArea >= 0.6f
+            }
+            if (contained.isNotEmpty()) {
+                var emphasis = emptyList<String>()
+                var strong = emptyList<MarkRect>()
+                for (old in contained) {
+                    val oldFlat = TextTidy.clean(old.text.replace("# ", "").replace(" | ", " "))
+                    emphasis = if (old.level >= 2) emphasis + oldFlat else emphasis + old.emphasis
+                    strong = strong + (if (old.level >= 2) old.rects else old.strongRects)
+                }
+                val merged = TextMark(
+                    id = UUID.randomUUID().toString(), page = page, rects = rects, color = color,
+                    text = text, createdAt = contained.minOf { it.createdAt },
+                    emphasis = emphasis.distinct(), strongRects = strong.distinct()
+                )
+                val ids = contained.map { it.id }.toSet()
+                next = existing.filter { it.id !in ids } + merged
+            }
         }
         val list = next ?: (existing + TextMark(
             id = UUID.randomUUID().toString(),

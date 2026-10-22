@@ -149,7 +149,10 @@ object TextLayout {
             val nextMulti = i < rows.lastIndex && rows[i + 1].cells.size >= 2
             isTable[i] = multi && (prevMulti || nextMulti || rows[i].cells.size >= 3)
         }
-        val isHeading = BooleanArray(rows.size) { i -> !isTable[i] && rows[i].height >= 1.3f * body }
+        val isHeading = BooleanArray(rows.size) { i ->
+            val ratio = if (rows[i].words.size >= 2) 1.3f else 1.6f
+            !isTable[i] && rows[i].height >= ratio * body
+        }
 
         val blockL = rows.minOf { it.l }
         val blockR = rows.maxOf { it.r }

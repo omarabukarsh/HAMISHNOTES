@@ -305,6 +305,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     var jump by remember { mutableStateOf(false) }
     var exportMenu by remember { mutableStateOf(false) }
     var settingsFor by remember { mutableStateOf<String?>(null) }
+    // تغيّر الأداة (مثل زر القلم الجانبي) يغلق أي لوحة إعدادات مفتوحة
+    LaunchedEffect(c.tool) { settingsFor = null }
     var showPicker by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
     var pdfAfter by remember { mutableStateOf(0) }
@@ -1068,7 +1070,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ReadingTimeBadge(AppController.readMsOf(s.id), Palette.Navy, 12)
+                ReaderTimer(s.id)
             }
         }
 
@@ -1142,6 +1144,12 @@ private fun ImageBar(s: DocSession) {
             TextButton(onClick = { s.selectedImageId = null }) { Text("تم") }
         }
     }
+}
+
+/** معزول في دالة مستقلة كي لا تُعاد رسم الصفحات مع كل تحديث للعداد. */
+@Composable
+private fun ReaderTimer(id: String) {
+    ReadingTimeBadge(AppController.readMsOf(id), Palette.Navy, 12)
 }
 
 @Composable

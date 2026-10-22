@@ -274,7 +274,21 @@ object Exporter {
             for (b in blocks) {
                 when (b) {
                     is SHeading -> put(layoutOf(b.text, headPaint, contentW, 1.25f), 10f, 4f)
-                    is SPara -> put(layoutOf(spanned(b.text, b.emphasis), bodyPaint, contentW, 1.45f), 2f, 7f)
+                    is SPara -> {
+                        val whole = layoutOf(spanned(b.text, b.emphasis), bodyPaint, contentW, 1.45f)
+                        if (whole.height <= pageH - 2 * margin - 20f) {
+                            put(whole, 2f, 7f)
+                        } else {
+                            // فقرة أطول من صفحة: تُكتب جملة جملة لتنتقل بين الصفحات دون أن تُقطع
+                            val parts = TextTidy.sentences(b.text)
+                            parts.forEachIndexed { k, part ->
+                                put(
+                                    layoutOf(spanned(part, b.emphasis), bodyPaint, contentW, 1.45f),
+                                    if (k == 0) 2f else 0f, if (k == parts.lastIndex) 7f else 1f
+                                )
+                            }
+                        }
+                    }
                     is STable -> {
                         val cols = b.rows.maxOfOrNull { it.size }?.coerceAtLeast(1) ?: 1
                         val colW = contentW / cols

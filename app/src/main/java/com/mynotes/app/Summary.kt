@@ -31,8 +31,8 @@ object Summary {
             val lines = raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
             if (lines.isEmpty()) continue
             when {
-                lines[0].startsWith("#") -> {
-                    out.add(PHeading(lines[0].trimStart('#').trim()))
+                lines[0].startsWith("# ") -> {
+                    out.add(PHeading(lines[0].removePrefix("# ").trim()))
                     if (lines.size > 1) out.add(PPara(lines.drop(1).joinToString("\n")))
                 }
                 lines.all { it.contains('|') } ->
@@ -113,14 +113,13 @@ object Summary {
     /** نطاقات الأجزاء المهمة داخل نص الفقرة (بدون حساسية لحالة الأحرف). */
     fun emphasisRanges(text: String, emphasis: List<String>): List<IntRange> {
         if (emphasis.isEmpty()) return emptyList()
-        val low = text.lowercase()
         val out = ArrayList<IntRange>()
         for (e in emphasis) {
-            val key = e.trim().trimEnd { it in TERMINAL }.lowercase()
+            val key = e.trim().trimEnd { it in TERMINAL }
             if (key.length < 2) continue
             var from = 0
             while (true) {
-                val i = low.indexOf(key, from)
+                val i = text.indexOf(key, from, ignoreCase = true)
                 if (i < 0) break
                 out.add(i until i + key.length)
                 from = i + key.length

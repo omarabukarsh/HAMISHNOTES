@@ -109,7 +109,7 @@ object AppController {
         private set
 
     fun setGoal(minutes: Int) {
-        goalMinutes = minutes.coerceIn(10, 600)
+        goalMinutes = minutes.coerceIn(5, 24 * 60)
         prefs.edit().putInt("goal_min", goalMinutes).apply()
     }
 

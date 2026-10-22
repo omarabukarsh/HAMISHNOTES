@@ -88,7 +88,8 @@ data class DocEntry(
     val addedAt: Long,
     val lastOpened: Long,
     val favorite: Boolean,
-    val lastPage: Int
+    val lastPage: Int,
+    val isNote: Boolean = false
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

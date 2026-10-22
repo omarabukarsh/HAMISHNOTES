@@ -5,8 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -89,9 +92,11 @@ fun MyNotesApp() {
 private fun TabBar() {
     val c = AppController
     Row(
-        Modifier.fillMaxWidth().height(44.dp).background(Palette.TabBar)
-            .horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.Bottom
+        Modifier.fillMaxWidth().background(Palette.TabBar)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         TabItem(
             title = "المكتبة",
@@ -114,6 +119,7 @@ private fun TabBar() {
     }
 }
 
+/** تبويب بحواف مستديرة بالكامل على شكل حبة. */
 @Composable
 private fun TabItem(
     title: String,
@@ -122,45 +128,42 @@ private fun TabItem(
     onClick: () -> Unit,
     onClose: (() -> Unit)?
 ) {
-    val activeColor = if (home) Palette.Background else Color.White
-    Column(
-        Modifier.padding(start = 4.dp)
-            .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
-            .background(if (active) activeColor else Color.Transparent)
+    val shape = RoundedCornerShape(50)
+    Row(
+        Modifier.height(38.dp)
+            .clip(shape)
+            .background(if (active) Color.White else Color.White.copy(alpha = 0.35f))
+            .border(1.dp, if (active) Palette.Navy.copy(alpha = 0.35f) else Color.Transparent, shape)
             .clickable(onClick = onClick)
+            .padding(start = 14.dp, end = if (onClose == null) 14.dp else 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            Modifier.fillMaxWidth().height(3.dp)
-                .background(if (active) Palette.Navy else Color.Transparent)
-        )
-        Row(
-            Modifier.height(37.dp)
-                .padding(start = 12.dp, end = if (onClose == null) 12.dp else 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (home) {
-                Icon(
-                    Icons.Default.Home, null, Modifier.size(18.dp),
-                    tint = if (active) Palette.Navy else Palette.TextSecondary
-                )
-                Spacer(Modifier.width(6.dp))
-            }
-            Text(
-                title,
-                fontSize = 14.sp,
-                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (active) Palette.TextPrimary else Palette.TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 170.dp)
+        if (home) {
+            Icon(
+                Icons.Default.Home, null, Modifier.size(18.dp),
+                tint = if (active) Palette.Navy else Palette.TextSecondary
             )
-            if (onClose != null) {
-                IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        Icons.Default.Close, "إغلاق التبويب", Modifier.size(16.dp),
-                        tint = Palette.TextSecondary
-                    )
-                }
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            title,
+            fontSize = 14.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (active) Palette.Navy else Palette.TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 170.dp)
+        )
+        if (onClose != null) {
+            Spacer(Modifier.width(2.dp))
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.size(30.dp).clip(CircleShape)
+            ) {
+                Icon(
+                    Icons.Default.Close, "إغلاق التبويب", Modifier.size(16.dp),
+                    tint = Palette.TextSecondary
+                )
             }
         }
     }

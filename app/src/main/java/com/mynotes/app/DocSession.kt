@@ -1,6 +1,5 @@
 package com.mynotes.app
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -11,6 +10,7 @@ import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,7 +34,7 @@ class EditSnapshot(
 
 /**
  * حالة مستند مفتوح في تبويب. تبقى حية عند تبديل التبويبات وعند تدوير الشاشة،
- * والكتابة والصور تُحفظ على القرص بعد كل تعديل.
+ * والكتابة والصور وبنية الصفحات تُحفظ على القرص بعد كل تعديل.
  */
 class DocSession(entry: DocEntry) {
     val id: String = entry.id
@@ -42,7 +42,17 @@ class DocSession(entry: DocEntry) {
     var title by mutableStateOf(entry.name)
     var status by mutableStateOf<SessionStatus>(SessionStatus.Loading)
     var pdf by mutableStateOf<PdfDoc?>(null)
+
+    // ---- التكبير والتحريك ----
     var scale by mutableStateOf(1f)
+    var panX by mutableStateOf(0f)
+
+    /** تضبطه شاشة القراءة؛ يكبّر/يصغّر حول مركز العرض (لأزرار + و −). */
+    var zoomHook: ((Float) -> Unit)? = null
+
+    // ---- درج الصفحات ----
+    var drawerOpen by mutableStateOf(false)
+    var drawerWidth by mutableStateOf(150f)
 
     var annotations by mutableStateOf<Map<Int, List<Ink>>>(emptyMap())
     var images by mutableStateOf<Map<Int, List<ImageItem>>>(emptyMap())
@@ -52,7 +62,6 @@ class DocSession(entry: DocEntry) {
     val redoStack = mutableStateListOf<EditSnapshot>()
 
     val listState = LazyListState(entry.lastPage.coerceIn(0, maxOf(0, entry.pageCount - 1)), 0)
-    val hScroll = ScrollState(0)
 
     // ---- القراءة الضوئية والتحديد والبحث ----
     val ocr = mutableStateMapOf<Int, OcrPage>()
@@ -76,7 +85,7 @@ class DocSession(entry: DocEntry) {
         try {
             val loaded = withContext(Dispatchers.IO) {
                 if (!file.exists()) throw FileNotFoundException()
-                val doc = PdfDoc.open(id, file)
+                val doc = PdfDoc.open(id, file, repo.partsDir(id), repo.loadPages(id))
                 Triple(doc, repo.loadDocData(id), repo.loadOcrAll(id))
             }
             if (disposed) {
@@ -173,6 +182,55 @@ class DocSession(entry: DocEntry) {
         endEdit()
     }
 
+    // ---------- إدراج صفحات ----------
+
+    /**
+     * يُدرج صفحات بعد الصفحة رقم after (من 0؛ -1 = في البداية).
+     * تُزاح كتابات المستخدم والصور ونتائج القراءة الضوئية لتبقى مع صفحاتها،
+     * ويُمسح سجل التراجع لأن أرقام الصفحات تغيّرت.
+     */
+    fun insertPages(after: Int, refs: List<PageRef>) {
+        val doc = pdf ?: return
+        val n = refs.size
+        if (n == 0) return
+        stopOcr()
+        val old = doc.pages
+        val at = (after + 1).coerceIn(0, old.size)
+        doc.setPages(old.subList(0, at) + refs + old.subList(at, old.size))
+
+        fun shift(k: Int): Int = if (k >= at) k + n else k
+        annotations = annotations.mapKeys { shift(it.key) }
+        val movedImages = HashMap<Int, List<ImageItem>>()
+        images.forEach { (k, list) ->
+            val nk = shift(k)
+            movedImages[nk] = list.map { it.copy(page = nk) }
+        }
+        images = movedImages
+        val shiftedOcr = HashMap<Int, OcrPage>()
+        ocr.forEach { (k, v) -> shiftedOcr[shift(k)] = v }
+        ocr.clear()
+        ocr.putAll(shiftedOcr)
+
+        undoStack.clear()
+        redoStack.clear()
+        snapshot = null
+        selection = null
+        selectedImageId = null
+        if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
+
+        val pagesSnap = doc.pages
+        val ink = annotations
+        val imgs = images
+        val ocrSnap = ocr.toMap()
+        AppController.onPagesChanged(id, pagesSnap.size)
+        AppController.scope.launch {
+            AppController.repo.savePages(id, pagesSnap)
+            AppController.repo.saveDocData(id, ink, imgs)
+            withContext(Dispatchers.IO) { AppController.repo.rewriteOcr(id, ocrSnap) }
+            if (!disposed) startOcr()
+        }
+    }
+
     // ---------- القراءة الضوئية ----------
 
     /** يقرأ صفحة واحدة (إن لم تكن مقروءة أو تغيّرت كتابة المستخدم عليها). */
@@ -185,7 +243,8 @@ class DocSession(entry: DocEntry) {
 
         val result: OcrPage? = try {
             withContext(Dispatchers.Default) {
-                val base = doc.renderFresh(page, 1800) ?: return@withContext null
+                val ref = doc.pages.getOrNull(page) ?: return@withContext null
+                val base = doc.renderFresh(ref, 1800) ?: return@withContext null
                 try {
                     val src = OcrEngine.compose(base, strokes)
                     try {
@@ -210,22 +269,32 @@ class DocSession(entry: DocEntry) {
         return result
     }
 
-    fun startOcr() {
-        if (ocrJob?.isActive == true) return
-        val doc = pdf ?: return
-        ocrJob = AppController.scope.launch {
+    /** يقرأ كل الصفحات غير المقروءة في الخلفية، ويتوقف مؤقتًا أثناء الكتابة بالقلم. */
+    fun startOcr(): Job? {
+        if (ocrJob?.isActive == true) return ocrJob
+        val doc = pdf ?: return null
+        val job = AppController.scope.launch {
             ocrRunning = true
             ocrTotal = doc.count
             ocrDone = 0
-            for (p in 0 until doc.count) {
+            var p = 0
+            while (p < doc.count) {
                 if (!isActive || disposed) break
+                while (isActive && System.currentTimeMillis() - AppController.lastInkAt < 1500L) {
+                    delay(300)
+                }
                 ocrPage(p)
                 ocrDone = p + 1
-                if (searchOpen && searchQuery.isNotBlank() && p % 5 == 4) runSearch(searchQuery, navigate = false)
+                if (searchOpen && searchQuery.isNotBlank() && p % 5 == 4) {
+                    runSearch(searchQuery, navigate = false)
+                }
+                p++
             }
             ocrRunning = false
             if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false)
         }
+        ocrJob = job
+        return job
     }
 
     fun stopOcr() {

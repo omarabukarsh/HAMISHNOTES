@@ -415,3 +415,71 @@ fun FitGlyph(tint: Color) {
         drawLine(tint, Offset(s * 0.80f, s * 0.50f), Offset(s * 0.94f, s * 0.50f), strokeWidth = sw, cap = cap)
     }
 }
+
+/** نجمة المفضلة: ممتلئة ذهبية أو إطار فقط. */
+@Composable
+fun StarGlyph(filled: Boolean, tint: Color, modifier: Modifier = Modifier.size(18.dp)) {
+    Canvas(modifier) {
+        val s = size.minDimension
+        val c = Offset(s / 2f, s / 2f)
+        val outer = s * 0.48f
+        val inner = s * 0.20f
+        val p = Path()
+        for (i in 0 until 10) {
+            val r = if (i % 2 == 0) outer else inner
+            val a = (-PI / 2 + i * PI / 5).toFloat()
+            val x = c.x + r * cos(a)
+            val y = c.y + r * sin(a) + s * 0.03f
+            if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+        }
+        p.close()
+        if (filled) drawPath(p, tint) else drawPath(p, tint, style = Stroke(width = s * 0.08f))
+    }
+}
+
+/** رسم الحالة الفارغة: أوراق مكدسة مع شريط علامة ذهبي. */
+@Composable
+fun EmptyShelfArt(modifier: Modifier = Modifier.size(width = 150.dp, height = 120.dp)) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val pw = w * 0.52f
+        val ph = h * 0.86f
+        val x0 = (w - pw) / 2f
+        val y0 = h * 0.06f
+        val r = CornerRadius(w * 0.02f)
+        val line = Color(0xFFE4DFD3)
+        // ورقتان خلفيتان مائلتان قليلًا
+        rotate(-8f, Offset(x0 + pw / 2f, y0 + ph)) {
+            drawRoundRect(Color(0xFFF1ECE1), Offset(x0, y0), Size(pw, ph), r)
+        }
+        rotate(5f, Offset(x0 + pw / 2f, y0 + ph)) {
+            drawRoundRect(Color(0xFFF7F2E8), Offset(x0, y0), Size(pw, ph), r)
+            drawRoundRect(line, Offset(x0, y0), Size(pw, ph), r, style = Stroke(width = w * 0.006f))
+        }
+        // الورقة الأمامية
+        drawRoundRect(Color(0xFFFFFBF2), Offset(x0, y0), Size(pw, ph), r)
+        drawRoundRect(line, Offset(x0, y0), Size(pw, ph), r, style = Stroke(width = w * 0.006f))
+        var ly = y0 + ph * 0.22f
+        repeat(5) { i ->
+            val lw = if (i == 4) pw * 0.45f else pw * 0.72f
+            drawLine(
+                Color(0xFFD6DCE6), Offset(x0 + pw * 0.14f, ly), Offset(x0 + pw * 0.14f + lw, ly),
+                strokeWidth = w * 0.012f, cap = StrokeCap.Round
+            )
+            ly += ph * 0.13f
+        }
+        // شريط علامة ذهبي
+        val bx = x0 + pw * 0.74f
+        val bw = pw * 0.12f
+        val ribbon = Path().apply {
+            moveTo(bx, y0 - h * 0.03f)
+            lineTo(bx + bw, y0 - h * 0.03f)
+            lineTo(bx + bw, y0 + ph * 0.36f)
+            lineTo(bx + bw / 2f, y0 + ph * 0.30f)
+            lineTo(bx, y0 + ph * 0.36f)
+            close()
+        }
+        drawPath(ribbon, Color(0xFFC9A44C))
+    }
+}

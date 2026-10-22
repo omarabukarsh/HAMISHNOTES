@@ -120,7 +120,7 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
             Modifier.fillMaxWidth().aspectRatio(ratio)
                 .shadow(3.dp, shape)
                 .background(Color.White)
-                .then(if (current) Modifier.border(2.dp, Palette.Navy, shape) else Modifier)
+                .then(if (current) Modifier.border(2.dp, Palette.Gold, shape) else Modifier)
                 .clickable(onClick = onClick)
         ) {
             val b = bmp
@@ -151,7 +151,7 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
             "${i + 1}",
             fontSize = 12.sp,
             fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-            color = if (current) Palette.Navy else Palette.TextSecondary,
+            color = if (current) Palette.GoldDeep else Palette.TextSecondary,
             modifier = Modifier.padding(top = 4.dp)
         )
     }

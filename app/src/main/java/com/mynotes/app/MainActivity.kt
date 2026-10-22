@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -91,17 +92,20 @@ fun MyNotesApp() {
 @Composable
 private fun TabBar() {
     val c = AppController
+    // شريط كحلي مثل كعب المجلد؛ التبويب النشط بلون الصفحة تحته فيبدو متصلًا بها
+    val activeBg = if (c.activeId == null) Palette.Background else Palette.Desk
     Row(
-        Modifier.fillMaxWidth().background(Palette.TabBar)
+        Modifier.fillMaxWidth().background(Palette.Ink)
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(start = 10.dp, end = 10.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.Bottom
     ) {
         TabItem(
             title = "المكتبة",
             active = c.activeId == null,
             home = true,
+            activeBg = activeBg,
             onClick = { c.activate(null) },
             onClose = null
         )
@@ -111,6 +115,7 @@ private fun TabBar() {
                     title = s.title,
                     active = c.activeId == s.id,
                     home = false,
+                    activeBg = activeBg,
                     onClick = { c.activate(s.id) },
                     onClose = { c.closeTab(s.id) }
                 )
@@ -119,51 +124,57 @@ private fun TabBar() {
     }
 }
 
-/** تبويب بحواف مستديرة بالكامل على شكل حبة. */
+/** تبويب على شكل لسان ملف بزوايا علوية مستديرة. */
 @Composable
 private fun TabItem(
     title: String,
     active: Boolean,
     home: Boolean,
+    activeBg: Color,
     onClick: () -> Unit,
     onClose: (() -> Unit)?
 ) {
-    val shape = RoundedCornerShape(50)
-    Row(
-        Modifier.height(38.dp)
-            .clip(shape)
-            .background(if (active) Color.White else Color.White.copy(alpha = 0.35f))
-            .border(1.dp, if (active) Palette.Gold.copy(alpha = 0.8f) else Color.Transparent, shape)
-            .clickable(onClick = onClick)
-            .padding(start = 14.dp, end = if (onClose == null) 14.dp else 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (home) {
-            Icon(
-                Icons.Default.Home, null, Modifier.size(18.dp),
-                tint = if (active) Palette.Navy else Palette.TextSecondary
-            )
-            Spacer(Modifier.width(6.dp))
-        }
-        Text(
-            title,
-            fontSize = 14.sp,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (active) Palette.Navy else Palette.TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 170.dp)
-        )
-        if (onClose != null) {
-            Spacer(Modifier.width(2.dp))
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier.size(30.dp).clip(CircleShape)
-            ) {
+    val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+    Column(Modifier.width(IntrinsicSize.Max)) {
+        Row(
+            Modifier.height(38.dp)
+                .clip(shape)
+                .background(if (active) activeBg else Color.Transparent)
+                .clickable(onClick = onClick)
+                .padding(start = 14.dp, end = if (onClose == null) 16.dp else 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (home) {
                 Icon(
-                    Icons.Default.Close, "إغلاق التبويب", Modifier.size(16.dp),
-                    tint = Palette.TextSecondary
+                    Icons.Default.Home, null, Modifier.size(17.dp),
+                    tint = if (active) Palette.Navy else Palette.OnInkMuted
                 )
+                Spacer(Modifier.width(7.dp))
+            } else if (active) {
+                // نقطة ذهبية تميّز المستند المفتوح حاليًا
+                Box(Modifier.size(6.dp).clip(CircleShape).background(Palette.Gold))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                title,
+                fontSize = 14.sp,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (active) Palette.Navy else Palette.OnInk.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 180.dp)
+            )
+            if (onClose != null) {
+                Spacer(Modifier.width(2.dp))
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(30.dp).clip(CircleShape)
+                ) {
+                    Icon(
+                        Icons.Default.Close, "إغلاق التبويب", Modifier.size(15.dp),
+                        tint = if (active) Palette.TextSecondary else Palette.OnInkMuted
+                    )
+                }
             }
         }
     }

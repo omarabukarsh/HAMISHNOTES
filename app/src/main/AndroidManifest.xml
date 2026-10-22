@@ -3,7 +3,7 @@
     <application
         android:label="MyNotes"
         android:icon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.MyNotes">
 
         <activity
             android:name=".StartActivity"

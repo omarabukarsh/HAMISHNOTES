@@ -80,9 +80,12 @@ fun SummaryDrawer(
                 SummaryGlyph(Palette.Navy, Palette.Gold)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("ملخصات", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
                     Text(
-                        "${s.title} · ${all.size} تمييز",
+                        "ملخصات", fontFamily = Fonts.Serif, fontSize = 24.sp, lineHeight = 30.sp,
+                        fontWeight = FontWeight.Bold, color = Palette.Navy
+                    )
+                    Text(
+                        "${s.title}، ${all.size} تمييز",
                         fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
                     )
                 }
@@ -194,7 +197,8 @@ private fun SummaryPage(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "الصفحة ${group.page + 1}",
-                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
+                fontFamily = Fonts.Serif, fontSize = 19.sp, lineHeight = 26.sp,
+                fontWeight = FontWeight.Bold, color = Palette.Navy,
                 modifier = Modifier.weight(1f)
             )
             TextButton(onClick = { marks.firstOrNull()?.let(onJump) }) {

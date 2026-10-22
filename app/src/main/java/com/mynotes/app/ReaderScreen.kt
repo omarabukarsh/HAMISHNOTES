@@ -9,6 +9,12 @@ import android.net.Uri
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -352,8 +358,9 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
         // شريط الأدوات في المنتصف
         Box(
             Modifier.align(Alignment.Center).padding(horizontal = 58.dp)
-                .shadow(6.dp, pill)
+                .shadow(8.dp, pill, ambientColor = Palette.Ink, spotColor = Palette.Ink)
                 .background(Color.White, pill)
+                .border(1.dp, Palette.Divider, pill)
                 .clip(pill)
         ) {
             Row(
@@ -925,15 +932,25 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             }
         }
 
-        if (s.drawerOpen) {
-            PagesDrawer(s, pdf, Modifier.align(Alignment.CenterStart))
+        // الدرجان ينزلقان من حافتيهما عند الفتح
+        AnimatedVisibility(
+            visible = s.drawerOpen,
+            modifier = Modifier.align(Alignment.CenterStart),
+            enter = slideInHorizontally(tween(260)) { -it } + fadeIn(tween(200)),
+            exit = slideOutHorizontally(tween(220)) { -it } + fadeOut(tween(180))
+        ) {
+            PagesDrawer(s, pdf)
         }
-        if (s.summaryOpen) {
+        AnimatedVisibility(
+            visible = s.summaryOpen,
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
+            exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(180))
+        ) {
             SummaryDrawer(
                 s = s,
                 onJump = { m -> s.jumpHook?.invoke(m) },
-                onExport = onExportSummary,
-                modifier = Modifier.align(Alignment.CenterEnd)
+                onExport = onExportSummary
             )
         }
 

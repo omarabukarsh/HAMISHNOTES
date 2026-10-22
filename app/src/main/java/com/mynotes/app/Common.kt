@@ -27,16 +27,16 @@ fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     Box(
         Modifier.clip(shape)
-            .background(if (selected) Palette.NavySoft else Color.White)
+            .background(if (selected) Palette.Navy else Color.White)
             .border(1.dp, if (selected) Palette.Navy else Palette.Divider, shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .padding(horizontal = 15.dp, vertical = 7.dp)
     ) {
         Text(
             label,
             fontSize = 14.sp,
-            color = if (selected) Palette.Navy else Palette.TextPrimary,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            color = if (selected) Color.White else Palette.TextPrimary,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
         )
     }
 }
@@ -55,7 +55,7 @@ fun PaperColorRow(selected: Int, onSelect: (Int) -> Unit, onCustom: () -> Unit) 
             val sel = argb == selected
             Box(
                 Modifier.size(36.dp).clip(CircleShape).background(Color(argb))
-                    .border(if (sel) 3.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
+                    .border(if (sel) 3.dp else 1.dp, if (sel) Palette.Gold else Palette.Divider, CircleShape)
                     .clickable { onSelect(argb) }
             )
         }

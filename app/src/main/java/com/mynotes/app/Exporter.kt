@@ -57,8 +57,8 @@ object Exporter {
                     val c = Canvas(base)
                     drawMarks(c, snap.marks[i] ?: emptyList(), w)
                     drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
-                    (snap.ink[i] ?: emptyList()).forEach { drawInk(c, it, w) }
                     drawTexts(c, snap.texts[i] ?: emptyList(), w)
+                    (snap.ink[i] ?: emptyList()).forEach { drawInk(c, it, w) }
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
                     val page = out.startPage(PdfDocument.PageInfo.Builder(PDF_W, ph, i + 1).create())
@@ -84,7 +84,7 @@ object Exporter {
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
         for (m in marks) {
-            p.color = m.color.copy(alpha = MARK_ALPHA).toArgb()
+            p.color = markColor(m.color).toArgb()
             for (r in m.rects) c.drawRect(r.l * w, r.t * w, r.r * w, r.b * w, p)
         }
     }
@@ -272,6 +272,20 @@ object Exporter {
         }
     }
 
-    /** شفافية التمييز الملتقط؛ يُرسم بمزج «ضرب» فيبقى النص الداكن فوقه واضحًا. */
+    /** شدة لون التمييز الملتقط. */
     const val MARK_ALPHA = 0.55f
+
+    /**
+     * لون التمييز ممزوجًا مسبقًا بالأبيض وبشفافية كاملة، ليُرسم بمزج «ضرب»:
+     * الورق الأبيض يأخذ لون التمييز والنص الداكن يبقى داكنًا تمامًا (على كل إصدارات أندرويد).
+     */
+    fun markColor(c: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
+        val k = MARK_ALPHA
+        return androidx.compose.ui.graphics.Color(
+            red = 1f - k + k * c.red,
+            green = 1f - k + k * c.green,
+            blue = 1f - k + k * c.blue,
+            alpha = 1f
+        )
+    }
 }

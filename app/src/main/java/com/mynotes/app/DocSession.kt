@@ -451,9 +451,11 @@ class DocSession(entry: DocEntry) {
             text = text,
             createdAt = System.currentTimeMillis()
         )
-        beginEdit()
+        // قد يكتمل هذا بعد قراءة الصفحة في الخلفية أثناء حركة أخرى للمستخدم؛ لا نكسر لقطتها
+        val nested = snapshot != null
+        if (!nested) beginEdit()
         marks = marks + (page to ((marks[page] ?: emptyList()) + m))
-        endEdit()
+        if (!nested) endEdit()
     }
 
     /**
@@ -466,9 +468,10 @@ class DocSession(entry: DocEntry) {
             if (words != null && idx.isNotEmpty()) {
                 addMark(page, words, idx, color)
             } else {
-                beginEdit()
+                val nested = snapshot != null
+                if (!nested) beginEdit()
                 addInk(page, Ink(pts, color, width, Tool.HIGHLIGHTER))
-                endEdit()
+                if (!nested) endEdit()
                 AppController.messages.tryEmit("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر")
             }
         }
@@ -477,6 +480,7 @@ class DocSession(entry: DocEntry) {
             applyTo(ready)
             return
         }
+        val refAtStart = pdf?.pages?.getOrNull(page)
         AppController.scope.launch {
             pageBusy = page
             val res = try {
@@ -484,7 +488,9 @@ class DocSession(entry: DocEntry) {
             } finally {
                 pageBusy = null
             }
-            if (!disposed) applyTo(res?.words)
+            // إن أُضيفت صفحات أثناء القراءة تغيّر رقم الصفحة؛ نتجاهل التمييز بدل وضعه في صفحة خاطئة
+            if (disposed || pdf?.pages?.getOrNull(page) !== refAtStart) return@launch
+            applyTo(res?.words)
         }
     }
 

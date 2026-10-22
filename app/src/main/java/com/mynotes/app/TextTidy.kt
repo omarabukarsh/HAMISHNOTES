@@ -10,6 +10,7 @@ package com.mynotes.app
  *  - يبدأ كل جملة لاتينية بحرف كبير
  */
 object TextTidy {
+    private val junk = Regex("[|_~^`¦•·]+")
     private const val TERMINAL = ".!?؟…"
     private val abbreviations = setOf(
         "e.g", "i.e", "etc", "vs", "dr", "mr", "mrs", "ms", "prof", "fig", "no", "vol", "approx", "al"
@@ -27,12 +28,13 @@ object TextTidy {
         // دمج الأسطر
         s = s.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
         // رموز شاردة تنتج عن القراءة الضوئية
-        s = s.split(' ').filterNot { it.matches(Regex("[|_~^`¦•·]+")) }.joinToString(" ")
+        s = s.split(' ').filterNot { it.matches(junk) }.joinToString(" ")
         // المسافات حول الترقيم
         s = s.replace(Regex("\\s+([,.;:!?،؛؟)\\]}…])"), "$1")
         s = s.replace(Regex("([(\\[{])\\s+"), "$1")
         s = s.replace(Regex("([,;!?،؛؟])(?=[\\p{L}\\p{N}])"), "$1 ")
-        s = s.replace(Regex("(?<=\\p{L}{2})([.:])(?=\\p{L}{2})"), "$1 ")
+        // نقطة أو نقطتان ملتصقتان بجملة تالية تبدأ بحرف كبير (لا تمس google.com)
+        s = s.replace(Regex("(?<=\\p{L}{2})([.:])(?=\\p{Lu}\\p{Ll})"), "$1 ")
         // تكرار الترقيم
         s = s.replace(Regex("([,،;؛])\\1+"), "$1")
         s = s.replace(Regex("\\.{4,}"), "...")

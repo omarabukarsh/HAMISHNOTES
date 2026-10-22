@@ -171,10 +171,11 @@ private fun ReaderContent(s: DocSession) {
     val summarySaver = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri: Uri? -> if (uri != null) c.exportSummary(context, s, uri) }
-    val exportDoc: () -> Unit = { docSaver.launch("${s.title} - مع التعليقات.pdf") }
+    val safeTitle = s.title.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim().ifEmpty { "مستند" }
+    val exportDoc: () -> Unit = { docSaver.launch("$safeTitle - مع التعليقات.pdf") }
     val exportSummary: () -> Unit = {
         if (s.allMarks().isEmpty()) c.messages.tryEmit("لا توجد ملخصات لحفظها بعد")
-        else summarySaver.launch("ملخص ${s.title}.pdf")
+        else summarySaver.launch("ملخص $safeTitle.pdf")
     }
 
     Column(Modifier.fillMaxSize().background(Palette.Desk)) {
@@ -1217,7 +1218,7 @@ private fun PageView(
             Canvas(Modifier.fillMaxSize()) {
                 val w = size.width
                 for (m in pageMarks) {
-                    val col = m.color.copy(alpha = Exporter.MARK_ALPHA)
+                    val col = Exporter.markColor(m.color)
                     for (r in m.rects) {
                         drawRect(
                             col, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
@@ -1541,7 +1542,10 @@ private fun PageView(
                                             }
                                         } else {
                                             session.updateTextBox(selText.id) {
-                                                it.copy(x = it.x + dx, y = it.y + dy)
+                                                it.copy(
+                                                    x = (it.x + dx).coerceIn(-it.w * 0.8f, 0.95f),
+                                                    y = (it.y + dy).coerceIn(0f, 1f / ratio - 0.02f)
+                                                )
                                             }
                                         }
                                         ch.consume()

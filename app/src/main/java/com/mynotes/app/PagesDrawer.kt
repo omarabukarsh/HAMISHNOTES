@@ -136,7 +136,7 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
             Canvas(Modifier.fillMaxSize()) {
                 val w = size.width
                 (s.marks[i] ?: emptyList()).forEach { m ->
-                    val col = m.color.copy(alpha = Exporter.MARK_ALPHA)
+                    val col = Exporter.markColor(m.color)
                     m.rects.forEach { r ->
                         drawRect(
                             col, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),

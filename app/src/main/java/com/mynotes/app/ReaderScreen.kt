@@ -233,22 +233,7 @@ private fun FocusOverlay(modifier: Modifier) {
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (c.pomoPhase == 0) {
-            TextButton(onClick = { c.startPomodoro() }) {
-                PhIcon(R.drawable.ph_play, Palette.Navy, 16.dp)
-                Spacer(Modifier.width(6.dp))
-                Text("مؤقت دراسة 25 د", color = Palette.Navy, fontSize = 13.sp)
-            }
-        } else {
-            val left = c.pomoLeftMs / 1000
-            Text(
-                (if (c.pomoPhase == 1) "دراسة " else "راحة ") + "%02d:%02d".format(left / 60, left % 60),
-                color = if (c.pomoPhase == 1) Palette.Navy else Palette.GoldDeep,
-                fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                modifier = Modifier.padding(horizontal = 10.dp)
-            )
-            IconButton(onClick = { c.stopPomodoro() }) { PhIcon(R.drawable.ph_stop, Palette.TextSecondary, 18.dp, "إيقاف المؤقت") }
-        }
+        PomodoroControl()
         IconButton(onClick = { c.focusMode = false }) {
             PhIcon(R.drawable.ph_focus_exit, Palette.TextPrimary, 20.dp, "الخروج من وضع التركيز")
         }
@@ -439,6 +424,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         if (marked) Palette.GoldDeep else Palette.TextSecondary
                     )
                 }
+                // مؤقت الدراسة: يعمل ويتوقف مؤقتًا هنا وفي وضع التركيز
+                PomodoroControl(showStartLabel = false)
 
                 ToolbarSep()
 

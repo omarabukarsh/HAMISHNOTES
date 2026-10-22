@@ -405,7 +405,7 @@ private fun TextSearchButton() {
     ) {
         PhIcon(R.drawable.ph_search_all, Palette.Navy, 19.dp)
         Spacer(Modifier.width(6.dp))
-        Text("داخل النصوص", fontSize = 13.sp, color = Palette.Navy)
+        Text("داخل النصوص", fontSize = 13.sp, color = Palette.Navy, maxLines = 1, softWrap = false)
     }
     if (open) LibrarySearchDialog(onDismiss = { open = false })
 }
@@ -692,25 +692,37 @@ private fun FilterRow() {
 private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNewNote: () -> Unit) {
     val c = AppController
     if (wide) {
-        Row(
+        // سطران: العنوان والأزرار، ثم البحث والترتيب؛ حتى لا يُضغط العنوان أو الأزرار في أي اتجاه للشاشة
+        Column(
             Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = 22.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    c.libraryFolder ?: filterTitle(c.libraryFilter),
-                    style = MaterialTheme.typography.headlineLarge, color = Palette.TextPrimary
-                )
-                Text(docsCount(shown), fontSize = 13.sp, color = Palette.TextSecondary)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        c.libraryFolder ?: filterTitle(c.libraryFilter),
+                        style = MaterialTheme.typography.headlineLarge, color = Palette.TextPrimary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Text(docsCount(shown), fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1)
+                }
+                PomodoroControl(showStartLabel = false)
+                NewNoteButton(onNewNote)
+                ImportButton(onImport)
             }
-            SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.widthIn(min = 260.dp, max = 360.dp))
-            TextSearchButton()
-            if (c.libraryFilter != LibraryFilter.RECENT) {
-                SortMenu(c.librarySort) { c.librarySort = it }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
+                TextSearchButton()
+                if (c.libraryFilter != LibraryFilter.RECENT) {
+                    SortMenu(c.librarySort) { c.librarySort = it }
+                }
             }
-            NewNoteButton(onNewNote)
-            ImportButton(onImport)
         }
     } else {
         Column(
@@ -724,6 +736,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                     "MyNotes", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                 )
+                PomodoroControl(showStartLabel = false)
                 var stats by remember { mutableStateOf(false) }
                 IconButton(onClick = { stats = true }) { GoalRing(26.dp, 3.dp) }
                 if (stats) StatsDialog(onDismiss = { stats = false })
@@ -732,9 +745,18 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 }) {
                     PhIcon(R.drawable.ph_palette, Palette.TextSecondary, 21.dp, "تبديل المظهر")
                 }
-                NewNoteButton(onNewNote)
-                Spacer(Modifier.width(8.dp))
+            }
+            // الأزرار في سطر مستقل قابل للتمرير حتى لا تُضغط على الشاشات الضيقة
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 ImportButton(onImport)
+                NewNoteButton(onNewNote)
+                if (c.libraryFilter != LibraryFilter.RECENT) {
+                    SortMenu(c.librarySort) { c.librarySort = it }
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -742,9 +764,6 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
             ) {
                 SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
                 TextSearchButton()
-                if (c.libraryFilter != LibraryFilter.RECENT) {
-                    SortMenu(c.librarySort) { c.librarySort = it }
-                }
             }
         }
     }
@@ -760,7 +779,7 @@ private fun ImportButton(onClick: () -> Unit) {
     ) {
         PhIcon(R.drawable.ph_plus, Color.White, 18.dp)
         Spacer(Modifier.width(6.dp))
-        Text("استيراد PDF", fontWeight = FontWeight.Medium)
+        Text("استيراد PDF", fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 
@@ -775,7 +794,7 @@ private fun NewNoteButton(onClick: () -> Unit) {
     ) {
         PhIcon(R.drawable.ph_note, Palette.GoldDeep, 18.dp)
         Spacer(Modifier.width(6.dp))
-        Text("ملاحظة جديدة", fontWeight = FontWeight.Medium)
+        Text("ملاحظة جديدة", fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 
@@ -824,7 +843,7 @@ private fun SortMenu(sort: SortMode, onSelect: (SortMode) -> Unit) {
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.TextPrimary),
             modifier = Modifier.height(44.dp)
         ) {
-            Text("الترتيب: " + sortLabel(sort), fontSize = 13.sp)
+            Text("الترتيب: " + sortLabel(sort), fontSize = 13.sp, maxLines = 1, softWrap = false)
             PhIcon(R.drawable.ph_caret_down, Palette.TextSecondary, 16.dp)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

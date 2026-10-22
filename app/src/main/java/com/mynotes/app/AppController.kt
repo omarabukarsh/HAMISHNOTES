@@ -223,13 +223,37 @@ object AppController {
     private const val STUDY_MS = 25L * 60_000L
     private const val BREAK_MS = 5L * 60_000L
 
+    /** المؤقت متوقف مؤقتًا (يحتفظ بالوقت المتبقي). */
+    var pomoPaused by mutableStateOf(false)
+        private set
+
     fun startPomodoro() {
         pomoPhase = 1
-        pomoEndsAt = System.currentTimeMillis() + STUDY_MS
+        pomoPaused = false
         pomoLeftMs = STUDY_MS
+        runPomodoro()
+    }
+
+    fun pausePomodoro() {
+        if (pomoPhase == 0 || pomoPaused) return
+        pomoLeftMs = (pomoEndsAt - System.currentTimeMillis()).coerceAtLeast(0L)
+        pomoPaused = true
+        pomoJob?.cancel()
+        pomoJob = null
+    }
+
+    fun resumePomodoro() {
+        if (pomoPhase == 0 || !pomoPaused) return
+        pomoPaused = false
+        runPomodoro()
+    }
+
+    /** يشغّل العدّ التنازلي من الوقت المتبقي الحالي. */
+    private fun runPomodoro() {
+        pomoEndsAt = System.currentTimeMillis() + pomoLeftMs
         pomoJob?.cancel()
         pomoJob = scope.launch {
-            while (isActive && pomoPhase != 0) {
+            while (isActive && pomoPhase != 0 && !pomoPaused) {
                 delay(1000)
                 val now = System.currentTimeMillis()
                 // أثناء جلسة الدراسة يُحسب وقت القراءة حتى بدون لمس الشاشة
@@ -256,6 +280,7 @@ object AppController {
 
     fun stopPomodoro() {
         pomoPhase = 0
+        pomoPaused = false
         pomoJob?.cancel()
         pomoJob = null
     }

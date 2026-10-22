@@ -263,7 +263,7 @@ private fun BlockView(
     val first = b.marks.firstOrNull()
     val edits = s.summaryEdits
     val userTable = b.key.startsWith("g:")
-    val overridden = userTable || edits.kinds.containsKey(b.key)
+    val overridden = userTable || edits.kinds.containsKey(b.key) || b.key in edits.order
     val pos = shownKeys.indexOf(b.key)
     Box {
         Column(

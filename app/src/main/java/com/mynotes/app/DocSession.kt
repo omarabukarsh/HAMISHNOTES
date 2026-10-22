@@ -576,8 +576,10 @@ class DocSession(entry: DocEntry) {
     // ---------- تحرير الملخص ----------
 
     private fun changeEdits(f: (SummaryEdits) -> SummaryEdits) {
+        val next = f(summaryEdits)
+        if (next == summaryEdits) return
         beginEdit()
-        summaryEdits = f(summaryEdits)
+        summaryEdits = next
         endEdit()
     }
 
@@ -613,7 +615,21 @@ class DocSession(entry: DocEntry) {
                 }
             }
             val group = TableGroup(UUID.randomUUID().toString(), expanded.distinct(), oneRow)
-            e.copy(tables = e.tables.filter { it.id !in absorbed && it.keys.none { k -> k in expanded } } + group)
+            val gKey = "g:" + group.id
+            // إن كان هناك ترتيب يدوي: الجدول يأخذ مكان أول عضو فيه
+            val memberKeys = keys.toSet() + expanded
+            val firstPos = e.order.indexOfFirst { it in memberKeys }
+            val order = if (firstPos < 0) e.order else e.order.mapIndexedNotNull { i, k ->
+                when {
+                    i == firstPos -> gKey
+                    k in memberKeys -> null
+                    else -> k
+                }
+            }
+            e.copy(
+                tables = e.tables.filter { it.id !in absorbed && it.keys.none { k -> k in expanded } } + group,
+                order = order
+            )
         }
     }
 
@@ -625,6 +641,7 @@ class DocSession(entry: DocEntry) {
     fun resetBlock(key: String) = changeEdits { e ->
         e.copy(
             kinds = e.kinds - key,
+            order = e.order - key,
             tables = e.tables.filter { "g:" + it.id != key }.map { g -> g.copy(keys = g.keys - key) }.filter { it.keys.isNotEmpty() }
         )
     }

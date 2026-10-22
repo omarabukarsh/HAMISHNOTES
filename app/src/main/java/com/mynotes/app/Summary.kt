@@ -87,19 +87,22 @@ object Summary {
     fun build(marksInOrder: List<TextMark>, tidy: Boolean): List<SBlock> {
         val out = ArrayList<SBlock>()
         val seen = HashMap<String, Int>() // نص مطبَّع ← موضع الفقرة في out
+        val mode = if (tidy) "t" else "r"
         for (m in marksInOrder) {
-            for (p in parse(m.text)) {
+            for ((pi, p) in parse(m.text).withIndex()) {
+                // مفتاح ثابت: الوضع + التمييز + رقم الجزء داخل نصه (لا يتغير بدمج أجزاء أخرى)
+                val key = "$mode:${m.id}#$pi"
                 when (p) {
                     is PHeading -> {
                         val t = if (tidy) TextTidy.clean(p.text) else p.text
                         val last = out.lastOrNull()
                         if (tidy && last is SHeading && norm(last.text) == norm(t)) continue
-                        out.add(SHeading(t, listOf(m)))
+                        out.add(SHeading(t, listOf(m), key))
                     }
-                    is PTable -> out.add(STable(p.rows, listOf(m)))
+                    is PTable -> out.add(STable(p.rows, listOf(m), key))
                     is PPara -> {
                         if (!tidy) {
-                            out.add(SPara(p.text.replace("\n", " ").trim(), emphasisOf(m, p.text.replace("\n", " ").trim()), listOf(m)))
+                            out.add(SPara(p.text.replace("\n", " ").trim(), emphasisOf(m, p.text.replace("\n", " ").trim()), listOf(m), key))
                             continue
                         }
                         val c = TextTidy.clean(p.text)
@@ -117,10 +120,11 @@ object Summary {
                             out[out.lastIndex] = SPara(
                                 "${last.text} $c",
                                 (last.emphasis + emphasisOf(m, c)).distinct(),
-                                last.marks + m
+                                last.marks + m,
+                                last.key
                             )
                         } else {
-                            out.add(SPara(c, emphasisOf(m, c), listOf(m)))
+                            out.add(SPara(c, emphasisOf(m, c), listOf(m), key))
                         }
                         seen[key] = out.lastIndex
                     }
@@ -148,14 +152,8 @@ object Summary {
 
     /** الملخص كما يُعرض: البناء التلقائي ثم تعديلات المستخدم. */
     fun view(marksInOrder: List<TextMark>, tidy: Boolean, edits: SummaryEdits): List<SBlock> {
-        // مفاتيح ثابتة: معرّف أول تمييز في الجزء + رقم الجزء بين أجزاء نفس التمييز
-        val counts = HashMap<String, Int>()
-        var list: List<SBlock> = build(marksInOrder, tidy).map { b ->
-            val base = b.marks.firstOrNull()?.id ?: "x"
-            val n = counts.getOrDefault(base, 0)
-            counts[base] = n + 1
-            withKey(b, "$base#$n")
-        }
+        // المفاتيح تُعطى في build وتتضمن الوضع («مرتّب» أو «كما التُقط»)، فتعديلات كل وضع مستقلة
+        var list: List<SBlock> = build(marksInOrder, tidy)
         if (edits.isEmpty()) return list
 
         // 1) عنوان / نص عادي

@@ -81,7 +81,7 @@ fun StatsDialog(onDismiss: () -> Unit) {
     val perDoc = HashMap<String, Long>()
     c.stats.forEach { (k, v) ->
         val bar = k.indexOf('|')
-        if (bar > 0 && k.substring(0, bar) in weekKeys) {
+        if (bar > 0 && !k.startsWith("pomo|") && k.substring(0, bar) in weekKeys) {
             val id = k.substring(bar + 1)
             perDoc[id] = (perDoc[id] ?: 0L) + v
         }
@@ -136,6 +136,11 @@ fun StatsDialog(onDismiss: () -> Unit) {
                             }
                         }
                         Spacer(Modifier.height(6.dp))
+                        val pomos = c.stats["pomo|" + today.toString()] ?: 0L
+                        if (pomos > 0) {
+                            Text("جلسات تركيز اليوم: $pomos", fontSize = 13.sp, color = Palette.Navy)
+                            Spacer(Modifier.height(4.dp))
+                        }
                         val streak = studyStreak()
                         Text(
                             if (streak > 0) "سلسلة الدراسة: $streak ${if (streak == 1) "يوم" else "أيام"} متتالية"

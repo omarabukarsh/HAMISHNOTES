@@ -1,5 +1,7 @@
 package com.mynotes.app
 
+import androidx.compose.ui.graphics.toArgb
+
 /**
  * بنية الملخص: عناوين وفقرات وجداول، دون أسماء الصفحات.
  * يستخدمها درج «ملخصات» وتصدير PDF معًا حتى يظهر الملخص بنفس الشكل في الاثنين.
@@ -255,6 +257,35 @@ object Summary {
         }
         return list
     }
+
+    /**
+     * الملخص للعرض والحفظ: تصفية بلون واحد (filter) أو تجميع حسب اللون، كل لون قسم بعنوان تصنيفه.
+     */
+    fun display(
+        marksInOrder: List<TextMark>,
+        tidy: Boolean,
+        edits: SummaryEdits,
+        filter: Int?,
+        byColor: Boolean,
+        labelOf: (androidx.compose.ui.graphics.Color) -> String
+    ): List<SBlock> {
+        val marks = if (filter == null) marksInOrder
+        else marksInOrder.filter { argbOf(it.color) == filter }
+        if (!byColor) return view(marks, tidy, edits)
+        val out = ArrayList<SBlock>()
+        val colors = LinkedHashMap<Int, androidx.compose.ui.graphics.Color>()
+        marks.forEach { colors.putIfAbsent(argbOf(it.color), it.color) }
+        for ((argb, col) in colors) {
+            val sub = marks.filter { argbOf(it.color) == argb }
+            val blocks = view(sub, tidy, edits)
+            if (blocks.isEmpty()) continue
+            out.add(SHeading(labelOf(col), emptyList(), "lbl:$argb"))
+            out.addAll(blocks)
+        }
+        return out
+    }
+
+    fun argbOf(c: androidx.compose.ui.graphics.Color): Int = c.toArgb()
 
     /** نطاقات الأجزاء المهمة داخل نص الفقرة (بدون حساسية لحالة الأحرف). */
     fun emphasisRanges(text: String, emphasis: List<String>): List<IntRange> {

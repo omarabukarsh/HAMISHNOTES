@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -85,6 +86,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -391,12 +393,121 @@ private fun SpineItem(
     }
 }
 
+/** زر «بحث داخل النصوص» ونافذته. */
+@Composable
+private fun TextSearchButton() {
+    var open by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.height(44.dp).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+            .clickable { open = true }.padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PhIcon(R.drawable.ph_search_all, Palette.Navy, 19.dp)
+        Spacer(Modifier.width(6.dp))
+        Text("داخل النصوص", fontSize = 13.sp, color = Palette.Navy)
+    }
+    if (open) LibrarySearchDialog(onDismiss = { open = false })
+}
+
+@Composable
+private fun LibrarySearchDialog(onDismiss: () -> Unit) {
+    val c = AppController
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var q by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<AppController.LibraryHit>?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    fun run() {
+        if (q.isBlank()) return
+        busy = true
+        scope.launch {
+            results = c.searchLibrary(q)
+            busy = false
+        }
+    }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        androidx.compose.material3.Surface(
+            Modifier.fillMaxWidth(0.82f).heightIn(min = 300.dp, max = 680.dp),
+            shape = RoundedCornerShape(22.dp), color = Palette.Ivory
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "بحث داخل نصوص المكتبة", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق") }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = q, onValueChange = { q = it }, singleLine = true,
+                        placeholder = { Text("كلمة أو جملة، عربي أو إنجليزي") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { run() }),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = { run() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)) { Text("بحث") }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "يشمل الصفحات التي قُرئ نصها. المستندات المستوردة تُقرأ تلقائيًا في الخلفية.",
+                    fontSize = 12.sp, color = Palette.TextSecondary
+                )
+                Spacer(Modifier.height(10.dp))
+                val r = results
+                when {
+                    busy -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = Palette.Gold)
+                    r == null -> {}
+                    r.isEmpty() -> Text("لا نتائج", color = Palette.TextSecondary)
+                    else -> {
+                        Text("${r.size} نتيجة", fontSize = 13.sp, color = Palette.TextSecondary)
+                        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth()) {
+                            items(r.size) { i ->
+                                val h = r[i]
+                                Column(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            c.openAt(h.docId, h.page, q.trim())
+                                            onDismiss()
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        "${h.docName} — صفحة ${h.page + 1}", fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold, color = Palette.Navy, maxLines = 1
+                                    )
+                                    Text(
+                                        emphasized(h.snippet, listOf(q.trim())), fontSize = 14.sp,
+                                        lineHeight = 21.sp, color = Palette.TextPrimary, maxLines = 3
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** قائمة المواد في الشريط الجانبي: اختيار، إضافة، إعادة تسمية، حذف. */
 @Composable
 private fun FolderSection() {
     val c = AppController
     var adding by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var exportFolder by remember { mutableStateOf<String?>(null) }
+    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
+        val f = exportFolder
+        if (uri != null && f != null) c.exportFolderSummary(context, f, uri)
+        exportFolder = null
+    }
     Spacer(Modifier.height(16.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("المواد", color = Palette.OnInkMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
@@ -424,6 +535,11 @@ private fun FolderSection() {
                 c.libraryFilter = LibraryFilter.ALL
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("حفظ ملخص المادة كاملة (PDF)") }, onClick = {
+                    menu = false
+                    exportFolder = f
+                    saver.launch("ملخص مادة ${f.replace(Regex("[\\\\/:*?\"<>|]"), "-")}.pdf")
+                })
                 DropdownMenuItem(text = { Text("إعادة تسمية") }, onClick = { menu = false; renaming = f })
                 DropdownMenuItem(
                     text = { Text("حذف المادة (تبقى المستندات)", color = Palette.Danger) },
@@ -589,6 +705,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 Text(docsCount(shown), fontSize = 13.sp, color = Palette.TextSecondary)
             }
             SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.widthIn(min = 260.dp, max = 360.dp))
+            TextSearchButton()
             if (c.libraryFilter != LibraryFilter.RECENT) {
                 SortMenu(c.librarySort) { c.librarySort = it }
             }
@@ -624,6 +741,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
+                TextSearchButton()
                 if (c.libraryFilter != LibraryFilter.RECENT) {
                     SortMenu(c.librarySort) { c.librarySort = it }
                 }

@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +72,17 @@ fun SummaryDrawer(
     val all = s.allMarks()
     val tidy = c.summaryTidy
     val edits = s.summaryEdits
-    val blocks = remember(all, tidy, edits) { Summary.view(all, tidy, edits) }
+    var colorFilter by remember { mutableStateOf<Int?>(null) }
+    val byColor = c.summaryByColor
+    val blocks = remember(all, tidy, edits, colorFilter, byColor) {
+        Summary.display(all, tidy, edits, colorFilter, byColor) { c.labelOf(it) }
+    }
+    // الألوان المستخدمة في هذا المستند (للتصفية)
+    val usedColors = remember(all) {
+        val m = LinkedHashMap<Int, Color>()
+        all.forEach { m.putIfAbsent(Summary.argbOf(it.color), it.color) }
+        m.values.toList()
+    }
     var editing by remember { mutableStateOf<TextMark?>(null) }
     // وضع اختيار أجزاء لصنع جدول
     var selecting by remember { mutableStateOf(false) }
@@ -134,6 +146,34 @@ fun SummaryDrawer(
                 }) { Text("نسخ الكل", fontSize = 13.sp) }
                 TextButton(enabled = blocks.isNotEmpty(), onClick = onExport) {
                     Text("PDF", fontSize = 13.sp)
+                }
+            }
+            if (usedColors.size > 1 || colorFilter != null) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp).padding(bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ChoiceChip("كل الألوان", colorFilter == null) { colorFilter = null }
+                    usedColors.forEach { col ->
+                        val argb = Summary.argbOf(col)
+                        val sel = colorFilter == argb
+                        val shape = RoundedCornerShape(18.dp)
+                        Row(
+                            Modifier.clip(shape)
+                                .background(if (sel) Palette.Navy else Color.White)
+                                .border(1.dp, if (sel) Palette.Navy else Palette.Divider, shape)
+                                .clickable { colorFilter = if (sel) null else argb }
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(12.dp).clip(RoundedCornerShape(6.dp)).background(col))
+                            Spacer(Modifier.width(6.dp))
+                            Text(c.labelOf(col), fontSize = 13.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                        }
+                    }
+                    ChoiceChip("تجميع حسب اللون", byColor) { c.toggleSummaryByColor() }
                 }
             }
             if (!edits.isEmpty()) {

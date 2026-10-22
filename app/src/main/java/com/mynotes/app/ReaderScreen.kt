@@ -192,12 +192,17 @@ private fun ReaderContent(s: DocSession) {
         else summarySaver.launch("ملخص $safeTitle.pdf")
     }
 
-    Column(Modifier.fillMaxSize().background(Palette.Desk)) {
-        ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
-        if (s.searchOpen) ReaderSearchBar(s)
-        if (s.ocrRunning) OcrStatusBar(s)
-        c.exporting?.let { ExportStatusBar(it) }
-        PageArea(s, pdf, exportSummary)
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(Palette.Desk)) {
+            if (!c.focusMode) {
+                ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
+                if (s.searchOpen) ReaderSearchBar(s)
+                if (s.ocrRunning) OcrStatusBar(s)
+                c.exporting?.let { ExportStatusBar(it) }
+            }
+            PageArea(s, pdf, exportSummary)
+        }
+        if (c.focusMode) FocusOverlay(Modifier.align(Alignment.TopEnd).padding(14.dp))
     }
 
     val req = s.textDialog
@@ -215,6 +220,38 @@ private fun ReaderContent(s: DocSession) {
             },
             onDismiss = { s.textDialog = null }
         )
+    }
+}
+
+/** أدوات وضع التركيز: مؤقت الدراسة والخروج. */
+@Composable
+private fun FocusOverlay(modifier: Modifier) {
+    val c = AppController
+    val pill = RoundedCornerShape(24.dp)
+    Row(
+        modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (c.pomoPhase == 0) {
+            TextButton(onClick = { c.startPomodoro() }) {
+                PhIcon(R.drawable.ph_play, Palette.Navy, 16.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("مؤقت دراسة 25 د", color = Palette.Navy, fontSize = 13.sp)
+            }
+        } else {
+            val left = c.pomoLeftMs / 1000
+            Text(
+                (if (c.pomoPhase == 1) "دراسة " else "راحة ") + "%02d:%02d".format(left / 60, left % 60),
+                color = if (c.pomoPhase == 1) Palette.Navy else Palette.GoldDeep,
+                fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                modifier = Modifier.padding(horizontal = 10.dp)
+            )
+            IconButton(onClick = { c.stopPomodoro() }) { PhIcon(R.drawable.ph_stop, Palette.TextSecondary, 18.dp, "إيقاف المؤقت") }
+        }
+        IconButton(onClick = { c.focusMode = false }) {
+            PhIcon(R.drawable.ph_focus_exit, Palette.TextPrimary, 20.dp, "الخروج من وضع التركيز")
+        }
     }
 }
 
@@ -515,6 +552,13 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
                 // ملاءمة الصفحة كاملة (مفيد في الوضع الأفقي)، ونقرة ثانية تعيد ملء العرض
                 TBtn(onClick = { s.fitHook?.invoke() }) { FitGlyph(Palette.TextPrimary) }
+                // وضع التركيز: إخفاء كل الأشرطة
+                TBtn(onClick = {
+                    s.drawerOpen = false
+                    s.summaryOpen = false
+                    c.focusMode = true
+                    c.messages.tryEmit("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة")
+                }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
             }
         }
     }
@@ -644,6 +688,20 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
         ToolPreview(t)
 
         if (t == Tool.HIGHLIGHTER) {
+            // تصنيف اللون الحالي (يظهر في الملخص عند التصفية أو التجميع حسب اللون)
+            Spacer(Modifier.height(10.dp))
+            val cur = c.colorFor(t)
+            var label by remember(cur) { mutableStateOf(c.labelOf(cur)) }
+            OutlinedTextField(
+                value = label,
+                onValueChange = {
+                    label = it
+                    c.setLabel(cur, it)
+                },
+                singleLine = true,
+                label = { Text("تصنيف هذا اللون") },
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(Modifier.height(12.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
             Spacer(Modifier.height(10.dp))
@@ -659,6 +717,30 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                 Switch(
                     checked = c.highlightSnap,
                     onCheckedChange = { c.toggleHighlightSnap() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Palette.Navy,
+                        checkedBorderColor = Palette.Navy
+                    )
+                )
+            }
+        }
+        if (t.isPen()) {
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("تحويل الرسم إلى أشكال", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(
+                        "الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة تلقائيًا",
+                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Switch(
+                    checked = c.shapeSnap,
+                    onCheckedChange = { c.toggleShapeSnap() },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = Palette.Navy,
@@ -1746,7 +1828,12 @@ private fun PageView(
                                     if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap) {
                                         snapPts = livePts.toList()
                                     } else {
-                                        session.addInk(index, Ink(livePts.toList(), live.color, live.width, live.tool))
+                                        // الأقلام: رسم يشبه شكلًا واضحًا يتحول إلى شكل مرتب
+                                        val raw = livePts.toList()
+                                        val pts = if (live.tool.isPen() && AppController.shapeSnap) {
+                                            ShapeRecognizer.recognize(raw) ?: raw
+                                        } else raw
+                                        session.addInk(index, Ink(pts, live.color, live.width, live.tool))
                                     }
                                 }
                                 livePts.clear()

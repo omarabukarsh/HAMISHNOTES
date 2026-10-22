@@ -394,7 +394,11 @@ object Exporter {
     // ---------------------------------------------------------------- الملخصات
 
     /** يحفظ الملخص بنفس شكل الدرج: عناوين، فقرات (المهم بخط عريض وتظليل)، وجداول. */
-    fun exportSummary(context: Context, title: String, blocks: List<SBlock>, uri: Uri): Int {
+    fun exportSummary(context: Context, title: String, blocks: List<SBlock>, uri: Uri): Int =
+        exportSummarySections(context, title, listOf("" to blocks), uri)
+
+    /** عدة أقسام (مستند لكل قسم) في ملف واحد؛ القسم بعنوان فارغ لا يُطبع عنوانه. */
+    fun exportSummarySections(context: Context, title: String, sections: List<Pair<String, List<SBlock>>>, uri: Uri): Int {
         val pageW = PDF_W
         val pageH = 842
         val margin = 50f
@@ -407,6 +411,9 @@ object Exporter {
         }
         val headPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Palette.Navy.toArgb(); textSize = 15f; typeface = bold
+        }
+        val sectionPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Palette.GoldDeep.toArgb(); textSize = 17f; typeface = bold
         }
         val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Palette.TextPrimary.toArgb(); textSize = 11.5f; typeface = sans
@@ -466,6 +473,12 @@ object Exporter {
             put(layoutOf(title, titlePaint, contentW, 1.2f), 0f, 6f)
             page!!.canvas.drawLine(margin, y, pageW - margin, y, rule)
             y += 14f
+            for ((secTitle, blocks) in sections) {
+            if (secTitle.isNotEmpty()) {
+                put(layoutOf(secTitle, sectionPaint, contentW, 1.2f), 18f, 4f)
+                page!!.canvas.drawLine(margin, y, margin + 60f, y, rule)
+                y += 10f
+            }
             for (b in blocks) {
                 when (b) {
                     is SHeading -> put(layoutOf(b.text, headPaint, contentW, 1.25f), 10f, 4f)
@@ -511,9 +524,10 @@ object Exporter {
                     }
                 }
             }
+            }
             page?.let { out.finishPage(it) }
             page = null
-            val os = context.contentResolver.openOutputStream(uri) ?: throw IllegalStateException("output")
+            val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
             os.use { out.writeTo(it) }
             return pageNo
         } finally {

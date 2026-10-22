@@ -209,6 +209,99 @@ object AppController {
         prefs.edit().putString("theme", t.name).apply()
     }
 
+    // ---------- وضع التركيز ومؤقت الدراسة (25 دقيقة دراسة ثم 5 راحة) ----------
+
+    var focusMode by mutableStateOf(false)
+
+    /** 0 متوقف، 1 دراسة، 2 راحة. */
+    var pomoPhase by mutableStateOf(0)
+        private set
+    var pomoLeftMs by mutableStateOf(0L)
+        private set
+    private var pomoEndsAt = 0L
+    private var pomoJob: Job? = null
+    private const val STUDY_MS = 25L * 60_000L
+    private const val BREAK_MS = 5L * 60_000L
+
+    fun startPomodoro() {
+        pomoPhase = 1
+        pomoEndsAt = System.currentTimeMillis() + STUDY_MS
+        pomoLeftMs = STUDY_MS
+        pomoJob?.cancel()
+        pomoJob = scope.launch {
+            while (isActive && pomoPhase != 0) {
+                delay(1000)
+                val now = System.currentTimeMillis()
+                // أثناء جلسة الدراسة يُحسب وقت القراءة حتى بدون لمس الشاشة
+                if (pomoPhase == 1) noteInteraction()
+                pomoLeftMs = (pomoEndsAt - now).coerceAtLeast(0L)
+                if (now >= pomoEndsAt) {
+                    if (pomoPhase == 1) {
+                        val k = "pomo|" + todayKey()
+                        stats[k] = (stats[k] ?: 0L) + 1L
+                        saveStats()
+                        pomoPhase = 2
+                        pomoEndsAt = now + BREAK_MS
+                        messages.tryEmit("انتهت جلسة الدراسة. استرح 5 دقائق")
+                    } else {
+                        pomoPhase = 1
+                        pomoEndsAt = now + STUDY_MS
+                        messages.tryEmit("انتهت الراحة. جلسة دراسة جديدة 25 دقيقة")
+                    }
+                    pomoLeftMs = pomoEndsAt - now
+                }
+            }
+        }
+    }
+
+    fun stopPomodoro() {
+        pomoPhase = 0
+        pomoJob?.cancel()
+        pomoJob = null
+    }
+
+    // ---------- ألوان التمييز كتصنيفات ----------
+
+    private val defaultLabels = mapOf(
+        0xFFFFEB3B.toInt() to "تعريف",
+        0xFF69F0AE.toInt() to "دواء",
+        0xFFFF80AB.toInt() to "ملاحظة امتحان",
+        0xFF40C4FF.toInt() to "مفهوم",
+        0xFFFFAB40.toInt() to "مهم"
+    )
+    private val colorLabels = mutableStateMapOf<Int, String>()
+
+    /** تجميع الملخص حسب لون التمييز (كل لون قسم بعنوان تصنيفه). */
+    var summaryByColor by mutableStateOf(false)
+        private set
+
+    fun labelOf(c: Color): String {
+        val k = c.toArgb()
+        return colorLabels[k] ?: defaultLabels[k] ?: "لون آخر"
+    }
+
+    fun setLabel(c: Color, label: String) {
+        colorLabels[c.toArgb()] = label
+        prefs.edit().putString(
+            "color_labels",
+            org.json.JSONObject().apply { colorLabels.forEach { (k, v) -> put(k.toString(), v) } }.toString()
+        ).apply()
+    }
+
+    fun toggleSummaryByColor() {
+        summaryByColor = !summaryByColor
+        prefs.edit().putBoolean("sum_by_color", summaryByColor).apply()
+    }
+
+    /** تحويل رسم القلم إلى أشكال مرتبة (خط، سهم، مستطيل، مثلث، دائرة). */
+    var shapeSnap by mutableStateOf(true)
+        private set
+
+    fun toggleShapeSnap() {
+        shapeSnap = !shapeSnap
+        prefs.edit().putBoolean("shape_snap", shapeSnap).apply()
+    }
+
     var laserMode by mutableStateOf(LaserMode.DOT)
         private set
 
@@ -261,6 +354,13 @@ object AppController {
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
         highlightSnap = prefs.getBoolean("hl_snap", false)
+        shapeSnap = prefs.getBoolean("shape_snap", true)
+        summaryByColor = prefs.getBoolean("sum_by_color", false)
+        try {
+            val o = org.json.JSONObject(prefs.getString("color_labels", "{}") ?: "{}")
+            for (k in o.keys()) k.toIntOrNull()?.let { colorLabels[it] = o.getString(k) }
+        } catch (e: Throwable) {
+        }
         goalMinutes = prefs.getInt("goal_min", 60)
         try {
             val arr = org.json.JSONArray(prefs.getString("folders", "[]") ?: "[]")
@@ -318,6 +418,7 @@ object AppController {
         scope.launch {
             s.load(repo.file(entry), repo)
             if (s.status is SessionStatus.Ready) {
+                s.applyPending()
                 // قراءة النص تبدأ تلقائيًا دون انتظار المستخدم
                 s.startOcr()
                 noteOcrLimits(s)
@@ -370,6 +471,81 @@ object AppController {
         saveLibrary()
         if (stats.isNotEmpty()) saveStats()
         saveSession()
+    }
+
+    // ---------- البحث في نص كل المكتبة ----------
+
+    class LibraryHit(val docId: String, val docName: String, val page: Int, val snippet: String)
+
+    /** يبحث في النص المقروء لكل المستندات (طبقة النص أو القراءة الضوئية المحفوظة). */
+    suspend fun searchLibrary(query: String): List<LibraryHit> = withContext(Dispatchers.IO) {
+        val tokens = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return@withContext emptyList()
+        val out = ArrayList<LibraryHit>()
+        for (e in library.toList()) {
+            val pages = repo.loadOcrAll(e.id)
+            for (page in pages.keys.sorted()) {
+                val words = pages[page]?.words ?: continue
+                var i = 0
+                var perPage = 0
+                while (i + tokens.size <= words.size && perPage < 3) {
+                    val ok = tokens.indices.all { j -> words[i + j].text.lowercase().contains(tokens[j]) }
+                    if (ok) {
+                        val a = (i - 6).coerceAtLeast(0)
+                        val z = (i + tokens.size + 10).coerceAtMost(words.size)
+                        val snippet = (if (a > 0) "… " else "") + words.subList(a, z).joinToString(" ") { it.text } +
+                            (if (z < words.size) " …" else "")
+                        out.add(LibraryHit(e.id, e.name, page, snippet))
+                        perPage++
+                        i += tokens.size
+                    } else {
+                        i++
+                    }
+                }
+                if (out.size >= 300) return@withContext out
+            }
+        }
+        out
+    }
+
+    /** يفتح مستندًا ويبحث فيه عن النص وينتقل إلى الصفحة. */
+    fun openAt(id: String, page: Int, query: String) {
+        openDocument(id)
+        val s = tabs.firstOrNull { it.id == id } ?: return
+        s.pendingQuery = query
+        s.pendingPage = page
+        if (s.status is SessionStatus.Ready) s.applyPending()
+    }
+
+    // ---------- ملخص المادة كاملة ----------
+
+    /** يجمع ملخصات كل مستندات المادة في ملف PDF واحد، قسم لكل مستند. */
+    fun exportFolderSummary(context: Context, folder: String, uri: Uri) {
+        if (exporting != null) return
+        val docs = library.filter { it.folder == folder }
+        if (docs.isEmpty()) return
+        exporting = "جارٍ حفظ ملخص المادة…"
+        scope.launch {
+            try {
+                val pages = withContext(Dispatchers.IO) {
+                    val sections = docs.mapNotNull { e ->
+                        val data = repo.loadDocData(e.id)
+                        val marks = data.marks.values.flatten().sortedWith(
+                            compareBy<TextMark>({ it.page }, { m -> m.rects.minOfOrNull { it.t } ?: 0f }, { m -> m.rects.minOfOrNull { it.l } ?: 0f })
+                        )
+                        val blocks = Summary.display(marks, summaryTidy, data.edits, null, summaryByColor) { labelOf(it) }
+                        if (blocks.isEmpty()) null else e.name to blocks
+                    }
+                    if (sections.isEmpty()) 0
+                    else Exporter.exportSummarySections(context.applicationContext, "ملخص مادة: $folder", sections, uri)
+                }
+                messages.tryEmit(if (pages == 0) "لا توجد ملخصات في مستندات هذه المادة" else "تم حفظ ملخص المادة ($pages صفحة)")
+            } catch (t: Throwable) {
+                messages.tryEmit("تعذر حفظ ملخص المادة")
+            } finally {
+                exporting = null
+            }
+        }
     }
 
     // ---------- عداد وقت القراءة ----------
@@ -546,7 +722,7 @@ object AppController {
 
     fun exportSummary(context: Context, s: DocSession, uri: Uri) {
         if (exporting != null) return
-        val blocks = Summary.view(s.allMarks(), summaryTidy, s.summaryEdits)
+        val blocks = Summary.display(s.allMarks(), summaryTidy, s.summaryEdits, null, summaryByColor) { labelOf(it) }
         val title = s.title
         exporting = "جارٍ حفظ الملخصات…"
         scope.launch {

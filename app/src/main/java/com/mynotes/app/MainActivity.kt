@@ -103,6 +103,8 @@ fun MyNotesApp() {
 
     // زر الرجوع من المستند يعيد إلى المكتبة بدل إغلاق التطبيق
     BackHandler(enabled = c.activeId != null) { c.activate(null) }
+    // في وضع التركيز: الرجوع يخرج من الوضع أولًا
+    BackHandler(enabled = c.focusMode) { c.focusMode = false }
 
     Box(
         Modifier.fillMaxSize().background(Palette.Background).systemBarsPadding()
@@ -117,7 +119,7 @@ fun MyNotesApp() {
             }
     ) {
         Column(Modifier.fillMaxSize()) {
-            if (c.tabs.isNotEmpty()) TabBar()
+            if (c.tabs.isNotEmpty() && !(c.focusMode && c.activeId != null)) TabBar()
             val active = c.tabs.firstOrNull { it.id == c.activeId }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (active == null) {

@@ -87,6 +87,19 @@ class DocSession(entry: DocEntry) {
     /** نص يُبحث عنه فور فتح المستند (من البحث في كل المكتبة). */
     var pendingQuery: String? = null
 
+    var pendingPage: Int = 0
+
+    /** يطبق بحثًا مؤجلًا (من البحث في كل المكتبة): يفتح شريط البحث وينتقل لأول نتيجة في الصفحة المطلوبة. */
+    fun applyPending() {
+        val q = pendingQuery ?: return
+        pendingQuery = null
+        searchOpen = true
+        runSearch(q, navigate = false)
+        val i = hits.indexOfFirst { it.page >= pendingPage }
+        hitIndex = if (i >= 0) i else 0
+        if (hits.isNotEmpty()) hitNav++
+    }
+
     fun addCustomCard(front: String, back: String) {
         val f = front.trim()
         val b = back.trim()

@@ -18,6 +18,11 @@ object Palette {
     val TabBar = Color(0xFFE4E9F0)
     val Desk = Color(0xFFE9E4DA)
     val DrawerBg = Color(0xFFF7F4EE)
+
+    /** سطح عاجي للقراءة والكتابة (صفحات الملخصات والملاحظات الجديدة). */
+    val Ivory = Color(0xFFFFFBF0)
+    val GoldSoft = Color(0xFFF6E7B8)
+    val GoldDeep = Color(0xFFB8860B)
 }
 
 private val AppColors = lightColorScheme(

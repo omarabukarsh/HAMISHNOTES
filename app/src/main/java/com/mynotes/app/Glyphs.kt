@@ -334,3 +334,84 @@ fun AddPageGlyph(tint: Color) {
         )
     }
 }
+
+/** التقاط النص بالهايلايتر: حرف T فوق شريط تمييز. */
+@Composable
+fun SnapGlyph(tint: Color, mark: Color) {
+    Canvas(Modifier.size(24.dp)) {
+        val s = size.minDimension
+        val sw = s * 0.09f
+        drawRect(mark.copy(alpha = 0.75f), Offset(s * 0.12f, s * 0.58f), Size(s * 0.76f, s * 0.26f))
+        drawLine(tint, Offset(s * 0.24f, s * 0.18f), Offset(s * 0.76f, s * 0.18f), strokeWidth = sw, cap = StrokeCap.Round)
+        drawLine(tint, Offset(s * 0.50f, s * 0.18f), Offset(s * 0.50f, s * 0.80f), strokeWidth = sw, cap = StrokeCap.Round)
+    }
+}
+
+/** درج الملخصات: صفحة عليها أسطر وأحدها مميز. */
+@Composable
+fun SummaryGlyph(tint: Color, mark: Color) {
+    Canvas(Modifier.size(24.dp)) {
+        val s = size.minDimension
+        val sw = s * 0.07f
+        drawRoundRect(
+            tint, Offset(s * 0.16f, s * 0.08f), Size(s * 0.68f, s * 0.84f), CornerRadius(s * 0.08f),
+            style = Stroke(width = sw)
+        )
+        drawRect(mark.copy(alpha = 0.8f), Offset(s * 0.26f, s * 0.40f), Size(s * 0.48f, s * 0.13f))
+        val cap = StrokeCap.Round
+        drawLine(tint, Offset(s * 0.30f, s * 0.27f), Offset(s * 0.70f, s * 0.27f), strokeWidth = sw * 0.8f, cap = cap)
+        drawLine(tint, Offset(s * 0.30f, s * 0.465f), Offset(s * 0.70f, s * 0.465f), strokeWidth = sw * 0.8f, cap = cap)
+        drawLine(tint, Offset(s * 0.30f, s * 0.66f), Offset(s * 0.70f, s * 0.66f), strokeWidth = sw * 0.8f, cap = cap)
+        drawLine(tint, Offset(s * 0.30f, s * 0.79f), Offset(s * 0.54f, s * 0.79f), strokeWidth = sw * 0.8f, cap = cap)
+    }
+}
+
+/** مربع نص مكتوب. */
+@Composable
+fun TextGlyph(tint: Color) {
+    Canvas(Modifier.size(24.dp)) {
+        val s = size.minDimension
+        val sw = s * 0.07f
+        drawRoundRect(
+            tint.copy(alpha = 0.5f), Offset(s * 0.08f, s * 0.12f), Size(s * 0.84f, s * 0.76f), CornerRadius(s * 0.08f),
+            style = Stroke(width = sw * 0.8f)
+        )
+        drawLine(tint, Offset(s * 0.30f, s * 0.30f), Offset(s * 0.70f, s * 0.30f), strokeWidth = sw * 1.3f, cap = StrokeCap.Round)
+        drawLine(tint, Offset(s * 0.50f, s * 0.30f), Offset(s * 0.50f, s * 0.72f), strokeWidth = sw * 1.3f, cap = StrokeCap.Round)
+    }
+}
+
+/** حفظ وتصدير: سهم خارج من صندوق. */
+@Composable
+fun ExportGlyph(tint: Color) {
+    Canvas(Modifier.size(24.dp)) {
+        val s = size.minDimension
+        val sw = s * 0.08f
+        val cap = StrokeCap.Round
+        drawLine(tint, Offset(s * 0.16f, s * 0.56f), Offset(s * 0.16f, s * 0.86f), strokeWidth = sw, cap = cap)
+        drawLine(tint, Offset(s * 0.16f, s * 0.86f), Offset(s * 0.84f, s * 0.86f), strokeWidth = sw, cap = cap)
+        drawLine(tint, Offset(s * 0.84f, s * 0.86f), Offset(s * 0.84f, s * 0.56f), strokeWidth = sw, cap = cap)
+        drawLine(tint, Offset(s * 0.50f, s * 0.66f), Offset(s * 0.50f, s * 0.12f), strokeWidth = sw, cap = cap)
+        drawLine(tint, Offset(s * 0.50f, s * 0.12f), Offset(s * 0.32f, s * 0.30f), strokeWidth = sw, cap = cap)
+        drawLine(tint, Offset(s * 0.50f, s * 0.12f), Offset(s * 0.68f, s * 0.30f), strokeWidth = sw, cap = cap)
+    }
+}
+
+/** ملاءمة الصفحة كاملة داخل الشاشة. */
+@Composable
+fun FitGlyph(tint: Color) {
+    Canvas(Modifier.size(24.dp)) {
+        val s = size.minDimension
+        val sw = s * 0.08f
+        drawRoundRect(
+            tint.copy(alpha = 0.16f), Offset(s * 0.30f, s * 0.20f), Size(s * 0.40f, s * 0.60f), CornerRadius(s * 0.05f)
+        )
+        drawRoundRect(
+            tint, Offset(s * 0.30f, s * 0.20f), Size(s * 0.40f, s * 0.60f), CornerRadius(s * 0.05f),
+            style = Stroke(width = sw * 0.8f)
+        )
+        val cap = StrokeCap.Round
+        drawLine(tint, Offset(s * 0.06f, s * 0.50f), Offset(s * 0.20f, s * 0.50f), strokeWidth = sw, cap = cap)
+        drawLine(tint, Offset(s * 0.80f, s * 0.50f), Offset(s * 0.94f, s * 0.50f), strokeWidth = sw, cap = cap)
+    }
+}

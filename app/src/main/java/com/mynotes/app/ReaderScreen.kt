@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +68,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -76,6 +79,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -159,12 +163,92 @@ private fun FailedView(session: DocSession, message: String) {
 @Composable
 private fun ReaderContent(s: DocSession) {
     val pdf = s.pdf ?: return
+    val c = AppController
+    val context = LocalContext.current
+    val docSaver = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri: Uri? -> if (uri != null) c.exportDocument(context, s, uri) }
+    val summarySaver = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri: Uri? -> if (uri != null) c.exportSummary(context, s, uri) }
+    val exportDoc: () -> Unit = { docSaver.launch("${s.title} - مع التعليقات.pdf") }
+    val exportSummary: () -> Unit = {
+        if (s.allMarks().isEmpty()) c.messages.tryEmit("لا توجد ملخصات لحفظها بعد")
+        else summarySaver.launch("ملخص ${s.title}.pdf")
+    }
+
     Column(Modifier.fillMaxSize().background(Palette.Desk)) {
-        ReaderTopBar(s, pdf.count)
+        ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
         if (s.searchOpen) ReaderSearchBar(s)
         if (s.ocrRunning) OcrStatusBar(s)
-        PageArea(s, pdf)
+        c.exporting?.let { ExportStatusBar(it) }
+        PageArea(s, pdf, exportSummary)
     }
+
+    val req = s.textDialog
+    if (req != null) {
+        TextBoxDialog(
+            initial = s.textBox(req.boxId)?.text ?: "",
+            isNew = req.boxId == null,
+            onSave = { text ->
+                c.saveTextBox(s, req, text)
+                s.textDialog = null
+            },
+            onDelete = {
+                req.boxId?.let { s.deleteTextBox(it) }
+                s.textDialog = null
+            },
+            onDismiss = { s.textDialog = null }
+        )
+    }
+}
+
+@Composable
+private fun ExportStatusBar(text: String) {
+    Column(Modifier.fillMaxWidth().background(Palette.GoldSoft)) {
+        Text(
+            text, fontSize = 12.sp, color = Palette.Navy,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+        )
+        LinearProgressIndicator(Modifier.fillMaxWidth(), color = Palette.GoldDeep)
+    }
+}
+
+@Composable
+private fun TextBoxDialog(
+    initial: String,
+    isNew: Boolean,
+    onSave: (String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initial) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            focus.requestFocus()
+        } catch (e: Throwable) {
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isNew) "إضافة نص" else "تعديل النص") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("اكتب هنا…") },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp).focusRequester(focus)
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(if (isNew) "إضافة" else "حفظ") } },
+        dismissButton = {
+            Row {
+                if (!isNew) TextButton(onClick = onDelete) { Text("حذف", color = Palette.Danger) }
+                TextButton(onClick = onDismiss) { Text("إلغاء") }
+            }
+        }
+    )
 }
 
 // ---------------------------------------------------------------- شريط الأدوات
@@ -183,7 +267,17 @@ private fun TBtn(
             .background(if (selected) Palette.NavySoft else Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { content() }
+    ) {
+        content()
+        // مؤشر ذهبي صغير أسفل الأداة المختارة
+        if (selected) {
+            Box(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
+                    .width(14.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
+                    .background(Palette.Gold)
+            )
+        }
+    }
 }
 
 @Composable
@@ -194,10 +288,11 @@ private fun ToolbarSep() {
 }
 
 @Composable
-private fun ReaderTopBar(s: DocSession, count: Int) {
+private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onExportSummary: () -> Unit) {
     val c = AppController
     val scope = rememberCoroutineScope()
     var jump by remember { mutableStateOf(false) }
+    var exportMenu by remember { mutableStateOf(false) }
     var penMenu by remember { mutableStateOf(false) }
     var colorMenu by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -227,6 +322,31 @@ private fun ReaderTopBar(s: DocSession, count: Int) {
                 .clickable { s.drawerOpen = !s.drawerOpen },
             contentAlignment = Alignment.Center
         ) { PagesGlyph(tintFor(s.drawerOpen)) }
+
+        // زر درج الملخصات في الزاوية المقابلة، مع عدد التمييزات
+        val markCount = s.marks.values.sumOf { it.size }
+        Box(Modifier.align(Alignment.CenterEnd)) {
+            Box(
+                Modifier.size(46.dp)
+                    .shadow(5.dp, CircleShape)
+                    .background(if (s.summaryOpen) Palette.GoldSoft else Color.White, CircleShape)
+                    .clip(CircleShape)
+                    .clickable { s.summaryOpen = !s.summaryOpen },
+                contentAlignment = Alignment.Center
+            ) { SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold) }
+            if (markCount > 0) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape)
+                        .background(Palette.GoldDeep),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (markCount > 99) "99" else "$markCount",
+                        fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
 
         // شريط الأدوات في المنتصف
         Box(
@@ -296,6 +416,12 @@ private fun ReaderTopBar(s: DocSession, count: Int) {
                         c.colorFor(Tool.HIGHLIGHTER)
                     )
                 }
+                // التقاط النص: يظهر عند اختيار الهايلايتر
+                if (c.tool == Tool.HIGHLIGHTER) {
+                    TBtn(selected = c.highlightSnap, onClick = { c.toggleHighlightSnap() }) {
+                        SnapGlyph(tintFor(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
+                    }
+                }
                 TBtn(selected = c.tool == Tool.ERASER, onClick = { c.selectTool(Tool.ERASER) }) {
                     ToolGlyph(Tool.ERASER, tintFor(c.tool == Tool.ERASER), Palette.Navy)
                 }
@@ -343,6 +469,7 @@ private fun ReaderTopBar(s: DocSession, count: Int) {
                 TBtn(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
                     ImageGlyph(Palette.TextSecondary)
                 }
+                TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
                 TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.TextSecondary) }
                 TBtn(selected = s.ocrRunning, onClick = {
                     if (s.ocrRunning) {
@@ -355,6 +482,27 @@ private fun ReaderTopBar(s: DocSession, count: Int) {
                 TBtn(selected = s.searchOpen, onClick = {
                     if (s.searchOpen) s.closeSearch() else s.searchOpen = true
                 }) { SearchGlyph(tintFor(s.searchOpen)) }
+                Box {
+                    TBtn(enabled = c.exporting == null, onClick = { exportMenu = true }) {
+                        ExportGlyph(Palette.TextSecondary)
+                    }
+                    DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("حفظ المستند مع التعليقات (PDF)") },
+                            onClick = {
+                                exportMenu = false
+                                onExportDoc()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("حفظ الملخصات (PDF)") },
+                            onClick = {
+                                exportMenu = false
+                                onExportSummary()
+                            }
+                        )
+                    }
+                }
 
                 ToolbarSep()
 
@@ -389,6 +537,8 @@ private fun ReaderTopBar(s: DocSession, count: Int) {
                 TBtn(enabled = canIn, onClick = { s.zoomHook?.invoke(1.25f) }) {
                     ZoomGlyph(if (canIn) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f), plus = true)
                 }
+                // ملاءمة الصفحة كاملة (مفيد في الوضع الأفقي)، ونقرة ثانية تعيد ملء العرض
+                TBtn(onClick = { s.fitHook?.invoke() }) { FitGlyph(Palette.TextPrimary) }
             }
         }
     }
@@ -437,7 +587,7 @@ private fun AddPagesDialog(
 ) {
     var template by remember { mutableStateOf("lined") }
     var atEnd by remember { mutableStateOf(false) }
-    var paper by remember { mutableStateOf(Templates.paperColors[0].first) }
+    var paper by remember { mutableStateOf(Templates.paperColors[1].first) }
     var picker by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -645,7 +795,7 @@ private fun Modifier.zoomAndPan(
 }
 
 @Composable
-private fun PageArea(s: DocSession, pdf: PdfDoc) {
+private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
@@ -715,6 +865,20 @@ private fun PageArea(s: DocSession, pdf: PdfDoc) {
                 val center = Offset(vw / 2f, vh / 2f)
                 applyZoom(f, center, center)
             }
+            s.fitHook = {
+                val page = s.listState.firstVisibleItemIndex.coerceIn(0, maxOf(0, pdf.count - 1))
+                val fit = (((vh - 2f * pad) * pdf.ratio(page) + 2f * pad) / vw).coerceIn(MIN_SCALE, 1f)
+                val target = if (abs(s.scale - fit) < 0.02f) 1f else fit
+                val center = Offset(vw / 2f, vh / 2f)
+                applyZoom(target / s.scale, center, center)
+                scope.launch { s.listState.scrollToItem(page) }
+            }
+            s.jumpHook = { m ->
+                val top = m.rects.minOfOrNull { it.t } ?: 0f
+                val pageW = vw * s.scale - 2f * pad
+                val off = (top * pageW - vh / 3f).toInt().coerceAtLeast(0)
+                scope.launch { s.listState.animateScrollToItem(m.page, off) }
+            }
         }
 
         // الانتقال إلى نتيجة البحث (عند التنقل فقط، لا عند تقدّم القراءة في الخلفية)
@@ -763,6 +927,14 @@ private fun PageArea(s: DocSession, pdf: PdfDoc) {
         if (s.drawerOpen) {
             PagesDrawer(s, pdf, Modifier.align(Alignment.CenterStart))
         }
+        if (s.summaryOpen) {
+            SummaryDrawer(
+                s = s,
+                onJump = { m -> s.jumpHook?.invoke(m) },
+                onExport = onExportSummary,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
+        }
 
         Column(
             Modifier.align(Alignment.BottomCenter).padding(12.dp),
@@ -771,6 +943,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc) {
         ) {
             if (s.selection != null) SelectionBar(s)
             if (s.selectedImageId != null) ImageBar(s)
+            if (s.selectedTextId != null) TextBoxBar(s)
         }
     }
 }
@@ -792,6 +965,9 @@ private fun SelectionBar(s: DocSession) {
                     AppController.messages.tryEmit("تم نسخ النص")
                 }
             }) { Text("نسخ") }
+            TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
+                Text("إلى الملخصات", color = Palette.GoldDeep)
+            }
             TextButton(onClick = {
                 val n = s.ocr[sel.page]?.words?.size ?: 0
                 if (n > 0) s.selection = TextSelection(sel.page, 0, n - 1)
@@ -828,6 +1004,42 @@ private fun ImageBar(s: DocSession) {
                 }
             }) { Text("تكبير") }
             TextButton(onClick = { s.selectedImageId = null }) { Text("تم") }
+        }
+    }
+}
+
+@Composable
+private fun TextBoxBar(s: DocSession) {
+    val id = s.selectedTextId ?: return
+    val tb = s.textBox(id)
+    if (tb == null) {
+        SideEffect { s.selectedTextId = null }
+        return
+    }
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
+        Row(
+            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { s.textDialog = TextDialogReq(id, tb.page) }) { Text("تعديل") }
+            TextButton(onClick = {
+                s.beginEdit()
+                s.updateTextBox(id) { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) }
+                s.endEdit()
+            }) { Text("خط أصغر") }
+            TextButton(onClick = {
+                s.beginEdit()
+                s.updateTextBox(id) { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) }
+                s.endEdit()
+            }) { Text("خط أكبر") }
+            TextButton(onClick = {
+                val pen = AppController.tool.let { if (it.isPen()) it else AppController.lastPen }
+                s.beginEdit()
+                s.updateTextBox(id) { it.copy(color = AppController.colorFor(pen)) }
+                s.endEdit()
+            }) { Text("لون القلم") }
+            TextButton(onClick = { s.deleteTextBox(id) }) { Text("حذف", color = Palette.Danger) }
+            TextButton(onClick = { s.selectedTextId = null }) { Text("تم") }
         }
     }
 }
@@ -975,6 +1187,12 @@ private fun PageView(
     val pageHits = session.hits.filter { it.page == index }
     val curHit = session.hits.getOrNull(session.hitIndex)
     val selImg = session.selectedImageId?.let { id -> pageImages.firstOrNull { it.id == id } }
+    val pageMarks = session.marks[index] ?: emptyList()
+    val pageTexts = session.texts[index] ?: emptyList()
+    val textsNow by rememberUpdatedState(pageTexts)
+    /** ارتفاع كل مربع نص بعد قياسه، نسبةً لعرض الصفحة (للنقر والسحب). */
+    val textHeights = remember { mutableStateMapOf<String, Float>() }
+    val density = LocalDensity.current
 
     val paper = RoundedCornerShape(4.dp)
     Box(
@@ -992,6 +1210,22 @@ private fun PageView(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.FillBounds
             )
+        }
+
+        // التمييز الملتقط: يُرسم بمزج «ضرب» فوق صورة الصفحة فيبدو خلف النص والنص واضح فوقه
+        if (pageMarks.isNotEmpty()) {
+            Canvas(Modifier.fillMaxSize()) {
+                val w = size.width
+                for (m in pageMarks) {
+                    val col = m.color.copy(alpha = Exporter.MARK_ALPHA)
+                    for (r in m.rects) {
+                        drawRect(
+                            col, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
+                            blendMode = BlendMode.Multiply
+                        )
+                    }
+                }
+            }
         }
 
         // رقم الصفحة (صغير في الزاوية، مثل دفتر الملاحظات)
@@ -1055,6 +1289,43 @@ private fun PageView(
                 drawRect(Palette.Navy, Offset(x, y), Size(ww, hh), style = Stroke(width = 2.dp.toPx()))
                 drawCircle(Palette.Navy, 10.dp.toPx(), Offset(x + ww, y + hh))
                 drawCircle(Color.White, 4.dp.toPx(), Offset(x + ww, y + hh))
+            }
+        }
+
+        // مربعات النص المكتوب
+        if (wPx > 0) {
+            val wp = wPx.toFloat()
+            pageTexts.forEach { tb ->
+                key(tb.id) {
+                    val fs = with(density) { (tb.size * wp).toSp() }
+                    val selected = session.selectedTextId == tb.id
+                    Text(
+                        tb.text,
+                        color = tb.color,
+                        fontSize = fs,
+                        lineHeight = fs * 1.25f,
+                        modifier = Modifier
+                            .align(AbsoluteAlignment.TopLeft)
+                            .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
+                            .width(with(density) { (tb.w * wp).toDp() })
+                            .onSizeChanged { textHeights[tb.id] = it.height / wp }
+                            .then(
+                                if (selected) Modifier.border(1.5.dp, Palette.Navy, RoundedCornerShape(3.dp))
+                                else Modifier
+                            )
+                    )
+                }
+            }
+            val selTb = session.selectedTextId?.let { id -> pageTexts.firstOrNull { it.id == id } }
+            if (selTb != null) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = (textHeights[selTb.id] ?: 0.03f) * w
+                    val cx = (selTb.x + selTb.w) * w
+                    val cy = selTb.y * w + h
+                    drawCircle(Palette.Navy, 9.dp.toPx(), Offset(cx, cy))
+                    drawCircle(Color.White, 3.5.dp.toPx(), Offset(cx, cy))
+                }
             }
         }
 
@@ -1212,12 +1483,19 @@ private fun PageView(
                                 }
                             } finally {
                                 live.hasPred = false
+                                var snapPts: List<Pt>? = null
                                 if (!erasing && livePts.isNotEmpty()) {
-                                    session.addInk(index, Ink(livePts.toList(), live.color, live.width, live.tool))
+                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap) {
+                                        snapPts = livePts.toList()
+                                    } else {
+                                        session.addInk(index, Ink(livePts.toList(), live.color, live.width, live.tool))
+                                    }
                                 }
                                 livePts.clear()
                                 tick++
                                 session.endEdit()
+                                // الهايلايتر الملتقط: يتحول الخط إلى تمييز خلف كلمات السطر ويُضاف إلى الملخصات
+                                if (snapPts != null) session.snapHighlight(index, snapPts, live.color, live.width)
                             }
                         }
                     }
@@ -1231,6 +1509,51 @@ private fun PageView(
                         if (w <= 0f) return@awaitEachGesture
                         val nx = down.position.x / w
                         val ny = down.position.y / w
+
+                        // سحب/تغيير عرض مربع النص المحدد
+                        val selTextId = session.selectedTextId
+                        val selText = if (selTextId != null) textsNow.firstOrNull { it.id == selTextId } else null
+                        if (selText != null) {
+                            val th = textHeights[selText.id] ?: 0.03f
+                            val onHandle = hypot(nx - (selText.x + selText.w), ny - (selText.y + th)) < 0.04f
+                            val inside = nx >= selText.x && nx <= selText.x + selText.w &&
+                                ny >= selText.y && ny <= selText.y + th
+                            if (onHandle || inside) {
+                                down.consume()
+                                session.beginEdit()
+                                var last = down.position
+                                var moved = false
+                                try {
+                                    while (true) {
+                                        val e = awaitPointerEvent()
+                                        val ch = e.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!ch.pressed) break
+                                        if (!moved && (ch.position - down.position).getDistance() < viewConfiguration.touchSlop) {
+                                            continue
+                                        }
+                                        moved = true
+                                        val dx = (ch.position.x - last.x) / w
+                                        val dy = (ch.position.y - last.y) / w
+                                        last = ch.position
+                                        if (onHandle) {
+                                            session.updateTextBox(selText.id) {
+                                                it.copy(w = (it.w + dx).coerceIn(0.08f, 1f))
+                                            }
+                                        } else {
+                                            session.updateTextBox(selText.id) {
+                                                it.copy(x = it.x + dx, y = it.y + dy)
+                                            }
+                                        }
+                                        ch.consume()
+                                    }
+                                } finally {
+                                    session.endEdit()
+                                }
+                                // نقرة على المربع المحدد (بلا سحب) تفتح التعديل
+                                if (!moved && inside) session.textDialog = TextDialogReq(selText.id, index)
+                                return@awaitEachGesture
+                            }
+                        }
 
                         // سحب/تغيير حجم الصورة المحددة
                         val selId = session.selectedImageId
@@ -1276,6 +1599,17 @@ private fun PageView(
                                 waitForUpOrCancellation()
                             }
                             if (up != null) {
+                                val textHit = textsNow.lastOrNull {
+                                    val th = textHeights[it.id] ?: 0.03f
+                                    nx >= it.x && nx <= it.x + it.w && ny >= it.y && ny <= it.y + th
+                                }
+                                if (textHit != null) {
+                                    session.selectedTextId = textHit.id
+                                    session.selectedImageId = null
+                                    session.selection = null
+                                    return@awaitEachGesture
+                                }
+                                if (session.selectedTextId != null) session.selectedTextId = null
                                 val hit = imagesNow.lastOrNull {
                                     nx >= it.x && nx <= it.x + it.w &&
                                         ny >= it.y && ny <= it.y + it.w / it.aspect

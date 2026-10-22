@@ -29,6 +29,34 @@ data class ImageItem(
     val aspect: Float
 )
 
+/** مستطيل بإحداثيات نسبية لعرض الصفحة. */
+data class MarkRect(val l: Float, val t: Float, val r: Float, val b: Float)
+
+/**
+ * تمييز ملتقط على النص: مستطيلات خلف الأسطر المميزة، مع النص نفسه.
+ * يظهر في درج «ملخصات» الخاص بالمستند. text قابل للتعديل من الدرج.
+ */
+data class TextMark(
+    val id: String,
+    val page: Int,
+    val rects: List<MarkRect>,
+    val color: Color,
+    val text: String,
+    val createdAt: Long
+)
+
+/** مربع نص مكتوب بالكيبورد فوق صفحة. x و y الزاوية العليا، w العرض، size حجم الخط نسبةً لعرض الصفحة. */
+data class TextBox(
+    val id: String,
+    val page: Int,
+    val x: Float,
+    val y: Float,
+    val w: Float,
+    val text: String,
+    val color: Color,
+    val size: Float
+)
+
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */
 object Sizes {
     const val COUNT = 10

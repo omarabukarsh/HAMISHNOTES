@@ -24,13 +24,15 @@ import java.util.concurrent.Executors
 
 class DocData(
     val ink: Map<Int, List<Ink>>,
-    val images: Map<Int, List<ImageItem>>
+    val images: Map<Int, List<ImageItem>>,
+    val marks: Map<Int, List<TextMark>> = emptyMap(),
+    val texts: Map<Int, List<TextBox>> = emptyMap()
 )
 
 /**
  * كل الملفات داخل مساحة التطبيق الخاصة:
  *  files/docs/<id>.pdf          نسخة المستند المستورد
- *  files/annotations/<id>.json  الكتابة اليدوية والصور المضافة (مواضعها)
+ *  files/annotations/<id>.json  الكتابة اليدوية والصور والتمييزات الملتقطة ومربعات النص
  *  files/images/<id>/           ملفات الصور المضافة
  *  files/ocr/<id>/<page>.json   نتيجة القراءة الضوئية لكل صفحة
  *  files/thumbs/<id>.jpg        الصورة المصغرة
@@ -341,7 +343,69 @@ class LibraryRepository(context: Context) {
                 }
                 all.groupBy { it.page }.forEach { (p, l) -> images[p] = l }
             }
-            DocData(ink, images)
+
+            val marks = HashMap<Int, List<TextMark>>()
+            val markArr = root.optJSONArray("marks")
+            if (markArr != null) {
+                val all = ArrayList<TextMark>()
+                for (i in 0 until markArr.length()) {
+                    try {
+                        val o = markArr.getJSONObject(i)
+                        val flat = o.getJSONArray("r")
+                        val rects = ArrayList<MarkRect>(flat.length() / 4)
+                        var j = 0
+                        while (j + 3 < flat.length()) {
+                            rects.add(
+                                MarkRect(
+                                    flat.getDouble(j).toFloat(),
+                                    flat.getDouble(j + 1).toFloat(),
+                                    flat.getDouble(j + 2).toFloat(),
+                                    flat.getDouble(j + 3).toFloat()
+                                )
+                            )
+                            j += 4
+                        }
+                        all.add(
+                            TextMark(
+                                id = o.getString("id"),
+                                page = o.getInt("page"),
+                                rects = rects,
+                                color = Color(o.getInt("c")),
+                                text = o.optString("t", ""),
+                                createdAt = o.optLong("at")
+                            )
+                        )
+                    } catch (e: Throwable) {
+                    }
+                }
+                all.groupBy { it.page }.forEach { (p, l) -> marks[p] = l }
+            }
+
+            val texts = HashMap<Int, List<TextBox>>()
+            val textArr = root.optJSONArray("texts")
+            if (textArr != null) {
+                val all = ArrayList<TextBox>()
+                for (i in 0 until textArr.length()) {
+                    try {
+                        val o = textArr.getJSONObject(i)
+                        all.add(
+                            TextBox(
+                                id = o.getString("id"),
+                                page = o.getInt("page"),
+                                x = o.getDouble("x").toFloat(),
+                                y = o.getDouble("y").toFloat(),
+                                w = o.getDouble("w").toFloat(),
+                                text = o.optString("t", ""),
+                                color = Color(o.getInt("c")),
+                                size = o.getDouble("s").toFloat()
+                            )
+                        )
+                    } catch (e: Throwable) {
+                    }
+                }
+                all.groupBy { it.page }.forEach { (p, l) -> texts[p] = l }
+            }
+            DocData(ink, images, marks, texts)
         } catch (e: Throwable) {
             try {
                 f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
@@ -351,7 +415,9 @@ class LibraryRepository(context: Context) {
         }
     }
 
-    suspend fun saveDocData(id: String, ink: Map<Int, List<Ink>>, images: Map<Int, List<ImageItem>>) {
+    suspend fun saveDocData(id: String, data: DocData) {
+        val ink = data.ink
+        val images = data.images
         withContext(writer) {
             try {
                 val pages = JSONObject()
@@ -391,9 +457,47 @@ class LibraryRepository(context: Context) {
                         )
                     }
                 }
+                val marks = JSONArray()
+                data.marks.values.forEach { list ->
+                    list.forEach { m ->
+                        val flat = JSONArray()
+                        m.rects.forEach {
+                            flat.put(it.l.toDouble())
+                            flat.put(it.t.toDouble())
+                            flat.put(it.r.toDouble())
+                            flat.put(it.b.toDouble())
+                        }
+                        marks.put(
+                            JSONObject()
+                                .put("id", m.id)
+                                .put("page", m.page)
+                                .put("c", m.color.toArgb())
+                                .put("t", m.text)
+                                .put("at", m.createdAt)
+                                .put("r", flat)
+                        )
+                    }
+                }
+                val texts = JSONArray()
+                data.texts.values.forEach { list ->
+                    list.forEach { tb ->
+                        texts.put(
+                            JSONObject()
+                                .put("id", tb.id)
+                                .put("page", tb.page)
+                                .put("x", tb.x.toDouble())
+                                .put("y", tb.y.toDouble())
+                                .put("w", tb.w.toDouble())
+                                .put("t", tb.text)
+                                .put("c", tb.color.toArgb())
+                                .put("s", tb.size.toDouble())
+                        )
+                    }
+                }
                 atomicWrite(
                     File(annDir, "$id.json"),
-                    JSONObject().put("version", 2).put("pages", pages).put("images", imgs).toString()
+                    JSONObject().put("version", 3).put("pages", pages).put("images", imgs)
+                        .put("marks", marks).put("texts", texts).toString()
                 )
             } catch (e: Throwable) {
             }

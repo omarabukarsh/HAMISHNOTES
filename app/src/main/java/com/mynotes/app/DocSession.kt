@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.UUID
 import kotlin.math.hypot
 
 sealed interface SessionStatus {
@@ -27,9 +29,14 @@ sealed interface SessionStatus {
 fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float): List<Ink> =
     list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
 
+/** طلب فتح نافذة مربع النص: boxId = null لإنشاء مربع جديد في الصفحة page. */
+data class TextDialogReq(val boxId: String?, val page: Int)
+
 class EditSnapshot(
     val ink: Map<Int, List<Ink>>,
-    val images: Map<Int, List<ImageItem>>
+    val images: Map<Int, List<ImageItem>>,
+    val marks: Map<Int, List<TextMark>>,
+    val texts: Map<Int, List<TextBox>>
 )
 
 /**
@@ -57,6 +64,20 @@ class DocSession(entry: DocEntry) {
     var annotations by mutableStateOf<Map<Int, List<Ink>>>(emptyMap())
     var images by mutableStateOf<Map<Int, List<ImageItem>>>(emptyMap())
     var selectedImageId by mutableStateOf<String?>(null)
+
+    /** تمييزات النص الملتقطة (مصدر درج «ملخصات»)، ومربعات النص المكتوب. */
+    var marks by mutableStateOf<Map<Int, List<TextMark>>>(emptyMap())
+    var texts by mutableStateOf<Map<Int, List<TextBox>>>(emptyMap())
+    var selectedTextId by mutableStateOf<String?>(null)
+
+    var textDialog by mutableStateOf<TextDialogReq?>(null)
+
+    // ---- درج الملخصات ----
+    var summaryOpen by mutableStateOf(false)
+
+    /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
+    var jumpHook: ((TextMark) -> Unit)? = null
+    var fitHook: (() -> Unit)? = null
 
     val undoStack = mutableStateListOf<EditSnapshot>()
     val redoStack = mutableStateListOf<EditSnapshot>()
@@ -95,6 +116,8 @@ class DocSession(entry: DocEntry) {
             pdf = loaded.first
             annotations = loaded.second.ink
             images = loaded.second.images
+            marks = loaded.second.marks
+            texts = loaded.second.texts
             ocr.putAll(loaded.third)
             status = SessionStatus.Ready
         } catch (e: FileNotFoundException) {
@@ -108,8 +131,19 @@ class DocSession(entry: DocEntry) {
 
     // ---------- التحرير والتراجع ----------
 
+    private fun snap() = EditSnapshot(annotations, images, marks, texts)
+
+    private fun restore(s: EditSnapshot) {
+        annotations = s.ink
+        images = s.images
+        marks = s.marks
+        texts = s.texts
+        selectedImageId = null
+        selectedTextId = null
+    }
+
     fun beginEdit() {
-        snapshot = EditSnapshot(annotations, images)
+        snapshot = snap()
     }
 
     fun addInk(page: Int, ink: Ink) {
@@ -117,16 +151,26 @@ class DocSession(entry: DocEntry) {
     }
 
     fun eraseAt(page: Int, at: Offset, radius: Float) {
-        val cur = annotations[page] ?: return
-        val next = eraseStrokes(cur, at, radius)
-        if (next.size != cur.size) annotations = annotations + (page to next)
+        val cur = annotations[page]
+        if (cur != null) {
+            val next = eraseStrokes(cur, at, radius)
+            if (next.size != cur.size) annotations = annotations + (page to next)
+        }
+        // الممحاة تزيل أيضًا التمييز الملتقط الذي تمرّ عليه (ويختفي من الملخصات)
+        val ms = marks[page] ?: return
+        val keep = ms.filterNot { m ->
+            m.rects.any { r ->
+                at.x >= r.l - radius && at.x <= r.r + radius && at.y >= r.t - radius && at.y <= r.b + radius
+            }
+        }
+        if (keep.size != ms.size) marks = marks + (page to keep)
     }
 
     /** يثبّت العملية في سجل التراجع فقط إذا تغيّر شيء فعلًا، ثم يحفظ على القرص. */
     fun endEdit() {
         val s = snapshot ?: return
         snapshot = null
-        if (s.ink === annotations && s.images === images) return
+        if (s.ink === annotations && s.images === images && s.marks === marks && s.texts === texts) return
         undoStack.add(s)
         if (undoStack.size > 100) undoStack.removeAt(0)
         redoStack.clear()
@@ -135,21 +179,15 @@ class DocSession(entry: DocEntry) {
 
     fun undo() {
         if (undoStack.isEmpty()) return
-        redoStack.add(EditSnapshot(annotations, images))
-        val s = undoStack.removeAt(undoStack.lastIndex)
-        annotations = s.ink
-        images = s.images
-        selectedImageId = null
+        redoStack.add(snap())
+        restore(undoStack.removeAt(undoStack.lastIndex))
         persist()
     }
 
     fun redo() {
         if (redoStack.isEmpty()) return
-        undoStack.add(EditSnapshot(annotations, images))
-        val s = redoStack.removeAt(redoStack.lastIndex)
-        annotations = s.ink
-        images = s.images
-        selectedImageId = null
+        undoStack.add(snap())
+        restore(redoStack.removeAt(redoStack.lastIndex))
         persist()
     }
 
@@ -206,6 +244,18 @@ class DocSession(entry: DocEntry) {
             movedImages[nk] = list.map { it.copy(page = nk) }
         }
         images = movedImages
+        val movedMarks = HashMap<Int, List<TextMark>>()
+        marks.forEach { (k, list) ->
+            val nk = shift(k)
+            movedMarks[nk] = list.map { it.copy(page = nk) }
+        }
+        marks = movedMarks
+        val movedTexts = HashMap<Int, List<TextBox>>()
+        texts.forEach { (k, list) ->
+            val nk = shift(k)
+            movedTexts[nk] = list.map { it.copy(page = nk) }
+        }
+        texts = movedTexts
         val shiftedOcr = HashMap<Int, OcrPage>()
         ocr.forEach { (k, v) -> shiftedOcr[shift(k)] = v }
         ocr.clear()
@@ -216,16 +266,16 @@ class DocSession(entry: DocEntry) {
         snapshot = null
         selection = null
         selectedImageId = null
+        selectedTextId = null
         if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
 
         val pagesSnap = doc.pages
-        val ink = annotations
-        val imgs = images
+        val data = DocData(annotations, images, marks, texts)
         val ocrSnap = ocr.toMap()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
             AppController.repo.savePages(id, pagesSnap)
-            AppController.repo.saveDocData(id, ink, imgs)
+            AppController.repo.saveDocData(id, data)
             withContext(Dispatchers.IO) { AppController.repo.rewriteOcr(id, ocrSnap) }
             if (!disposed) startOcr()
         }
@@ -320,6 +370,183 @@ class DocSession(entry: DocEntry) {
         return sb.toString()
     }
 
+    // ---------- التمييز الملتقط والملخصات ----------
+
+    /** نص كلمات صفحة من فهارس مرتبة، مع فاصل سطر عند تغيّر السطر. */
+    private fun wordsText(words: List<OcrWord>, idx: List<Int>): String {
+        val sb = StringBuilder()
+        var lastLine = -1
+        for (i in idx) {
+            val w = words.getOrNull(i) ?: continue
+            if (lastLine != -1) sb.append(if (w.line == lastLine) " " else "\n")
+            sb.append(w.text)
+            lastLine = w.line
+        }
+        return sb.toString()
+    }
+
+    /** مستطيل واحد لكل سطر يغطي كلماته المختارة، بهامش بسيط. */
+    private fun rectsFor(words: List<OcrWord>, idx: List<Int>): List<MarkRect> =
+        idx.mapNotNull { words.getOrNull(it) }
+            .groupBy { it.line }
+            .values
+            .map { ws ->
+                val l = ws.minOf { it.l }
+                val t = ws.minOf { it.t }
+                val r = ws.maxOf { it.r }
+                val b = ws.maxOf { it.b }
+                val padY = (b - t) * 0.12f
+                val padX = (b - t) * 0.10f
+                MarkRect(l - padX, t - padY, r + padX, b + padY)
+            }
+
+    /**
+     * الكلمات التي مرّ عليها خط الهايلايتر. تُعدّ الكلمة مغطاة إذا مرّ الخط داخل عرضها
+     * وتداخل شريطه مع ارتفاعها، ثم تُملأ الفجوات بين أول وآخر كلمة مغطاة في كل سطر.
+     */
+    private fun wordsUnder(words: List<OcrWord>, pts: List<Pt>, band: Float): List<Int> {
+        if (words.isEmpty() || pts.isEmpty()) return emptyList()
+        val samples = ArrayList<Pt>(pts.size * 2)
+        samples.add(pts[0])
+        for (i in 1 until pts.size) {
+            val a = pts[i - 1]
+            val c = pts[i]
+            val d = hypot(c.x - a.x, c.y - a.y)
+            val n = (d / 0.003f).toInt().coerceIn(0, 200)
+            for (k in 1..n) {
+                val f = k.toFloat() / (n + 1)
+                samples.add(Pt(a.x + (c.x - a.x) * f, a.y + (c.y - a.y) * f, c.p))
+            }
+            samples.add(c)
+        }
+        val half = band / 2f
+        val hit = HashSet<Int>()
+        for (i in words.indices) {
+            val w = words[i]
+            val h = w.b - w.t
+            val slack = minOf(half, h * 0.6f)
+            if (samples.any { p ->
+                    p.x >= w.l && p.x <= w.r && p.y >= w.t - slack && p.y <= w.b + slack
+                }
+            ) hit.add(i)
+        }
+        if (hit.isEmpty()) return emptyList()
+        val out = HashSet<Int>()
+        hit.groupBy { words[it].line }.forEach { (line, list) ->
+            val a = list.min()
+            val b = list.max()
+            for (i in a..b) if (words[i].line == line) out.add(i)
+        }
+        return out.sorted()
+    }
+
+    private fun addMark(page: Int, words: List<OcrWord>, idx: List<Int>, color: Color) {
+        val text = wordsText(words, idx).trim()
+        if (text.isEmpty()) return
+        val m = TextMark(
+            id = UUID.randomUUID().toString(),
+            page = page,
+            rects = rectsFor(words, idx),
+            color = color,
+            text = text,
+            createdAt = System.currentTimeMillis()
+        )
+        beginEdit()
+        marks = marks + (page to ((marks[page] ?: emptyList()) + m))
+        endEdit()
+    }
+
+    /**
+     * يحوّل خط هايلايتر إلى تمييز ملتقط على النص. إن لم تكن الصفحة مقروءة بعد تُقرأ أولًا.
+     * إن لم يوجد نص مقروء تحت الخط يُحفظ كتمييز حر عادي كي لا يضيع ما رسمه المستخدم.
+     */
+    fun snapHighlight(page: Int, pts: List<Pt>, color: Color, width: Float) {
+        fun applyTo(words: List<OcrWord>?) {
+            val idx = if (words == null) emptyList() else wordsUnder(words, pts, width)
+            if (words != null && idx.isNotEmpty()) {
+                addMark(page, words, idx, color)
+            } else {
+                beginEdit()
+                addInk(page, Ink(pts, color, width, Tool.HIGHLIGHTER))
+                endEdit()
+                AppController.messages.tryEmit("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر")
+            }
+        }
+        val ready = ocr[page]?.words
+        if (ready != null) {
+            applyTo(ready)
+            return
+        }
+        AppController.scope.launch {
+            pageBusy = page
+            val res = try {
+                ocrPage(page)
+            } finally {
+                pageBusy = null
+            }
+            if (!disposed) applyTo(res?.words)
+        }
+    }
+
+    /** يميّز النص المحدد بالضغط المطوّل ويضيفه إلى الملخصات. */
+    fun markSelection(color: Color) {
+        val sel = selection ?: return
+        val words = ocr[sel.page]?.words ?: return
+        val a = minOf(sel.start, sel.end)
+        val b = maxOf(sel.start, sel.end)
+        addMark(sel.page, words, (a..b).toList(), color)
+        selection = null
+        AppController.messages.tryEmit("أُضيف النص إلى الملخصات")
+    }
+
+    /** كل التمييزات مرتبة حسب الصفحة ثم موضعها في الصفحة. */
+    fun allMarks(): List<TextMark> =
+        marks.values.flatten().sortedWith(
+            compareBy<TextMark>({ it.page }, { m -> m.rects.minOfOrNull { it.t } ?: 0f }, { m -> m.rects.minOfOrNull { it.l } ?: 0f })
+        )
+
+    fun updateMarkText(markId: String, text: String) {
+        val page = marks.entries.firstOrNull { e -> e.value.any { it.id == markId } }?.key ?: return
+        beginEdit()
+        marks = marks + (page to (marks[page] ?: emptyList()).map { if (it.id == markId) it.copy(text = text) else it })
+        endEdit()
+    }
+
+    fun deleteMark(markId: String) {
+        val page = marks.entries.firstOrNull { e -> e.value.any { it.id == markId } }?.key ?: return
+        beginEdit()
+        marks = marks + (page to (marks[page] ?: emptyList()).filter { it.id != markId })
+        endEdit()
+    }
+
+    // ---------- مربعات النص ----------
+
+    fun addTextBox(item: TextBox) {
+        beginEdit()
+        texts = texts + (item.page to ((texts[item.page] ?: emptyList()) + item))
+        selectedTextId = item.id
+        selectedImageId = null
+        endEdit()
+    }
+
+    fun textBox(boxId: String?): TextBox? =
+        if (boxId == null) null else texts.values.firstNotNullOfOrNull { l -> l.firstOrNull { it.id == boxId } }
+
+    /** يعدّل مربع نص دون تسجيله في التراجع؛ يجب لفّها بـ beginEdit/endEdit. */
+    fun updateTextBox(boxId: String, transform: (TextBox) -> TextBox) {
+        val page = texts.entries.firstOrNull { e -> e.value.any { it.id == boxId } }?.key ?: return
+        val list = texts[page] ?: return
+        texts = texts + (page to list.map { if (it.id == boxId) transform(it) else it })
+    }
+
+    fun deleteTextBox(boxId: String) {
+        val page = texts.entries.firstOrNull { e -> e.value.any { it.id == boxId } }?.key ?: return
+        beginEdit()
+        texts = texts + (page to (texts[page] ?: emptyList()).filter { it.id != boxId })
+        if (selectedTextId == boxId) selectedTextId = null
+        endEdit()
+    }
+
     // ---------- البحث ----------
 
     fun runSearch(q: String, navigate: Boolean = true) {
@@ -373,9 +600,8 @@ class DocSession(entry: DocEntry) {
     }
 
     private fun persist() {
-        val ink = annotations
-        val imgs = images
-        AppController.scope.launch { AppController.repo.saveDocData(id, ink, imgs) }
+        val data = DocData(annotations, images, marks, texts)
+        AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 
     fun dispose() {

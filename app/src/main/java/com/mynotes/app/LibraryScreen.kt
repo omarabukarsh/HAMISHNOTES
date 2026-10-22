@@ -237,7 +237,7 @@ private fun Brand() {
             Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Palette.Navy),
             contentAlignment = Alignment.Center
         ) {
-            Text("M", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("M", color = Palette.Gold, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(10.dp))
         Text("MyNotes", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
@@ -608,7 +608,7 @@ private fun NewNoteButton(onClick: () -> Unit) {
 private fun NewNoteDialog(onCreate: (String, String, Int) -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("ملاحظة جديدة") }
     var template by remember { mutableStateOf("lined") }
-    var paper by remember { mutableStateOf(Templates.paperColors[0].first) }
+    var paper by remember { mutableStateOf(Templates.paperColors[1].first) }
     var picker by remember { mutableStateOf(false) }
 
     AlertDialog(

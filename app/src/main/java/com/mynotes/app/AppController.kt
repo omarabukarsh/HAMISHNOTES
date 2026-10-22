@@ -83,6 +83,28 @@ object AppController {
     )
     val customColors = mutableStateListOf<Color>()
 
+    /** عند تفعيله يلتقط الهايلايتر النص الذي يمرّ عليه ويضعه خلفه، ويضيفه إلى «ملخصات». */
+    var highlightSnap by mutableStateOf(false)
+        private set
+
+    /** عرض الملخصات مرتبةً (جمل منظمة) بدل النص الأصلي كما التُقط. */
+    var summaryTidy by mutableStateOf(true)
+        private set
+
+    fun toggleHighlightSnap() {
+        highlightSnap = !highlightSnap
+        prefs.edit().putBoolean("hl_snap", highlightSnap).apply()
+        messages.tryEmit(
+            if (highlightSnap) "التقاط النص مفعّل: مرّر الهايلايتر على السطر ليُميَّز ويُضاف إلى الملخصات"
+            else "التقاط النص متوقف: الهايلايتر يرسم بحرية"
+        )
+    }
+
+    fun toggleSummaryTidy() {
+        summaryTidy = !summaryTidy
+        prefs.edit().putBoolean("sum_tidy", summaryTidy).apply()
+    }
+
     fun paletteFor(t: Tool): List<Color> =
         if (t == Tool.HIGHLIGHTER) highlightPalette else penPalette
 
@@ -134,6 +156,8 @@ object AppController {
             .split(",")
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
+        highlightSnap = prefs.getBoolean("hl_snap", false)
+        summaryTidy = prefs.getBoolean("sum_tidy", true)
 
         scope.launch {
             val list = withContext(Dispatchers.IO) { repo.loadIndex() }
@@ -267,6 +291,85 @@ object AppController {
                 messages.tryEmit("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها")
             } catch (t: Throwable) {
                 messages.tryEmit("تعذر إضافة الصورة")
+            }
+        }
+    }
+
+    // ---------- مربعات النص ----------
+
+    /** ينشئ مربع نص جديدًا في أعلى الصفحة بلون القلم الحالي، أو يعدّل نص مربع موجود. */
+    fun saveTextBox(s: DocSession, req: TextDialogReq, text: String) {
+        val clean = text.trimEnd()
+        val existing = s.textBox(req.boxId)
+        if (existing != null) {
+            if (clean.isBlank()) {
+                s.deleteTextBox(existing.id)
+            } else {
+                s.beginEdit()
+                s.updateTextBox(existing.id) { it.copy(text = clean) }
+                s.endEdit()
+            }
+            return
+        }
+        if (clean.isBlank()) return
+        val pen = if (tool.isPen()) tool else lastPen
+        s.addTextBox(
+            TextBox(
+                id = UUID.randomUUID().toString(),
+                page = req.page,
+                x = 0.12f,
+                y = 0.12f,
+                w = 0.6f,
+                text = clean,
+                color = colorFor(pen),
+                size = 0.024f
+            )
+        )
+        messages.tryEmit("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله")
+    }
+
+    // ---------- التصدير ----------
+
+    /** نص حالة التصدير الجاري (null = لا يوجد تصدير). */
+    var exporting by mutableStateOf<String?>(null)
+        private set
+
+    fun exportDocument(context: Context, s: DocSession, uri: Uri) {
+        if (exporting != null) return
+        val snap = Exporter.snapshotOf(s) ?: return
+        val total = snap.pages.size
+        exporting = "جارٍ حفظ PDF…"
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
+                        exporting = "جارٍ حفظ PDF: صفحة ${i + 1} من $total"
+                    }
+                }
+                messages.tryEmit("تم حفظ المستند مع التعليقات ($total صفحة)")
+            } catch (t: Throwable) {
+                messages.tryEmit("تعذر حفظ ملف PDF")
+            } finally {
+                exporting = null
+            }
+        }
+    }
+
+    fun exportSummary(context: Context, s: DocSession, uri: Uri) {
+        if (exporting != null) return
+        val groups = Exporter.summaryGroups(s.allMarks(), summaryTidy)
+        val title = s.title
+        exporting = "جارٍ حفظ الملخصات…"
+        scope.launch {
+            try {
+                val pages = withContext(Dispatchers.IO) {
+                    Exporter.exportSummary(context.applicationContext, title, groups, uri)
+                }
+                messages.tryEmit("تم حفظ الملخصات ($pages صفحة)")
+            } catch (t: Throwable) {
+                messages.tryEmit("تعذر حفظ الملخصات")
+            } finally {
+                exporting = null
             }
         }
     }

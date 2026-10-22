@@ -133,7 +133,7 @@ private fun TabItem(
         Modifier.height(38.dp)
             .clip(shape)
             .background(if (active) Color.White else Color.White.copy(alpha = 0.35f))
-            .border(1.dp, if (active) Palette.Navy.copy(alpha = 0.35f) else Color.Transparent, shape)
+            .border(1.dp, if (active) Palette.Gold.copy(alpha = 0.8f) else Color.Transparent, shape)
             .clickable(onClick = onClick)
             .padding(start = 14.dp, end = if (onClose == null) 14.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically

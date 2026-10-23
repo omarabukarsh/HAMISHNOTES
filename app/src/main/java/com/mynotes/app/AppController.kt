@@ -432,6 +432,14 @@ object AppController {
     var laserMode by mutableStateOf(LaserMode.DOT)
         private set
 
+    var eraserMode by mutableStateOf(EraserMode.STROKE)
+        private set
+
+    fun updateEraserMode(m: EraserMode) {
+        eraserMode = m
+        prefs.edit().putString("eraser_mode", m.name).apply()
+    }
+
     fun updateLaserMode(m: LaserMode) {
         laserMode = m
         prefs.edit().putString("laser_mode", m.name).apply()
@@ -486,6 +494,11 @@ object AppController {
         penDoubleTapEnabled = prefs.getBoolean("pen_dtap", true)
         fingerUndo = prefs.getBoolean("finger_undo", true)
         penKeyCode = prefs.getInt("pen_key", -1)
+        eraserMode = try {
+            EraserMode.valueOf(prefs.getString("eraser_mode", "STROKE") ?: "STROKE")
+        } catch (e: Throwable) {
+            EraserMode.STROKE
+        }
         toolbarStyle = try {
             ToolbarStyle.valueOf(prefs.getString("toolbar_style", "PEN_BAR") ?: "PEN_BAR")
         } catch (e: Throwable) {

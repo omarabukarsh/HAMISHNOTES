@@ -99,6 +99,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
@@ -935,12 +936,61 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             )
         }
         if (t == Tool.ERASER) {
+            Spacer(Modifier.height(12.dp))
+            PanelLabel("نمط الممحاة")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    EraserMode.STROKE to "الخط كاملًا",
+                    EraserMode.AREA to "الجزء الملموس"
+                ).forEach { (m, label) ->
+                    val sel = c.eraserMode == m
+                    val shape = RoundedCornerShape(12.dp)
+                    Column(
+                        Modifier.weight(1f).clip(shape)
+                            .background(if (sel) Palette.Navy else Palette.Background)
+                            .clickable { c.updateEraserMode(m) }
+                            .padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        EraserModeSample(m, if (sel) Color.White else Palette.Navy)
+                        Spacer(Modifier.height(4.dp))
+                        Text(label, fontSize = 12.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (c.eraserMode == EraserMode.STROKE) "لمسة واحدة تمسح الخط الذي كُتب دون رفع القلم كاملًا."
+                else "يمسح ما تمر عليه الممحاة فقط، ويبقى باقي الخط.",
+                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+            )
             Spacer(Modifier.height(8.dp))
             Text(
                 "تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.",
                 fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
             )
         }
+    }
+}
+
+/** رسم صغير يوضح نمط الممحاة: خط ممسوح كله، أو مقطوع في الوسط. */
+@Composable
+private fun EraserModeSample(m: EraserMode, col: Color) {
+    Canvas(Modifier.width(64.dp).height(22.dp)) {
+        val y = size.height / 2f
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(4f, y + 5f)
+            cubicTo(size.width * 0.3f, y - 10f, size.width * 0.6f, y + 12f, size.width - 4f, y - 4f)
+        }
+        val cx = size.width / 2f
+        if (m == EraserMode.STROKE) {
+            drawPath(path, col.copy(alpha = 0.25f), style = Stroke(width = 3f, cap = StrokeCap.Round,
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 5f))))
+        } else {
+            clipRect(right = cx - 9f) { drawPath(path, col, style = Stroke(width = 3f, cap = StrokeCap.Round)) }
+            clipRect(left = cx + 9f) { drawPath(path, col, style = Stroke(width = 3f, cap = StrokeCap.Round)) }
+        }
+        drawCircle(col, 8f, Offset(cx, y), style = Stroke(1.5f))
     }
 }
 
@@ -1695,6 +1745,9 @@ private fun PageView(
     val imagesNow by rememberUpdatedState(pageImages)
 
     val live = remember { LiveInk() }
+    /** موضع حدود الممحاة (بالبكسل) ونصف قطرها النسبي؛ null = مخفية. */
+    val eraserCursor = remember { arrayOfNulls<Offset>(1) }
+    val eraserR = remember { floatArrayOf(0f) }
     val livePts = remember { ArrayList<Pt>() }
     val laser = remember { ArrayList<LaserPt>() }
     val lz = remember { LaserState() }
@@ -1950,6 +2003,19 @@ private fun PageView(
                                 continue
                             }
 
+                            // حدود الممحاة: تظهر والقلم فوق الشاشة (حيث يدعمه الجهاز) وأثناء المسح
+                            val hv = ev.changes.firstOrNull {
+                                it.type == PointerType.Stylus || it.type == PointerType.Eraser || it.type == PointerType.Mouse
+                            }
+                            if (hv != null && !hv.pressed) {
+                                val showCur = toolNow == Tool.ERASER || hv.type == PointerType.Eraser
+                                val nextCur = if (showCur && ev.type != PointerEventType.Exit) hv.position else null
+                                if (nextCur != eraserCursor[0]) {
+                                    eraserCursor[0] = nextCur
+                                    tick++
+                                }
+                            }
+
                             val down = ev.changes.firstOrNull {
                                 it.changedToDown() && (
                                     it.type == PointerType.Stylus ||
@@ -1978,6 +2044,9 @@ private fun PageView(
                             livePts.clear()
                             if (erasing) {
                                 session.eraseAt(index, Offset(down.position.x / w, down.position.y / w), eraseR)
+                                eraserCursor[0] = down.position
+                                eraserR[0] = eraseR
+                                tick++
                             } else {
                                 livePts.add(Pt(down.position.x / w, down.position.y / w, pressureOf(down)))
                                 tick++
@@ -2007,6 +2076,8 @@ private fun PageView(
                                             session.eraseAt(index, Offset(h.position.x / w, h.position.y / w), eraseR)
                                         }
                                         session.eraseAt(index, Offset(ch.position.x / w, ch.position.y / w), eraseR)
+                                        eraserCursor[0] = ch.position
+                                        tick++
                                     } else {
                                         for (h in ch.historical) {
                                             livePts.add(Pt(h.position.x / w, h.position.y / w, pr))
@@ -2046,6 +2117,11 @@ private fun PageView(
                                 }
                             } finally {
                                 live.hasPred = false
+                                // بعد رفع القلم تختفي الحدود (وتعود مع التحويم إن دعمه الجهاز)
+                                if (erasing) {
+                                    eraserCursor[0] = null
+                                    tick++
+                                }
                                 var snapPts: List<Pt>? = null
                                 if (!erasing && livePts.isNotEmpty()) {
                                     if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap) {
@@ -2242,6 +2318,13 @@ private fun PageView(
             val t = tick
             val extra = if (live.hasPred) Pt(live.predX, live.predY, live.predP) else null
             drawInk(livePts, live.color, live.width, live.tool, extra)
+
+            // حدود الممحاة
+            eraserCursor[0]?.let { pos ->
+                val r = (if (toolNow == Tool.ERASER) eraserNow else eraserR[0]) * size.width
+                drawCircle(Color.White.copy(alpha = 0.45f), r, pos)
+                drawCircle(Color(0xFF4A5568), r, pos, style = Stroke(1.5.dp.toPx()))
+            }
 
             // ليزر: نقطة حمراء متوهجة، مع أثر قصير جدًا داخل المقطع الواحد فقط
             if (laser.isNotEmpty()) {

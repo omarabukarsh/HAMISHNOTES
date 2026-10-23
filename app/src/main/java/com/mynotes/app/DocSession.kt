@@ -26,8 +26,62 @@ sealed interface SessionStatus {
     class Failed(val message: String) : SessionStatus
 }
 
-fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float): List<Ink> =
-    list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
+/** يمسح كل خط تلمسه الممحاة كاملًا. يعيد القائمة نفسها إن لم يتغير شيء. */
+fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float): List<Ink> {
+    val next = list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
+    return if (next.size == list.size) list else next
+}
+
+/**
+ * يمسح الجزء الذي تلمسه الممحاة فقط: يُقسم الخط عند دائرة الممحاة إلى قطعتين ويبقى الباقي.
+ * تُضاف نقاط وسيطة أولًا حتى لا تعبر الممحاة بين نقطتين متباعدتين دون أن تقطع الخط.
+ */
+fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float): List<Ink> {
+    fun inside(p: Pt) = hypot(p.x - at.x, p.y - at.y) < radius
+    var changed = false
+    val out = ArrayList<Ink>(list.size + 2)
+    for (s in list) {
+        // رفض سريع بالمستطيل المحيط
+        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        for (p in s.pts) {
+            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+        }
+        if (at.x < minX - radius || at.x > maxX + radius || at.y < minY - radius || at.y > maxY + radius) {
+            out.add(s); continue
+        }
+        val step = (radius * 0.4f).coerceAtLeast(1e-4f)
+        val dense = ArrayList<Pt>(s.pts.size * 2)
+        for (i in s.pts.indices) {
+            val b = s.pts[i]
+            if (i > 0) {
+                val a = s.pts[i - 1]
+                val d = hypot(b.x - a.x, b.y - a.y)
+                val n = (d / step).toInt().coerceAtMost(200)
+                for (k in 1 until n) {
+                    val f = k.toFloat() / n
+                    dense.add(Pt(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.p + (b.p - a.p) * f))
+                }
+            }
+            dense.add(b)
+        }
+        if (dense.none { inside(it) }) {
+            out.add(s); continue
+        }
+        changed = true
+        var cur = ArrayList<Pt>()
+        for (p in dense) {
+            if (inside(p)) {
+                if (cur.size >= 2) out.add(s.copy(pts = cur))
+                cur = ArrayList()
+            } else {
+                cur.add(p)
+            }
+        }
+        if (cur.size >= 2) out.add(s.copy(pts = cur))
+    }
+    return if (changed) out else list
+}
 
 /** طلب فتح نافذة مربع النص: boxId = null لإنشاء مربع جديد في الصفحة page. */
 data class TextDialogReq(val boxId: String?, val page: Int)
@@ -230,8 +284,9 @@ class DocSession(entry: DocEntry) {
     fun eraseAt(page: Int, at: Offset, radius: Float) {
         val cur = annotations[page]
         if (cur != null) {
-            val next = eraseStrokes(cur, at, radius)
-            if (next.size != cur.size) annotations = annotations + (page to next)
+            val next = if (AppController.eraserMode == EraserMode.AREA) eraseStrokesArea(cur, at, radius)
+            else eraseStrokes(cur, at, radius)
+            if (next !== cur) annotations = annotations + (page to next)
         }
         // الممحاة تزيل من التمييز الملتقط الكلمات التي تمرّ عليها فقط، ويبقى باقي التمييز ونصه في الملخص
         val ms = marks[page] ?: return

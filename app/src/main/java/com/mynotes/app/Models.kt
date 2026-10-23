@@ -7,6 +7,9 @@ enum class Tool { BALLPOINT, FOUNTAIN, PENCIL, HIGHLIGHTER, ERASER, LASER }
 /** نمط الليزر: نقطة متوهجة، أو خط مستمر يتلاشى بعد ثانية ونصف. */
 enum class LaserMode { DOT, LINE }
 
+/** نمط الممحاة: STROKE يمسح الخط المرسوم دفعة واحدة كاملًا، AREA يمسح الجزء الذي تلمسه فقط. */
+enum class EraserMode { STROKE, AREA }
+
 /** شكل شريط الأدوات: الكلاسيكي (القلم والهايلايتر زرّان)، أو شريط ثانٍ لكل الأقلام يظهر عند الضغط على القلم. */
 enum class ToolbarStyle { CLASSIC, PEN_BAR }
 

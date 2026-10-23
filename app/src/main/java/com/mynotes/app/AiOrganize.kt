@@ -293,12 +293,12 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
     /** هل الإكمال التلقائي مفعّل (بعد التظليل الجديد). */
     var autoContinue by mutableStateOf(prefs().getBoolean("auto_continue", true))
         private set
-    fun setAutoContinue(on: Boolean) { autoContinue = on; prefs().edit().putBoolean("auto_continue", on).apply() }
+    fun toggleAutoContinue(on: Boolean) { autoContinue = on; prefs().edit().putBoolean("auto_continue", on).apply() }
 
     /** بطاقات مراجعة تلقائية بالذكاء الاصطناعي من النصوص المظللة. */
     var autoCards by mutableStateOf(prefs().getBoolean("auto_cards", true))
         private set
-    fun setAutoCards(on: Boolean) { autoCards = on; prefs().edit().putBoolean("auto_cards", on).apply() }
+    fun toggleAutoCards(on: Boolean) { autoCards = on; prefs().edit().putBoolean("auto_cards", on).apply() }
 
     private fun prefs() = AppController.appContext.getSharedPreferences("mynotes_ai", Context.MODE_PRIVATE)
 
@@ -655,11 +655,11 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                 AiToggle(
                     L("إكمال تلقائي بعد التظليل الجديد", "Continue automatically after new highlights"),
                     AiOrganizer.autoContinue
-                ) { AiOrganizer.setAutoContinue(!AiOrganizer.autoContinue) }
+                ) { AiOrganizer.toggleAutoContinue(!AiOrganizer.autoContinue) }
                 AiToggle(
                     L("بطاقات مراجعة تلقائية بالذكاء الاصطناعي (تظهر في «بطاقات»)", "Automatic AI review cards (shown in “Cards”)"),
                     AiOrganizer.autoCards
-                ) { AiOrganizer.setAutoCards(!AiOrganizer.autoCards) }
+                ) { AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards) }
                 if (busyElsewhere) {
                     Text(L("يعمل الذكاء الاصطناعي على مستند آخر الآن", "AI is working on another document now"), fontSize = 12.sp, color = Palette.TextSecondary)
                 }

@@ -66,6 +66,8 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // ترجمة مصطلح بالضغط المطول (حزمة لغة تُنزَّل مرة واحدة ثم تعمل دون إنترنت)
     implementation("com.google.mlkit:translate:17.0.3")
+    // تحويل الخط اليدوي إلى نص (حزمة لغة تُنزَّل مرة واحدة)
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
     implementation("androidx.core:core-ktx:1.13.1")
     // فتح المستندات المقفلة بالبصمة
     implementation("androidx.biometric:biometric:1.1.0")

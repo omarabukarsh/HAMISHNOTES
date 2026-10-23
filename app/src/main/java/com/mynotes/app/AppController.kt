@@ -671,6 +671,7 @@ object AppController {
         val app = context.applicationContext
         appContext = app
         repo = LibraryRepository(app)
+        AudioNotes.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {

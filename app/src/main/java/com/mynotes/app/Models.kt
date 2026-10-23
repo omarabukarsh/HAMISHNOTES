@@ -24,7 +24,9 @@ data class Ink(
     val pts: List<Pt>,
     val color: Color,
     val width: Float,
-    val tool: Tool = Tool.FOUNTAIN
+    val tool: Tool = Tool.FOUNTAIN,
+    /** وقت كتابة الخط (للربط بتسجيل الصوت)؛ 0 = غير معروف. */
+    val t: Long = 0L
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */

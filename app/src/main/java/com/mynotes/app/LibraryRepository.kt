@@ -388,7 +388,7 @@ class LibraryRepository(context: Context) {
                             Tool.FOUNTAIN
                         }
                         val safeKind = if (kind == Tool.ERASER || kind == Tool.LASER) Tool.FOUNTAIN else kind
-                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind))
+                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L)))
                     }
                     ink[key.toInt()] = list
                 }
@@ -544,6 +544,7 @@ class LibraryRepository(context: Context) {
                                     .put("c", s.color.toArgb())
                                     .put("w", s.width.toDouble())
                                     .put("k", s.tool.name)
+                                    .put("t", s.t)
                                     .put("p", flat)
                             )
                         }

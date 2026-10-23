@@ -233,6 +233,10 @@ private fun ReaderContent(s: DocSession) {
             if (s.zoomBox != null && !c.focusMode) ZoomPanel(s, pdf)
         }
         if (c.focusMode) FocusOverlay(Modifier.align(Alignment.TopEnd).padding(14.dp))
+        // مشغّل التسجيل الصوتي
+        AudioNotes.playing?.let { rec ->
+            if (rec.docId == s.id) AudioPlayerBar(rec, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+        }
         // رجوع بعد تتبّع رابط
         c.linkBack?.let { (backId, backPage) ->
             run {
@@ -384,6 +388,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     var showPicker by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
     var linkDialog by remember { mutableStateOf(false) }
+    var audioDialog by remember { mutableStateOf(false) }
     var pdfAfter by remember { mutableStateOf(0) }
     val cur = s.listState.firstVisibleItemIndex
     val pill = RoundedCornerShape(28.dp)
@@ -558,6 +563,14 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 if (v("link")) {
                     TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
                 }
+                if (v("record")) {
+                    val recHere = AudioNotes.recordingDoc == s.id
+                    TBtn(selected = recHere, onClick = { audioDialog = true }) {
+                        if (recHere) {
+                            Text(mmss(AudioNotes.recElapsed), color = Palette.Danger, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        } else PhIcon(R.drawable.ph_mic, Palette.TextSecondary)
+                    }
+                }
                 if (v("zoomwin")) {
                     TBtn(selected = s.zoomBox != null, onClick = {
                         s.zoomBox = if (s.zoomBox != null) null else ZoomBox(cur, if (I18n.english) 0.04f else 0.56f, 0.12f, 0.4f)
@@ -674,6 +687,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
         )
     }
     if (linkDialog) LinkDialog(s, cur) { linkDialog = false }
+    if (audioDialog) AudioDialog(s) { audioDialog = false }
     if (addDialog) {
         AddPagesDialog(
             onBlank = { template, atEnd, color ->
@@ -1684,6 +1698,7 @@ private fun SelectionBar(s: DocSession) {
 @Composable
 private fun LassoBar(s: DocSession) {
     val c = AppController
+    var toText by remember { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 8.dp, vertical = 4.dp).horizontalScroll(rememberScrollState()),
@@ -1698,10 +1713,21 @@ private fun LassoBar(s: DocSession) {
                 }
             }
             TextButton(onClick = { s.lassoDuplicate() }) { Text(L("نسخ", "Duplicate")) }
+            TextButton(onClick = { toText = true }) { Text(L("إلى نص", "To text")) }
+            // تشغيل التسجيل الصوتي من لحظة كتابة أول خط محدد
+            val sel = s.lassoSel
+            val firstT = sel?.strokes?.filter { it.t > 0 }?.minOfOrNull { it.t } ?: 0L
+            val rec = if (firstT > 0) AudioNotes.recAt(s.id, firstT) else null
+            if (rec != null) {
+                TextButton(onClick = { AudioNotes.play(rec, firstT - rec.start - 2000L) }) {
+                    Text(L("▶ الصوت", "▶ Audio"), color = Palette.Navy, fontWeight = FontWeight.Bold)
+                }
+            }
             TextButton(onClick = { s.lassoDelete() }) { Text(L("حذف", "Delete"), color = Color(0xFFC62828)) }
             TextButton(onClick = { s.lassoSel = null }) { Text(L("تم", "Done")) }
         }
     }
+    if (toText) InkToTextDialog(s) { toText = false }
 }
 
 @Composable
@@ -2375,7 +2401,7 @@ private fun PageView(
                                         val pts = if (live.tool.isPen() && AppController.shapeSnap) {
                                             ShapeRecognizer.recognize(raw) ?: raw
                                         } else raw
-                                        session.addInk(index, Ink(pts, live.color, live.width, live.tool))
+                                        session.addInk(index, Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis()))
                                     }
                                 }
                                 livePts.clear()

@@ -144,7 +144,7 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                                     val color = c.colorFor(tool)
                                     val width = Sizes.width(tool, c.sizeFor(tool))
                                     if (tool == Tool.HIGHLIGHTER && c.highlightSnap) snap = live.toList()
-                                    else s.addInk(b.page, Ink(live.toList(), color, width, tool))
+                                    else s.addInk(b.page, Ink(live.toList(), color, width, tool, System.currentTimeMillis()))
                                 }
                                 live.clear()
                                 tick++

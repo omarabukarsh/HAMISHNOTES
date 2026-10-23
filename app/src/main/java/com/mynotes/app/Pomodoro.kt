@@ -30,17 +30,17 @@ fun PomodoroControl(showStartLabel: Boolean = true) {
                     .padding(horizontal = 10.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                PhIcon(R.drawable.ph_timer, Palette.Navy, 20.dp, "تشغيل مؤقت الدراسة")
+                PhIcon(R.drawable.ph_timer, Palette.Navy, 20.dp, L("تشغيل مؤقت الدراسة", "Start study timer"))
                 if (showStartLabel) {
                     Spacer(Modifier.width(6.dp))
-                    Text("مؤقت 25 د", color = Palette.Navy, fontSize = 13.sp)
+                    Text(L("مؤقت 25 د", "Timer 25 min"), color = Palette.Navy, fontSize = 13.sp)
                 }
             }
         } else {
             val left = c.pomoLeftMs / 1000
             val study = c.pomoPhase == 1
             Text(
-                (if (study) "دراسة " else "راحة ") + "%02d:%02d".format(left / 60, left % 60),
+                (if (study) L("دراسة ", "Study ") else L("راحة ", "Break ")) + "%02d:%02d".format(left / 60, left % 60),
                 color = when {
                     c.pomoPaused -> Palette.TextSecondary
                     study -> Palette.Navy
@@ -54,11 +54,11 @@ fun PomodoroControl(showStartLabel: Boolean = true) {
                     .clickable { if (c.pomoPaused) c.resumePomodoro() else c.pausePomodoro() }
                     .padding(8.dp)
             ) {
-                if (c.pomoPaused) PhIcon(R.drawable.ph_play, Palette.Navy, 18.dp, "متابعة المؤقت")
-                else PhIcon(R.drawable.ph_pause, Palette.Navy, 18.dp, "إيقاف مؤقت")
+                if (c.pomoPaused) PhIcon(R.drawable.ph_play, Palette.Navy, 18.dp, L("متابعة المؤقت", "Resume timer"))
+                else PhIcon(R.drawable.ph_pause, Palette.Navy, 18.dp, L("إيقاف مؤقت", "Pause"))
             }
             Row(Modifier.clip(shape).clickable { c.stopPomodoro() }.padding(8.dp)) {
-                PhIcon(R.drawable.ph_stop, Palette.TextSecondary, 18.dp, "إنهاء المؤقت")
+                PhIcon(R.drawable.ph_stop, Palette.TextSecondary, 18.dp, L("إنهاء المؤقت", "Stop timer"))
             }
         }
     }

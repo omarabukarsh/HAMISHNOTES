@@ -110,10 +110,10 @@ fun TableEditorDialog(
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "تحرير الجدول", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                        L("تحرير الجدول", "Edit table"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                         fontSize = 20.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                     )
-                    Text("الصف الأول عناوين", fontSize = 13.sp, color = Palette.TextSecondary)
+                    Text(L("الصف الأول عناوين", "First row is headers"), fontSize = 13.sp, color = Palette.TextSecondary)
                     Spacer(Modifier.width(8.dp))
                     Switch(
                         checked = header, onCheckedChange = { header = it },
@@ -122,9 +122,9 @@ fun TableEditorDialog(
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ToolChip("+ صف", R.drawable.ph_plus) { addRow(rows.size) }
-                    ToolChip("+ عمود", R.drawable.ph_plus) { addCol(cols) }
-                    ToolChip("تبديل الصفوف والأعمدة", R.drawable.ph_redo) {
+                    ToolChip(L("+ صف", "+ Row"), R.drawable.ph_plus) { addRow(rows.size) }
+                    ToolChip(L("+ عمود", "+ Column"), R.drawable.ph_plus) { addCol(cols) }
+                    ToolChip(L("تبديل الصفوف والأعمدة", "Swap rows and columns"), R.drawable.ph_redo) {
                         rows = (0 until cols).map { c -> rows.map { it.getOrElse(c) { "" } } }
                     }
                 }
@@ -138,12 +138,12 @@ fun TableEditorDialog(
                         for (c in 0 until cols) {
                             Box(Modifier.width(180.dp), contentAlignment = Alignment.Center) {
                                 AxisMenu(
-                                    label = "العمود ${c + 1}",
+                                    label = L("العمود ${c + 1}", "Column ${c + 1}"),
                                     items = listOfNotNull(
-                                        if (c > 0) "تحريك يسارًا" to { moveCol(c, -1) } else null,
-                                        if (c < cols - 1) "تحريك يمينًا" to { moveCol(c, 1) } else null,
-                                        "إدراج عمود بعده" to { addCol(c + 1) },
-                                        if (cols > 1) "حذف العمود" to {
+                                        if (c > 0) L("تحريك يسارًا", "Move left") to { moveCol(c, -1) } else null,
+                                        if (c < cols - 1) L("تحريك يمينًا", "Move right") to { moveCol(c, 1) } else null,
+                                        L("إدراج عمود بعده", "Insert column after") to { addCol(c + 1) },
+                                        if (cols > 1) L("حذف العمود", "Delete column") to {
                                             rows = rows.map { row -> row.filterIndexed { j, _ -> j != c } }
                                         } else null
                                     )
@@ -157,10 +157,10 @@ fun TableEditorDialog(
                                 AxisMenu(
                                     label = "${r + 1}",
                                     items = listOfNotNull(
-                                        if (r > 0) "تحريك لأعلى" to { moveRow(r, -1) } else null,
-                                        if (r < rows.lastIndex) "تحريك لأسفل" to { moveRow(r, 1) } else null,
-                                        "إدراج صف بعده" to { addRow(r + 1) },
-                                        if (rows.size > 1) "حذف الصف" to {
+                                        if (r > 0) L("تحريك لأعلى", "Move up") to { moveRow(r, -1) } else null,
+                                        if (r < rows.lastIndex) L("تحريك لأسفل", "Move down") to { moveRow(r, 1) } else null,
+                                        L("إدراج صف بعده", "Insert row after") to { addRow(r + 1) },
+                                        if (rows.size > 1) L("حذف الصف", "Delete row") to {
                                             rows = rows.filterIndexed { i, _ -> i != r }
                                         } else null
                                     )
@@ -190,15 +190,15 @@ fun TableEditorDialog(
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "اضغط رقم الصف أو اسم العمود لتحريكه أو حذفه",
+                        L("اضغط رقم الصف أو اسم العمود لتحريكه أو حذفه", "Tap a row number or column name to move or delete it"),
                         fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = onDismiss) { Text("إلغاء") }
+                    TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
                     TextButton(onClick = {
                         // تجاهل الصفوف الفارغة تمامًا
                         val clean = rows.map { r -> r.map { it.trim() } }.filter { r -> r.any { it.isNotEmpty() } }
                         onSave(clean.ifEmpty { rows }, header)
-                    }) { Text("حفظ", fontWeight = FontWeight.Bold) }
+                    }) { Text(L("حفظ", "Save"), fontWeight = FontWeight.Bold) }
                 }
             }
         }

@@ -77,8 +77,8 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                         Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        ChoiceChip("الكل", !onlyMarks) { onlyMarks = false }
-                        ChoiceChip("العلامات ${s.bookmarks.size}", onlyMarks) { onlyMarks = true }
+                        ChoiceChip(L("الكل", "All"), !onlyMarks) { onlyMarks = false }
+                        ChoiceChip(L("العلامات ${s.bookmarks.size}", "Bookmarks ${s.bookmarks.size}"), onlyMarks) { onlyMarks = true }
                     }
                 }
                 val shown = if (onlyMarks) s.bookmarks.filter { it < pdf.count }.sorted() else (0 until pdf.count).toList()

@@ -97,7 +97,7 @@ object AppController {
         if (folder.isNotEmpty()) addFolder(folder)
         updateEntry(id) { it.copy(folder = folder) }
         saveLibrary()
-        messages.tryEmit(if (folder.isEmpty()) "أُزيل المستند من المادة" else "نُقل المستند إلى «$folder»")
+        messages.tryEmit(if (folder.isEmpty()) L("أُزيل المستند من المادة", "Document removed from the subject") else L("نُقل المستند إلى «$folder»", "Document moved to “$folder”"))
     }
 
     // ---------- إحصاءات الدراسة ----------
@@ -169,8 +169,8 @@ object AppController {
         highlightToSummary = !highlightToSummary
         prefs.edit().putBoolean("hl_summary", highlightToSummary).apply()
         messages.tryEmit(
-            if (highlightToSummary) "التمييز الجديد يُضاف إلى الملخصات"
-            else "التمييز الجديد يبقى على الصفحة فقط ولا يظهر في الملخصات"
+            if (highlightToSummary) L("التمييز الجديد يُضاف إلى الملخصات", "New highlights are added to summaries")
+            else L("التمييز الجديد يبقى على الصفحة فقط ولا يظهر في الملخصات", "New highlights stay on the page only and are not added to summaries")
         )
     }
 
@@ -185,8 +185,8 @@ object AppController {
         highlightSnap = !highlightSnap
         prefs.edit().putBoolean("hl_snap", highlightSnap).apply()
         messages.tryEmit(
-            if (highlightSnap) "التقاط النص مفعّل: مرّر الهايلايتر على السطر ليُميَّز ويُضاف إلى الملخصات"
-            else "التقاط النص متوقف: الهايلايتر يرسم بحرية"
+            if (highlightSnap) L("التقاط النص مفعّل: مرّر الهايلايتر على السطر ليُميَّز ويُضاف إلى الملخصات", "Text snap on: run the highlighter over a line to mark it and add it to summaries")
+            else L("التقاط النص متوقف: الهايلايتر يرسم بحرية", "Text snap off: the highlighter draws freely")
         )
     }
 
@@ -283,11 +283,11 @@ object AppController {
                         saveStats()
                         pomoPhase = 2
                         pomoEndsAt = now + BREAK_MS
-                        messages.tryEmit("انتهت جلسة الدراسة. استرح 5 دقائق")
+                        messages.tryEmit(L("انتهت جلسة الدراسة. استرح 5 دقائق", "Study session finished. Take a 5-minute break"))
                     } else {
                         pomoPhase = 1
                         pomoEndsAt = now + STUDY_MS
-                        messages.tryEmit("انتهت الراحة. جلسة دراسة جديدة 25 دقيقة")
+                        messages.tryEmit(L("انتهت الراحة. جلسة دراسة جديدة 25 دقيقة", "Break over. New 25-minute study session"))
                     }
                     pomoLeftMs = pomoEndsAt - now
                 }
@@ -304,12 +304,12 @@ object AppController {
 
     // ---------- ألوان التمييز كتصنيفات ----------
 
-    private val defaultLabels = mapOf(
-        0xFFFFEB3B.toInt() to "تعريف",
-        0xFF69F0AE.toInt() to "دواء",
-        0xFFFF80AB.toInt() to "ملاحظة امتحان",
-        0xFF40C4FF.toInt() to "مفهوم",
-        0xFFFFAB40.toInt() to "مهم"
+    private val defaultLabels get() = mapOf(
+        0xFFFFEB3B.toInt() to L("تعريف", "Definition"),
+        0xFF69F0AE.toInt() to L("دواء", "Drug"),
+        0xFFFF80AB.toInt() to L("ملاحظة امتحان", "Exam note"),
+        0xFF40C4FF.toInt() to L("مفهوم", "Concept"),
+        0xFFFFAB40.toInt() to L("مهم", "Important")
     )
     private val colorLabels = mutableStateMapOf<Int, String>()
 
@@ -319,7 +319,7 @@ object AppController {
 
     fun labelOf(c: Color): String {
         val k = c.toArgb()
-        return colorLabels[k] ?: defaultLabels[k] ?: "لون آخر"
+        return colorLabels[k] ?: defaultLabels[k] ?: L("لون آخر", "Other color")
     }
 
     fun setLabel(c: Color, label: String) {
@@ -341,6 +341,12 @@ object AppController {
     /** نقرتان على القلم (أو زره) تبدّلان بين الممحاة وآخر قلم مستخدم. */
     var penDoubleTapEnabled by mutableStateOf(true)
         private set
+
+    /** لغة الواجهة. */
+    fun setEnglish(en: Boolean) {
+        I18n.english = en
+        prefs.edit().putBoolean("lang_en", en).apply()
+    }
 
     fun togglePenDoubleTap() {
         penDoubleTapEnabled = !penDoubleTapEnabled
@@ -385,7 +391,7 @@ object AppController {
             penKeyLearning = false
             penKeyCode = code
             prefs.edit().putInt("pen_key", code).apply()
-            messages.tryEmit("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم")
+            messages.tryEmit(L("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم", "Done: double-tapping the pen now switches between the eraser and your last pen"))
             return true
         }
         if (code in stylusKeys || (penKeyCode >= 0 && code == penKeyCode)) {
@@ -450,7 +456,7 @@ object AppController {
         selectTool(t)
         if (!prefs.getBoolean("tool_hint_shown", false)) {
             prefs.edit().putBoolean("tool_hint_shown", true).apply()
-            messages.tryEmit("اضغط على الأداة مرة ثانية لفتح إعداداتها: النوع واللون والحجم")
+            messages.tryEmit(L("اضغط على الأداة مرة ثانية لفتح إعداداتها: النوع واللون والحجم", "Tap the tool again to open its settings: type, color and size"))
         }
     }
 
@@ -494,6 +500,7 @@ object AppController {
         penDoubleTapEnabled = prefs.getBoolean("pen_dtap", true)
         fingerUndo = prefs.getBoolean("finger_undo", true)
         penKeyCode = prefs.getInt("pen_key", -1)
+        I18n.english = prefs.getBoolean("lang_en", false)
         eraserMode = try {
             EraserMode.valueOf(prefs.getString("eraser_mode", "STROKE") ?: "STROKE")
         } catch (e: Throwable) {
@@ -666,7 +673,7 @@ object AppController {
         if (exporting != null) return
         val docs = library.filter { it.folder == folder }
         if (docs.isEmpty()) return
-        exporting = "جارٍ حفظ ملخص المادة…"
+        exporting = L("جارٍ حفظ ملخص المادة…", "Saving subject summary…")
         scope.launch {
             try {
                 val pages = withContext(Dispatchers.IO) {
@@ -679,11 +686,11 @@ object AppController {
                         if (blocks.isEmpty()) null else e.name to blocks
                     }
                     if (sections.isEmpty()) 0
-                    else Exporter.exportSummarySections(context.applicationContext, "ملخص مادة: $folder", sections, uri)
+                    else Exporter.exportSummarySections(context.applicationContext, L("ملخص مادة: $folder", "Subject summary: $folder"), sections, uri)
                 }
-                messages.tryEmit(if (pages == 0) "لا توجد ملخصات في مستندات هذه المادة" else "تم حفظ ملخص المادة ($pages صفحة)")
+                messages.tryEmit(if (pages == 0) L("لا توجد ملخصات في مستندات هذه المادة", "No summaries in this subject’s documents") else L("تم حفظ ملخص المادة ($pages صفحة)", "Subject summary saved ($pages pages)"))
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر حفظ ملخص المادة")
+                messages.tryEmit(L("تعذر حفظ ملخص المادة", "Could not save the subject summary"))
             } finally {
                 exporting = null
             }
@@ -776,9 +783,9 @@ object AppController {
                         aspect = res.second
                     )
                 )
-                messages.tryEmit("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها")
+                messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر إضافة الصورة")
+                messages.tryEmit(L("تعذر إضافة الصورة", "Could not add the image"))
             }
         }
     }
@@ -813,7 +820,7 @@ object AppController {
                 size = 0.024f
             )
         )
-        messages.tryEmit("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله")
+        messages.tryEmit(L("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله", "Text added. Drag it with your finger to move it, tap it again to edit"))
     }
 
     // ---------- التصدير ----------
@@ -826,7 +833,7 @@ object AppController {
         if (exporting != null) return
         val snap = Exporter.snapshotOf(s) ?: return
         val total = snap.pages.size
-        exporting = "جارٍ حفظ PDF…"
+        exporting = L("جارٍ حفظ PDF…", "Saving PDF…")
         scope.launch {
             try {
                 val selectable = withContext(Dispatchers.IO) {
@@ -840,22 +847,22 @@ object AppController {
                                 src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
                                 else -> null
                             }
-                        }, uri) { i -> exporting = "جارٍ حفظ PDF: صفحة ${i + 1} من $total" }
+                        }, uri) { i -> exporting = L("جارٍ حفظ PDF: صفحة ${i + 1} من $total", "Saving PDF: page ${i + 1} of $total") }
                         true
                     } catch (t: Throwable) {
                         // احتياط: صفحات كصور (الطريقة السابقة)
                         Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
-                            exporting = "جارٍ حفظ PDF كصور: صفحة ${i + 1} من $total"
+                            exporting = L("جارٍ حفظ PDF كصور: صفحة ${i + 1} من $total", "Saving PDF as images: page ${i + 1} of $total")
                         }
                         false
                     }
                 }
                 messages.tryEmit(
-                    if (selectable) "تم حفظ المستند مع التعليقات ($total صفحة)، والنص قابل للتحديد"
-                    else "تم حفظ المستند مع التعليقات ($total صفحة) كصور"
+                    if (selectable) L("تم حفظ المستند مع التعليقات ($total صفحة)، والنص قابل للتحديد", "Document saved with annotations ($total pages), text is selectable")
+                    else L("تم حفظ المستند مع التعليقات ($total صفحة) كصور", "Document saved with annotations ($total pages) as images")
                 )
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر حفظ ملف PDF")
+                messages.tryEmit(L("تعذر حفظ ملف PDF", "Could not save the PDF"))
             } finally {
                 exporting = null
             }
@@ -866,15 +873,15 @@ object AppController {
         if (exporting != null) return
         val blocks = Summary.display(s.allMarks(), summaryTidy, s.summaryEdits, null, summaryByColor) { labelOf(it) }
         val title = s.title
-        exporting = "جارٍ حفظ الملخصات…"
+        exporting = L("جارٍ حفظ الملخصات…", "Saving summaries…")
         scope.launch {
             try {
                 val pages = withContext(Dispatchers.IO) {
                     Exporter.exportSummary(context.applicationContext, title, blocks, uri)
                 }
-                messages.tryEmit("تم حفظ الملخصات ($pages صفحة)")
+                messages.tryEmit(L("تم حفظ الملخصات ($pages صفحة)", "Summaries saved ($pages pages)"))
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر حفظ الملخصات")
+                messages.tryEmit(L("تعذر حفظ الملخصات", "Could not save the summaries"))
             } finally {
                 exporting = null
             }
@@ -891,7 +898,7 @@ object AppController {
                 saveLibrary()
                 openDocument(e.id)
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر إنشاء الملاحظة")
+                messages.tryEmit(L("تعذر إنشاء الملاحظة", "Could not create the note"))
             }
         }
     }
@@ -908,7 +915,7 @@ object AppController {
         val ratio = doc.ratio(base)
         s.insertPages(after, listOf(PageRef(Templates.src(template, color), 0, ratio)))
         scope.launch { s.listState.scrollToItem((after + 1).coerceAtLeast(0)) }
-        messages.tryEmit("أُضيفت صفحة جديدة (${doc.count} صفحة الآن)")
+        messages.tryEmit(L("أُضيفت صفحة جديدة (${doc.count} صفحة الآن)", "New page added (${doc.count} pages now)"))
     }
 
     /** يضيف كل صفحات ملف PDF آخر إلى هذا المستند بعد الصفحة رقم after. */
@@ -922,9 +929,9 @@ object AppController {
                 }
                 s.insertPages(after, refs)
                 s.listState.scrollToItem((after + 1).coerceAtLeast(0))
-                messages.tryEmit("أُضيفت ${refs.size} صفحة من الملف (${doc.count} صفحة الآن)")
+                messages.tryEmit(L("أُضيفت ${refs.size} صفحة من الملف (${doc.count} صفحة الآن)", "Added ${refs.size} pages from the file (${doc.count} pages now)"))
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر إضافة الملف. تأكد أنه PDF سليم.")
+                messages.tryEmit(L("تعذر إضافة الملف. تأكد أنه PDF سليم.", "Could not add the file. Make sure it is a valid PDF."))
             }
         }
     }
@@ -971,10 +978,10 @@ object AppController {
             saveLibrary()
             importing = false
             val msg = when {
-                failed == 0 && ok == 1 -> "تم استيراد المستند، وتبدأ قراءة نصه تلقائيًا"
-                failed == 0 -> "تم استيراد $ok مستندات، وتبدأ قراءة نصوصها تلقائيًا"
-                ok == 0 -> "تعذر الاستيراد. تأكد أن الملف PDF سليم."
-                else -> "تم استيراد $ok وتعذر استيراد $failed"
+                failed == 0 && ok == 1 -> L("تم استيراد المستند، وتبدأ قراءة نصه تلقائيًا", "Document imported; its text is read automatically")
+                failed == 0 -> L("تم استيراد $ok مستندات، وتبدأ قراءة نصوصها تلقائيًا", "Imported $ok documents; their text is read automatically")
+                ok == 0 -> L("تعذر الاستيراد. تأكد أن الملف PDF سليم.", "Import failed. Make sure the file is a valid PDF.")
+                else -> L("تم استيراد $ok وتعذر استيراد $failed", "Imported $ok, failed to import $failed")
             }
             messages.tryEmit(msg)
             added.forEach { queueOcr(it) }
@@ -997,12 +1004,12 @@ object AppController {
     fun duplicate(entry: DocEntry) {
         scope.launch {
             try {
-                val copy = withContext(Dispatchers.IO) { repo.duplicate(entry, " (نسخة)") }
+                val copy = withContext(Dispatchers.IO) { repo.duplicate(entry, L(" (نسخة)", " (copy)")) }
                 library.add(0, copy)
                 saveLibrary()
-                messages.tryEmit("تم إنشاء نسخة من المستند")
+                messages.tryEmit(L("تم إنشاء نسخة من المستند", "Document duplicated"))
             } catch (t: Throwable) {
-                messages.tryEmit("تعذر نسخ المستند")
+                messages.tryEmit(L("تعذر نسخ المستند", "Could not duplicate the document"))
             }
         }
     }
@@ -1012,6 +1019,6 @@ object AppController {
         library.removeAll { it.id == entry.id }
         saveLibrary()
         scope.launch { withContext(Dispatchers.IO) { repo.delete(entry) } }
-        messages.tryEmit("تم حذف المستند")
+        messages.tryEmit(L("تم حذف المستند", "Document deleted"))
     }
 }

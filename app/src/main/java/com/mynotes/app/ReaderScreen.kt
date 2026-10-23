@@ -170,15 +170,15 @@ private fun FailedView(session: DocSession, message: String) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            "تعذر فتح «${session.title}»",
+            L("تعذر فتح «${session.title}»", "Could not open “${session.title}”"),
             fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary
         )
         Spacer(Modifier.height(8.dp))
         Text(message, fontSize = 14.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { AppController.closeTab(session.id) }) { Text("إغلاق التبويب") }
-            OutlinedButton(onClick = { AppController.activate(null) }) { Text("المكتبة") }
+            Button(onClick = { AppController.closeTab(session.id) }) { Text(L("إغلاق التبويب", "Close tab")) }
+            OutlinedButton(onClick = { AppController.activate(null) }) { Text(L("المكتبة", "Library")) }
         }
     }
 }
@@ -194,11 +194,11 @@ private fun ReaderContent(s: DocSession) {
     val summarySaver = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri: Uri? -> if (uri != null) c.exportSummary(context, s, uri) }
-    val safeTitle = s.title.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim().ifEmpty { "مستند" }
-    val exportDoc: () -> Unit = { docSaver.launch("$safeTitle - مع التعليقات.pdf") }
+    val safeTitle = s.title.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim().ifEmpty { L("مستند", "Document") }
+    val exportDoc: () -> Unit = { docSaver.launch(L("$safeTitle - مع التعليقات.pdf", "$safeTitle - annotated.pdf")) }
     val exportSummary: () -> Unit = {
-        if (s.allMarks().isEmpty()) c.messages.tryEmit("لا توجد ملخصات لحفظها بعد")
-        else summarySaver.launch("ملخص $safeTitle.pdf")
+        if (s.allMarks().isEmpty()) c.messages.tryEmit(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
+        else summarySaver.launch(L("ملخص $safeTitle.pdf", "Summary $safeTitle.pdf"))
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -250,7 +250,7 @@ private fun FocusOverlay(modifier: Modifier) {
     ) {
         PomodoroControl()
         IconButton(onClick = { c.focusMode = false }) {
-            PhIcon(R.drawable.ph_focus_exit, Palette.TextPrimary, 20.dp, "الخروج من وضع التركيز")
+            PhIcon(R.drawable.ph_focus_exit, Palette.TextPrimary, 20.dp, L("الخروج من وضع التركيز", "Exit focus mode"))
         }
     }
 }
@@ -284,20 +284,20 @@ private fun TextBoxDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "إضافة نص" else "تعديل النص") },
+        title = { Text(if (isNew) L("إضافة نص", "Add text") else L("تعديل النص", "Edit text")) },
         text = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("اكتب هنا…") },
+                placeholder = { Text(L("اكتب هنا…", "Write here…")) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp).focusRequester(focus)
             )
         },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(if (isNew) "إضافة" else "حفظ") } },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(if (isNew) L("إضافة", "Add") else L("حفظ", "Save")) } },
         dismissButton = {
             Row {
-                if (!isNew) TextButton(onClick = onDelete) { Text("حذف", color = Palette.Danger) }
-                TextButton(onClick = onDismiss) { Text("إلغاء") }
+                if (!isNew) TextButton(onClick = onDelete) { Text(L("حذف", "Delete"), color = Palette.Danger) }
+                TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
             }
         }
     )
@@ -527,14 +527,14 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         }
                         DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
                             DropdownMenuItem(
-                                text = { Text("حفظ المستند مع التعليقات (PDF)") },
+                                text = { Text(L("حفظ المستند مع التعليقات (PDF)", "Save document with annotations (PDF)")) },
                                 onClick = {
                                     exportMenu = false
                                     onExportDoc()
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("حفظ الملخصات (PDF)") },
+                                text = { Text(L("حفظ الملخصات (PDF)", "Save summaries (PDF)")) },
                                 onClick = {
                                     exportMenu = false
                                     onExportSummary()
@@ -585,7 +585,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         s.drawerOpen = false
                         s.summaryOpen = false
                         c.focusMode = true
-                        c.messages.tryEmit("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة")
+                        c.messages.tryEmit(L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
                     }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
                 }
                 // الإعدادات: ظاهرة دائمًا
@@ -673,18 +673,18 @@ private fun PenBar() {
                 Box(
                     Modifier.size(34.dp).clip(CircleShape).clickable { picker = true },
                     contentAlignment = Alignment.Center
-                ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, "لون مخصص") }
+                ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("لون مخصص", "Custom color")) }
                 ToolbarSep()
                 SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.width(120.dp).padding(vertical = 4.dp))
                 if (t == Tool.HIGHLIGHTER) {
                     ToolbarSep()
-                    BarToggle("التقاط النص", c.highlightSnap) { c.toggleHighlightSnap() }
+                    BarToggle(L("التقاط النص", "Text snap"), c.highlightSnap) { c.toggleHighlightSnap() }
                     Spacer(Modifier.width(6.dp))
-                    BarToggle("في الملخص", c.highlightToSummary) { c.toggleHighlightToSummary() }
+                    BarToggle(L("في الملخص", "In summary"), c.highlightToSummary) { c.toggleHighlightToSummary() }
                 }
                 if (t.isPen()) {
                     ToolbarSep()
-                    BarToggle("أشكال", c.shapeSnap) { c.toggleShapeSnap() }
+                    BarToggle(L("أشكال", "Shapes"), c.shapeSnap) { c.toggleShapeSnap() }
                 }
                 ToolbarSep()
                 Box {
@@ -700,7 +700,7 @@ private fun PenBar() {
                     }
                 }
                 TBtn(onClick = { c.penBarOpen = false }) {
-                    PhIcon(R.drawable.ph_caret_up, Palette.TextSecondary, 20.dp, "إخفاء شريط الأقلام")
+                    PhIcon(R.drawable.ph_caret_up, Palette.TextSecondary, 20.dp, L("إخفاء شريط الأقلام", "Hide pen bar"))
                 }
             }
         }
@@ -736,12 +736,12 @@ private fun BarToggle(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 private fun toolName(t: Tool): String = when (t) {
-    Tool.BALLPOINT -> "قلم جاف"
-    Tool.FOUNTAIN -> "قلم حبر"
-    Tool.PENCIL -> "قلم رصاص"
-    Tool.HIGHLIGHTER -> "هايلايتر"
-    Tool.ERASER -> "ممحاة"
-    Tool.LASER -> "مؤشر ليزر"
+    Tool.BALLPOINT -> L("قلم جاف", "Ballpoint")
+    Tool.FOUNTAIN -> L("قلم حبر", "Fountain pen")
+    Tool.PENCIL -> L("قلم رصاص", "Pencil")
+    Tool.HIGHLIGHTER -> L("هايلايتر", "Highlighter")
+    Tool.ERASER -> L("ممحاة", "Eraser")
+    Tool.LASER -> L("مؤشر ليزر", "Laser pointer")
 }
 
 /** زر أداة في الشريط، ولوحة إعداداتها تنسدل تحته. */
@@ -789,7 +789,7 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
         Spacer(Modifier.height(12.dp))
 
         if (t.isPen()) {
-            PanelLabel("نوع القلم")
+            PanelLabel(L("نوع القلم", "Pen type"))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(Tool.BALLPOINT, Tool.FOUNTAIN, Tool.PENCIL).forEach { pt ->
                     val sel = pt == t
@@ -818,7 +818,7 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             Spacer(Modifier.height(10.dp))
         }
 
-        PanelLabel(if (t == Tool.ERASER) "حجم الممحاة" else "الحجم")
+        PanelLabel(if (t == Tool.ERASER) L("حجم الممحاة", "Eraser size") else L("الحجم", "Size"))
         SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         ToolPreview(t)
@@ -835,7 +835,7 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                     c.setLabel(cur, it)
                 },
                 singleLine = true,
-                label = { Text("تصنيف هذا اللون") },
+                label = { Text(L("تصنيف هذا اللون", "Label for this color")) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(12.dp))
@@ -843,9 +843,9 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("التقاط النص", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(L("التقاط النص", "Text snap"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                     Text(
-                        "يلتصق التمييز بالكلمات ويوضع خلفها، ويُضاف النص إلى الملخصات",
+                        L("يلتصق التمييز بالكلمات ويوضع خلفها، ويُضاف النص إلى الملخصات", "The highlight sticks to words, sits behind them, and the text is added to summaries"),
                         fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
                     )
                 }
@@ -863,9 +863,9 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("إضافة إلى الملخص", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(L("إضافة إلى الملخص", "Add to summary"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                     Text(
-                        "أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات",
+                        L("أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات", "Turn off to highlight on the page only, without adding text to summaries"),
                         fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
                     )
                 }
@@ -887,9 +887,9 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("تحويل الرسم إلى أشكال", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(L("تحويل الرسم إلى أشكال", "Turn drawings into shapes"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                     Text(
-                        "الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة تلقائيًا",
+                        L("الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة تلقائيًا", "Lines, arrows, rectangles, triangles and circles are tidied automatically"),
                         fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
                     )
                 }
@@ -907,11 +907,11 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
         }
         if (t == Tool.LASER) {
             Spacer(Modifier.height(12.dp))
-            PanelLabel("نمط الليزر")
+            PanelLabel(L("نمط الليزر", "Laser style"))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
-                    LaserMode.DOT to "نقطة",
-                    LaserMode.LINE to "خط مستمر"
+                    LaserMode.DOT to L("نقطة", "Dot"),
+                    LaserMode.LINE to L("خط مستمر", "Trail")
                 ).forEach { (m, label) ->
                     val sel = c.laserMode == m
                     val shape = RoundedCornerShape(12.dp)
@@ -930,18 +930,18 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                if (c.laserMode == LaserMode.DOT) "نقطة متوهجة تتبع القلم، مع أثر قصير يختفي فورًا."
-                else "اضغط بالقلم وارسم: يبقى الخط متوهجًا ثانية ونصف ثم يختفي. بدون لمس تظهر النقطة فقط.",
+                if (c.laserMode == LaserMode.DOT) L("نقطة متوهجة تتبع القلم، مع أثر قصير يختفي فورًا.", "A glowing dot follows the pen with a short trail that fades instantly.")
+                else L("اضغط بالقلم وارسم: يبقى الخط متوهجًا ثانية ونصف ثم يختفي. بدون لمس تظهر النقطة فقط.", "Press and draw: the line glows for a second and a half, then fades. Without touching, only the dot shows."),
                 fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
             )
         }
         if (t == Tool.ERASER) {
             Spacer(Modifier.height(12.dp))
-            PanelLabel("نمط الممحاة")
+            PanelLabel(L("نمط الممحاة", "Eraser mode"))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
-                    EraserMode.STROKE to "الخط كاملًا",
-                    EraserMode.AREA to "الجزء الملموس"
+                    EraserMode.STROKE to L("الخط كاملًا", "Whole stroke"),
+                    EraserMode.AREA to L("الجزء الملموس", "Touched part")
                 ).forEach { (m, label) ->
                     val sel = c.eraserMode == m
                     val shape = RoundedCornerShape(12.dp)
@@ -960,13 +960,13 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                if (c.eraserMode == EraserMode.STROKE) "لمسة واحدة تمسح الخط الذي كُتب دون رفع القلم كاملًا."
-                else "يمسح ما تمر عليه الممحاة فقط، ويبقى باقي الخط.",
+                if (c.eraserMode == EraserMode.STROKE) L("لمسة واحدة تمسح الخط الذي كُتب دون رفع القلم كاملًا.", "One touch erases the entire stroke drawn without lifting the pen.")
+                else L("يمسح ما تمر عليه الممحاة فقط، ويبقى باقي الخط.", "Erases only what the eraser passes over; the rest of the stroke stays."),
                 fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.",
+                L("تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.", "Erases handwriting and snapped highlights. The pen’s side button also works as an eraser."),
                 fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
             )
         }
@@ -1054,18 +1054,18 @@ private fun AddPagesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("إضافة صفحة") },
+        title = { Text(L("إضافة صفحة", "Add page")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("المكان", fontSize = 13.sp, color = Palette.TextSecondary)
+                Text(L("المكان", "Position"), fontSize = 13.sp, color = Palette.TextSecondary)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ChoiceChip("بعد الصفحة الحالية", !atEnd) { atEnd = false }
-                    ChoiceChip("في نهاية الملف", atEnd) { atEnd = true }
+                    ChoiceChip(L("بعد الصفحة الحالية", "After current page"), !atEnd) { atEnd = false }
+                    ChoiceChip(L("في نهاية الملف", "At the end"), atEnd) { atEnd = true }
                 }
-                Text("التخطيط", fontSize = 13.sp, color = Palette.TextSecondary)
+                Text(L("التخطيط", "Layout"), fontSize = 13.sp, color = Palette.TextSecondary)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1074,17 +1074,17 @@ private fun AddPagesDialog(
                         ChoiceChip(label, template == k) { template = k }
                     }
                 }
-                Text("لون الورقة", fontSize = 13.sp, color = Palette.TextSecondary)
+                Text(L("لون الورقة", "Paper color"), fontSize = 13.sp, color = Palette.TextSecondary)
                 PaperColorRow(paper, { paper = it }, { picker = true })
             }
         },
         confirmButton = {
-            TextButton(onClick = { onBlank(template, atEnd, paper) }) { Text("إضافة صفحة") }
+            TextButton(onClick = { onBlank(template, atEnd, paper) }) { Text(L("إضافة صفحة", "Add page")) }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = { onPdf(atEnd) }) { Text("إضافة ملف PDF…") }
-                TextButton(onClick = onDismiss) { Text("إلغاء") }
+                TextButton(onClick = { onPdf(atEnd) }) { Text(L("إضافة ملف PDF…", "Add PDF file…")) }
+                TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
             }
         }
     )
@@ -1105,7 +1105,7 @@ private fun PageJumpDialog(count: Int, current: Int, onGo: (Int) -> Unit, onDism
     var text by remember { mutableStateOf((current + 1).toString()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("الانتقال إلى صفحة") },
+        title = { Text(L("الانتقال إلى صفحة", "Go to page")) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -1120,9 +1120,9 @@ private fun PageJumpDialog(count: Int, current: Int, onGo: (Int) -> Unit, onDism
                 val n = text.toIntOrNull()
                 if (n != null) onGo(n.coerceIn(1, count) - 1)
                 onDismiss()
-            }) { Text("انتقال") }
+            }) { Text(L("انتقال", "Go")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -1150,7 +1150,7 @@ private fun ReaderSearchBar(s: DocSession) {
                 contentAlignment = Alignment.CenterStart
             ) {
                 if (s.searchQuery.isEmpty()) {
-                    Text("ابحث في نص المستند", color = Palette.TextSecondary, fontSize = 15.sp, maxLines = 1)
+                    Text(L("ابحث في نص المستند", "Search the document text"), color = Palette.TextSecondary, fontSize = 15.sp, maxLines = 1)
                 }
                 BasicTextField(
                     value = s.searchQuery,
@@ -1164,7 +1164,7 @@ private fun ReaderSearchBar(s: DocSession) {
             Text(
                 when {
                     s.searchQuery.isBlank() -> ""
-                    s.hits.isEmpty() -> "لا نتائج"
+                    s.hits.isEmpty() -> L("لا نتائج", "No results")
                     else -> "${s.hitIndex + 1}/${s.hits.size}"
                 },
                 fontSize = 13.sp, color = Palette.TextSecondary
@@ -1172,7 +1172,7 @@ private fun ReaderSearchBar(s: DocSession) {
             TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.TextPrimary, up = true) }
             TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.TextPrimary, up = false) }
             IconButton(onClick = { s.closeSearch() }, modifier = Modifier.size(40.dp)) {
-                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق البحث")
+                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق البحث", "Close search"))
             }
         }
         if (!s.ocrRunning && s.ocr.size < total) {
@@ -1181,10 +1181,10 @@ private fun ReaderSearchBar(s: DocSession) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "البحث يشمل ${s.ocr.size} من $total صفحة تمت قراءتها",
+                    L("البحث يشمل ${s.ocr.size} من $total صفحة تمت قراءتها", "Search covers ${s.ocr.size} of $total pages read so far"),
                     fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
                 )
-                TextButton(onClick = { s.startOcr() }) { Text("قراءة الكل", fontSize = 13.sp) }
+                TextButton(onClick = { s.startOcr() }) { Text(L("قراءة الكل", "Read all"), fontSize = 13.sp) }
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
@@ -1519,21 +1519,21 @@ private fun SelectionBar(s: DocSession) {
                 if (text.isNotEmpty()) {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-                    AppController.messages.tryEmit("تم نسخ النص")
+                    AppController.messages.tryEmit(L("تم نسخ النص", "Text copied"))
                 }
-            }) { Text("نسخ") }
+            }) { Text(L("نسخ", "Copy")) }
             TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
-                Text("إلى الملخصات", color = Palette.GoldDeep)
+                Text(L("إلى الملخصات", "To summaries"), color = Palette.GoldDeep)
             }
             TextButton(onClick = {
                 val text = s.selectionText()
                 if (text.isNotEmpty()) cardBack = TextTidy.clean(text)
-            }) { Text("اجعله بطاقة") }
+            }) { Text(L("اجعله بطاقة", "Make it a card")) }
             TextButton(onClick = {
                 val n = s.ocr[sel.page]?.words?.size ?: 0
                 if (n > 0) s.selection = TextSelection(sel.page, 0, n - 1)
-            }) { Text("تحديد كل الصفحة") }
-            TextButton(onClick = { s.selection = null }) { Text("إلغاء") }
+            }) { Text(L("تحديد كل الصفحة", "Select whole page")) }
+            TextButton(onClick = { s.selection = null }) { Text(L("إلغاء", "Cancel")) }
         }
     }
 }
@@ -1546,7 +1546,7 @@ private fun ImageBar(s: DocSession) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = { s.deleteSelectedImage() }) {
-                Text("حذف الصورة", color = Palette.Danger)
+                Text(L("حذف الصورة", "Delete image"), color = Palette.Danger)
             }
             TextButton(onClick = {
                 val id = s.selectedImageId
@@ -1555,7 +1555,7 @@ private fun ImageBar(s: DocSession) {
                     s.updateImage(id) { it.copy(w = (it.w * 0.87f).coerceAtLeast(0.05f)) }
                     s.endEdit()
                 }
-            }) { Text("تصغير") }
+            }) { Text(L("تصغير", "Smaller")) }
             TextButton(onClick = {
                 val id = s.selectedImageId
                 if (id != null) {
@@ -1563,8 +1563,8 @@ private fun ImageBar(s: DocSession) {
                     s.updateImage(id) { it.copy(w = (it.w * 1.15f).coerceAtMost(1.5f)) }
                     s.endEdit()
                 }
-            }) { Text("تكبير") }
-            TextButton(onClick = { s.selectedImageId = null }) { Text("تم") }
+            }) { Text(L("تكبير", "Larger")) }
+            TextButton(onClick = { s.selectedImageId = null }) { Text(L("تم", "Done")) }
         }
     }
 }
@@ -1588,25 +1588,25 @@ private fun TextBoxBar(s: DocSession) {
             Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = { s.textDialog = TextDialogReq(id, tb.page) }) { Text("تعديل") }
+            TextButton(onClick = { s.textDialog = TextDialogReq(id, tb.page) }) { Text(L("تعديل", "Edit")) }
             TextButton(onClick = {
                 s.beginEdit()
                 s.updateTextBox(id) { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) }
                 s.endEdit()
-            }) { Text("خط أصغر") }
+            }) { Text(L("خط أصغر", "Smaller text")) }
             TextButton(onClick = {
                 s.beginEdit()
                 s.updateTextBox(id) { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) }
                 s.endEdit()
-            }) { Text("خط أكبر") }
+            }) { Text(L("خط أكبر", "Larger text")) }
             TextButton(onClick = {
                 val pen = AppController.tool.let { if (it.isPen()) it else AppController.lastPen }
                 s.beginEdit()
                 s.updateTextBox(id) { it.copy(color = AppController.colorFor(pen)) }
                 s.endEdit()
-            }) { Text("لون القلم") }
-            TextButton(onClick = { s.deleteTextBox(id) }) { Text("حذف", color = Palette.Danger) }
-            TextButton(onClick = { s.selectedTextId = null }) { Text("تم") }
+            }) { Text(L("لون القلم", "Pen color")) }
+            TextButton(onClick = { s.deleteTextBox(id) }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
+            TextButton(onClick = { s.selectedTextId = null }) { Text(L("تم", "Done")) }
         }
     }
 }
@@ -2288,7 +2288,7 @@ private fun PageView(
                                         ch.consume()
                                     }
                                 } else {
-                                    AppController.messages.tryEmit("لا يوجد نص عند هذه النقطة")
+                                    AppController.messages.tryEmit(L("لا يوجد نص عند هذه النقطة", "No text at this point"))
                                 }
                             } else {
                                 // الصفحة لم تُقرأ بعد: اقرأها الآن ثم حدّد الكلمة
@@ -2298,14 +2298,14 @@ private fun PageView(
                                     session.pageBusy = null
                                     val list = page?.words
                                     if (list == null || list.isEmpty()) {
-                                        AppController.messages.tryEmit("لم يُعثر على نص مقروء في هذه الصفحة")
+                                        AppController.messages.tryEmit(L("لم يُعثر على نص مقروء في هذه الصفحة", "No readable text found on this page"))
                                     } else {
                                         val i = nearestWord(list, nx, ny, 0.06f)
                                         if (i >= 0) {
                                             session.selectedImageId = null
                                             session.selection = TextSelection(index, i, i)
                                         } else {
-                                            AppController.messages.tryEmit("لا يوجد نص عند هذه النقطة")
+                                            AppController.messages.tryEmit(L("لا يوجد نص عند هذه النقطة", "No text at this point"))
                                         }
                                     }
                                 }
@@ -2408,7 +2408,7 @@ private fun PageView(
             ) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text("جارٍ قراءة الصفحة…", fontSize = 13.sp, color = Palette.TextPrimary)
+                Text(L("جارٍ قراءة الصفحة…", "Reading page…"), fontSize = 13.sp, color = Palette.TextPrimary)
             }
         }
     }

@@ -86,34 +86,34 @@ data class ToolInfo(
 )
 
 object ToolCatalog {
-    val all = listOf(
-        ToolInfo("pen", "الأقلام", "اكتب وارسم بقلم جاف أو حبر أو رصاص، بأي لون وحجم. الضغط على القلم يغيّر سماكة الخط.", R.drawable.ph_pen_nib, Demo.PEN, essential = true),
-        ToolInfo("highlighter", "الهايلايتر", "ظلّل الجمل المهمة. بحواف دائرية ناعمة ويظهر خلف النص فيبقى النص واضحًا.", R.drawable.ph_highlighter, Demo.HIGHLIGHT, essential = true),
-        ToolInfo("eraser", "الممحاة", "تمسح الكتابة أو الكلمات المظللة التي تلمسها فقط، والباقي يبقى كما هو.", R.drawable.ph_eraser, Demo.ERASER, essential = true),
-        ToolInfo("laser", "مؤشر الليزر", "للشرح أمام غيرك: نقطة متوهجة أو خط يختفي وحده دون أن يُحفظ.", R.drawable.ph_laser, Demo.LASER, essential = true),
-        ToolInfo("snap", "التقاط النص", "مرّر الهايلايتر على السطر فيلتصق التمييز بالكلمات بدقة ويُضاف نصها إلى الملخص.", R.drawable.ph_snap, Demo.SNAP),
-        ToolInfo("nosummary", "تمييز بدون ملخص", "خيار في الهايلايتر: ظلّل للتذكير على الصفحة فقط دون أن يدخل النص في الملخص.", R.drawable.ph_highlighter, Demo.NO_SUMMARY, tourOnly = true),
-        ToolInfo("shapes", "الأشكال", "ارسم خطًا أو سهمًا أو مستطيلًا أو دائرة باليد فيصبح شكلًا مرتبًا. يُفعّل من إعدادات القلم.", R.drawable.ph_shapes, Demo.SHAPES, tourOnly = true),
-        ToolInfo("nav", "التنقل بين الصفحات", "السهمان ورقم الصفحة: اضغط الرقم لتنتقل مباشرة إلى أي صفحة.", R.drawable.ph_pages, Demo.NAV),
-        ToolInfo("bookmark", "العلامة المرجعية", "علّم الصفحات المهمة بشريط ذهبي، وتجدها في «العلامات» داخل درج الصفحات.", R.drawable.ph_bookmark, Demo.BOOKMARK),
-        ToolInfo("timer", "مؤقت الدراسة", "25 دقيقة دراسة ثم 5 راحة. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", R.drawable.ph_timer, Demo.TIMER),
-        ToolInfo("image", "إضافة صورة", "أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", R.drawable.ph_image, Demo.IMAGE),
-        ToolInfo("text", "مربع نص", "اكتب بلوحة المفاتيح في أي مكان من الصفحة.", R.drawable.ph_text, Demo.TEXT),
-        ToolInfo("addpage", "إضافة صفحات", "أضف صفحة فارغة (مسطرة أو مربعات) أو صفحات من ملف PDF آخر.", R.drawable.ph_add_page, Demo.ADD_PAGE),
-        ToolInfo("ocr", "قراءة النص", "يقرأ نص الصفحات (العربية مدعومة في ملفات PDF الرقمية) ليعمل البحث والتقاط النص.", R.drawable.ph_scan, Demo.OCR),
-        ToolInfo("search", "البحث", "ابحث عن كلمة داخل المستند وتنقّل بين النتائج.", R.drawable.ph_search, Demo.SEARCH),
-        ToolInfo("export", "الحفظ PDF", "احفظ المستند مع كتابتك وتظليلك، أو احفظ الملخص وحده كملف PDF.", R.drawable.ph_export, Demo.EXPORT),
-        ToolInfo("undo", "التراجع والإعادة", "تراجع عن آخر تعديل أو أعده. أو انقر الصفحة بإصبعين للتراجع وبثلاثة للإعادة.", R.drawable.ph_undo, Demo.UNDO),
-        ToolInfo("zoom", "التكبير والتصغير", "كبّر الصفحة لقراءة التفاصيل أو صغّرها لرؤية أكثر. يعمل أيضًا بإصبعين.", R.drawable.ph_zoom_in, Demo.ZOOM),
-        ToolInfo("fit", "ملاءمة الصفحة", "اعرض الصفحة كاملة على الشاشة، ونقرة ثانية تعيد ملء العرض.", R.drawable.ph_fit, Demo.FIT),
-        ToolInfo("focus", "وضع التركيز", "يخفي كل الأشرطة لتبقى مع الصفحة فقط، والمؤقت يبقى معك.", R.drawable.ph_eye, Demo.FOCUS),
-        ToolInfo("readtimer", "عداد وقت القراءة", "يظهر في الزاوية كم قضيت في قراءة هذا المستند.", R.drawable.ph_timer, Demo.TIMER),
-        ToolInfo("summary", "الملخصات", "كل ما تلتقطه بالهايلايتر يُجمع مرتبًا في درج «ملخصات»: عناوين وفقرات وجداول تعدّلها بنفسك.", R.drawable.ph_summary, Demo.SUMMARY, tourOnly = true),
-        ToolInfo("cards", "البطاقات", "اصنع بطاقة بعنوان ومحتوى تكتبهما بنفسك، واقلبها للمراجعة. من «بطاقات» في درج الملخصات.", R.drawable.ph_cards, Demo.CARDS, tourOnly = true)
+    val all get() = listOf(
+        ToolInfo("pen", L("الأقلام", "Pens"), L("اكتب وارسم بقلم جاف أو حبر أو رصاص، بأي لون وحجم. الضغط على القلم يغيّر سماكة الخط.", "Write and draw with a ballpoint, fountain pen or pencil in any color and size. Pen pressure changes the line width."), R.drawable.ph_pen_nib, Demo.PEN, essential = true),
+        ToolInfo("highlighter", L("الهايلايتر", "Highlighter"), L("ظلّل الجمل المهمة. بحواف دائرية ناعمة ويظهر خلف النص فيبقى النص واضحًا.", "Highlight important sentences. Soft rounded edges, drawn behind the text so it stays clear."), R.drawable.ph_highlighter, Demo.HIGHLIGHT, essential = true),
+        ToolInfo("eraser", L("الممحاة", "Eraser"), L("تمسح الكتابة أو الكلمات المظللة التي تلمسها فقط، والباقي يبقى كما هو.", "Erases only the writing or highlighted words it touches; everything else stays."), R.drawable.ph_eraser, Demo.ERASER, essential = true),
+        ToolInfo("laser", L("مؤشر الليزر", "Laser pointer"), L("للشرح أمام غيرك: نقطة متوهجة أو خط يختفي وحده دون أن يُحفظ.", "For presenting: a glowing dot or a line that fades by itself and is never saved."), R.drawable.ph_laser, Demo.LASER, essential = true),
+        ToolInfo("snap", L("التقاط النص", "Text snap"), L("مرّر الهايلايتر على السطر فيلتصق التمييز بالكلمات بدقة ويُضاف نصها إلى الملخص.", "Run the highlighter over a line and it snaps precisely to the words and adds their text to the summary."), R.drawable.ph_snap, Demo.SNAP),
+        ToolInfo("nosummary", L("تمييز بدون ملخص", "Highlight without summary"), L("خيار في الهايلايتر: ظلّل للتذكير على الصفحة فقط دون أن يدخل النص في الملخص.", "A highlighter option: highlight on the page as a reminder without adding the text to the summary."), R.drawable.ph_highlighter, Demo.NO_SUMMARY, tourOnly = true),
+        ToolInfo("shapes", L("الأشكال", "Shapes"), L("ارسم خطًا أو سهمًا أو مستطيلًا أو دائرة باليد فيصبح شكلًا مرتبًا. يُفعّل من إعدادات القلم.", "Draw a line, arrow, rectangle or circle by hand and it becomes a neat shape. Enable it in pen settings."), R.drawable.ph_shapes, Demo.SHAPES, tourOnly = true),
+        ToolInfo("nav", L("التنقل بين الصفحات", "Page navigation"), L("السهمان ورقم الصفحة: اضغط الرقم لتنتقل مباشرة إلى أي صفحة.", "Arrows and page number: tap the number to jump to any page."), R.drawable.ph_pages, Demo.NAV),
+        ToolInfo("bookmark", L("العلامة المرجعية", "Bookmark"), L("علّم الصفحات المهمة بشريط ذهبي، وتجدها في «العلامات» داخل درج الصفحات.", "Mark important pages with a gold ribbon; find them under “Bookmarks” in the pages drawer."), R.drawable.ph_bookmark, Demo.BOOKMARK),
+        ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("25 دقيقة دراسة ثم 5 راحة. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "25 minutes of study, then a 5-minute break. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
+        ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
+        ToolInfo("text", L("مربع نص", "Text box"), L("اكتب بلوحة المفاتيح في أي مكان من الصفحة.", "Type with the keyboard anywhere on the page."), R.drawable.ph_text, Demo.TEXT),
+        ToolInfo("addpage", L("إضافة صفحات", "Add pages"), L("أضف صفحة فارغة (مسطرة أو مربعات) أو صفحات من ملف PDF آخر.", "Add a blank page (lined or grid) or pages from another PDF."), R.drawable.ph_add_page, Demo.ADD_PAGE),
+        ToolInfo("ocr", L("قراءة النص", "Read text"), L("يقرأ نص الصفحات (العربية مدعومة في ملفات PDF الرقمية) ليعمل البحث والتقاط النص.", "Reads page text (Arabic supported in digital PDFs) so search and text snap work."), R.drawable.ph_scan, Demo.OCR),
+        ToolInfo("search", L("البحث", "Search"), L("ابحث عن كلمة داخل المستند وتنقّل بين النتائج.", "Find a word in the document and move between results."), R.drawable.ph_search, Demo.SEARCH),
+        ToolInfo("export", L("الحفظ PDF", "Save as PDF"), L("احفظ المستند مع كتابتك وتظليلك، أو احفظ الملخص وحده كملف PDF.", "Save the document with your writing and highlights, or save the summary alone as a PDF."), R.drawable.ph_export, Demo.EXPORT),
+        ToolInfo("undo", L("التراجع والإعادة", "Undo and redo"), L("تراجع عن آخر تعديل أو أعده. أو انقر الصفحة بإصبعين للتراجع وبثلاثة للإعادة.", "Undo or redo the last change. Or tap the page with two fingers to undo and three to redo."), R.drawable.ph_undo, Demo.UNDO),
+        ToolInfo("zoom", L("التكبير والتصغير", "Zoom"), L("كبّر الصفحة لقراءة التفاصيل أو صغّرها لرؤية أكثر. يعمل أيضًا بإصبعين.", "Zoom in for details or out to see more. Also works with two fingers."), R.drawable.ph_zoom_in, Demo.ZOOM),
+        ToolInfo("fit", L("ملاءمة الصفحة", "Fit page"), L("اعرض الصفحة كاملة على الشاشة، ونقرة ثانية تعيد ملء العرض.", "Show the whole page on screen; tap again to fill the width."), R.drawable.ph_fit, Demo.FIT),
+        ToolInfo("focus", L("وضع التركيز", "Focus mode"), L("يخفي كل الأشرطة لتبقى مع الصفحة فقط، والمؤقت يبقى معك.", "Hides all bars so only the page remains; the timer stays with you."), R.drawable.ph_eye, Demo.FOCUS),
+        ToolInfo("readtimer", L("عداد وقت القراءة", "Reading time counter"), L("يظهر في الزاوية كم قضيت في قراءة هذا المستند.", "Shows in the corner how long you have spent reading this document."), R.drawable.ph_timer, Demo.TIMER),
+        ToolInfo("summary", L("الملخصات", "Summaries"), L("كل ما تلتقطه بالهايلايتر يُجمع مرتبًا في درج «ملخصات»: عناوين وفقرات وجداول تعدّلها بنفسك.", "Everything you snap with the highlighter is collected in the “Summaries” drawer: headings, paragraphs and tables you can edit."), R.drawable.ph_summary, Demo.SUMMARY, tourOnly = true),
+        ToolInfo("cards", L("البطاقات", "Cards"), L("اصنع بطاقة بعنوان ومحتوى تكتبهما بنفسك، واقلبها للمراجعة. من «بطاقات» في درج الملخصات.", "Make cards with your own title and content and flip them to review. From “Cards” in the summaries drawer."), R.drawable.ph_cards, Demo.CARDS, tourOnly = true)
     )
-    val tour = all
-    val essentials = all.filter { it.essential }
-    val optional = all.filter { !it.essential && !it.tourOnly }
+    val tour get() = all
+    val essentials get() = all.filter { it.essential }
+    val optional get() = all.filter { !it.essential && !it.tourOnly }
 }
 
 // ---------------------------------------------------------------- نافذة الإعدادات
@@ -147,10 +147,10 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     PhIcon(R.drawable.ph_sliders, Palette.Navy, 24.dp)
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "الإعدادات", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                        L("الإعدادات", "Settings"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                         fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 22.dp, "إغلاق") }
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 22.dp, L("إغلاق", "Close")) }
                 }
                 LazyColumn(
                     state = listState,
@@ -158,33 +158,40 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    item { SectionTitle("تعرّف على الأدوات") }
+                    item { SectionTitle("اللغة / Language") }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ChoiceChip("العربية", !I18n.english) { c.setEnglish(false) }
+                            ChoiceChip("English", I18n.english) { c.setEnglish(true) }
+                        }
+                    }
+                    item { SectionTitle(L("تعرّف على الأدوات", "Get to know the tools")) }
                     item { ToolTour(pager) }
 
-                    item { SectionTitle("شكل شريط الأدوات") }
+                    item { SectionTitle(L("شكل شريط الأدوات", "Toolbar style")) }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             StyleOption(
-                                Modifier.weight(1f), ToolbarStyle.PEN_BAR, "شريط الأقلام",
-                                "زر قلم واحد؛ الضغط عليه يفتح شريطًا ثانيًا فيه كل الأقلام والهايلايتر والألوان والحجم."
+                                Modifier.weight(1f), ToolbarStyle.PEN_BAR, L("شريط الأقلام", "Pen bar"),
+                                L("زر قلم واحد؛ الضغط عليه يفتح شريطًا ثانيًا فيه كل الأقلام والهايلايتر والألوان والحجم.", "One pen button; tapping it opens a second bar with all pens, the highlighter, colors and size.")
                             )
                             StyleOption(
-                                Modifier.weight(1f), ToolbarStyle.CLASSIC, "الكلاسيكي",
-                                "القلم والهايلايتر زرّان منفصلان؛ نقرة ثانية على الأداة تفتح إعداداتها."
+                                Modifier.weight(1f), ToolbarStyle.CLASSIC, L("الكلاسيكي", "Classic"),
+                                L("القلم والهايلايتر زرّان منفصلان؛ نقرة ثانية على الأداة تفتح إعداداتها.", "Pen and highlighter are separate buttons; tapping a tool again opens its settings.")
                             )
                         }
                     }
 
-                    item { SectionTitle("الأدوات الأساسية (ظاهرة دائمًا)") }
+                    item { SectionTitle(L("الأدوات الأساسية (ظاهرة دائمًا)", "Essential tools (always shown)")) }
                     ToolCatalog.essentials.forEach { t ->
                         item(key = "e_" + t.id) {
                             ToolRow(t, onInfo = { showTour(t.id) }) {
-                                Text("أساسية", fontSize = 12.sp, color = Palette.TextSecondary)
+                                Text(L("أساسية", "Essential"), fontSize = 12.sp, color = Palette.TextSecondary)
                             }
                         }
                     }
 
-                    item { SectionTitle("أدوات اختيارية: أظهرها أو أخفها من الشريط") }
+                    item { SectionTitle(L("أدوات اختيارية: أظهرها أو أخفها من الشريط", "Optional tools: show or hide them in the toolbar")) }
                     ToolCatalog.optional.forEach { t ->
                         item(key = "o_" + t.id) {
                             ToolRow(t, onInfo = { showTour(t.id) }) {
@@ -193,52 +200,52 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     }
 
-                    item { SectionTitle("القلم والأصابع") }
+                    item { SectionTitle(L("القلم والأصابع", "Pen and fingers")) }
                     item {
                         SettingSwitch(
-                            "النقر المزدوج على القلم",
-                            "يبدّل بين الممحاة وآخر قلم استخدمته",
+                            L("النقر المزدوج على القلم", "Pen double-tap"),
+                            L("يبدّل بين الممحاة وآخر قلم استخدمته", "Switches between the eraser and your last pen"),
                             c.penDoubleTapEnabled
                         ) { c.togglePenDoubleTap() }
                     }
                     item { PenKeyLearnRow() }
                     item {
                         SettingSwitch(
-                            "نقرة بإصبعين للتراجع، وبثلاثة للإعادة",
-                            "انقر الصفحة بإصبعين معًا للتراجع، وبثلاثة أصابع لإعادة ما تراجعت عنه",
+                            L("نقرة بإصبعين للتراجع، وبثلاثة للإعادة", "Two-finger tap to undo, three to redo"),
+                            L("انقر الصفحة بإصبعين معًا للتراجع، وبثلاثة أصابع لإعادة ما تراجعت عنه", "Tap the page with two fingers to undo, with three fingers to redo"),
                             c.fingerUndo
                         ) { c.toggleFingerUndo() }
                     }
 
-                    item { SectionTitle("التمييز والملخص") }
+                    item { SectionTitle(L("التمييز والملخص", "Highlights and summary")) }
                     item {
-                        SettingSwitch("التقاط النص", "يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", c.highlightSnap) {
+                        SettingSwitch(L("التقاط النص", "Text snap"), L("يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", "The highlighter snaps to words and adds their text to the summary"), c.highlightSnap) {
                             c.toggleHighlightSnap()
                         }
                     }
                     item {
                         SettingSwitch(
-                            "إضافة التمييز إلى الملخص",
-                            "أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات",
+                            L("إضافة التمييز إلى الملخص", "Add highlights to summary"),
+                            L("أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات", "Turn off to highlight on the page only, without adding text to summaries"),
                             c.highlightToSummary
                         ) { c.toggleHighlightToSummary() }
                     }
                     item {
-                        SettingSwitch("ترتيب نص الملخص", "تنظيف المسافات وإكمال الجمل المقطوعة بين الأسطر", c.summaryTidy) {
+                        SettingSwitch(L("ترتيب نص الملخص", "Tidy summary text"), L("تنظيف المسافات وإكمال الجمل المقطوعة بين الأسطر", "Clean spacing and join sentences broken across lines"), c.summaryTidy) {
                             c.toggleSummaryTidy()
                         }
                     }
                     item {
-                        SettingSwitch("تحويل الرسم إلى أشكال", "الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة", c.shapeSnap) {
+                        SettingSwitch(L("تحويل الرسم إلى أشكال", "Turn drawings into shapes"), L("الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة", "Lines, arrows, rectangles, triangles and circles are tidied"), c.shapeSnap) {
                             c.toggleShapeSnap()
                         }
                     }
 
-                    item { SectionTitle("المظهر") }
+                    item { SectionTitle(L("المظهر", "Appearance")) }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            ChoiceChip("كحلي", ThemeState.theme == AppTheme.NAVY) { c.setTheme(AppTheme.NAVY) }
-                            ChoiceChip("فاتح", ThemeState.theme == AppTheme.LIGHT) { c.setTheme(AppTheme.LIGHT) }
+                            ChoiceChip(L("كحلي", "Navy"), ThemeState.theme == AppTheme.NAVY) { c.setTheme(AppTheme.NAVY) }
+                            ChoiceChip(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT) { c.setTheme(AppTheme.LIGHT) }
                         }
                     }
                 }
@@ -258,26 +265,26 @@ private fun PenKeyLearnRow() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text("تعليم التطبيق نقرتي القلم", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            Text(L("تعليم التطبيق نقرتي القلم", "Teach the app your pen double-tap"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
             Text(
                 when {
-                    c.penKeyLearning -> "انقر الآن مرتين على القلم…"
-                    c.penKeyCode >= 0 -> "مربوطة. أعد التعليم إن غيّرت القلم"
-                    else -> "إن لم تعمل النقرتان: اضغط «تعليم» ثم انقر على القلم مرتين"
+                    c.penKeyLearning -> L("انقر الآن مرتين على القلم…", "Double-tap the pen now…")
+                    c.penKeyCode >= 0 -> L("مربوطة. أعد التعليم إن غيّرت القلم", "Linked. Teach again if you change pens")
+                    else -> L("إن لم تعمل النقرتان: اضغط «تعليم» ثم انقر على القلم مرتين", "If double-tap doesn’t work: tap “Teach”, then double-tap the pen")
                 },
                 fontSize = 12.sp, lineHeight = 18.sp,
                 color = if (c.penKeyLearning) Palette.GoldDeep else Palette.TextSecondary
             )
         }
         Spacer(Modifier.width(10.dp))
-        ChoiceChip(if (c.penKeyLearning) "إلغاء" else "تعليم", c.penKeyLearning) {
+        ChoiceChip(if (c.penKeyLearning) L("إلغاء", "Cancel") else L("تعليم", "Teach"), c.penKeyLearning) {
             if (c.penKeyLearning) {
                 c.penKeyLearning = false
             } else {
                 // نافذة الإعدادات تحجب إشارات القلم عن الشاشة الرئيسية، فنغلقها أثناء التعليم
                 c.penKeyLearning = true
                 c.settingsOpen = false
-                c.messages.tryEmit("انقر الآن على القلم مرتين…")
+                c.messages.tryEmit(L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
             }
         }
     }

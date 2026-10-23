@@ -63,7 +63,7 @@ object MarkMerge {
             val ofOld = ov / oldArea
             if (ofNew >= 0.6f && ofOld >= 0.6f) {
                 next = existing.map { if (it.id == old.id) it.copy(level = 2, strongRects = it.rects) else it }
-                message = "ظُلّل النص مرة ثانية، فصار مهمًا في الملخص"
+                message = L("ظُلّل النص مرة ثانية، فصار مهمًا في الملخص", "Highlighted twice, so it is now important in the summary")
                 break
             }
             if (ofNew >= 0.6f) {
@@ -74,7 +74,7 @@ object MarkMerge {
                         strongRects = if (it.level >= 2) it.strongRects else addStrong(it.strongRects, rects)
                     ) else it
                 }
-                message = "أُبرز هذا الجزء كمهم في الملخص"
+                message = L("أُبرز هذا الجزء كمهم في الملخص", "This part is now marked important in the summary")
                 break
             }
         }

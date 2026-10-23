@@ -180,7 +180,7 @@ private fun TabBar() {
         verticalAlignment = Alignment.Bottom
     ) {
         TabItem(
-            title = "المكتبة",
+            title = L("المكتبة", "Library"),
             active = c.activeId == null,
             home = true,
             activeBg = activeBg,
@@ -260,7 +260,7 @@ private fun TabItem(
                 ) {
                     PhIcon(
                         R.drawable.ph_close,
-                        if (active) Palette.TextSecondary else Palette.OnInkMuted, 15.dp, "إغلاق التبويب"
+                        if (active) Palette.TextSecondary else Palette.OnInkMuted, 15.dp, L("إغلاق التبويب", "Close tab")
                     )
                 }
             }

@@ -78,7 +78,7 @@ fun ColorMenuContent(onCustom: () -> Unit, onDone: () -> Unit) {
     val current = c.colorFor(c.tool)
     val colors = c.paletteFor(c.tool) + c.customColors.toList()
     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text("اللون", fontSize = 13.sp, color = Palette.TextSecondary)
+        Text(L("اللون", "Color"), fontSize = 13.sp, color = Palette.TextSecondary)
         Spacer(Modifier.height(6.dp))
         colors.chunked(5).forEach { row ->
             Row {
@@ -92,7 +92,7 @@ fun ColorMenuContent(onCustom: () -> Unit, onDone: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onCustom, shape = RoundedCornerShape(10.dp)) {
-            Text("لون مخصص…", fontSize = 14.sp)
+            Text(L("لون مخصص…", "Custom color…"), fontSize = 14.sp)
         }
     }
 }
@@ -156,7 +156,7 @@ fun ColorPickerDialog(initial: Color, onPick: (Color) -> Unit, onDismiss: () -> 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("لون مخصص") },
+        title = { Text(L("لون مخصص", "Custom color")) },
         text = {
             Column {
                 // مربع التشبّع والسطوع
@@ -224,10 +224,10 @@ fun ColorPickerDialog(initial: Color, onPick: (Color) -> Unit, onDismiss: () -> 
             }
         },
         confirmButton = {
-            TextButton(onClick = { onPick(current) }) { Text("اختيار") }
+            TextButton(onClick = { onPick(current) }) { Text(L("اختيار", "Choose")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("إلغاء") }
+            TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
         }
     )
 }

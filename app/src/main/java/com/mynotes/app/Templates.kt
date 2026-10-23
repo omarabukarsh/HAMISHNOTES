@@ -6,23 +6,23 @@ import kotlin.math.max
 
 /** قوالب الصفحات (بيضاء، مسطّرة، مربعات، نقاط) مع لون الورقة. */
 object Templates {
-    val options: List<Pair<String, String>> = listOf(
-        "plain" to "بيضاء",
-        "lined" to "مسطّرة",
-        "grid" to "مربعات",
-        "dots" to "نقاط"
+    val options: List<Pair<String, String>> get() = listOf(
+        "plain" to L("بيضاء", "Plain"),
+        "lined" to L("مسطّرة", "Lined"),
+        "grid" to L("مربعات", "Grid"),
+        "dots" to L("نقاط", "Dots")
     )
 
     /** ألوان الورق الجاهزة (ARGB، الاسم). */
-    val paperColors: List<Pair<Int, String>> = listOf(
-        0xFFFFFFFF.toInt() to "أبيض",
-        0xFFFFF8E1.toInt() to "كريمي",
-        0xFFFFF59D.toInt() to "أصفر",
-        0xFFE3F2FD.toInt() to "أزرق فاتح",
-        0xFFE8F5E9.toInt() to "أخضر فاتح",
-        0xFFFCE4EC.toInt() to "وردي",
-        0xFFECEFF1.toInt() to "رمادي",
-        0xFF1E232B.toInt() to "داكن"
+    val paperColors: List<Pair<Int, String>> get() = listOf(
+        0xFFFFFFFF.toInt() to L("أبيض", "White"),
+        0xFFFFF8E1.toInt() to L("كريمي", "Cream"),
+        0xFFFFF59D.toInt() to L("أصفر", "Yellow"),
+        0xFFE3F2FD.toInt() to L("أزرق فاتح", "Light blue"),
+        0xFFE8F5E9.toInt() to L("أخضر فاتح", "Light green"),
+        0xFFFCE4EC.toInt() to L("وردي", "Pink"),
+        0xFFECEFF1.toInt() to L("رمادي", "Gray"),
+        0xFF1E232B.toInt() to L("داكن", "Dark")
     )
 
     /** يبني نص مصدر الصفحة الفارغة، مثل: blank:lined:FFFFF8E1 */

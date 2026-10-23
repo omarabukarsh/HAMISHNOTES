@@ -91,10 +91,10 @@ object Flashcards {
     }
 
     fun intervalLabel(days: Int): String = when {
-        days <= 0 -> "الآن"
-        days == 1 -> "غدًا"
-        days < 30 -> "$days يوم"
-        else -> "${days / 30} شهر"
+        days <= 0 -> L("الآن", "now")
+        days == 1 -> L("غدًا", "tomorrow")
+        days < 30 -> L("$days يوم", "$days days")
+        else -> L("${days / 30} شهر", "${days / 30} months")
     }
 
     /** البطاقات المستحقة اليوم، والجديدة بحد 20 بطاقة جديدة في اليوم (لا في كل جلسة). */
@@ -137,7 +137,7 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "بطاقات المراجعة", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                            L("بطاقات المراجعة", "Review cards"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                             fontSize = 20.sp, color = Palette.Navy
                         )
                         Text(s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1)
@@ -145,9 +145,9 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                     TextButton(onClick = { adding = true }) {
                         PhIcon(R.drawable.ph_plus, Palette.Navy, 16.dp)
                         Spacer(Modifier.width(4.dp))
-                        Text("بطاقة جديدة", color = Palette.Navy, fontWeight = FontWeight.Bold)
+                        Text(L("بطاقة جديدة", "New card"), color = Palette.Navy, fontWeight = FontWeight.Bold)
                     }
-                    ChoiceChip("الصعبة فقط (${cards.count { it.id in s.starred }})", hardOnly) {
+                    ChoiceChip(L("الصعبة فقط (${cards.count { it.id in s.starred }})", "Hard only (${cards.count { it.id in s.starred }})"), hardOnly) {
                         hardOnly = !hardOnly
                         flipped = emptySet()
                         scope.launch { pager.scrollToPage(0) }
@@ -157,17 +157,17 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                             shuffled = deck.map { it.id }.shuffled()
                             flipped = emptySet()
                             scope.launch { pager.scrollToPage(0) }
-                        }) { Text("خلط", color = Palette.GoldDeep, fontWeight = FontWeight.Bold) }
+                        }) { Text(L("خلط", "Shuffle"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold) }
                     }
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق") }
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(12.dp))
 
                 if (deck.isEmpty()) {
                     EmptyCards(
-                        if (hardOnly) "لا توجد بطاقات مميزة بنجمة. اضغط النجمة على أي بطاقة صعبة لتظهر هنا."
-                        else "لا توجد بطاقات بعد. اضغط «بطاقة جديدة» واكتب العنوان والمحتوى، " +
-                            "أو حدد نصًا في المستند أو الملخص واختر «اجعله بطاقة»."
+                        if (hardOnly) L("لا توجد بطاقات مميزة بنجمة. اضغط النجمة على أي بطاقة صعبة لتظهر هنا.", "No starred cards. Tap the star on any hard card to see it here.")
+                        else L("لا توجد بطاقات بعد. اضغط «بطاقة جديدة» واكتب العنوان والمحتوى، ", "No cards yet. Tap “New card” and write a title and content, ") +
+                            L("أو حدد نصًا في المستند أو الملخص واختر «اجعله بطاقة».", "or select text in the document or summary and choose “Make it a card”.")
                     )
                 } else {
                     HorizontalPager(
@@ -183,10 +183,10 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                             }
                             Row(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
                                 IconButton(onClick = { editingCard = card }) {
-                                    PhIcon(R.drawable.ph_pencil, Palette.TextSecondary, 20.dp, "تعديل البطاقة")
+                                    PhIcon(R.drawable.ph_pencil, Palette.TextSecondary, 20.dp, L("تعديل البطاقة", "Edit card"))
                                 }
                                 IconButton(onClick = { s.deleteCustomCard(card.id) }) {
-                                    PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 20.dp, "حذف البطاقة")
+                                    PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 20.dp, L("حذف البطاقة", "Delete card"))
                                 }
                                 IconButton(onClick = { s.toggleStar(card.id) }) {
                                     StarGlyph(card.id in s.starred, Palette.Gold, Modifier.size(24.dp))
@@ -199,7 +199,7 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                         TextButton(
                             enabled = pager.currentPage > 0,
                             onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
-                        ) { Text("السابقة") }
+                        ) { Text(L("السابقة", "Previous")) }
                         Spacer(Modifier.weight(1f))
                         Text(
                             "${pager.currentPage + 1} / ${deck.size}",
@@ -209,10 +209,10 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                         TextButton(
                             enabled = pager.currentPage < deck.lastIndex,
                             onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }
-                        ) { Text("التالية") }
+                        ) { Text(L("التالية", "Next")) }
                     }
                     Text(
-                        "انقر البطاقة لقلبها، واسحب للتنقل",
+                        L("انقر البطاقة لقلبها، واسحب للتنقل", "Tap a card to flip it, swipe to move"),
                         fontSize = 12.sp, color = Palette.TextSecondary,
                         modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
                     )
@@ -227,7 +227,7 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
         }, onDismiss = { adding = false })
     }
     editingCard?.let { ec ->
-        AddCardDialog(ec.front, ec.back, title = "تعديل البطاقة", confirm = "حفظ", onSave = { f, b ->
+        AddCardDialog(ec.front, ec.back, title = L("تعديل البطاقة", "Edit card"), confirm = L("حفظ", "Save"), onSave = { f, b ->
             s.updateCustomCard(ec.id, f, b)
             editingCard = null
         }, onDismiss = { editingCard = null })
@@ -290,8 +290,8 @@ private fun EmptyCards(text: String) {
 fun AddCardDialog(
     initialFront: String,
     initialBack: String,
-    title: String = "بطاقة جديدة",
-    confirm: String = "إضافة",
+    title: String = L("بطاقة جديدة", "New card"),
+    confirm: String = L("إضافة", "Add"),
     onSave: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -304,17 +304,17 @@ fun AddCardDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 androidx.compose.material3.OutlinedTextField(
                     value = front, onValueChange = { front = it },
-                    label = { Text("عنوان البطاقة") }, modifier = Modifier.fillMaxWidth()
+                    label = { Text(L("عنوان البطاقة", "Card title")) }, modifier = Modifier.fillMaxWidth()
                 )
                 androidx.compose.material3.OutlinedTextField(
                     value = back, onValueChange = { back = it },
-                    label = { Text("محتوى البطاقة") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
+                    label = { Text(L("محتوى البطاقة", "Card content")) }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
                 )
             }
         },
         confirmButton = {
             TextButton(enabled = front.isNotBlank() && back.isNotBlank(), onClick = { onSave(front, back) }) { Text(confirm) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
 }

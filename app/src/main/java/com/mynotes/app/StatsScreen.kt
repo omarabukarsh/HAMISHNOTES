@@ -114,7 +114,7 @@ fun StatsDialog(onDismiss: () -> Unit) {
         val byFolder = HashMap<String, MutableList<Pair<String, Map<String, Long>>>>()
         perDocDay.forEach { (id, m) ->
             val e = c.library.firstOrNull { it.id == id } ?: return@forEach
-            byFolder.getOrPut(e.folder.ifEmpty { "بدون مادة" }) { ArrayList() }.add(e.name to m)
+            byFolder.getOrPut(e.folder.ifEmpty { L("بدون مادة", "No subject") }) { ArrayList() }.add(e.name to m)
         }
         byFolder.map { (f, docs) ->
             val daySet = HashSet<String>()
@@ -137,10 +137,10 @@ fun StatsDialog(onDismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(22.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "إحصاءات الدراسة", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                        L("إحصاءات الدراسة", "Study stats"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                         fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق") }
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(14.dp))
 
@@ -150,27 +150,30 @@ fun StatsDialog(onDismiss: () -> Unit) {
                         GoalRing(96.dp, 9.dp)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(formatReading(todayMs), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
-                            Text("اليوم", fontSize = 11.sp, color = Palette.TextSecondary)
+                            Text(L("اليوم", "today"), fontSize = 11.sp, color = Palette.TextSecondary)
                         }
                     }
                     Spacer(Modifier.width(20.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            if (todayMs >= goalMs) "حققت هدف اليوم" else "باقي ${formatReading(goalMs - todayMs)} لهدف اليوم",
+                            if (todayMs >= goalMs) L("حققت هدف اليوم", "Today’s goal reached") else L("باقي ${formatReading(goalMs - todayMs)} لهدف اليوم", "${formatReading(goalMs - todayMs)} left for today’s goal"),
                             fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
                         )
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("هدفك اليومي: ${formatReading(goalMs)}", fontSize = 14.sp, color = Palette.TextPrimary)
+                            Text(L("هدفك اليومي: ${formatReading(goalMs)}", "Daily goal: ${formatReading(goalMs)}"), fontSize = 14.sp, color = Palette.TextPrimary)
                             Spacer(Modifier.width(8.dp))
                             TextButton(onClick = { editGoal = true }) {
-                                Text("تغيير", color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                                Text(L("تغيير", "Change"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                             }
                         }
                         val streak = studyStreak()
                         Text(
-                            if (streak > 0) "سلسلة الدراسة: $streak ${if (streak == 1) "يوم" else "أيام"} متتالية"
-                            else "ابدأ سلسلة دراسة اليوم",
+                            if (streak > 0) L(
+                                "سلسلة الدراسة: $streak ${if (streak == 1) "يوم" else "أيام"} متتالية",
+                                "Study streak: $streak ${if (streak == 1) "day" else "days"} in a row"
+                            )
+                            else L("ابدأ سلسلة دراسة اليوم", "Start a study streak today"),
                             fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold
                         )
                     }
@@ -179,37 +182,37 @@ fun StatsDialog(onDismiss: () -> Unit) {
                 // الشهر
                 Spacer(Modifier.height(22.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { month = month.minusMonths(1) }) { PhIcon(R.drawable.ph_caret_down, Palette.Navy, 20.dp, "الشهر السابق", Modifier.graphicsLayer { rotationZ = 90f }) }
+                    IconButton(onClick = { month = month.minusMonths(1) }) { PhIcon(R.drawable.ph_caret_down, Palette.Navy, 20.dp, L("الشهر السابق", "Previous month"), Modifier.graphicsLayer { rotationZ = 90f }) }
                     Text(
-                        month.month.getDisplayName(TextStyle.FULL, Locale("ar")) + " " + month.year,
+                        month.month.getDisplayName(TextStyle.FULL, if (I18n.english) Locale.ENGLISH else Locale("ar")) + " " + month.year,
                         fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
                         modifier = Modifier.weight(1f), textAlign = TextAlign.Center
                     )
                     IconButton(
                         enabled = month.isBefore(today.withDayOfMonth(1)),
                         onClick = { month = month.plusMonths(1) }
-                    ) { PhIcon(R.drawable.ph_caret_down, Palette.Navy, 20.dp, "الشهر التالي", Modifier.graphicsLayer { rotationZ = -90f }) }
+                    ) { PhIcon(R.drawable.ph_caret_down, Palette.Navy, 20.dp, L("الشهر التالي", "Next month"), Modifier.graphicsLayer { rotationZ = -90f }) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatTile("المجموع", formatReading(monthTotal), Modifier.weight(1f))
-                    StatTile("أيام الدراسة", "$studied", Modifier.weight(1f))
-                    StatTile("حققت الهدف", "$goalDays يوم", Modifier.weight(1f))
-                    StatTile("متوسط يوم الدراسة", if (studied > 0) formatReading(monthTotal / studied) else "—", Modifier.weight(1f))
+                    StatTile(L("المجموع", "Total"), formatReading(monthTotal), Modifier.weight(1f))
+                    StatTile(L("أيام الدراسة", "Study days"), "$studied", Modifier.weight(1f))
+                    StatTile(L("حققت الهدف", "Goal reached"), L("$goalDays يوم", "$goalDays days"), Modifier.weight(1f))
+                    StatTile(L("متوسط يوم الدراسة", "Avg study day"), if (studied > 0) formatReading(monthTotal / studied) else "—", Modifier.weight(1f))
                 }
                 if (pomos > 0) {
                     Spacer(Modifier.height(6.dp))
-                    Text("جلسات تركيز هذا الشهر: $pomos", fontSize = 13.sp, color = Palette.Navy)
+                    Text(L("جلسات تركيز هذا الشهر: $pomos", "Focus sessions this month: $pomos"), fontSize = 13.sp, color = Palette.Navy)
                 }
                 Spacer(Modifier.height(12.dp))
                 MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
 
                 // تقرير كل مادة
                 Spacer(Modifier.height(22.dp))
-                Text("تقرير المواد لهذا الشهر", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                Text(L("تقرير المواد لهذا الشهر", "Subjects report this month"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 if (reports.isEmpty()) {
-                    Text("لا توجد قراءة مسجلة في هذا الشهر.", fontSize = 13.sp, color = Palette.TextSecondary)
+                    Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 13.sp, color = Palette.TextSecondary)
                 }
                 val maxTotal = reports.maxOfOrNull { it.total }?.coerceAtLeast(1L) ?: 1L
                 reports.forEach { r ->
@@ -232,8 +235,11 @@ fun StatsDialog(onDismiss: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         val share = if (monthTotal > 0) (r.total * 100 / monthTotal) else 0
                         Text(
-                            "$share% من وقت الشهر، درستها في ${r.days} ${if (r.days == 1) "يوم" else "أيام"}" +
-                                (if (r.days > 0) "، بمتوسط ${formatReading(r.total / r.days)} لليوم" else ""),
+                            L(
+                                "$share% من وقت الشهر، درستها في ${r.days} ${if (r.days == 1) "يوم" else "أيام"}",
+                                "$share% of the month, studied on ${r.days} ${if (r.days == 1) "day" else "days"}"
+                            ) +
+                                (if (r.days > 0) L("، بمتوسط ${formatReading(r.total / r.days)} لليوم", ", avg ${formatReading(r.total / r.days)} per day") else ""),
                             fontSize = 12.sp, color = Palette.TextSecondary
                         )
                         r.docs.take(5).forEach { (name, ms) ->
@@ -259,31 +265,31 @@ private fun GoalDialog(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Uni
     val total = (hours.toIntOrNull() ?: 0) * 60 + (minutes.toIntOrNull() ?: 0)
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("الهدف اليومي") },
+        title = { Text(L("الهدف اليومي", "Daily goal")) },
         text = {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.OutlinedTextField(
                         value = hours, onValueChange = { v -> hours = v.filter { it.isDigit() }.take(2) },
-                        label = { Text("ساعات") }, singleLine = true, modifier = Modifier.weight(1f),
+                        label = { Text(L("ساعات", "Hours")) }, singleLine = true, modifier = Modifier.weight(1f),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
                     )
                     Spacer(Modifier.width(10.dp))
                     androidx.compose.material3.OutlinedTextField(
                         value = minutes, onValueChange = { v -> minutes = v.filter { it.isDigit() }.take(2) },
-                        label = { Text("دقائق") }, singleLine = true, modifier = Modifier.weight(1f),
+                        label = { Text(L("دقائق", "Minutes")) }, singleLine = true, modifier = Modifier.weight(1f),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (total in 5..1440) "الهدف: ${formatReading(total * 60_000L)} يوميًا" else "اختر بين 5 دقائق و24 ساعة",
+                    if (total in 5..1440) L("الهدف: ${formatReading(total * 60_000L)} يوميًا", "Goal: ${formatReading(total * 60_000L)} a day") else L("اختر بين 5 دقائق و24 ساعة", "Choose between 5 minutes and 24 hours"),
                     fontSize = 13.sp, color = Palette.TextSecondary
                 )
             }
         },
-        confirmButton = { TextButton(enabled = total in 5..1440, onClick = { onSave(total) }) { Text("حفظ") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        confirmButton = { TextButton(enabled = total in 5..1440, onClick = { onSave(total) }) { Text(L("حفظ", "Save")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 

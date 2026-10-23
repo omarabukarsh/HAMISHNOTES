@@ -110,7 +110,7 @@ fun SummaryDrawer(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "ملخصات", fontFamily = Fonts.Display, fontSize = 22.sp, lineHeight = 28.sp,
+                        L("ملخصات", "Summaries"), fontFamily = Fonts.Display, fontSize = 22.sp, lineHeight = 28.sp,
                         fontWeight = FontWeight.Bold, color = Palette.Navy
                     )
                     Text(
@@ -125,11 +125,11 @@ fun SummaryDrawer(
                     ) {
                         PhIcon(R.drawable.ph_books, Palette.GoldDeep, 16.dp)
                         Spacer(Modifier.width(6.dp))
-                        Text("بطاقات ${cards.size}", fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                        Text(L("بطاقات ${cards.size}", "Cards ${cards.size}"), fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                     }
                 }
                 IconButton(onClick = { s.summaryOpen = false }) {
-                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق الملخصات")
+                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق الملخصات", "Close summaries"))
                 }
             }
             Row(
@@ -137,12 +137,12 @@ fun SummaryDrawer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ChoiceChip("مرتّب", tidy) { if (!tidy) c.toggleSummaryTidy() }
-                ChoiceChip("كما التُقط", !tidy) { if (tidy) c.toggleSummaryTidy() }
+                ChoiceChip(L("مرتّب", "Tidy"), tidy) { if (!tidy) c.toggleSummaryTidy() }
+                ChoiceChip(L("كما التُقط", "As captured"), !tidy) { if (tidy) c.toggleSummaryTidy() }
                 Spacer(Modifier.weight(1f))
                 TextButton(enabled = blocks.isNotEmpty(), onClick = {
                     copy(context, Summary.plainText(s.title, blocks))
-                }) { Text("نسخ الكل", fontSize = 13.sp) }
+                }) { Text(L("نسخ الكل", "Copy all"), fontSize = 13.sp) }
                 TextButton(enabled = blocks.isNotEmpty(), onClick = onExport) {
                     Text("PDF", fontSize = 13.sp)
                 }
@@ -154,7 +154,7 @@ fun SummaryDrawer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    ChoiceChip("كل الألوان", colorFilter == null) { colorFilter = null }
+                    ChoiceChip(L("كل الألوان", "All colors"), colorFilter == null) { colorFilter = null }
                     usedColors.forEach { col ->
                         val argb = Summary.argbOf(col)
                         val sel = colorFilter == argb
@@ -172,7 +172,7 @@ fun SummaryDrawer(
                             Text(c.labelOf(col), fontSize = 13.sp, color = if (sel) Color.White else Palette.TextPrimary)
                         }
                     }
-                    ChoiceChip("تجميع حسب اللون", byColor) { c.toggleSummaryByColor() }
+                    ChoiceChip(L("تجميع حسب اللون", "Group by color"), byColor) { c.toggleSummaryByColor() }
                 }
             }
             if (!edits.isEmpty()) {
@@ -181,11 +181,11 @@ fun SummaryDrawer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "فيه تعديلات يدوية على الترتيب التلقائي",
+                        L("فيه تعديلات يدوية على الترتيب التلقائي", "Has manual edits to the automatic layout"),
                         fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = { s.resetSummaryEdits() }) {
-                        Text("استعادة التلقائي", fontSize = 12.sp, color = Palette.GoldDeep)
+                        Text(L("استعادة التلقائي", "Restore automatic"), fontSize = 12.sp, color = Palette.GoldDeep)
                     }
                 }
             }
@@ -195,10 +195,10 @@ fun SummaryDrawer(
                     val target = tableTarget
                     Text(
                         when {
-                            target != null && selected.isEmpty() -> "اختر النصوص التي تريد ضمها إلى الجدول"
-                            target != null -> "اخترت ${selected.size}، وستُضاف كصفوف في آخر الجدول"
-                            selected.isEmpty() -> "اختر النصوص بالترتيب الذي تريده في الجدول"
-                            else -> "اخترت ${selected.size}. النصوص تملأ الصفوف بالترتيب حسب عدد الأعمدة"
+                            target != null && selected.isEmpty() -> L("اختر النصوص التي تريد ضمها إلى الجدول", "Choose the texts to add to the table")
+                            target != null -> L("اخترت ${selected.size}، وستُضاف كصفوف في آخر الجدول", "${selected.size} selected; they will be added as rows at the end of the table")
+                            selected.isEmpty() -> L("اختر النصوص بالترتيب الذي تريده في الجدول", "Choose texts in the order you want in the table")
+                            else -> L("اخترت ${selected.size}. النصوص تملأ الصفوف بالترتيب حسب عدد الأعمدة", "${selected.size} selected. Texts fill the rows in order by column count")
                         },
                         fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Bold
                     )
@@ -208,7 +208,7 @@ fun SummaryDrawer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("الأعمدة:", fontSize = 13.sp, color = Palette.TextSecondary)
+                            Text(L("الأعمدة:", "Columns:"), fontSize = 13.sp, color = Palette.TextSecondary)
                             listOf(1, 2, 3, 4).forEach { n ->
                                 ChoiceChip("$n", tableCols == n) { tableCols = n }
                             }
@@ -221,7 +221,7 @@ fun SummaryDrawer(
                                 s.makeTable(selected, cols = tableCols)
                                 selecting = false
                                 selected = emptyList()
-                            }) { Text("إنشاء الجدول", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                            }) { Text(L("إنشاء الجدول", "Create table"), fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                         } else {
                             TextButton(enabled = selected.isNotEmpty(), onClick = {
                                 val newRows = selected.mapNotNull { k -> blocks.firstOrNull { it.key == k } }.flatMap { b ->
@@ -235,14 +235,14 @@ fun SummaryDrawer(
                                 selecting = false
                                 selected = emptyList()
                                 tableTarget = null
-                            }) { Text("إضافة إلى الجدول", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                            }) { Text(L("إضافة إلى الجدول", "Add to table"), fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                         }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = {
                             selecting = false
                             selected = emptyList()
                             tableTarget = null
-                        }) { Text("إلغاء", fontSize = 13.sp, color = Palette.TextSecondary) }
+                        }) { Text(L("إلغاء", "Cancel"), fontSize = 13.sp, color = Palette.TextSecondary) }
                     }
                 }
             }
@@ -360,7 +360,7 @@ fun SummaryDrawer(
 private fun copy(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-    AppController.messages.tryEmit("تم النسخ")
+    AppController.messages.tryEmit(L("تم النسخ", "Copied"))
 }
 
 /** نص الفقرة مع إبراز الأجزاء المهمة بخط عريض وتظليل ذهبي فاتح. */
@@ -411,7 +411,7 @@ private fun BlockView(
                 )
             }
             if (selecting && !selectable) {
-                Text("الجدول الذي تضم إليه", fontSize = 11.sp, color = Palette.GoldDeep)
+                Text(L("الجدول الذي تضم إليه", "Table you are adding to"), fontSize = 11.sp, color = Palette.GoldDeep)
             }
             when (b) {
                 is SHeading -> Text(
@@ -429,39 +429,39 @@ private fun BlockView(
         // تبويب صغير يظهر عند الضغط على الجزء
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             when (b) {
-                is SHeading -> MenuRow("نص عادي", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
-                is SPara -> MenuRow("اجعله عنوانًا", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "h") }
+                is SHeading -> MenuRow(L("نص عادي", "Plain text"), R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
+                is SPara -> MenuRow(L("اجعله عنوانًا", "Make heading"), R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "h") }
                 is STable -> if (!userTable) {
-                    MenuRow("تحويل إلى نص", R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
+                    MenuRow(L("تحويل إلى نص", "Convert to text"), R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
                 }
             }
             if (b is STable) {
-                MenuRow("تحرير الجدول", R.drawable.ph_sliders) { menu = false; onEditTable(b) }
-                MenuRow("ضم نصوص إلى هذا الجدول", R.drawable.ph_plus) { menu = false; onAddToTable() }
+                MenuRow(L("تحرير الجدول", "Edit table"), R.drawable.ph_sliders) { menu = false; onEditTable(b) }
+                MenuRow(L("ضم نصوص إلى هذا الجدول", "Add texts to this table"), R.drawable.ph_plus) { menu = false; onAddToTable() }
             }
             if (userTable) {
-                MenuRow("فك الجدول", R.drawable.ph_close) { menu = false; s.removeTable(b.key) }
+                MenuRow(L("فك الجدول", "Unmake table"), R.drawable.ph_close) { menu = false; s.removeTable(b.key) }
             } else if (b !is STable) {
-                MenuRow("ضعه في جدول…", R.drawable.ph_pages) { menu = false; onStartTable() }
+                MenuRow(L("ضعه في جدول…", "Put in a table…"), R.drawable.ph_pages) { menu = false; onStartTable() }
             }
-            if (pos > 0) MenuRow("تحريك لأعلى", R.drawable.ph_caret_up) { menu = false; s.moveBlock(shownKeys, b.key, -1) }
+            if (pos > 0) MenuRow(L("تحريك لأعلى", "Move up"), R.drawable.ph_caret_up) { menu = false; s.moveBlock(shownKeys, b.key, -1) }
             if (pos >= 0 && pos < shownKeys.lastIndex) {
-                MenuRow("تحريك لأسفل", R.drawable.ph_caret_down) { menu = false; s.moveBlock(shownKeys, b.key, 1) }
+                MenuRow(L("تحريك لأسفل", "Move down"), R.drawable.ph_caret_down) { menu = false; s.moveBlock(shownKeys, b.key, 1) }
             }
             if (overridden) {
-                MenuRow("كما اكتشفه البرنامج", R.drawable.ph_recent) { menu = false; s.resetBlock(b.key) }
+                MenuRow(L("كما اكتشفه البرنامج", "As detected"), R.drawable.ph_recent) { menu = false; s.resetBlock(b.key) }
             }
             Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Palette.Divider))
             if (first != null) {
-                MenuRow("انتقال إلى الموضع", R.drawable.ph_search) { menu = false; onJump(first) }
-                MenuRow("تعديل النص", R.drawable.ph_note) { menu = false; onEdit(first) }
+                MenuRow(L("انتقال إلى الموضع", "Go to location"), R.drawable.ph_search) { menu = false; onJump(first) }
+                MenuRow(L("تعديل النص", "Edit text"), R.drawable.ph_note) { menu = false; onEdit(first) }
             }
-            MenuRow("اجعله بطاقة", R.drawable.ph_cards) { menu = false; onMakeCard(b) }
-            MenuRow("نسخ", R.drawable.ph_copy) {
+            MenuRow(L("اجعله بطاقة", "Make it a card"), R.drawable.ph_cards) { menu = false; onMakeCard(b) }
+            MenuRow(L("نسخ", "Copy"), R.drawable.ph_copy) {
                 menu = false
                 copy(context, Summary.plainText("", listOf(b)).trim())
             }
-            MenuRow("حذف التمييز", R.drawable.ph_trash, Palette.Danger) {
+            MenuRow(L("حذف التمييز", "Delete highlight"), R.drawable.ph_trash, Palette.Danger) {
                 menu = false
                 b.marks.forEach { s.deleteMark(it.id) }
             }
@@ -518,13 +518,13 @@ private fun EmptySummary() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            "لا توجد ملخصات بعد",
+            L("لا توجد ملخصات بعد", "No summaries yet"),
             fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "اختر الهايلايتر، واضغط عليه مرة ثانية وفعّل «التقاط النص»، ثم مرّر على أي سطر. " +
-                "ظلّل نفس النص مرتين ليظهر مهمًا بخط عريض.\nيعمل مع العربية والإنجليزية في ملفات PDF الرقمية.",
+            L("اختر الهايلايتر، واضغط عليه مرة ثانية وفعّل «التقاط النص»، ثم مرّر على أي سطر. ", "Pick the highlighter, tap it again and turn on “Text snap”, then run it over any line. ") +
+                L("ظلّل نفس النص مرتين ليظهر مهمًا بخط عريض.\nيعمل مع العربية والإنجليزية في ملفات PDF الرقمية.", "Highlight the same text twice to make it important in bold.\nWorks with Arabic and English in digital PDFs."),
             fontSize = 13.sp, color = Palette.TextSecondary, lineHeight = 21.sp
         )
     }
@@ -536,7 +536,7 @@ private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss:
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("تعديل النص") },
+        title = { Text(L("تعديل النص", "Edit text")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -545,7 +545,7 @@ private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss:
                     modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)
                 )
                 Text(
-                    "سطر يبدأ بـ # يصبح عنوانًا. خلايا الجدول يفصلها |. سطر فارغ يبدأ فقرة جديدة.",
+                    L("سطر يبدأ بـ # يصبح عنوانًا. خلايا الجدول يفصلها |. سطر فارغ يبدأ فقرة جديدة.", "A line starting with # becomes a heading. Table cells are separated by |. A blank line starts a new paragraph."),
                     fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
                 )
                 Box(
@@ -560,13 +560,13 @@ private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss:
                         }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text("ترتيب النص", fontSize = 14.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                    Text(L("ترتيب النص", "Tidy text"), fontSize = 14.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isNotBlank()) onSave(text.trim()) }) { Text("حفظ") }
+            TextButton(onClick = { if (text.isNotBlank()) onSave(text.trim()) }) { Text(L("حفظ", "Save")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
 }

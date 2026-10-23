@@ -73,13 +73,13 @@ fun PaperColorRow(selected: Int, onSelect: (Int) -> Unit, onCustom: () -> Unit) 
 /** وقت القراءة بصيغة مختصرة: «45 د»، «2 س 15 د». */
 fun formatReading(ms: Long): String {
     val m = ms / 60_000L
-    if (m < 1L) return "أقل من دقيقة"
+    if (m < 1L) return L("أقل من دقيقة", "under a minute")
     val h = m / 60L
     val mm = m % 60L
     return when {
-        h == 0L -> "$mm د"
-        mm == 0L -> "$h س"
-        else -> "$h س $mm د"
+        h == 0L -> L("$mm د", "$mm min")
+        mm == 0L -> L("$h س", "$h h")
+        else -> L("$h س $mm د", "$h h $mm min")
     }
 }
 

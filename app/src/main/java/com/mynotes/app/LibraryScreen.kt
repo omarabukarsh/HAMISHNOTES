@@ -147,9 +147,9 @@ fun LibraryScreen() {
                         c.library.isEmpty() -> EmptyLibrary(startImport) { showNewNote = true }
                         docs.isEmpty() -> NoResults(
                             if (c.libraryFilter == LibraryFilter.FAVORITES && query.isEmpty())
-                                "لا توجد مستندات مفضلة بعد. اختر «إضافة إلى المفضلة» من قائمة أي مستند."
+                                L("لا توجد مستندات مفضلة بعد. اختر «إضافة إلى المفضلة» من قائمة أي مستند.", "No favorites yet. Choose “Add to favorites” from any document’s menu.")
                             else
-                                "لا يوجد مستند باسم «$query»"
+                                L("لا يوجد مستند باسم «$query»", "No document named “$query”")
                         )
                         else -> LazyVerticalGrid(
                             columns = GridCells.Adaptive(if (wide) 172.dp else 148.dp),
@@ -186,7 +186,7 @@ fun LibraryScreen() {
         var name by remember(rt.id) { mutableStateOf(rt.name) }
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("إعادة تسمية المستند") },
+            title = { Text(L("إعادة تسمية المستند", "Rename document")) },
             text = {
                 OutlinedTextField(
                     value = name,
@@ -198,10 +198,10 @@ fun LibraryScreen() {
                 TextButton(onClick = {
                     c.rename(rt.id, name)
                     renameTarget = null
-                }) { Text("حفظ") }
+                }) { Text(L("حفظ", "Save")) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("إلغاء") }
+                TextButton(onClick = { renameTarget = null }) { Text(L("إلغاء", "Cancel")) }
             }
         )
     }
@@ -225,16 +225,16 @@ fun LibraryScreen() {
     if (dt != null) {
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("حذف المستند؟") },
-            text = { Text("سيتم حذف «${dt.name}» وكل الكتابة عليه نهائيًا، ولا يمكن التراجع.") },
+            title = { Text(L("حذف المستند؟", "Delete document?")) },
+            text = { Text(L("سيتم حذف «${dt.name}» وكل الكتابة عليه نهائيًا، ولا يمكن التراجع.", "“${dt.name}” and everything written on it will be deleted permanently. This cannot be undone.")) },
             confirmButton = {
                 TextButton(onClick = {
                     c.delete(dt)
                     deleteTarget = null
-                }) { Text("حذف", color = Palette.Danger) }
+                }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("إلغاء") }
+                TextButton(onClick = { deleteTarget = null }) { Text(L("إلغاء", "Cancel")) }
             }
         )
     }
@@ -247,31 +247,31 @@ private fun sortDocs(list: List<DocEntry>, mode: SortMode): List<DocEntry> = whe
 }
 
 private fun filterTitle(f: LibraryFilter): String = when (f) {
-    LibraryFilter.RECENT -> "الأحدث"
-    LibraryFilter.ALL -> "كل المستندات"
-    LibraryFilter.FAVORITES -> "المفضلة"
+    LibraryFilter.RECENT -> L("الأحدث", "Recent")
+    LibraryFilter.ALL -> L("كل المستندات", "All documents")
+    LibraryFilter.FAVORITES -> L("المفضلة", "Favorites")
 }
 
 private fun sortLabel(m: SortMode): String = when (m) {
-    SortMode.LAST_OPENED -> "آخر فتح"
-    SortMode.NAME -> "الاسم"
-    SortMode.DATE_ADDED -> "تاريخ الإضافة"
+    SortMode.LAST_OPENED -> L("آخر فتح", "Last opened")
+    SortMode.NAME -> L("الاسم", "Name")
+    SortMode.DATE_ADDED -> L("تاريخ الإضافة", "Date added")
 }
 
 /** صيغة العدد العربية: مستند واحد، مستندان، 3 مستندات، 11 مستندًا. */
 private fun docsCount(n: Int): String = when {
-    n == 0 -> "لا مستندات"
-    n == 1 -> "مستند واحد"
-    n == 2 -> "مستندان"
-    n % 100 in 3..10 -> "$n مستندات"
-    else -> "$n مستندًا"
+    n == 0 -> L("لا مستندات", "No documents")
+    n == 1 -> L("مستند واحد", "1 document")
+    n == 2 -> L("مستندان", "2 documents")
+    n % 100 in 3..10 -> L("$n مستندات", "$n documents")
+    else -> L("$n مستندًا", "$n documents")
 }
 
 private fun pagesCount(n: Int): String = when {
-    n == 1 -> "صفحة واحدة"
-    n == 2 -> "صفحتان"
-    n % 100 in 3..10 -> "$n صفحات"
-    else -> "$n صفحة"
+    n == 1 -> L("صفحة واحدة", "1 page")
+    n == 2 -> L("صفحتان", "2 pages")
+    n % 100 in 3..10 -> L("$n صفحات", "$n pages")
+    else -> L("$n صفحة", "$n pages")
 }
 
 // ---------------------------------------------------------------- الكعب (الشريط الجانبي)
@@ -315,7 +315,7 @@ private fun Spine() {
                     "MyNotes", color = Palette.OnInk, fontFamily = Fonts.Display,
                     fontWeight = FontWeight.Bold, fontSize = 23.sp, lineHeight = 26.sp
                 )
-                Text("مكتبة الدراسة", color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 16.sp)
+                Text(L("مكتبة الدراسة", "Study library"), color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
         Spacer(Modifier.height(22.dp))
@@ -323,19 +323,19 @@ private fun Spine() {
         Spacer(Modifier.height(16.dp))
 
         val noFolder = c.libraryFolder == null
-        SpineItem("الأحدث", R.drawable.ph_recent, null, noFolder && c.libraryFilter == LibraryFilter.RECENT) {
+        SpineItem(L("الأحدث", "Recent"), R.drawable.ph_recent, null, noFolder && c.libraryFilter == LibraryFilter.RECENT) {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.RECENT
         }
-        SpineItem("كل المستندات", R.drawable.ph_books, c.library.size, noFolder && c.libraryFilter == LibraryFilter.ALL) {
+        SpineItem(L("كل المستندات", "All documents"), R.drawable.ph_books, c.library.size, noFolder && c.libraryFilter == LibraryFilter.ALL) {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.ALL
         }
-        SpineItem("المفضلة", R.drawable.ph_star, favCount, noFolder && c.libraryFilter == LibraryFilter.FAVORITES) {
+        SpineItem(L("المفضلة", "Favorites"), R.drawable.ph_star, favCount, noFolder && c.libraryFilter == LibraryFilter.FAVORITES) {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.FAVORITES
         }
-        SpineItem("الإعدادات", R.drawable.ph_sliders, null, false) { c.settingsOpen = true }
+        SpineItem(L("الإعدادات", "Settings"), R.drawable.ph_sliders, null, false) { c.settingsOpen = true }
 
         // المواد
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -346,7 +346,7 @@ private fun Spine() {
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.InkLine))
         Spacer(Modifier.height(10.dp))
-        Text(docsCount(c.library.size) + "، " + pagesCount(pages), color = Palette.OnInkMuted, fontSize = 12.sp)
+        Text(docsCount(c.library.size) + L("، ", ", ") + pagesCount(pages), color = Palette.OnInkMuted, fontSize = 12.sp)
         Spacer(Modifier.height(10.dp))
         ThemeSwitch()
     }
@@ -406,7 +406,7 @@ private fun TextSearchButton() {
     ) {
         PhIcon(R.drawable.ph_search_all, Palette.Navy, 19.dp)
         Spacer(Modifier.width(6.dp))
-        Text("داخل النصوص", fontSize = 13.sp, color = Palette.Navy, maxLines = 1, softWrap = false)
+        Text(L("داخل النصوص", "In text"), fontSize = 13.sp, color = Palette.Navy, maxLines = 1, softWrap = false)
     }
     if (open) LibrarySearchDialog(onDismiss = { open = false })
 }
@@ -437,26 +437,26 @@ private fun LibrarySearchDialog(onDismiss: () -> Unit) {
             Column(Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "بحث داخل نصوص المكتبة", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                        L("بحث داخل نصوص المكتبة", "Search inside library text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                         fontSize = 20.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, "إغلاق") }
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = q, onValueChange = { q = it }, singleLine = true,
-                        placeholder = { Text("كلمة أو جملة، عربي أو إنجليزي") },
+                        placeholder = { Text(L("كلمة أو جملة، عربي أو إنجليزي", "A word or phrase, Arabic or English")) },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { run() }),
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = { run() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)) { Text("بحث") }
+                    Button(onClick = { run() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)) { Text(L("بحث", "Search")) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "يشمل الصفحات التي قُرئ نصها. المستندات المستوردة تُقرأ تلقائيًا في الخلفية.",
+                    L("يشمل الصفحات التي قُرئ نصها. المستندات المستوردة تُقرأ تلقائيًا في الخلفية.", "Covers pages whose text has been read. Imported documents are read automatically in the background."),
                     fontSize = 12.sp, color = Palette.TextSecondary
                 )
                 Spacer(Modifier.height(10.dp))
@@ -464,9 +464,9 @@ private fun LibrarySearchDialog(onDismiss: () -> Unit) {
                 when {
                     busy -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = Palette.Gold)
                     r == null -> {}
-                    r.isEmpty() -> Text("لا نتائج", color = Palette.TextSecondary)
+                    r.isEmpty() -> Text(L("لا نتائج", "No results"), color = Palette.TextSecondary)
                     else -> {
-                        Text("${r.size} نتيجة", fontSize = 13.sp, color = Palette.TextSecondary)
+                        Text(L("${r.size} نتيجة", "${r.size} results"), fontSize = 13.sp, color = Palette.TextSecondary)
                         androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth()) {
                             items(r.size) { i ->
                                 val h = r[i]
@@ -479,7 +479,7 @@ private fun LibrarySearchDialog(onDismiss: () -> Unit) {
                                         .padding(horizontal = 10.dp, vertical = 8.dp)
                                 ) {
                                     Text(
-                                        "${h.docName} — صفحة ${h.page + 1}", fontSize = 13.sp,
+                                        L("${h.docName} — صفحة ${h.page + 1}", "${h.docName} — page ${h.page + 1}"), fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold, color = Palette.Navy, maxLines = 1
                                     )
                                     Text(
@@ -511,16 +511,16 @@ private fun FolderSection() {
     }
     Spacer(Modifier.height(16.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("المواد", color = Palette.OnInkMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(L("المواد", "Subjects"), color = Palette.OnInkMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
         Text(
-            "+ مادة", color = Palette.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            L("+ مادة", "+ Subject"), color = Palette.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { adding = true }
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
     if (c.folders.isEmpty()) {
         Text(
-            "رتّب مستنداتك حسب المادة: أضف مادة، ثم «نقل إلى مادة» من قائمة أي مستند.",
+            L("رتّب مستنداتك حسب المادة: أضف مادة، ثم «نقل إلى مادة» من قائمة أي مستند.", "Organize documents by subject: add a subject, then “Move to subject” from any document’s menu."),
             color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 18.sp,
             modifier = Modifier.padding(top = 4.dp, start = 4.dp)
         )
@@ -536,25 +536,26 @@ private fun FolderSection() {
                 c.libraryFilter = LibraryFilter.ALL
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("حفظ ملخص المادة كاملة (PDF)") }, onClick = {
+                DropdownMenuItem(text = { Text(L("حفظ ملخص المادة كاملة (PDF)", "Save the whole subject summary (PDF)")) }, onClick = {
                     menu = false
                     exportFolder = f
-                    saver.launch("ملخص مادة ${f.replace(Regex("[\\\\/:*?\"<>|]"), "-")}.pdf")
+                    val safeF = f.replace(Regex("[\\\\/:*?\"<>|]"), "-")
+                    saver.launch(L("ملخص مادة $safeF.pdf", "Subject summary $safeF.pdf"))
                 })
-                DropdownMenuItem(text = { Text("إعادة تسمية") }, onClick = { menu = false; renaming = f })
+                DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; renaming = f })
                 DropdownMenuItem(
-                    text = { Text("حذف المادة (تبقى المستندات)", color = Palette.Danger) },
+                    text = { Text(L("حذف المادة (تبقى المستندات)", "Delete subject (documents stay)"), color = Palette.Danger) },
                     onClick = { menu = false; c.deleteFolder(f) }
                 )
             }
         }
     }
     if (adding) {
-        NameDialog("مادة جديدة", "", onSave = { c.addFolder(it); adding = false }, onDismiss = { adding = false })
+        NameDialog(L("مادة جديدة", "New subject"), "", onSave = { c.addFolder(it); adding = false }, onDismiss = { adding = false })
     }
     val r = renaming
     if (r != null) {
-        NameDialog("إعادة تسمية المادة", r, onSave = { c.renameFolder(r, it); renaming = null }, onDismiss = { renaming = null })
+        NameDialog(L("إعادة تسمية المادة", "Rename subject"), r, onSave = { c.renameFolder(r, it); renaming = null }, onDismiss = { renaming = null })
     }
 }
 
@@ -564,9 +565,9 @@ private fun NameDialog(title: String, initial: String, onSave: (String) -> Unit,
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("الاسم") }) },
-        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("حفظ") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(L("الاسم", "Name")) }) },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text(L("حفظ", "Save")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -577,30 +578,30 @@ private fun MoveToFolderDialog(entry: DocEntry, onDismiss: () -> Unit) {
     var newName by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("نقل «${entry.name}» إلى مادة") },
+        title = { Text(L("نقل «${entry.name}» إلى مادة", "Move “${entry.name}” to a subject")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ChoiceChip("بدون مادة", entry.folder.isEmpty()) { c.moveToFolder(entry.id, ""); onDismiss() }
+                    ChoiceChip(L("بدون مادة", "No subject"), entry.folder.isEmpty()) { c.moveToFolder(entry.id, ""); onDismiss() }
                     c.folders.toList().forEach { f ->
                         ChoiceChip(f, entry.folder == f) { c.moveToFolder(entry.id, f); onDismiss() }
                     }
                 }
                 OutlinedTextField(
                     value = newName, onValueChange = { newName = it }, singleLine = true,
-                    label = { Text("أو اكتب اسم مادة جديدة") }
+                    label = { Text(L("أو اكتب اسم مادة جديدة", "or type a new subject name")) }
                 )
             }
         },
         confirmButton = {
             TextButton(enabled = newName.isNotBlank(), onClick = { c.moveToFolder(entry.id, newName.trim()); onDismiss() }) {
-                Text("نقل")
+                Text(L("نقل", "Move"))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -619,11 +620,14 @@ private fun StudyCard() {
         GoalRing(34.dp, 4.dp, Palette.InkLine)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("اليوم ${formatReading(today)}", color = Palette.OnInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(L("اليوم ${formatReading(today)}", "Today ${formatReading(today)}"), color = Palette.OnInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             val streak = studyStreak()
             Text(
-                if (streak > 0) "سلسلة $streak ${if (streak == 1) "يوم" else "أيام"}، الهدف ${formatReading(c.goalMinutes * 60_000L)}"
-                else "الهدف ${formatReading(c.goalMinutes * 60_000L)}",
+                if (streak > 0) L(
+                    "سلسلة $streak ${if (streak == 1) "يوم" else "أيام"}، الهدف ${formatReading(c.goalMinutes * 60_000L)}",
+                    "Streak $streak ${if (streak == 1) "day" else "days"}, goal ${formatReading(c.goalMinutes * 60_000L)}"
+                )
+                else L("الهدف ${formatReading(c.goalMinutes * 60_000L)}", "Goal ${formatReading(c.goalMinutes * 60_000L)}"),
                 color = Palette.OnInkMuted, fontSize = 11.sp
             )
         }
@@ -636,12 +640,12 @@ private fun StudyCard() {
 @Composable
 private fun ThemeSwitch() {
     val c = AppController
-    Text("المظهر", color = Palette.OnInkMuted, fontSize = 12.sp)
+    Text(L("المظهر", "Appearance"), color = Palette.OnInkMuted, fontSize = 12.sp)
     Spacer(Modifier.height(6.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
-            AppTheme.NAVY to "كحلي",
-            AppTheme.LIGHT to "فاتح"
+            AppTheme.NAVY to L("كحلي", "Navy"),
+            AppTheme.LIGHT to L("فاتح", "Light")
         ).forEach { (t, label) ->
             val sel = ThemeState.theme == t
             val shape = RoundedCornerShape(10.dp)
@@ -744,10 +748,10 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 IconButton(onClick = {
                     c.setTheme(if (ThemeState.light) AppTheme.NAVY else AppTheme.LIGHT)
                 }) {
-                    PhIcon(R.drawable.ph_palette, Palette.TextSecondary, 21.dp, "تبديل المظهر")
+                    PhIcon(R.drawable.ph_palette, Palette.TextSecondary, 21.dp, L("تبديل المظهر", "Switch theme"))
                 }
                 IconButton(onClick = { c.settingsOpen = true }) {
-                    PhIcon(R.drawable.ph_sliders, Palette.TextSecondary, 21.dp, "الإعدادات")
+                    PhIcon(R.drawable.ph_sliders, Palette.TextSecondary, 21.dp, L("الإعدادات", "Settings"))
                 }
             }
             // الأزرار في سطر مستقل قابل للتمرير حتى لا تُضغط على الشاشات الضيقة
@@ -783,7 +787,7 @@ private fun ImportButton(onClick: () -> Unit) {
     ) {
         PhIcon(R.drawable.ph_plus, Color.White, 18.dp)
         Spacer(Modifier.width(6.dp))
-        Text("استيراد PDF", fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Text(L("استيراد PDF", "Import PDF"), fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 
@@ -798,7 +802,7 @@ private fun NewNoteButton(onClick: () -> Unit) {
     ) {
         PhIcon(R.drawable.ph_note, Palette.GoldDeep, 18.dp)
         Spacer(Modifier.width(6.dp))
-        Text("ملاحظة جديدة", fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Text(L("ملاحظة جديدة", "New note"), fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 
@@ -817,7 +821,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
-                Text("ابحث باسم المستند", color = Palette.TextSecondary, fontSize = 14.sp, maxLines = 1)
+                Text(L("ابحث باسم المستند", "Search by document name"), color = Palette.TextSecondary, fontSize = 14.sp, maxLines = 1)
             }
             BasicTextField(
                 value = value,
@@ -830,7 +834,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
         }
         if (value.isNotEmpty()) {
             IconButton(onClick = { onChange("") }, modifier = Modifier.size(28.dp)) {
-                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 16.dp, "مسح البحث")
+                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 16.dp, L("مسح البحث", "Clear search"))
             }
         }
     }
@@ -847,7 +851,7 @@ private fun SortMenu(sort: SortMode, onSelect: (SortMode) -> Unit) {
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.TextPrimary),
             modifier = Modifier.height(44.dp)
         ) {
-            Text("الترتيب: " + sortLabel(sort), fontSize = 13.sp, maxLines = 1, softWrap = false)
+            Text(L("الترتيب: ", "Sort: ") + sortLabel(sort), fontSize = 13.sp, maxLines = 1, softWrap = false)
             PhIcon(R.drawable.ph_caret_down, Palette.TextSecondary, 16.dp)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -893,7 +897,7 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
         ) { Thumbnail(entry) }
         Spacer(Modifier.width(18.dp))
         Column(Modifier.weight(1f)) {
-            Text("تابع من حيث توقفت", fontSize = 12.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Medium)
+            Text(L("تابع من حيث توقفت", "Continue where you left off"), fontSize = 12.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Medium)
             Text(
                 entry.name, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                 fontSize = if (wide) 24.sp else 20.sp, lineHeight = if (wide) 34.sp else 28.sp,
@@ -912,7 +916,7 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "الصفحة $page من $total", fontSize = 12.sp, color = Palette.TextSecondary
+                    L("الصفحة $page من $total", "Page $page of $total"), fontSize = 12.sp, color = Palette.TextSecondary
                 )
                 if (entry.readMs >= 60_000L) {
                     Spacer(Modifier.width(14.dp))
@@ -926,7 +930,7 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
                 onClick = onOpen,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
-            ) { Text("متابعة القراءة") }
+            ) { Text(L("متابعة القراءة", "Continue reading")) }
         }
     }
 }
@@ -977,7 +981,7 @@ private fun DocCard(
                             .clip(RoundedCornerShape(6.dp)).background(Palette.GoldSoft)
                             .padding(horizontal = 7.dp, vertical = 1.dp)
                     ) {
-                        Text("ملاحظة", color = Palette.GoldDeep, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text(L("ملاحظة", "Note"), color = Palette.GoldDeep, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -1003,9 +1007,9 @@ private fun DocCard(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    pagesCount(entry.pageCount) + "، " + (
-                        if (entry.lastOpened > 0L) "فُتح " + formatRelative(entry.lastOpened)
-                        else "أُضيف " + formatRelative(entry.addedAt)
+                    pagesCount(entry.pageCount) + L("، ", ", ") + (
+                        if (entry.lastOpened > 0L) L("فُتح ", "Opened ") + formatRelative(entry.lastOpened)
+                        else L("أُضيف ", "Added ") + formatRelative(entry.addedAt)
                         ),
                     fontSize = 12.sp, color = Palette.TextSecondary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
@@ -1013,24 +1017,24 @@ private fun DocCard(
             }
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.size(30.dp)) {
-                    PhIcon(R.drawable.ph_more, Palette.TextSecondary, 20.dp, "خيارات المستند")
+                    PhIcon(R.drawable.ph_more, Palette.TextSecondary, 20.dp, L("خيارات المستند", "Document options"))
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
-                        text = { Text(if (entry.favorite) "إزالة من المفضلة" else "إضافة إلى المفضلة") },
+                        text = { Text(if (entry.favorite) L("إزالة من المفضلة", "Remove from favorites") else L("إضافة إلى المفضلة", "Add to favorites")) },
                         leadingIcon = {
                             StarGlyph(filled = entry.favorite, tint = Palette.GoldDeep, modifier = Modifier.size(18.dp))
                         },
                         onClick = { menu = false; onFavorite() }
                     )
-                    DropdownMenuItem(text = { Text("إعادة تسمية") }, onClick = { menu = false; onRename() })
-                    DropdownMenuItem(text = { Text("إنشاء نسخة") }, onClick = { menu = false; onDuplicate() })
+                    DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; onRename() })
+                    DropdownMenuItem(text = { Text(L("إنشاء نسخة", "Duplicate")) }, onClick = { menu = false; onDuplicate() })
                     DropdownMenuItem(
-                        text = { Text(if (entry.folder.isEmpty()) "نقل إلى مادة…" else "المادة: ${entry.folder}…") },
+                        text = { Text(if (entry.folder.isEmpty()) L("نقل إلى مادة…", "Move to subject…") else L("المادة: ${entry.folder}…", "Subject: ${entry.folder}…")) },
                         onClick = { menu = false; onMove() }
                     )
                     DropdownMenuItem(
-                        text = { Text("حذف", color = Palette.Danger) },
+                        text = { Text(L("حذف", "Delete"), color = Palette.Danger) },
                         onClick = { menu = false; onDelete() }
                     )
                 }
@@ -1085,10 +1089,10 @@ private fun EmptyLibrary(onImport: () -> Unit, onNewNote: () -> Unit) {
     ) {
         EmptyShelfArt()
         Spacer(Modifier.height(20.dp))
-        Text("ابدأ مكتبتك", style = MaterialTheme.typography.headlineMedium, color = Palette.TextPrimary)
+        Text(L("ابدأ مكتبتك", "Start your library"), style = MaterialTheme.typography.headlineMedium, color = Palette.TextPrimary)
         Spacer(Modifier.height(6.dp))
         Text(
-            "استورد محاضرة أو كتابًا بصيغة PDF لتقرأه وتكتب عليه بالقلم،\nأو أنشئ ملاحظة فارغة.",
+            L("استورد محاضرة أو كتابًا بصيغة PDF لتقرأه وتكتب عليه بالقلم،\nأو أنشئ ملاحظة فارغة.", "Import a lecture or book as PDF to read and write on it with your pen,\nor create a blank note."),
             fontSize = 15.sp, lineHeight = 24.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(20.dp))
@@ -1111,23 +1115,23 @@ private fun NoResults(text: String) {
 /** إنشاء ملاحظة فارغة بالكامل داخل المكتبة: الاسم، التخطيط، ولون الورقة. */
 @Composable
 private fun NewNoteDialog(onCreate: (String, String, Int) -> Unit, onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf("ملاحظة جديدة") }
+    var name by remember { mutableStateOf(L("ملاحظة جديدة", "New note")) }
     var template by remember { mutableStateOf("lined") }
     var paper by remember { mutableStateOf(Templates.paperColors[1].first) }
     var picker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ملاحظة جديدة") },
+        title = { Text(L("ملاحظة جديدة", "New note")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("الاسم") }
+                    label = { Text(L("الاسم", "Name")) }
                 )
-                Text("التخطيط", fontSize = 13.sp, color = Palette.TextSecondary)
+                Text(L("التخطيط", "Layout"), fontSize = 13.sp, color = Palette.TextSecondary)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1136,15 +1140,15 @@ private fun NewNoteDialog(onCreate: (String, String, Int) -> Unit, onDismiss: ()
                         ChoiceChip(label, template == k) { template = k }
                     }
                 }
-                Text("لون الورقة", fontSize = 13.sp, color = Palette.TextSecondary)
+                Text(L("لون الورقة", "Paper color"), fontSize = 13.sp, color = Palette.TextSecondary)
                 PaperColorRow(paper, { paper = it }, { picker = true })
             }
         },
         confirmButton = {
-            TextButton(onClick = { onCreate(name, template, paper) }) { Text("إنشاء") }
+            TextButton(onClick = { onCreate(name, template, paper) }) { Text(L("إنشاء", "Create")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("إلغاء") }
+            TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
         }
     )
     if (picker) {
@@ -1177,9 +1181,9 @@ private fun formatRelative(ts: Long): String {
     if (ts <= 0L) return "—"
     val d = ((dayStart(System.currentTimeMillis()) - dayStart(ts)) / 86_400_000.0).roundToInt()
     return when {
-        d <= 0 -> "اليوم"
-        d == 1 -> "أمس"
-        d < 7 -> "قبل $d أيام"
+        d <= 0 -> L("اليوم", "today")
+        d == 1 -> L("أمس", "yesterday")
+        d < 7 -> L("قبل $d أيام", "$d days ago")
         else -> SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(ts))
     }
 }

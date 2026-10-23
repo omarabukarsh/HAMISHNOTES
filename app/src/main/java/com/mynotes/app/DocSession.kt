@@ -160,7 +160,7 @@ class DocSession(entry: DocEntry) {
         if (f.isEmpty() || b.isEmpty()) return
         customCards = customCards + Card("u:" + UUID.randomUUID().toString(), f, b)
         persist()
-        AppController.messages.tryEmit("أُضيفت البطاقة")
+        AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
     }
 
     fun updateCustomCard(cardId: String, front: String, back: String) {
@@ -185,7 +185,7 @@ class DocSession(entry: DocEntry) {
     fun toggleBookmark(page: Int) {
         bookmarks = if (page in bookmarks) bookmarks - page else bookmarks + page
         persist()
-        AppController.messages.tryEmit(if (page in bookmarks) "أُضيفت علامة على الصفحة ${page + 1}" else "أُزيلت العلامة")
+        AppController.messages.tryEmit(if (page in bookmarks) L("أُضيفت علامة على الصفحة ${page + 1}", "Bookmarked page ${page + 1}") else L("أُزيلت العلامة", "Bookmark removed"))
     }
 
     /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
@@ -251,11 +251,11 @@ class DocSession(entry: DocEntry) {
             ocr.putAll(loaded.third)
             status = SessionStatus.Ready
         } catch (e: FileNotFoundException) {
-            status = SessionStatus.Failed("الملف غير موجود، ربما حُذف أو نُقل.")
+            status = SessionStatus.Failed(L("الملف غير موجود، ربما حُذف أو نُقل.", "File not found; it may have been deleted or moved."))
         } catch (e: SecurityException) {
-            status = SessionStatus.Failed("الملف محمي بكلمة مرور ولا يمكن فتحه.")
+            status = SessionStatus.Failed(L("الملف محمي بكلمة مرور ولا يمكن فتحه.", "The file is password-protected and cannot be opened."))
         } catch (t: Throwable) {
-            status = SessionStatus.Failed("تعذر فتح الملف، قد يكون تالفًا.")
+            status = SessionStatus.Failed(L("تعذر فتح الملف، قد يكون تالفًا.", "Could not open the file; it may be damaged."))
         }
     }
 
@@ -589,7 +589,7 @@ class DocSession(entry: DocEntry) {
                 if (!nested) beginEdit()
                 addInk(page, Ink(pts, color, width, Tool.HIGHLIGHTER))
                 if (!nested) endEdit()
-                AppController.messages.tryEmit("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر")
+                AppController.messages.tryEmit(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
             }
         }
         val ready = ocr[page]?.words
@@ -620,7 +620,7 @@ class DocSession(entry: DocEntry) {
         addMark(sel.page, words, (a..b).toList(), color)
         selection = null
         AppController.messages.tryEmit(
-            if (AppController.highlightToSummary) "أُضيف النص إلى الملخصات" else "مُيّز النص دون إضافته إلى الملخصات"
+            if (AppController.highlightToSummary) L("أُضيف النص إلى الملخصات", "Text added to summaries") else L("مُيّز النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries")
         )
     }
 

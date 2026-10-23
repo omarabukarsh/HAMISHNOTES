@@ -242,20 +242,20 @@ class LibraryRepository(context: Context) {
             mime == DocType.PDF.mime || ext == "pdf" -> DocType.PDF
             else -> DocType.fromExt(ext)
         }
-        if (type == null || !type.supported) throw IOException("نوع الملف غير مدعوم بعد")
+        if (type == null || !type.supported) throw IOException(L("نوع الملف غير مدعوم بعد", "This file type is not supported yet"))
 
         val id = UUID.randomUUID().toString()
         val fileName = "$id.${type.ext}"
         val dest = File(docsDir, fileName)
         try {
-            val input = resolver.openInputStream(uri) ?: throw IOException("تعذر قراءة الملف")
+            val input = resolver.openInputStream(uri) ?: throw IOException(L("تعذر قراءة الملف", "Could not read the file"))
             input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
             val pages = probePageCount(dest)
-            if (pages <= 0) throw IOException("الملف فارغ")
+            if (pages <= 0) throw IOException(L("الملف فارغ", "The file is empty"))
             val now = System.currentTimeMillis()
             val entry = DocEntry(
                 id = id,
-                name = displayName.substringBeforeLast('.', displayName).ifBlank { "مستند" },
+                name = displayName.substringBeforeLast('.', displayName).ifBlank { L("مستند", "Document") },
                 type = type,
                 fileName = fileName,
                 sizeBytes = dest.length(),
@@ -681,13 +681,13 @@ class LibraryRepository(context: Context) {
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("صورة غير صالحة")
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException(L("صورة غير صالحة", "Invalid image"))
 
         var sample = 1
         while (bounds.outWidth / sample > 2000 || bounds.outHeight / sample > 2000) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         var bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
-            ?: throw IOException("تعذر قراءة الصورة")
+            ?: throw IOException(L("تعذر قراءة الصورة", "Could not read the image"))
 
         val orientation = try {
             resolver.openInputStream(uri)?.use {
@@ -772,10 +772,10 @@ class LibraryRepository(context: Context) {
         val name = UUID.randomUUID().toString() + ".pdf"
         val dest = File(dir, name)
         try {
-            val input = resolver.openInputStream(uri) ?: throw IOException("تعذر قراءة الملف")
+            val input = resolver.openInputStream(uri) ?: throw IOException(L("تعذر قراءة الملف", "Could not read the file"))
             input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
             val pages = probePageCount(dest)
-            if (pages <= 0) throw IOException("الملف فارغ")
+            if (pages <= 0) throw IOException(L("الملف فارغ", "The file is empty"))
             return Pair(name, pages)
         } catch (t: Throwable) {
             dest.delete()
@@ -803,7 +803,7 @@ class LibraryRepository(context: Context) {
         }
         val entry = DocEntry(
             id = id,
-            name = name.trim().ifBlank { "ملاحظة جديدة" },
+            name = name.trim().ifBlank { L("ملاحظة جديدة", "New note") },
             type = DocType.PDF,
             fileName = fileName,
             sizeBytes = dest.length(),

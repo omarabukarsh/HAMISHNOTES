@@ -271,7 +271,14 @@ private fun PenKeyLearnRow() {
         }
         Spacer(Modifier.width(10.dp))
         ChoiceChip(if (c.penKeyLearning) "إلغاء" else "تعليم", c.penKeyLearning) {
-            c.penKeyLearning = !c.penKeyLearning
+            if (c.penKeyLearning) {
+                c.penKeyLearning = false
+            } else {
+                // نافذة الإعدادات تحجب إشارات القلم عن الشاشة الرئيسية، فنغلقها أثناء التعليم
+                c.penKeyLearning = true
+                c.settingsOpen = false
+                c.messages.tryEmit("انقر الآن على القلم مرتين…")
+            }
         }
     }
 }

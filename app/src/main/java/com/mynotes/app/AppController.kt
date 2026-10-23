@@ -366,13 +366,16 @@ object AppController {
     fun penDoubleTap() {
         if (!penDoubleTapEnabled || activeId == null) return
         val now = System.currentTimeMillis()
-        if (now - lastPenToggleAt < 250L) return
+        if (now - lastPenToggleAt < 600L) return
         lastPenToggleAt = now
         if (tool == Tool.ERASER) selectTool(lastWriting) else selectTool(Tool.ERASER)
     }
 
-    /** مفاتيح أزرار القلم في أندرويد 14 (STYLUS_BUTTON_PRIMARY..TAIL). */
-    private val stylusKeys = setOf(308, 309, 310, 311)
+    /**
+     * مفاتيح القلم: أزرار القلم في أندرويد 14 (308..311)، و718 الذي يرسله قلم هواوي M-Pencil
+     * عند النقر المزدوج (يصل مرتين لكل نقرة مزدوجة، فنعدّهما نقرة واحدة).
+     */
+    private val stylusKeys = setOf(308, 309, 310, 311, 718)
 
     /** يعالج مفتاحًا من القلم؛ true = استُهلك. */
     fun handlePenKey(code: Int, down: Boolean, repeat: Int): Boolean {

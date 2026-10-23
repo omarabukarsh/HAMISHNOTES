@@ -203,6 +203,11 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     }
 
                     item { SectionTitle(L("أدوات اختيارية: أظهرها أو أخفها من الشريط", "Optional tools: show or hide them in the toolbar")) }
+                    item {
+                        androidx.compose.material3.TextButton(onClick = { c.resetToolbar() }) {
+                            Text(L("استعادة الشريط الافتراضي", "Restore default toolbar"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     ToolCatalog.optional.forEach { t ->
                         item(key = "o_" + t.id) {
                             ToolRow(t, onInfo = { showTour(t.id) }) {

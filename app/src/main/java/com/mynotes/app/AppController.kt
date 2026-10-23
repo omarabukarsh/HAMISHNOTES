@@ -533,6 +533,15 @@ object AppController {
 
     fun toolVisible(id: String): Boolean = id !in hiddenTools
 
+    /** الأدوات المخفية في الشريط الافتراضي (تظهر بقية الأدوات). */
+    val DEFAULT_HIDDEN_TOOLS = listOf("zoomwin", "ocr", "zoom", "night")
+
+    fun resetToolbar() {
+        hiddenTools.clear()
+        hiddenTools.addAll(DEFAULT_HIDDEN_TOOLS)
+        prefs.edit().putString("hidden_tools", hiddenTools.joinToString(",")).apply()
+    }
+
     fun setToolVisible(id: String, visible: Boolean) {
         if (visible) hiddenTools.remove(id) else if (id !in hiddenTools) hiddenTools.add(id)
         prefs.edit().putString("hidden_tools", hiddenTools.joinToString(",")).apply()
@@ -640,7 +649,9 @@ object AppController {
             ToolbarStyle.PEN_BAR
         }
         hiddenTools.clear()
-        (prefs.getString("hidden_tools", "") ?: "").split(",").filter { it.isNotBlank() }.forEach { hiddenTools.add(it) }
+        // أول تشغيل: الشريط الافتراضي، ثم يضيف المستخدم ما يريد من الإعدادات
+        val savedHidden = prefs.getString("hidden_tools", null)
+        (savedHidden?.split(",")?.filter { it.isNotBlank() } ?: DEFAULT_HIDDEN_TOOLS).forEach { hiddenTools.add(it) }
         summaryByColor = prefs.getBoolean("sum_by_color", false)
         try {
             val o = org.json.JSONObject(prefs.getString("color_labels", "{}") ?: "{}")

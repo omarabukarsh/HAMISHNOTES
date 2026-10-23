@@ -217,6 +217,19 @@ private fun ReaderContent(s: DocSession) {
     // إيقاف أداة التحديد الحر يلغي التحديد
     LaunchedEffect(c.lassoActive) { if (!c.lassoActive) s.lassoSel = null }
 
+    // MyNotes Pro: بعد تظليل جديد يُكمل الذكاء الاصطناعي الملخص المرتّب (وبطاقات المراجعة) تلقائيًا،
+    // بعد توقف قصير عن الكتابة حتى لا يبطئ القلم
+    LaunchedEffect(s.marks) {
+        AiOrganizer.refreshPending(s)
+        if (!AiOrganizer.autoContinue || !Ai.ready || !AiOrganizer.canContinue(s.id)) return@LaunchedEffect
+        if (AiOrganizer.pendingMarks(s).isEmpty()) return@LaunchedEffect
+        delay(20_000)
+        while (System.currentTimeMillis() - c.lastInkAt < 5_000 || AiOrganizer.runningDoc != null || AiPageReader.runningKey != null) {
+            delay(3_000)
+        }
+        AiOrganizer.continueSummary(s, quiet = true)
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {

@@ -180,6 +180,23 @@ class DocSession(entry: DocEntry) {
         AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
     }
 
+    /** MyNotes Pro: بطاقات مراجعة من الذكاء الاصطناعي (معرّفها يبدأ بـ ai:). replace = تُستبدل بطاقات الذكاء السابقة. */
+    fun putAiCards(cards: List<Pair<String, String>>, replace: Boolean) {
+        val keep = if (replace) customCards.filter { !it.id.startsWith("ai:") } else customCards
+        val seen = keep.map { it.front.trim().lowercase() }.toMutableSet()
+        val add = cards.mapNotNull { (f, b) ->
+            val ff = f.trim()
+            val bb = b.trim()
+            if (ff.isEmpty() || bb.isEmpty() || !seen.add(ff.lowercase())) null
+            else Card("ai:" + UUID.randomUUID().toString(), ff, bb)
+        }
+        if (!replace && add.isEmpty()) return
+        customCards = keep + add
+        val ids = customCards.map { it.id }.toSet()
+        starred = starred.filter { !it.startsWith("ai:") || it in ids }.toSet()
+        persist()
+    }
+
     fun updateCustomCard(cardId: String, front: String, back: String) {
         val f = front.trim()
         val b = back.trim()

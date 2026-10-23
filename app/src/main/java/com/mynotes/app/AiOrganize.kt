@@ -235,8 +235,162 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         return out.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
     }
 
-    fun start(s: DocSession, notes: String) {
+    // ---------- المتابعة: ما رُتّب من التمييزات (معرّف التمييز ← نصه عند الترتيب) ----------
+
+    private fun doneFile(docId: String) = File(File(AppController.appContext.filesDir, "ai").also { it.mkdirs() }, "$docId.done.json")
+    private val doneCache = HashMap<String, Map<String, String>>()
+
+    /** عدد التمييزات الجديدة منذ آخر ترتيب (للعرض). */
+    val pendingCount = mutableStateMapOf<String, Int>()
+
+    fun processed(docId: String): Map<String, String> = doneCache.getOrPut(docId) {
+        try {
+            val f = doneFile(docId)
+            if (!f.exists()) emptyMap() else {
+                val o = org.json.JSONObject(f.readText())
+                o.keys().asSequence().associateWith { o.getString(it) }
+            }
+        } catch (t: Throwable) {
+            emptyMap()
+        }
+    }
+
+    private fun setProcessed(docId: String, m: Map<String, String>) {
+        doneCache[docId] = m
+        AppController.scope.launch(Dispatchers.IO) {
+            try {
+                val f = doneFile(docId)
+                if (m.isEmpty()) f.delete() else f.writeText(org.json.JSONObject(m).toString())
+            } catch (t: Throwable) {
+            }
+        }
+    }
+
+    /** هل الإكمال ممكن: يوجد ملخص مرتّب ومعروف ما رُتّب منه. */
+    fun canContinue(docId: String) = result(docId) != null && processed(docId).isNotEmpty()
+
+    /** التمييزات الجديدة، أو الجزء الذي أضيف إلى تمييز قديم، منذ آخر ترتيب. */
+    fun pendingMarks(s: DocSession): List<TextMark> {
+        val done = processed(s.id)
+        return s.allMarks().mapNotNull { m ->
+            val old = done[m.id]
+            when {
+                old == null -> m
+                old == m.text -> null
+                old.isNotBlank() && m.text.contains(old) -> m.copy(text = m.text.replace(old, "").trim()).takeIf { it.text.isNotBlank() }
+                else -> m
+            }
+        }
+    }
+
+    fun refreshPending(s: DocSession) {
+        pendingCount[s.id] = if (canContinue(s.id)) pendingMarks(s).size else 0
+    }
+
+    private fun notesOf(marks: List<TextMark>): String =
+        Summary.plainText("", Summary.display(marks, true, SummaryEdits(), null, false) { AppController.labelOf(it) })
+
+    /** هل الإكمال التلقائي مفعّل (بعد التظليل الجديد). */
+    var autoContinue by mutableStateOf(prefs().getBoolean("auto_continue", true))
+        private set
+    fun setAutoContinue(on: Boolean) { autoContinue = on; prefs().edit().putBoolean("auto_continue", on).apply() }
+
+    /** بطاقات مراجعة تلقائية بالذكاء الاصطناعي من النصوص المظللة. */
+    var autoCards by mutableStateOf(prefs().getBoolean("auto_cards", true))
+        private set
+    fun setAutoCards(on: Boolean) { autoCards = on; prefs().edit().putBoolean("auto_cards", on).apply() }
+
+    private fun prefs() = AppController.appContext.getSharedPreferences("mynotes_ai", Context.MODE_PRIVATE)
+
+    private const val CARDS_SYSTEM = """You write study flashcards for a pharmacy student from highlighted notes.
+Strict rules:
+- Use ONLY information found in the notes. Never add facts, numbers or doses that are not in the notes.
+- One card per important fact: a clear question and a short answer.
+- Write each card in the language of its note. Keep drug names and medical terms exactly as written.
+- At most 8 cards. Skip trivial facts.
+Output format (plain text only, nothing else):
+Q: question
+A: answer
+(blank line between cards)"""
+
+    /** يقرأ البطاقات من مخرجات النموذج (Q:/A: أو س:/ج:). */
+    fun parseCards(raw: String): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        var q: String? = null
+        val a = StringBuilder()
+        fun flush() {
+            val qq = q?.trim()
+            val aa = a.toString().trim()
+            if (!qq.isNullOrEmpty() && aa.isNotEmpty()) out.add(qq to aa)
+            q = null
+            a.clear()
+        }
+        val qRe = Regex("^(?:\\d+[.)]\\s*)?(?:Q|Question|س|سؤال)\\s*[:：]\\s*(.*)$", RegexOption.IGNORE_CASE)
+        val aRe = Regex("^(?:A|Answer|ج|جواب|الإجابة)\\s*[:：]\\s*(.*)$", RegexOption.IGNORE_CASE)
+        for (raw0 in raw.replace("**", "").lines()) {
+            val l = raw0.trim()
+            val qm = qRe.find(l)
+            val am = aRe.find(l)
+            when {
+                qm != null -> { flush(); q = qm.groupValues[1] }
+                am != null && q != null -> a.append(am.groupValues[1])
+                l.isNotEmpty() && q != null && a.isNotEmpty() -> a.append(' ').append(l)
+            }
+        }
+        flush()
+        return out
+    }
+
+    private fun normHead(h: String) = h.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+
+    /** يدمج ملخص التمييزات الجديدة في الملخص القائم: تحت نفس العنوان إن وُجد، وإلا في آخره. */
+    fun merge(existing: String, addition: String): String {
+        fun sections(text: String): MutableList<Pair<String?, MutableList<String>>> {
+            val out = ArrayList<Pair<String?, MutableList<String>>>()
+            out.add(null to ArrayList<String>())
+            for (l in text.lines()) {
+                if (l.trim().startsWith("# ")) out.add(l.trim() to ArrayList<String>()) else out.last().second.add(l)
+            }
+            return out
+        }
+        val base = sections(existing)
+        for ((h, body) in sections(addition)) {
+            val content = body.joinToString("\n").trim()
+            if (h == null) {
+                if (content.isNotEmpty()) base.last().second.addAll(listOf("", content))
+                continue
+            }
+            val match = base.firstOrNull { it.first != null && normHead(it.first!!.removePrefix("# ")) == normHead(h.removePrefix("# ")) }
+            if (match != null) {
+                while (match.second.isNotEmpty() && match.second.last().isBlank()) match.second.removeAt(match.second.lastIndex)
+                if (content.isNotEmpty()) match.second.add(content)
+                match.second.add("")
+            } else {
+                base.add(h to mutableListOf<String>().apply { if (content.isNotEmpty()) add(content); add("") })
+            }
+        }
+        return base.joinToString("\n") { (h, body) ->
+            (if (h != null) h + "\n" else "") + body.joinToString("\n")
+        }.replace(Regex("\n{3,}"), "\n\n").trim()
+    }
+
+    /** ترتيب كامل للملخص (append = false) أو إكمال بالتمييزات الجديدة فقط (append = true). */
+    fun start(s: DocSession, notes: String) = organize(s, notes, append = false, marks = s.allMarks())
+
+    /** يكمل الملخص المرتّب بما ظُلّل بعده. */
+    fun continueSummary(s: DocSession, quiet: Boolean = false) {
+        if (!canContinue(s.id)) return
+        val news = pendingMarks(s)
+        if (news.isEmpty()) {
+            if (!quiet) AppController.messages.tryEmit(L("لا توجد تظليلات جديدة", "No new highlights"))
+            return
+        }
+        organize(s, notesOf(news), append = true, marks = news, quiet = quiet)
+    }
+
+    private fun organize(s: DocSession, notes: String, append: Boolean, marks: List<TextMark>, quiet: Boolean = false) {
         if (job?.isActive == true || AiPageReader.runningKey != null) return
+        if (!Ai.ready) return
         val docId = s.id
         // ذاكرة النموذج 4096 رمزًا: العربية تأخذ رموزًا أكثر، فأجزاء أصغر.
         // جزء من الذاكرة لنص صفحات المستند (المصدر)، فالملاحظات في كل جزء أقل قليلًا.
@@ -244,36 +398,76 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         val parts = chunks(notes, if (arabic) 1300 else 2400)
         val sourceBudget = if (arabic) 1300 else 2400
         if (parts.isEmpty()) return
+        // ما رُتّب: نص كل تمييز كما هو الآن (للتمييز الذي أضيف إليه نص: نصه الكامل)
+        val snapshot = s.allMarks().filter { m -> marks.any { it.id == m.id } }.associate { it.id to it.text }
+        val before = if (append) result(docId) ?: "" else ""
         runningDoc = docId
         partial = ""
         stepFraction = 0f
         job = AppController.scope.launch {
             val done = StringBuilder()
+            val cards = ArrayList<Pair<String, String>>()
+            fun shown() = if (append) merge(before, done.toString()) else done.toString()
             try {
                 // نص صفحات المستند كاملًا مصدرًا: تُقرأ الصفحات التي فيها تمييزات إن لم تكن مقروءة
                 stepText = L("جارٍ قراءة صفحات المستند…", "Reading the document pages…")
-                s.allMarks().map { it.page }.distinct().forEach { p -> if (s.ocr[p] == null) s.ocrPage(p) }
+                marks.map { it.page }.distinct().forEach { p -> if (s.ocr[p] == null) s.ocrPage(p) }
                 val pages = (0 until (s.pdf?.count ?: 0)).associateWith { pageSource(s, it) }.filterValues { it.isNotBlank() }
+                val heads = if (append) before.lines().filter { it.trim().startsWith("# ") }.joinToString("\n").take(900) else ""
                 parts.forEachIndexed { i, part ->
-                    stepText = if (parts.size == 1) L("جارٍ الترتيب…", "Organizing…")
-                    else L("جارٍ ترتيب الجزء ${i + 1} من ${parts.size}…", "Organizing part ${i + 1} of ${parts.size}…")
+                    stepText = when {
+                        append -> L("جارٍ إكمال الملخص بالتظليل الجديد…", "Adding new highlights to the summary…")
+                        parts.size == 1 -> L("جارٍ الترتيب…", "Organizing…")
+                        else -> L("جارٍ ترتيب الجزء ${i + 1} من ${parts.size}…", "Organizing part ${i + 1} of ${parts.size}…")
+                    }
                     stepFraction = i / parts.size.toFloat()
                     val src = sourceFor(part, pages, sourceBudget)
-                    val prompt = if (src.isBlank()) "Notes:\n\n$part"
-                    else "SOURCE (document text, reference only):\n\n$src\n\nNOTES (organize these):\n\n$part"
-                    val res = Ai.generate(SYSTEM, prompt) { p ->
-                        partial = (done.toString() + "\n\n" + clean(p)).trim()
+                    val sb = StringBuilder()
+                    if (src.isNotBlank()) sb.append("SOURCE (document text, reference only):\n\n").append(src).append("\n\n")
+                    if (heads.isNotBlank()) {
+                        sb.append("EXISTING HEADINGS of the summary (when a note belongs under one of them, use that heading exactly):\n")
+                            .append(heads).append("\n\n")
+                    }
+                    sb.append(if (sb.isEmpty()) "Notes:\n\n" else "NOTES (organize these):\n\n").append(part)
+                    val res = Ai.generate(SYSTEM, sb.toString()) { p ->
+                        partial = (if (append) merge(before, (done.toString() + "\n\n" + clean(p)).trim())
+                        else (done.toString() + "\n\n" + clean(p)).trim())
                     }
                     if (done.isNotEmpty()) done.append("\n\n")
                     done.append(clean(res))
-                    partial = done.toString()
+                    partial = shown()
+                    if (autoCards) {
+                        stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
+                        try {
+                            cards.addAll(parseCards(Ai.generate(CARDS_SYSTEM, "Notes:\n\n$part")))
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (t: Throwable) {
+                        }
+                    }
                 }
-                save(docId, done.toString())
-                AppController.messages.tryEmit(L("اكتمل ترتيب الملخص. راجعه قبل الاعتماد عليه", "Summary organized. Review it before relying on it"))
+                save(docId, shown())
+                setProcessed(docId, if (append) processed(docId) + snapshot else snapshot)
+                if (autoCards) s.putAiCards(cards, replace = !append)
+                refreshPending(s)
+                run {
+                    AppController.messages.tryEmit(
+                        when {
+                            append && cards.isNotEmpty() -> L("أُكمل الملخص وأُضيفت ${cards.size} بطاقة مراجعة", "Summary updated, ${cards.size} review cards added")
+                            append -> L("أُكمل الملخص بالتظليل الجديد", "Summary updated with new highlights")
+                            cards.isNotEmpty() -> L("اكتمل ترتيب الملخص و${cards.size} بطاقة مراجعة. راجعها قبل الاعتماد عليها", "Summary organized with ${cards.size} review cards. Review before relying on them")
+                            else -> L("اكتمل ترتيب الملخص. راجعه قبل الاعتماد عليه", "Summary organized. Review it before relying on it")
+                        }
+                    )
+                }
             } catch (e: CancellationException) {
-                if (done.isNotEmpty()) save(docId, done.toString())
+                // ترتيب كامل لم يكتمل: يُحفظ ما كُتب، ولا يُعرف ما رُتّب فيُطفأ الإكمال حتى يُعاد الترتيب
+                if (!append && done.isNotEmpty()) {
+                    save(docId, done.toString())
+                    setProcessed(docId, emptyMap())
+                }
             } catch (t: Throwable) {
-                AppController.messages.tryEmit(
+                if (!quiet) AppController.messages.tryEmit(
                     L("تعذر تشغيل النموذج. جرّب النموذج «الخفيف» من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
                         "Could not run the model. Try the “Light” model in Settings, or close other apps to free memory.")
                 )
@@ -442,6 +636,30 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                         TextButton(onClick = { AiOrganizer.save(s.id, "") }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
                     }
                 }
+                // إكمال الملخص بما ظُلّل بعد آخر ترتيب
+                val pending = AiOrganizer.pendingCount[s.id] ?: 0
+                if (saved != null && AiOrganizer.canContinue(s.id) && pending > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        enabled = !busyElsewhere && AiPageReader.runningKey == null,
+                        onClick = { AiOrganizer.continueSummary(s) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Palette.GoldDeep)
+                    ) { Text(L("✦ أكمل الملخص ($pending تظليل جديد)", "✦ Continue summary ($pending new highlights)")) }
+                } else if (saved != null && !AiOrganizer.canContinue(s.id)) {
+                    Text(
+                        L("لتفعيل الإكمال بعد التظليل الجديد اضغط «أعد الترتيب» مرة واحدة.", "To continue after new highlights, tap “Organize again” once."),
+                        fontSize = 12.sp, color = Palette.TextSecondary
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                AiToggle(
+                    L("إكمال تلقائي بعد التظليل الجديد", "Continue automatically after new highlights"),
+                    AiOrganizer.autoContinue
+                ) { AiOrganizer.setAutoContinue(!AiOrganizer.autoContinue) }
+                AiToggle(
+                    L("بطاقات مراجعة تلقائية بالذكاء الاصطناعي (تظهر في «بطاقات»)", "Automatic AI review cards (shown in “Cards”)"),
+                    AiOrganizer.autoCards
+                ) { AiOrganizer.setAutoCards(!AiOrganizer.autoCards) }
                 if (busyElsewhere) {
                     Text(L("يعمل الذكاء الاصطناعي على مستند آخر الآن", "AI is working on another document now"), fontSize = 12.sp, color = Palette.TextSecondary)
                 }
@@ -473,6 +691,17 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
             confirmButton = { TextButton(onClick = { AiOrganizer.save(s.id, t); editing = false }) { Text(L("حفظ", "Save")) } },
             dismissButton = { TextButton(onClick = { editing = false }) { Text(L("إلغاء", "Cancel")) } }
         )
+    }
+}
+
+@Composable
+private fun AiToggle(label: String, on: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 13.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = { onToggle() })
     }
 }
 

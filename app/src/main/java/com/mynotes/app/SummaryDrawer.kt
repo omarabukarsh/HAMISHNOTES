@@ -73,6 +73,8 @@ fun SummaryDrawer(
     val tidy = c.summaryTidy
     val edits = s.summaryEdits
     var colorFilter by remember { mutableStateOf<Int?>(null) }
+    // MyNotes Pro: عرض الملخص المرتّب بالذكاء الاصطناعي (منفصل عن الملخص الأصلي)
+    var aiMode by remember { mutableStateOf(false) }
     val byColor = c.summaryByColor
     val blocks = remember(all, tidy, edits, colorFilter, byColor) {
         Summary.display(all, tidy, edits, colorFilter, byColor) { c.labelOf(it) }
@@ -137,8 +139,9 @@ fun SummaryDrawer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ChoiceChip(L("مرتّب", "Tidy"), tidy) { if (!tidy) c.toggleSummaryTidy() }
-                ChoiceChip(L("كما التُقط", "As captured"), !tidy) { if (tidy) c.toggleSummaryTidy() }
+                ChoiceChip(L("مرتّب", "Tidy"), tidy && !aiMode) { aiMode = false; if (!tidy) c.toggleSummaryTidy() }
+                ChoiceChip(L("كما التُقط", "As captured"), !tidy && !aiMode) { aiMode = false; if (tidy) c.toggleSummaryTidy() }
+                ChoiceChip(L("✦ ذكاء", "✦ AI"), aiMode) { aiMode = true }
                 Spacer(Modifier.weight(1f))
                 TextButton(enabled = blocks.isNotEmpty(), onClick = {
                     copy(context, Summary.plainText(s.title, blocks))
@@ -247,7 +250,9 @@ fun SummaryDrawer(
                 }
             }
 
-            if (blocks.isEmpty()) {
+            if (aiMode) {
+                AiSummaryPanel(s, Summary.plainText("", blocks))
+            } else if (blocks.isEmpty()) {
                 EmptySummary()
             } else {
                 // ورقة واحدة متصلة

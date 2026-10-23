@@ -169,6 +169,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    item { SectionTitle(L("الذكاء الاصطناعي (على جهازك، دون إنترنت)", "AI (on your device, offline)")) }
+                    item { AiSettings() }
+
                     item { SectionTitle("اللغة / Language") }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1109,4 +1112,80 @@ private fun DrawScope.demoNight(t: Float) {
         Color(0xFFFFE066).copy(alpha = 0.55f + 0.2f * (1f - dark)), Offset(o.x - 4f, o.y - hh * 0.32f), Size(w + 8f, hh),
         CornerRadius(hh * 0.32f), blendMode = if (dark > 0.5f) BlendMode.Screen else BlendMode.Multiply
     )
+}
+
+// ---------------------------------------------------------------- MyNotes Pro: إعدادات الذكاء الاصطناعي
+
+@Composable
+private fun AiSettings() {
+    val c = AppController
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) Ai.importFile(uri) }
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            L("نموذج لغوي مجاني يعمل داخل الجهاز: يرتّب الملخصات ويشرح النصوص. نزّله مرة واحدة (يحتاج إنترنت للتنزيل فقط)، ثم يعمل دون إنترنت.",
+                "A free language model running inside the device: organizes summaries and explains text. Download it once (internet needed only for the download); then it works offline."),
+            fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+        )
+        Ai.models.forEach { m ->
+            val sel = Ai.selectedId == m.id
+            val installed = Ai.installed(m)
+            val prog = Ai.progress[m.id]
+            val rowShape = RoundedCornerShape(12.dp)
+            Column(
+                Modifier.fillMaxWidth().clip(rowShape)
+                    .border(if (sel) 2.dp else 1.dp, if (sel) Palette.Gold else Palette.Divider, rowShape)
+                    .clickable(enabled = installed) { Ai.select(m.id) }
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(16.dp).clip(CircleShape)
+                            .border(2.dp, if (sel) Palette.Gold else Palette.Divider, CircleShape)
+                            .background(if (sel && installed) Palette.Gold else Color.Transparent)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(m.title(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                        Text(
+                            m.desc() + if (m.sizeMb > 0) L(" · نحو ${m.sizeMb} ميغابايت", " · about ${m.sizeMb} MB") else "",
+                            fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
+                        )
+                    }
+                    when {
+                        prog != null -> androidx.compose.material3.TextButton(onClick = { Ai.cancelDownload(m) }) {
+                            Text(L("إيقاف", "Pause"), color = Palette.Danger)
+                        }
+                        installed -> androidx.compose.material3.TextButton(onClick = { Ai.delete(m) }) {
+                            Text(L("حذف", "Delete"), color = Palette.Danger)
+                        }
+                        m.url != null -> androidx.compose.material3.TextButton(onClick = {
+                            Ai.select(m.id)
+                            Ai.download(m)
+                        }) { Text(L("تنزيل", "Download"), color = Palette.Navy, fontWeight = FontWeight.Bold) }
+                        else -> androidx.compose.material3.TextButton(onClick = { picker.launch(arrayOf("*/*")) }) {
+                            Text(L("اختيار ملف", "Choose file"), color = Palette.Navy)
+                        }
+                    }
+                }
+                if (prog != null) {
+                    Spacer(Modifier.height(6.dp))
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { prog }, modifier = Modifier.fillMaxWidth(), color = Palette.Gold
+                    )
+                    Text("${(prog * 100).toInt()}%", fontSize = 11.sp, color = Palette.TextSecondary)
+                }
+            }
+        }
+        SettingSwitch(
+            L("تسريع بمعالج الرسوم (تجريبي)", "GPU acceleration (experimental)"),
+            L("أسرع إن دعمه جهازك. إن ظهر خطأ أوقفه.", "Faster if your device supports it. Turn off if errors appear."),
+            Ai.useGpu
+        ) { Ai.setGpu(!Ai.useGpu) }
+    }
 }

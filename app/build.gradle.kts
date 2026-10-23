@@ -8,13 +8,14 @@ android {
     namespace = "com.mynotes.app"
     compileSdk = 34
     defaultConfig {
-        applicationId = "com.mynotes.app"
+        // تطبيق مستقل يُثبَّت بجانب MyNotes ولا يحلّ محله (بيانات منفصلة)
+        applicationId = "com.mynotes.app.pro"
         minSdk = 26
         targetSdk = 34
         // رقم يزيد مع كل بناء على GitHub Actions، فيُثبَّت كل APK جديد كتحديث فوق القديم
         val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = 100 + run
-        versionName = "1.0.$run"
+        versionName = "pro-1.0.$run"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // مفتاح توقيع ثابت (keystore/mynotes.jks) بدل مفتاح debug العشوائي الذي يتغير في كل بناء
@@ -67,6 +68,8 @@ dependencies {
     // ترجمة مصطلح بالضغط المطول (حزمة لغة تُنزَّل مرة واحدة ثم تعمل دون إنترنت)
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("androidx.core:core-ktx:1.13.1")
+    // MyNotes Pro: نموذج لغوي يعمل داخل الجهاز دون إنترنت (LiteRT-LM من Google، مفتوح المصدر)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
     // قراءة النص الرقمي داخل PDF (يدعم العربية) والكتابة على PDF عند الحفظ
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 

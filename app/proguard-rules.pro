@@ -19,3 +19,7 @@
 
 # أرقام الأسطر في تقارير الأعطال
 -keepattributes SourceFile,LineNumberTable
+
+# LiteRT-LM (الذكاء الاصطناعي على الجهاز): واجهات JNI
+-keep class com.google.ai.edge.litertlm.** { *; }
+-dontwarn com.google.ai.edge.litertlm.**

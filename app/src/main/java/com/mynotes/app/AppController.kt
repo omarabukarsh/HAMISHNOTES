@@ -595,6 +595,7 @@ object AppController {
         initialized = true
         val app = context.applicationContext
         appContext = app
+        Ai.init(app)
         repo = LibraryRepository(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)

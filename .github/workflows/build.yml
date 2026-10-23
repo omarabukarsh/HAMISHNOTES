@@ -26,5 +26,5 @@ jobs:
           grep -E '^e: |What went wrong|ERROR:|Missing class' -A2 build.log | head -40 | sed 's/^/::error::/' || true
       - uses: actions/upload-artifact@v4
         with:
-          name: MyNotes
+          name: MyNotes-Pro
           path: app/build/outputs/apk/release/app-release.apk

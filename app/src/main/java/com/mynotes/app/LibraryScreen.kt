@@ -313,7 +313,7 @@ private fun Spine() {
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(
-                    "MyNotes", color = Palette.OnInk, fontFamily = Fonts.Display,
+                    "MyNotes Pro", color = Palette.OnInk, fontFamily = Fonts.Display,
                     fontWeight = FontWeight.Bold, fontSize = 23.sp, lineHeight = 26.sp
                 )
                 Text(L("مكتبة الدراسة", "Study library"), color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 16.sp)
@@ -837,7 +837,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 Monogram(36, onDark = false)
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "MyNotes", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                    "MyNotes Pro", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                 )
                 PomodoroControl(showStartLabel = false)

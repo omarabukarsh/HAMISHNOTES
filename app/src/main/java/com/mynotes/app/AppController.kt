@@ -1011,7 +1011,14 @@ object AppController {
 
     fun exportSummary(context: Context, s: DocSession, uri: Uri) {
         if (exporting != null) return
-        val blocks = Summary.display(s.allMarks(), summaryTidy, s.summaryEdits, null, summaryByColor) { labelOf(it) }
+        // MyNotes Pro: يُحفظ من التبويب المفتوح؛ «✦ ذكاء» يحفظ الملخص المرتّب بالذكاء الاصطناعي
+        val aiText = if (s.summaryAiMode) AiOrganizer.result(s.id) else null
+        if (s.summaryAiMode && aiText == null) {
+            messages.tryEmit(L("لا يوجد ملخص مرتّب بالذكاء الاصطناعي لهذا المستند بعد", "No AI-organized summary for this document yet"))
+            return
+        }
+        val blocks = if (aiText != null) AiOrganizer.toBlocks(aiText)
+            else Summary.display(s.allMarks(), summaryTidy, s.summaryEdits, null, summaryByColor) { labelOf(it) }
         val title = s.title
         exporting = L("جارٍ حفظ الملخصات…", "Saving summaries…")
         scope.launch {

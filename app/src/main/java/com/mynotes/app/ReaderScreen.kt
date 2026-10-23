@@ -202,7 +202,10 @@ private fun ReaderContent(s: DocSession) {
     val safeTitle = s.title.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim().ifEmpty { L("مستند", "Document") }
     val exportDoc: () -> Unit = { docSaver.launch(L("$safeTitle - مع التعليقات.pdf", "$safeTitle - annotated.pdf")) }
     val exportSummary: () -> Unit = {
-        if (s.allMarks().isEmpty()) c.messages.tryEmit(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
+        if (s.summaryAiMode) {
+            if (AiOrganizer.result(s.id) == null) c.messages.tryEmit(L("رتّب الملخص بالذكاء الاصطناعي أولًا", "Organize the summary with AI first"))
+            else summarySaver.launch(L("ملخص ذكاء $safeTitle.pdf", "AI summary $safeTitle.pdf"))
+        } else if (s.allMarks().isEmpty()) c.messages.tryEmit(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
         else summarySaver.launch(L("ملخص $safeTitle.pdf", "Summary $safeTitle.pdf"))
     }
 

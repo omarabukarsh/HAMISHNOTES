@@ -136,6 +136,9 @@ class DocSession(entry: DocEntry) {
     // ---- درج الملخصات ----
     var summaryOpen by mutableStateOf(false)
 
+    /** MyNotes Pro: تبويب «✦ ذكاء» مفتوح في درج الملخصات (فيُحفظ PDF من الملخص المرتّب بالذكاء الاصطناعي). */
+    var summaryAiMode by mutableStateOf(false)
+
     /** تعديلات المستخدم على الملخص (عنوان/نص، جداول، ترتيب) فوق الترتيب التلقائي. */
     var summaryEdits by mutableStateOf(SummaryEdits())
 

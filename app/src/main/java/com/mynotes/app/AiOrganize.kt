@@ -102,6 +102,38 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         }
     }
 
+    /**
+     * يحوّل الملخص المرتّب بالذكاء الاصطناعي إلى أجزاء ملخص (عناوين، فقرات، جداول)
+     * بنفس قواعد عرضه في الدرج، ليُحفظ PDF بنفس شكل ملفات الملخص الأخرى.
+     */
+    fun toBlocks(text: String): List<SBlock> {
+        val out = ArrayList<SBlock>()
+        val lines = text.lines()
+        var i = 0
+        while (i < lines.size) {
+            val l = lines[i].trim()
+            when {
+                l.isEmpty() -> {}
+                l.startsWith("## ") -> out.add(SHeading(l.removePrefix("## ").trim(), emptyList(), "ai$i"))
+                l.startsWith("# ") -> out.add(SHeading(l.removePrefix("# ").trim(), emptyList(), "ai$i"))
+                l.contains(" | ") -> {
+                    val start = i
+                    val rows = ArrayList<List<String>>()
+                    while (i < lines.size && lines[i].contains(" | ")) {
+                        rows.add(lines[i].trim().split(" | ").map { it.trim() })
+                        i++
+                    }
+                    i--
+                    out.add(STable(rows, emptyList(), "ai$start", header = true))
+                }
+                l.startsWith("- ") -> out.add(SPara("•  " + l.removePrefix("- ").trim(), emptyList(), emptyList(), "ai$i"))
+                else -> out.add(SPara(l, emptyList(), emptyList(), "ai$i"))
+            }
+            i++
+        }
+        return out
+    }
+
     /** يقسّم النص إلى أجزاء تناسب ذاكرة النموذج (عند حدود الفقرات). */
     fun chunks(text: String, maxChars: Int): List<String> {
         val paras = text.split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotEmpty() }

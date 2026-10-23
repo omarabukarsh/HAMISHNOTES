@@ -11,9 +11,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -65,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -196,8 +199,14 @@ private fun ReaderContent(s: DocSession) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {
                 ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
+                // شريط الأقلام الثاني (نمط «شريط الأقلام»)
+                AnimatedVisibility(
+                    visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen &&
+                        (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
+                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                ) { PenBar() }
                 if (s.searchOpen) ReaderSearchBar(s)
-                if (s.ocrRunning) OcrStatusBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
             }
             PageArea(s, pdf, exportSummary)
@@ -399,55 +408,78 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val v: (String) -> Boolean = { c.toolVisible(it) }
+                val dim = Palette.TextSecondary.copy(alpha = 0.35f)
+
                 // التنقل بين الصفحات
-                TBtn(onClick = {
-                    scope.launch { s.listState.animateScrollToItem((cur - 1).coerceAtLeast(0)) }
-                }) { ChevronGlyph(Palette.TextPrimary, up = true) }
-                Box(
-                    Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
-                        .clickable { jump = true }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        "${cur + 1} / $count", fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium, color = Palette.TextPrimary
-                    )
+                if (v("nav")) {
+                    TBtn(onClick = {
+                        scope.launch { s.listState.animateScrollToItem((cur - 1).coerceAtLeast(0)) }
+                    }) { ChevronGlyph(Palette.TextPrimary, up = true) }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
+                            .clickable { jump = true }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            "${cur + 1} / $count", fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium, color = Palette.TextPrimary
+                        )
+                    }
+                    TBtn(onClick = {
+                        scope.launch { s.listState.animateScrollToItem((cur + 1).coerceAtMost(count - 1)) }
+                    }) { ChevronGlyph(Palette.TextPrimary, up = false) }
                 }
-                TBtn(onClick = {
-                    scope.launch { s.listState.animateScrollToItem((cur + 1).coerceAtMost(count - 1)) }
-                }) { ChevronGlyph(Palette.TextPrimary, up = false) }
                 // علامة مرجعية للصفحة الحالية
-                val marked = cur in s.bookmarks
-                TBtn(selected = marked, onClick = { s.toggleBookmark(cur) }) {
-                    PhIcon(
-                        if (marked) R.drawable.ph_bookmark_fill else R.drawable.ph_bookmark,
-                        if (marked) Palette.GoldDeep else Palette.TextSecondary
-                    )
+                if (v("bookmark")) {
+                    val marked = cur in s.bookmarks
+                    TBtn(selected = marked, onClick = { s.toggleBookmark(cur) }) {
+                        PhIcon(
+                            if (marked) R.drawable.ph_bookmark_fill else R.drawable.ph_bookmark,
+                            if (marked) Palette.GoldDeep else Palette.TextSecondary
+                        )
+                    }
                 }
                 // مؤقت الدراسة: يعمل ويتوقف مؤقتًا هنا وفي وضع التركيز
-                PomodoroControl(showStartLabel = false)
+                if (v("timer")) PomodoroControl(showStartLabel = false)
+                if (v("nav") || v("bookmark") || v("timer")) ToolbarSep()
 
-                ToolbarSep()
-
-                // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
-                val penSelected = c.tool.isPen()
-                val shownPen = if (penSelected) c.tool else c.lastPen
-                ToolSlot(
-                    tool = shownPen, selected = penSelected, open = settingsFor == "pen",
-                    onTap = { if (penSelected) settingsFor = "pen" else c.selectToolWithHint(c.lastPen) },
-                    onDismiss = { settingsFor = null },
-                    onCustomColor = { settingsFor = null; showPicker = true }
-                )
-                ToolSlot(
-                    tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER, open = settingsFor == "hl",
-                    onTap = { if (c.tool == Tool.HIGHLIGHTER) settingsFor = "hl" else c.selectToolWithHint(Tool.HIGHLIGHTER) },
-                    onDismiss = { settingsFor = null },
-                    onCustomColor = { settingsFor = null; showPicker = true }
-                )
-                // التقاط النص: اختصار سريع يظهر عند اختيار الهايلايتر (وموجود أيضًا في إعداداته)
-                if (c.tool == Tool.HIGHLIGHTER) {
-                    TBtn(selected = c.highlightSnap, onClick = { c.toggleHighlightSnap() }) {
-                        SnapGlyph(tintFor(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
+                // الأدوات الأساسية
+                if (c.toolbarStyle == ToolbarStyle.PEN_BAR) {
+                    // زر قلم واحد: يفتح شريط الأقلام والهايلايتر
+                    val writing = c.tool.isPen() || c.tool == Tool.HIGHLIGHTER
+                    val shown = if (writing) c.tool else c.lastWriting
+                    TBtn(selected = writing, onClick = {
+                        if (!writing) {
+                            c.selectTool(c.lastWriting)
+                            c.penBarOpen = true
+                        } else {
+                            c.penBarOpen = !c.penBarOpen
+                        }
+                    }) {
+                        ToolGlyph(shown, tintFor(writing), c.colorFor(shown), filled = writing)
+                    }
+                } else {
+                    // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
+                    val penSelected = c.tool.isPen()
+                    val shownPen = if (penSelected) c.tool else c.lastPen
+                    ToolSlot(
+                        tool = shownPen, selected = penSelected, open = settingsFor == "pen",
+                        onTap = { if (penSelected) settingsFor = "pen" else c.selectToolWithHint(c.lastPen) },
+                        onDismiss = { settingsFor = null },
+                        onCustomColor = { settingsFor = null; showPicker = true }
+                    )
+                    ToolSlot(
+                        tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER, open = settingsFor == "hl",
+                        onTap = { if (c.tool == Tool.HIGHLIGHTER) settingsFor = "hl" else c.selectToolWithHint(Tool.HIGHLIGHTER) },
+                        onDismiss = { settingsFor = null },
+                        onCustomColor = { settingsFor = null; showPicker = true }
+                    )
+                    // التقاط النص: اختصار سريع يظهر عند اختيار الهايلايتر (وموجود أيضًا في إعداداته)
+                    if (c.tool == Tool.HIGHLIGHTER && v("snap")) {
+                        TBtn(selected = c.highlightSnap, onClick = { c.toggleHighlightSnap() }) {
+                            SnapGlyph(tintFor(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
+                        }
                     }
                 }
                 ToolSlot(
@@ -463,89 +495,95 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     onCustomColor = { settingsFor = null; showPicker = true }
                 )
 
-                ToolbarSep()
-
-                // صورة / إضافة صفحة / قراءة النص / بحث
-                TBtn(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
-                    ImageGlyph(Palette.TextSecondary)
-                }
-                TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
-                TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.TextSecondary) }
-                TBtn(selected = s.ocrRunning, onClick = {
-                    if (s.ocrRunning) {
-                        s.stopOcr()
-                    } else {
-                        s.startOcr()
-                        c.messages.tryEmit("يُقرأ نص الملف مباشرة، والعربية مدعومة في ملفات PDF الرقمية")
-                    }
-                }) { OcrGlyph(tintFor(s.ocrRunning)) }
-                TBtn(selected = s.searchOpen, onClick = {
-                    if (s.searchOpen) s.closeSearch() else s.searchOpen = true
-                }) { SearchGlyph(tintFor(s.searchOpen)) }
-                Box {
-                    TBtn(enabled = c.exporting == null, onClick = { exportMenu = true }) {
-                        ExportGlyph(Palette.TextSecondary)
-                    }
-                    DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("حفظ المستند مع التعليقات (PDF)") },
-                            onClick = {
-                                exportMenu = false
-                                onExportDoc()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("حفظ الملخصات (PDF)") },
-                            onClick = {
-                                exportMenu = false
-                                onExportSummary()
-                            }
-                        )
+                // صورة / نص / إضافة صفحة / قراءة النص / بحث / حفظ
+                if (listOf("image", "text", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
+                if (v("image")) {
+                    TBtn(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
+                        ImageGlyph(Palette.TextSecondary)
                     }
                 }
-
-                ToolbarSep()
+                if (v("text")) TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
+                if (v("addpage")) TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.TextSecondary) }
+                if (v("ocr")) {
+                    TBtn(selected = s.ocrRunning, onClick = {
+                        if (s.ocrRunning) s.stopOcr() else s.startOcr()
+                    }) { OcrGlyph(tintFor(s.ocrRunning)) }
+                }
+                if (v("search")) {
+                    TBtn(selected = s.searchOpen, onClick = {
+                        if (s.searchOpen) s.closeSearch() else s.searchOpen = true
+                    }) { SearchGlyph(tintFor(s.searchOpen)) }
+                }
+                if (v("export")) {
+                    Box {
+                        TBtn(enabled = c.exporting == null, onClick = { exportMenu = true }) {
+                            ExportGlyph(Palette.TextSecondary)
+                        }
+                        DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("حفظ المستند مع التعليقات (PDF)") },
+                                onClick = {
+                                    exportMenu = false
+                                    onExportDoc()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("حفظ الملخصات (PDF)") },
+                                onClick = {
+                                    exportMenu = false
+                                    onExportSummary()
+                                }
+                            )
+                        }
+                    }
+                }
 
                 // تراجع وإعادة
-                val canUndo = s.undoStack.isNotEmpty()
-                val canRedo = s.redoStack.isNotEmpty()
-                TBtn(enabled = canUndo, onClick = { s.undo() }) {
-                    UndoGlyph(if (canUndo) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f))
-                }
-                TBtn(enabled = canRedo, onClick = { s.redo() }) {
-                    UndoGlyph(
-                        if (canRedo) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f),
-                        redo = true
-                    )
+                if (v("undo")) {
+                    ToolbarSep()
+                    val canUndo = s.undoStack.isNotEmpty()
+                    val canRedo = s.redoStack.isNotEmpty()
+                    TBtn(enabled = canUndo, onClick = { s.undo() }) {
+                        UndoGlyph(if (canUndo) Palette.TextPrimary else dim)
+                    }
+                    TBtn(enabled = canRedo, onClick = { s.redo() }) {
+                        UndoGlyph(if (canRedo) Palette.TextPrimary else dim, redo = true)
+                    }
                 }
 
                 ToolbarSep()
 
                 // التكبير
-                val canOut = s.scale > MIN_SCALE + 0.01f
-                val canIn = s.scale < 3.99f
-                TBtn(enabled = canOut, onClick = { s.zoomHook?.invoke(1f / 1.25f) }) {
-                    ZoomGlyph(if (canOut) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f), plus = false)
-                }
-                Box(
-                    Modifier.clip(RoundedCornerShape(8.dp))
-                        .clickable { s.zoomHook?.invoke(1f / s.scale) }
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
-                ) {
-                    Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.TextPrimary)
-                }
-                TBtn(enabled = canIn, onClick = { s.zoomHook?.invoke(1.25f) }) {
-                    ZoomGlyph(if (canIn) Palette.TextPrimary else Palette.TextSecondary.copy(alpha = 0.35f), plus = true)
+                if (v("zoom")) {
+                    val canOut = s.scale > MIN_SCALE + 0.01f
+                    val canIn = s.scale < 3.99f
+                    TBtn(enabled = canOut, onClick = { s.zoomHook?.invoke(1f / 1.25f) }) {
+                        ZoomGlyph(if (canOut) Palette.TextPrimary else dim, plus = false)
+                    }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(8.dp))
+                            .clickable { s.zoomHook?.invoke(1f / s.scale) }
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.TextPrimary)
+                    }
+                    TBtn(enabled = canIn, onClick = { s.zoomHook?.invoke(1.25f) }) {
+                        ZoomGlyph(if (canIn) Palette.TextPrimary else dim, plus = true)
+                    }
                 }
                 // ملاءمة الصفحة كاملة (مفيد في الوضع الأفقي)، ونقرة ثانية تعيد ملء العرض
-                TBtn(onClick = { s.fitHook?.invoke() }) { FitGlyph(Palette.TextPrimary) }
+                if (v("fit")) TBtn(onClick = { s.fitHook?.invoke() }) { FitGlyph(Palette.TextPrimary) }
                 // وضع التركيز: إخفاء كل الأشرطة
-                TBtn(onClick = {
-                    s.drawerOpen = false
-                    s.summaryOpen = false
-                    c.focusMode = true
-                    c.messages.tryEmit("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة")
-                }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
+                if (v("focus")) {
+                    TBtn(onClick = {
+                        s.drawerOpen = false
+                        s.summaryOpen = false
+                        c.focusMode = true
+                        c.messages.tryEmit("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة")
+                    }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
+                }
+                // الإعدادات: ظاهرة دائمًا
+                TBtn(onClick = { c.settingsOpen = true }) { PhIcon(R.drawable.ph_sliders, Palette.TextPrimary) }
             }
         }
     }
@@ -583,6 +621,111 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
             },
             onDismiss = { addDialog = false }
         )
+    }
+}
+
+/**
+ * شريط الأقلام: كل الأقلام والهايلايتر، الألوان، الحجم، وخيارات الأداة السريعة.
+ * يظهر تحت شريط الأدوات عند الضغط على زر القلم.
+ */
+@Composable
+private fun PenBar() {
+    val c = AppController
+    val t = c.tool
+    val pill = RoundedCornerShape(26.dp)
+    var picker by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.shadow(6.dp, pill, ambientColor = Palette.Ink, spotColor = Palette.Ink)
+                .background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)
+        ) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf(Tool.BALLPOINT, Tool.FOUNTAIN, Tool.PENCIL, Tool.HIGHLIGHTER).forEach { pt ->
+                    val sel = pt == t
+                    TBtn(selected = sel, onClick = { c.selectTool(pt) }) {
+                        ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
+                    }
+                }
+                ToolbarSep()
+                val current = c.colorFor(t)
+                (c.paletteFor(t) + c.customColors.toList()).forEach { col ->
+                    val sel = col == current
+                    Box(
+                        Modifier.size(34.dp).clip(CircleShape).clickable { c.setColor(col) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            Modifier.size(if (sel) 26.dp else 22.dp).clip(CircleShape).background(col)
+                                .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
+                        )
+                    }
+                }
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).clickable { picker = true },
+                    contentAlignment = Alignment.Center
+                ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, "لون مخصص") }
+                ToolbarSep()
+                SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.width(120.dp).padding(vertical = 4.dp))
+                if (t == Tool.HIGHLIGHTER) {
+                    ToolbarSep()
+                    BarToggle("التقاط النص", c.highlightSnap) { c.toggleHighlightSnap() }
+                    Spacer(Modifier.width(6.dp))
+                    BarToggle("في الملخص", c.highlightToSummary) { c.toggleHighlightToSummary() }
+                }
+                if (t.isPen()) {
+                    ToolbarSep()
+                    BarToggle("أشكال", c.shapeSnap) { c.toggleShapeSnap() }
+                }
+                ToolbarSep()
+                Box {
+                    TBtn(onClick = { more = true }) { PhIcon(R.drawable.ph_more, Palette.TextSecondary) }
+                    DropdownMenu(
+                        expanded = more,
+                        onDismissRequest = { more = false },
+                        shape = RoundedCornerShape(18.dp),
+                        containerColor = Color.White,
+                        shadowElevation = 12.dp
+                    ) {
+                        ToolSettingsPanel(onCustomColor = { more = false; picker = true })
+                    }
+                }
+                TBtn(onClick = { c.penBarOpen = false }) {
+                    PhIcon(R.drawable.ph_caret_up, Palette.TextSecondary, 20.dp, "إخفاء شريط الأقلام")
+                }
+            }
+        }
+    }
+    if (picker) {
+        ColorPickerDialog(
+            initial = c.colorFor(c.tool),
+            onPick = { col ->
+                c.addCustomColor(col)
+                c.setColor(col)
+                picker = false
+            },
+            onDismiss = { picker = false }
+        )
+    }
+}
+
+/** زر تبديل صغير داخل شريط الأقلام. */
+@Composable
+private fun BarToggle(label: String, on: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.clip(shape).background(if (on) Palette.Navy else Palette.Background)
+            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (on) {
+            PhIcon(R.drawable.ph_check, Color.White, 14.dp)
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(label, fontSize = 12.sp, color = if (on) Color.White else Palette.TextPrimary, maxLines = 1)
     }
 }
 
@@ -704,6 +847,26 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                 Switch(
                     checked = c.highlightSnap,
                     onCheckedChange = { c.toggleHighlightSnap() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Palette.Navy,
+                        checkedBorderColor = Palette.Navy
+                    )
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("إضافة إلى الملخص", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(
+                        "أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات",
+                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Switch(
+                    checked = c.highlightToSummary,
+                    onCheckedChange = { c.toggleHighlightToSummary() },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = Palette.Navy,
@@ -973,23 +1136,6 @@ private fun ReaderSearchBar(s: DocSession) {
     }
 }
 
-@Composable
-private fun OcrStatusBar(s: DocSession) {
-    Column(Modifier.fillMaxWidth().background(Palette.NavySoft)) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "جارٍ قراءة النص: ${s.ocrDone} / ${s.ocrTotal}",
-                fontSize = 12.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = { s.stopOcr() }) { Text("إيقاف", fontSize = 12.sp) }
-        }
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-    }
-}
-
 // ---------------------------------------------------------------- التكبير والتحريك
 
 /**
@@ -1125,6 +1271,42 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             }
         }
 
+        // تجهيز الصفحات المجاورة مسبقًا: نسخ معاينة سريعة حولك دائمًا، ونسخ واضحة للصفحتين التاليتين عند التوقف
+        LaunchedEffect(pdf, vw) {
+            snapshotFlow {
+                Triple(s.listState.firstVisibleItemIndex, s.listState.isScrollInProgress, s.scale)
+            }.collectLatest { (first, scrolling, sc) ->
+                if (scrolling) s.lastScrollAt = System.currentTimeMillis()
+                val visible = s.listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+                val n = pdf.count
+                withContext(Dispatchers.IO) {
+                    val ctx = coroutineContext
+                    val around = (first - 3..first + visible + 6).filter { it in 0 until n }
+                    for (k in around) {
+                        if (!ctx.isActive) return@withContext
+                        try {
+                            pdf.render(pdf.pages.getOrNull(k), PREVIEW_W) { ctx.isActive }
+                        } catch (t: Throwable) {
+                        }
+                    }
+                }
+                if (scrolling) return@collectLatest
+                delay(250)
+                val w = renderWidthFor((vw * sc - 2f * pad).roundToInt())
+                withContext(Dispatchers.IO) {
+                    val ctx = coroutineContext
+                    for (k in listOf(first + visible, first + visible + 1)) {
+                        if (k !in 0 until n) continue
+                        if (!ctx.isActive) return@withContext
+                        try {
+                            pdf.render(pdf.pages.getOrNull(k), w) { ctx.isActive }
+                        } catch (t: Throwable) {
+                        }
+                    }
+                }
+            }
+        }
+
         // الانتقال إلى نتيجة البحث (عند التنقل فقط، لا عند تقدّم القراءة في الخلفية)
         LaunchedEffect(s.hitNav) {
             val h = s.hits.getOrNull(s.hitIndex) ?: return@LaunchedEffect
@@ -1154,7 +1336,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                items(pdf.count, key = { it }) { i ->
+                items(pdf.count, key = { it }, contentType = { "page" }) { i ->
                     PageView(
                         pdf = pdf,
                         index = i,
@@ -1191,7 +1373,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         }
 
         // عداد وقت القراءة لهذا المستند
-        if (!s.drawerOpen) {
+        if (!s.drawerOpen && AppController.toolVisible("readtimer")) {
             Row(
                 Modifier.align(Alignment.BottomStart).padding(14.dp)
                     .shadow(3.dp, RoundedCornerShape(14.dp))
@@ -1396,19 +1578,37 @@ private fun PageView(
     val scope = rememberCoroutineScope()
     val view = LocalView.current
     var wPx by remember { mutableStateOf(0) }
-    val renderW = if (wPx <= 0) 0 else (((wPx + 299) / 300) * 300).coerceAtMost(2400)
+    val renderW = renderWidthFor(wPx)
 
+    // أولًا نسخة صغيرة سريعة (فلا تظهر صفحة فارغة عند التمرير السريع)، ثم النسخة الواضحة
     val lastRef = remember { arrayOfNulls<PageRef>(1) }
-    val bmp by produceState<Bitmap?>(pdf.cached(ref, renderW), pdf, ref, renderW) {
+    val bmp by produceState<Bitmap?>(
+        pdf.cached(ref, renderW) ?: pdf.cached(ref, PREVIEW_W), pdf, ref, renderW
+    ) {
         if (lastRef[0] != ref) {
-            value = pdf.cached(ref, renderW)
+            value = pdf.cached(ref, renderW) ?: pdf.cached(ref, PREVIEW_W)
             lastRef[0] = ref
         }
         if (renderW > 0) {
+            if (value == null) {
+                val low = withContext(Dispatchers.IO) {
+                    val ctx = coroutineContext
+                    try {
+                        pdf.render(ref, PREVIEW_W) { ctx.isActive }
+                    } catch (t: Throwable) {
+                        null
+                    }
+                }
+                if (low != null && value == null) value = low
+            }
+            if (pdf.cached(ref, renderW) == null) {
+                // صفحة تعبر الشاشة بسرعة لا تستحق رسمًا كاملًا
+                delay(90)
+            }
             val b = withContext(Dispatchers.IO) {
-                ensureActive()
+                val ctx = coroutineContext
                 try {
-                    pdf.render(ref, renderW)
+                    pdf.render(ref, renderW) { ctx.isActive }
                 } catch (t: Throwable) {
                     null
                 }
@@ -1514,20 +1714,10 @@ private fun PageView(
                 val w = size.width
                 for (m in pageMarks) {
                     val col = Exporter.markColor(m.color, strong = m.level >= 2)
-                    for (r in m.rects) {
-                        drawRect(
-                            col, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
-                            blendMode = BlendMode.Multiply
-                        )
-                    }
+                    for (r in m.rects) drawMarkRect(col, r, w)
                     if (m.level < 2) {
                         val strong = Exporter.markColor(m.color, strong = true)
-                        for (r in m.strongRects) {
-                            drawRect(
-                                strong, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
-                                blendMode = BlendMode.Multiply
-                            )
-                        }
+                        for (r in m.strongRects) drawMarkRect(strong, r, w)
                     }
                     // خط ذهبي تحت النص المهم (المظلل مرتين)
                     val important = if (m.level >= 2) m.rects else m.strongRects

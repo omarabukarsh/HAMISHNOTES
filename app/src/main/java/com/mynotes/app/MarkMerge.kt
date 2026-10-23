@@ -24,6 +24,24 @@ object MarkMerge {
         idx: List<Int>,
         color: Color,
         now: Long,
+        inSummary: Boolean = true,
+        newId: () -> String
+    ): Result? {
+        // التمييز «بدون ملخص» لا يُدمج مع تمييزات الملخص (ولا العكس)
+        val others = existing.filter { it.inSummary != inSummary }
+        val same = existing.filter { it.inSummary == inSummary }
+        val res = addSame(same, page, words, idx, color, now, inSummary, newId) ?: return null
+        return Result(others + res.marks, res.message)
+    }
+
+    private fun addSame(
+        existing: List<TextMark>,
+        page: Int,
+        words: List<OcrWord>,
+        idx: List<Int>,
+        color: Color,
+        now: Long,
+        inSummary: Boolean,
         newId: () -> String
     ): Result? {
         val text = TextLayout.buildText(words, idx).trim()
@@ -77,7 +95,7 @@ object MarkMerge {
                 val merged = TextMark(
                     id = newId(), page = page, rects = rects, color = color,
                     text = text, createdAt = contained.minOf { it.createdAt },
-                    emphasis = emphasis.distinct(), strongRects = strong.distinct()
+                    emphasis = emphasis.distinct(), strongRects = strong.distinct(), inSummary = inSummary
                 )
                 val ids = contained.map { it.id }.toSet()
                 next = existing.filter { it.id !in ids } + merged
@@ -122,7 +140,8 @@ object MarkMerge {
                         if (it.level >= 2) listOf(TextTidy.clean(it.text.replace("# ", "").replace(" | ", " ")))
                         else it.emphasis
                     }.distinct(),
-                    strongRects = adjacent.flatMap { if (it.level >= 2) it.rects else it.strongRects }.distinct()
+                    strongRects = adjacent.flatMap { if (it.level >= 2) it.rects else it.strongRects }.distinct(),
+                    inSummary = inSummary
                 )
                 val ids = adjacent.map { it.id }.toSet()
                 next = existing.filter { it.id !in ids } + merged
@@ -134,7 +153,8 @@ object MarkMerge {
             rects = rects,
             color = color,
             text = text,
-            createdAt = now
+            createdAt = now,
+            inSummary = inSummary
         ))
         return Result(list, message)
     }

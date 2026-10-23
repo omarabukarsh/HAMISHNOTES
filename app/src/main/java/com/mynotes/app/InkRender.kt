@@ -1,6 +1,9 @@
 package com.mynotes.app
 
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -63,7 +66,7 @@ internal fun DrawScope.drawInk(
         Tool.HIGHLIGHTER -> drawPath(
             buildPath(pts, w, extra),
             color.copy(alpha = 0.35f),
-            style = Stroke(width = width * w, cap = StrokeCap.Square, join = StrokeJoin.Round)
+            style = Stroke(width = width * w, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
         Tool.PENCIL -> drawPath(
             buildPath(pts, w, extra),
@@ -76,4 +79,17 @@ internal fun DrawScope.drawInk(
             style = Stroke(width = width * w, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
+}
+
+/** نصف قطر زوايا التمييز: حواف دائرية ناعمة نسبةً لارتفاع السطر. */
+fun markCorner(heightPx: Float): Float = heightPx * 0.32f
+
+/** مستطيل تمييز بحواف دائرية بمزج «ضرب» (يبدو خلف النص). */
+fun DrawScope.drawMarkRect(color: Color, r: MarkRect, w: Float) {
+    val h = (r.b - r.t) * w
+    drawRoundRect(
+        color, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, h),
+        cornerRadius = CornerRadius(markCorner(h)),
+        blendMode = BlendMode.Multiply
+    )
 }

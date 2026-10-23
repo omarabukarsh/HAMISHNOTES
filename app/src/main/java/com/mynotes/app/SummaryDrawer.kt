@@ -92,9 +92,8 @@ fun SummaryDrawer(
     var tableCols by remember { mutableStateOf(2) }
     var editingTable by remember { mutableStateOf<STable?>(null) }
     var studying by remember { mutableStateOf(false) }
-    // البطاقات تُصنع دائمًا من الملخص المرتب (مع تعديلات المستخدم)
-    val custom = s.customCards
-    val cards = remember(all, edits, custom) { custom + Flashcards.generate(Summary.view(all, true, edits)) }
+    // البطاقات يصنعها المستخدم بنفسه فقط (عنوان ومحتوى)
+    val cards = s.customCards
     var cardFrom by remember { mutableStateOf<SBlock?>(null) }
 
     Surface(

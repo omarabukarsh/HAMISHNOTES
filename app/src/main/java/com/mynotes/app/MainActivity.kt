@@ -131,6 +131,7 @@ fun MyNotesApp() {
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
     }
+    if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
 }
 
 @Composable

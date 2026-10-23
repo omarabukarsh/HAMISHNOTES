@@ -18,24 +18,43 @@ import java.io.File
  */
 data class PageRef(val src: String, val index: Int, val ratio: Float)
 
-/** ذاكرة مؤقتة للصفحات المرسومة، بحد أقصى للذاكرة حتى لا تمتلئ مع الملفات الكبيرة. */
+/**
+ * ذاكرة مؤقتة للصفحات المرسومة، بحد أقصى للذاكرة حتى لا تمتلئ مع الملفات الكبيرة.
+ * النسخ الصغيرة (معاينة سريعة أثناء التمرير والمصغرات) في ذاكرة منفصلة حتى لا تطردها الصفحات الكبيرة.
+ */
 object PageCache {
     private val cache = object : LruCache<String, Bitmap>(
         (Runtime.getRuntime().maxMemory() / 5L).coerceAtMost(160L * 1024L * 1024L).toInt()
     ) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
+    private val small = object : LruCache<String, Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 12L).coerceAtMost(40L * 1024L * 1024L).toInt()
+    ) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
 
-    fun get(key: String): Bitmap? = cache.get(key)
+    private fun isSmall(key: String) = key.substringAfterLast(':').toIntOrNull()?.let { it <= SMALL_MAX } ?: false
+
+    fun get(key: String): Bitmap? = if (isSmall(key)) small.get(key) else cache.get(key)
 
     fun put(key: String, bmp: Bitmap) {
-        cache.put(key, bmp)
+        if (isSmall(key)) small.put(key, bmp) else cache.put(key, bmp)
     }
 
     fun removePrefix(prefix: String) {
         cache.snapshot().keys.filter { it.startsWith(prefix) }.forEach { cache.remove(it) }
+        small.snapshot().keys.filter { it.startsWith(prefix) }.forEach { small.remove(it) }
     }
+
+    private const val SMALL_MAX = 480
 }
+
+/** عرض نسخة المعاينة السريعة (تظهر فورًا أثناء التمرير السريع، ثم تُستبدل بالنسخة الواضحة). */
+const val PREVIEW_W = 360
+
+/** عرض الرسم الواضح لصفحة معروضة بعرض wPx (مقرّب حتى تُعاد الاستفادة من الذاكرة المؤقتة). */
+fun renderWidthFor(wPx: Int): Int = if (wPx <= 0) 0 else (((wPx + 199) / 200) * 200).coerceAtMost(2400)
 
 /** ذاكرة مؤقتة للصور المضافة فوق الصفحات. */
 object ImageCache {
@@ -127,13 +146,18 @@ class PdfDoc private constructor(private val id: String) {
         }
     }
 
-    /** للعرض على الشاشة: تُخزَّن في الذاكرة المؤقتة. */
-    fun render(ref: PageRef?, widthPx: Int): Bitmap? {
+    /**
+     * للعرض على الشاشة: تُخزَّن في الذاكرة المؤقتة.
+     * alive: إن أصبح false أثناء انتظار الدور (الصفحة خرجت من الشاشة بالتمرير السريع) يُلغى الرسم.
+     */
+    fun render(ref: PageRef?, widthPx: Int, alive: () -> Boolean = { true }): Bitmap? {
         if (ref == null || widthPx <= 0) return null
         val k = key(ref, widthPx)
         PageCache.get(k)?.let { return it }
         val bmp: Bitmap = synchronized(this) {
-            if (closed) return null
+            if (closed || !alive()) return null
+            // ربما رسمها طلب آخر أثناء الانتظار
+            PageCache.get(k)?.let { return it }
             draw(ref, widthPx)
         } ?: return null
         PageCache.put(k, bmp)

@@ -335,6 +335,7 @@ private fun Spine() {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.FAVORITES
         }
+        SpineItem("الإعدادات", R.drawable.ph_sliders, null, false) { c.settingsOpen = true }
 
         // المواد
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -744,6 +745,9 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                     c.setTheme(if (ThemeState.light) AppTheme.NAVY else AppTheme.LIGHT)
                 }) {
                     PhIcon(R.drawable.ph_palette, Palette.TextSecondary, 21.dp, "تبديل المظهر")
+                }
+                IconButton(onClick = { c.settingsOpen = true }) {
+                    PhIcon(R.drawable.ph_sliders, Palette.TextSecondary, 21.dp, "الإعدادات")
                 }
             }
             // الأزرار في سطر مستقل قابل للتمرير حتى لا تُضغط على الشاشات الضيقة

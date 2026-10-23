@@ -462,7 +462,8 @@ class LibraryRepository(context: Context) {
                                 createdAt = o.optLong("at"),
                                 level = o.optInt("lv", 1),
                                 emphasis = if (em == null) emptyList() else (0 until em.length()).map { em.getString(it) },
-                                strongRects = strong
+                                strongRects = strong,
+                                inSummary = o.optBoolean("sum", true)
                             )
                         )
                     } catch (e: Throwable) {
@@ -578,6 +579,7 @@ class LibraryRepository(context: Context) {
                                 .put("at", m.createdAt)
                                 .put("r", flat)
                                 .put("lv", m.level)
+                                .put("sum", m.inSummary)
                                 .put("em", JSONArray().apply { m.emphasis.forEach { put(it) } })
                                 .put("sr", JSONArray().apply {
                                     m.strongRects.forEach {

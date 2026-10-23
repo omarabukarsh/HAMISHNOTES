@@ -39,7 +39,6 @@ object AppController {
     @Volatile
     var lastInkAt: Long = 0L
 
-    private var ocrNoticeShown = false
 
     val library = mutableStateListOf<DocEntry>()
     val tabs = mutableStateListOf<DocSession>()
@@ -162,6 +161,19 @@ object AppController {
     val customColors = mutableStateListOf<Color>()
 
     /** عند تفعيله يلتقط الهايلايتر النص الذي يمرّ عليه ويضعه خلفه، ويضيفه إلى «ملخصات». */
+    /** التمييز الجديد يُضاف إلى الملخصات (false = تمييز على الصفحة فقط). */
+    var highlightToSummary by mutableStateOf(true)
+        private set
+
+    fun toggleHighlightToSummary() {
+        highlightToSummary = !highlightToSummary
+        prefs.edit().putBoolean("hl_summary", highlightToSummary).apply()
+        messages.tryEmit(
+            if (highlightToSummary) "التمييز الجديد يُضاف إلى الملخصات"
+            else "التمييز الجديد يبقى على الصفحة فقط ولا يظهر في الملخصات"
+        )
+    }
+
     var highlightSnap by mutableStateOf(false)
         private set
 
@@ -199,9 +211,14 @@ object AppController {
         else -> 2
     }
 
+    /** آخر أداة كتابة (قلم أو هايلايتر)، لزر القلم في نمط «شريط الأقلام». */
+    var lastWriting by mutableStateOf(Tool.FOUNTAIN)
+        private set
+
     fun selectTool(t: Tool) {
         tool = t
         if (t.isPen()) lastPen = t
+        if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t
     }
 
     fun setTheme(t: AppTheme) {
@@ -319,6 +336,32 @@ object AppController {
     }
 
     /** تحويل رسم القلم إلى أشكال مرتبة (خط، سهم، مستطيل، مثلث، دائرة). */
+    // ---------- الإعدادات: شكل شريط الأدوات والأدوات الظاهرة ----------
+
+    /** نافذة الإعدادات (تُفتح من المكتبة أو من داخل المستند). */
+    var settingsOpen by mutableStateOf(false)
+
+    var toolbarStyle by mutableStateOf(ToolbarStyle.PEN_BAR)
+        private set
+
+    fun updateToolbarStyle(st: ToolbarStyle) {
+        toolbarStyle = st
+        prefs.edit().putString("toolbar_style", st.name).apply()
+    }
+
+    /** شريط الأقلام الثاني مفتوح (في نمط «شريط الأقلام»). */
+    var penBarOpen by mutableStateOf(false)
+
+    /** الأدوات الاختيارية المخفية من شريط الأدوات (الأدوات الأساسية لا تُخفى). */
+    val hiddenTools = mutableStateListOf<String>()
+
+    fun toolVisible(id: String): Boolean = id !in hiddenTools
+
+    fun setToolVisible(id: String, visible: Boolean) {
+        if (visible) hiddenTools.remove(id) else if (id !in hiddenTools) hiddenTools.add(id)
+        prefs.edit().putString("hidden_tools", hiddenTools.joinToString(",")).apply()
+    }
+
     var shapeSnap by mutableStateOf(true)
         private set
 
@@ -379,7 +422,15 @@ object AppController {
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
         highlightSnap = prefs.getBoolean("hl_snap", false)
+        highlightToSummary = prefs.getBoolean("hl_summary", true)
         shapeSnap = prefs.getBoolean("shape_snap", true)
+        toolbarStyle = try {
+            ToolbarStyle.valueOf(prefs.getString("toolbar_style", "PEN_BAR") ?: "PEN_BAR")
+        } catch (e: Throwable) {
+            ToolbarStyle.PEN_BAR
+        }
+        hiddenTools.clear()
+        (prefs.getString("hidden_tools", "") ?: "").split(",").filter { it.isNotBlank() }.forEach { hiddenTools.add(it) }
         summaryByColor = prefs.getBoolean("sum_by_color", false)
         try {
             val o = org.json.JSONObject(prefs.getString("color_labels", "{}") ?: "{}")
@@ -446,18 +497,9 @@ object AppController {
                 s.applyPending()
                 // قراءة النص تبدأ تلقائيًا دون انتظار المستخدم
                 s.startOcr()
-                noteOcrLimits(s)
             }
         }
         saveSession()
-    }
-
-    private fun noteOcrLimits(s: DocSession) {
-        val total = s.pdf?.count ?: 0
-        if (!ocrNoticeShown && s.ocr.size < total) {
-            ocrNoticeShown = true
-            messages.tryEmit("يُقرأ نص الملف مباشرة (العربية مدعومة). الصفحات الممسوحة ضوئيًا تُقرأ بالإنجليزية فقط")
-        }
     }
 
     fun activate(id: String?) {
@@ -555,7 +597,7 @@ object AppController {
                 val pages = withContext(Dispatchers.IO) {
                     val sections = docs.mapNotNull { e ->
                         val data = repo.loadDocData(e.id)
-                        val marks = data.marks.values.flatten().sortedWith(
+                        val marks = data.marks.values.flatten().filter { it.inSummary }.sortedWith(
                             compareBy<TextMark>({ it.page }, { m -> m.rects.minOfOrNull { it.t } ?: 0f }, { m -> m.rects.minOfOrNull { it.l } ?: 0f })
                         )
                         val blocks = Summary.display(marks, summaryTidy, data.edits, null, summaryByColor) { labelOf(it) }

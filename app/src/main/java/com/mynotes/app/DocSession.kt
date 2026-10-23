@@ -109,6 +109,14 @@ class DocSession(entry: DocEntry) {
         AppController.messages.tryEmit("أُضيفت البطاقة")
     }
 
+    fun updateCustomCard(cardId: String, front: String, back: String) {
+        val f = front.trim()
+        val b = back.trim()
+        if (f.isEmpty() || b.isEmpty()) return
+        customCards = customCards.map { if (it.id == cardId) it.copy(front = f, back = b) else it }
+        persist()
+    }
+
     fun deleteCustomCard(cardId: String) {
         customCards = customCards.filter { it.id != cardId }
         starred = starred - cardId
@@ -138,6 +146,8 @@ class DocSession(entry: DocEntry) {
     // ---- القراءة الضوئية والتحديد والبحث ----
     val ocr = mutableStateMapOf<Int, OcrPage>()
     var ocrRunning by mutableStateOf(false)
+    /** آخر لحظة تمرير (تُحدَّث من شاشة القراءة). */
+    @Volatile var lastScrollAt = 0L
     var ocrDone by mutableStateOf(0)
     var ocrTotal by mutableStateOf(0)
     var pageBusy by mutableStateOf<Int?>(null)
@@ -448,8 +458,14 @@ class DocSession(entry: DocEntry) {
             var p = 0
             while (p < doc.count) {
                 if (!isActive || disposed) break
-                while (isActive && System.currentTimeMillis() - AppController.lastInkAt < 1500L) {
-                    delay(300)
+                // القراءة في الخلفية تتنحى أثناء الكتابة والتمرير حتى لا تبطئ رسم الصفحات
+                while (isActive && (
+                        System.currentTimeMillis() - AppController.lastInkAt < 1500L ||
+                            listState.isScrollInProgress ||
+                            System.currentTimeMillis() - lastScrollAt < 800L
+                        )
+                ) {
+                    delay(250)
                 }
                 ocrPage(p)
                 ocrDone = p + 1
@@ -493,7 +509,8 @@ class DocSession(entry: DocEntry) {
     /** يضيف تمييزًا ملتقطًا (منطق الدمج في MarkMerge). */
     private fun addMark(page: Int, words: List<OcrWord>, idx: List<Int>, color: Color) {
         val res = MarkMerge.add(
-            marks[page] ?: emptyList(), page, words, idx, color, System.currentTimeMillis()
+            marks[page] ?: emptyList(), page, words, idx, color, System.currentTimeMillis(),
+            inSummary = AppController.highlightToSummary
         ) { UUID.randomUUID().toString() } ?: return
         // قد يكتمل هذا بعد قراءة الصفحة في الخلفية أثناء حركة أخرى للمستخدم؛ لا نكسر لقطتها
         val nested = snapshot != null
@@ -547,11 +564,14 @@ class DocSession(entry: DocEntry) {
         val b = maxOf(sel.start, sel.end)
         addMark(sel.page, words, (a..b).toList(), color)
         selection = null
-        AppController.messages.tryEmit("أُضيف النص إلى الملخصات")
+        AppController.messages.tryEmit(
+            if (AppController.highlightToSummary) "أُضيف النص إلى الملخصات" else "مُيّز النص دون إضافته إلى الملخصات"
+        )
     }
 
     /** كل التمييزات مرتبة حسب الصفحة ثم موضعها في الصفحة. */
-    fun allMarks(): List<TextMark> = MarkMerge.readingOrder(marks.values)
+    /** تمييزات الملخص فقط (بدون التمييز المخصص للصفحة وحدها). */
+    fun allMarks(): List<TextMark> = MarkMerge.readingOrder(marks.values).filter { it.inSummary }
 
     fun updateMarkText(markId: String, text: String) {
         val page = marks.entries.firstOrNull { e -> e.value.any { it.id == markId } }?.key ?: return

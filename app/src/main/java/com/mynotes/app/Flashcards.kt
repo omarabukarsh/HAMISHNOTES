@@ -54,90 +54,10 @@ import kotlin.math.roundToInt
 /** حالة بطاقة في المراجعة المتباعدة: سهولة، فاصل بالأيام، يوم الاستحقاق (epochDay)، عدد مرات النجاح. */
 data class SrsState(val ease: Float, val interval: Int, val due: Long, val reps: Int, val intro: Long = -1L)
 
-/** بطاقة: وجه (سؤال) وظهر (إجابة). id ثابت من نصها، فتبقى حالتها إن أعيد توليد البطاقات. */
+/** بطاقة يصنعها المستخدم: الوجه عنوان، والظهر المحتوى. */
 data class Card(val id: String, val front: String, val back: String, val cloze: Boolean = false)
 
 object Flashcards {
-    private const val TERMINAL = ".!?؟…"
-
-    private fun idOf(kind: String, front: String, back: String) =
-        kind + ":" + (front.trim() + "|" + back.trim()).hashCode().toUInt().toString(16)
-
-    /**
-     * يولّد البطاقات من الملخص (بعد تعديلات المستخدم):
-     *  - عنوان + ما تحته من فقرات  → سؤال: العنوان، والإجابة: النص
-     *  - كل صف جدول                → سؤال: الخلية الأولى، والإجابة: باقي الخلايا مع أسماء الأعمدة
-     *  - النص المهم (المظلل مرتين) → بطاقة «أكمل الفراغ» من جملته
-     */
-    fun generate(blocks: List<SBlock>): List<Card> {
-        val out = ArrayList<Card>()
-        var heading: String? = null
-        val under = ArrayList<String>()
-
-        fun flushSection() {
-            val h = heading
-            if (h != null && under.isNotEmpty()) {
-                val back = under.joinToString("\n\n").let { if (it.length > 900) it.take(900) + "…" else it }
-                out.add(Card(idOf("h", h, back), h, back))
-            }
-            under.clear()
-        }
-
-        for (b in blocks) {
-            when (b) {
-                is SHeading -> {
-                    flushSection()
-                    heading = b.text
-                }
-                is SPara -> {
-                    under.add(b.text)
-                    for (r in Summary.emphasisRanges(b.text, b.emphasis)) {
-                        val phrase = b.text.substring(r.first, r.last + 1)
-                        if (phrase.length > 80) continue
-                        // بطاقة مباشرة: النص المهم في الوجه، وجملته كاملة في الظهر
-                        val sentence = sentenceAround(b.text, r.first, r.last + 1).first
-                        if (sentence.length < phrase.length + 12) continue
-                        out.add(Card(idOf("c", phrase, sentence), phrase, sentence))
-                    }
-                }
-                is STable -> {
-                    val rows = b.rows.filter { r -> r.any { it.isNotBlank() } }
-                    if (rows.isEmpty()) continue
-                    val head = if (b.header && rows.size > 1) rows[0] else null
-                    val data = if (head != null) rows.drop(1) else rows
-                    for (r in data) {
-                        val key = r.firstOrNull()?.trim().orEmpty()
-                        if (key.isEmpty() || r.size < 2) continue
-                        val back = r.drop(1).mapIndexedNotNull { i, v ->
-                            if (v.isBlank()) null
-                            else {
-                                val label = head?.getOrNull(i + 1)?.trim().orEmpty()
-                                if (label.isNotEmpty()) "$label: $v" else v
-                            }
-                        }.joinToString("\n")
-                        if (back.isEmpty()) continue
-                        val front = if (heading != null) "$key\n(${heading})" else key
-                        out.add(Card(idOf("t", front, back), front, back))
-                    }
-                }
-            }
-        }
-        flushSection()
-        return out.distinctBy { it.id }
-    }
-
-    /** الجملة التي تحتوي النطاق، وموضع بداية النطاق داخلها. */
-    private fun sentenceAround(text: String, start: Int, end: Int): Pair<String, Int> {
-        var a = start
-        while (a > 0 && text[a - 1] !in TERMINAL) a--
-        var z = end
-        while (z < text.length && text[z] !in TERMINAL) z++
-        if (z < text.length) z++
-        val raw = text.substring(a, z)
-        val lead = raw.length - raw.trimStart().length
-        return raw.trim() to (start - a - lead)
-    }
-
     // ---------- الجدولة (SM-2 مبسطة) ----------
 
     fun today(): Long = LocalDate.now().toEpochDay()
@@ -203,6 +123,9 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     // البطاقات المقلوبة حاليًا (حسب المعرّف)
     var flipped by remember { mutableStateOf(setOf<String>()) }
+    // إضافة بطاقة جديدة أو تعديل بطاقة موجودة
+    var adding by remember { mutableStateOf(false) }
+    var editingCard by remember { mutableStateOf<Card?>(null) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -218,6 +141,11 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                             fontSize = 20.sp, color = Palette.Navy
                         )
                         Text(s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1)
+                    }
+                    TextButton(onClick = { adding = true }) {
+                        PhIcon(R.drawable.ph_plus, Palette.Navy, 16.dp)
+                        Spacer(Modifier.width(4.dp))
+                        Text("بطاقة جديدة", color = Palette.Navy, fontWeight = FontWeight.Bold)
                     }
                     ChoiceChip("الصعبة فقط (${cards.count { it.id in s.starred }})", hardOnly) {
                         hardOnly = !hardOnly
@@ -238,8 +166,8 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                 if (deck.isEmpty()) {
                     EmptyCards(
                         if (hardOnly) "لا توجد بطاقات مميزة بنجمة. اضغط النجمة على أي بطاقة صعبة لتظهر هنا."
-                        else "لا توجد بطاقات بعد. البطاقات تُصنع من العناوين وما تحتها، ومن صفوف الجداول، " +
-                            "ومن النص المظلل مرتين، أو حدد نصًا واختر «اجعله بطاقة»."
+                        else "لا توجد بطاقات بعد. اضغط «بطاقة جديدة» واكتب العنوان والمحتوى، " +
+                            "أو حدد نصًا في المستند أو الملخص واختر «اجعله بطاقة»."
                     )
                 } else {
                     HorizontalPager(
@@ -254,10 +182,11 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                                 flipped = if (isFlipped) flipped - card.id else flipped + card.id
                             }
                             Row(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                                if (card.id.startsWith("u:")) {
-                                    IconButton(onClick = { s.deleteCustomCard(card.id) }) {
-                                        PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 20.dp, "حذف البطاقة")
-                                    }
+                                IconButton(onClick = { editingCard = card }) {
+                                    PhIcon(R.drawable.ph_pencil, Palette.TextSecondary, 20.dp, "تعديل البطاقة")
+                                }
+                                IconButton(onClick = { s.deleteCustomCard(card.id) }) {
+                                    PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 20.dp, "حذف البطاقة")
                                 }
                                 IconButton(onClick = { s.toggleStar(card.id) }) {
                                     StarGlyph(card.id in s.starred, Palette.Gold, Modifier.size(24.dp))
@@ -290,6 +219,18 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                 }
             }
         }
+    }
+    if (adding) {
+        AddCardDialog("", "", onSave = { f, b ->
+            s.addCustomCard(f, b)
+            adding = false
+        }, onDismiss = { adding = false })
+    }
+    editingCard?.let { ec ->
+        AddCardDialog(ec.front, ec.back, title = "تعديل البطاقة", confirm = "حفظ", onSave = { f, b ->
+            s.updateCustomCard(ec.id, f, b)
+            editingCard = null
+        }, onDismiss = { editingCard = null })
     }
 }
 
@@ -344,28 +285,35 @@ private fun EmptyCards(text: String) {
     }
 }
 
-/** إضافة بطاقة يدويًا: الظهر هو النص المحدد، والوجه يكتبه المستخدم. */
+/** إضافة بطاقة أو تعديلها: العنوان (الوجه) والمحتوى (الظهر) يكتبهما المستخدم. */
 @Composable
-fun AddCardDialog(initialFront: String, initialBack: String, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
+fun AddCardDialog(
+    initialFront: String,
+    initialBack: String,
+    title: String = "بطاقة جديدة",
+    confirm: String = "إضافة",
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
     var front by remember { mutableStateOf(initialFront) }
     var back by remember { mutableStateOf(initialBack) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("بطاقة جديدة") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 androidx.compose.material3.OutlinedTextField(
                     value = front, onValueChange = { front = it },
-                    label = { Text("الوجه: عنوان أو مصطلح") }, modifier = Modifier.fillMaxWidth()
+                    label = { Text("عنوان البطاقة") }, modifier = Modifier.fillMaxWidth()
                 )
                 androidx.compose.material3.OutlinedTextField(
                     value = back, onValueChange = { back = it },
-                    label = { Text("الظهر: الشرح") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
+                    label = { Text("محتوى البطاقة") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
                 )
             }
         },
         confirmButton = {
-            TextButton(enabled = front.isNotBlank() && back.isNotBlank(), onClick = { onSave(front, back) }) { Text("إضافة") }
+            TextButton(enabled = front.isNotBlank() && back.isNotBlank(), onClick = { onSave(front, back) }) { Text(confirm) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )

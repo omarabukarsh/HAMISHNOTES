@@ -154,12 +154,7 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
                 val w = size.width
                 (s.marks[i] ?: emptyList()).forEach { m ->
                     val col = Exporter.markColor(m.color, strong = m.level >= 2)
-                    m.rects.forEach { r ->
-                        drawRect(
-                            col, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, (r.b - r.t) * w),
-                            blendMode = BlendMode.Multiply
-                        )
-                    }
+                    m.rects.forEach { r -> drawMarkRect(col, r, w) }
                 }
                 strokes.forEach { drawInk(it.pts, it.color, it.width, it.tool) }
             }

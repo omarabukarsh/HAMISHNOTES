@@ -186,12 +186,12 @@ object Exporter {
                 for (m in marks) {
                     val col = markColor(m.color, strong = m.level >= 2)
                     cs.setNonStrokingColor(col.red, col.green, col.blue)
-                    for (r in m.rects) cs.addRect(px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
+                    for (r in m.rects) addRoundRect(cs, px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
                     cs.fill()
                     if (m.level < 2 && m.strongRects.isNotEmpty()) {
                         val strong = markColor(m.color, strong = true)
                         cs.setNonStrokingColor(strong.red, strong.green, strong.blue)
-                        for (r in m.strongRects) cs.addRect(px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
+                        for (r in m.strongRects) addRoundRect(cs, px(r.l), py(r.b), (r.r - r.l) * w, (r.b - r.t) * w)
                         cs.fill()
                     }
                     val important = if (m.level >= 2) m.rects else m.strongRects
@@ -280,6 +280,27 @@ object Exporter {
         }
     }
 
+    private fun roundRect(c: Canvas, r: MarkRect, w: Float, p: Paint) {
+        val rad = markCorner((r.b - r.t) * w)
+        c.drawRoundRect(r.l * w, r.t * w, r.r * w, r.b * w, rad, rad, p)
+    }
+
+    /** مستطيل بحواف دائرية في ملف PDF (منحنيات بيزييه). */
+    private fun addRoundRect(cs: com.tom_roush.pdfbox.pdmodel.PDPageContentStream, x: Float, y: Float, rw: Float, rh: Float) {
+        val rad = markCorner(rh).coerceAtMost(minOf(rw, rh) / 2f)
+        val k = rad * 0.5523f
+        cs.moveTo(x + rad, y)
+        cs.lineTo(x + rw - rad, y)
+        cs.curveTo(x + rw - rad + k, y, x + rw, y + rad - k, x + rw, y + rad)
+        cs.lineTo(x + rw, y + rh - rad)
+        cs.curveTo(x + rw, y + rh - rad + k, x + rw - rad + k, y + rh, x + rw - rad, y + rh)
+        cs.lineTo(x + rad, y + rh)
+        cs.curveTo(x + rad - k, y + rh, x, y + rh - rad + k, x, y + rh - rad)
+        cs.lineTo(x, y + rad)
+        cs.curveTo(x, y + rad - k, x + rad - k, y, x + rad, y)
+        cs.closePath()
+    }
+
     private fun drawMarks(c: Canvas, marks: List<TextMark>, w: Float) {
         if (marks.isEmpty()) return
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -287,10 +308,10 @@ object Exporter {
         val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Palette.GoldDeep.toArgb() }
         for (m in marks) {
             p.color = markColor(m.color, strong = m.level >= 2).toArgb()
-            for (r in m.rects) c.drawRect(r.l * w, r.t * w, r.r * w, r.b * w, p)
+            for (r in m.rects) roundRect(c, r, w, p)
             if (m.level < 2) {
                 p.color = markColor(m.color, strong = true).toArgb()
-                for (r in m.strongRects) c.drawRect(r.l * w, r.t * w, r.r * w, r.b * w, p)
+                for (r in m.strongRects) roundRect(c, r, w, p)
             }
             // خط ذهبي تحت النص المهم
             val important = if (m.level >= 2) m.rects else m.strongRects

@@ -7,6 +7,9 @@ enum class Tool { BALLPOINT, FOUNTAIN, PENCIL, HIGHLIGHTER, ERASER, LASER }
 /** نمط الليزر: نقطة متوهجة، أو خط مستمر يتلاشى بعد ثانية ونصف. */
 enum class LaserMode { DOT, LINE }
 
+/** شكل شريط الأدوات: الكلاسيكي (القلم والهايلايتر زرّان)، أو شريط ثانٍ لكل الأقلام يظهر عند الضغط على القلم. */
+enum class ToolbarStyle { CLASSIC, PEN_BAR }
+
 /** الأقلام العادية الثلاثة (جاف، حبر، رصاص). */
 fun Tool.isPen(): Boolean =
     this == Tool.BALLPOINT || this == Tool.FOUNTAIN || this == Tool.PENCIL
@@ -51,7 +54,9 @@ data class TextMark(
     /** أجزاء من النص ظُلّلت مرة ثانية؛ تظهر بخط عريض في الملخص. */
     val emphasis: List<String> = emptyList(),
     /** مستطيلات الأجزاء المظللة مرة ثانية (تظليل أقوى على الصفحة). */
-    val strongRects: List<MarkRect> = emptyList()
+    val strongRects: List<MarkRect> = emptyList(),
+    /** false = تمييز على الصفحة فقط، لا يظهر في الملخصات. */
+    val inSummary: Boolean = true
 )
 
 /*

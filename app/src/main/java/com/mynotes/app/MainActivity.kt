@@ -53,7 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)
@@ -107,6 +107,12 @@ class MainActivity : ComponentActivity() {
 
     /** ملف PDF فُتح من تطبيق آخر: يُضاف إلى المكتبة (أو يُفتح إن كان موجودًا) ويظهر مباشرة. */
     private fun handleOpenIntent(i: android.content.Intent?) {
+        // أداة الشاشة الرئيسية: متابعة آخر مستند
+        if (i?.getBooleanExtra("open_last", false) == true) {
+            i.removeExtra("open_last")
+            AppController.openLast()
+            return
+        }
         if (i?.action != android.content.Intent.ACTION_VIEW) return
         val uri = i.data ?: return
         val type = i.type
@@ -182,6 +188,7 @@ fun MyNotesApp() {
     if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
     // عرض باوربوينت فُتح من تطبيق آخر: تحويله إلى PDF
     PresentationConvertDialog()
+    LockDialogs()
 }
 
 @Composable

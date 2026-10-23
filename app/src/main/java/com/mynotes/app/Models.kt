@@ -150,7 +150,9 @@ data class DocEntry(
     /** مجموع وقت القراءة الفعلي بالمللي ثانية. */
     val readMs: Long = 0L,
     /** المادة (المجلد) التي ينتمي إليها المستند؛ فارغ = بدون مادة. */
-    val folder: String = ""
+    val folder: String = "",
+    /** مستند مقفل برمز أو بصمة. */
+    val locked: Boolean = false
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

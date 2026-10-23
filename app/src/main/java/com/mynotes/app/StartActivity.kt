@@ -45,6 +45,7 @@ class StartActivity : Activity() {
             if (type != null) next.setDataAndType(uri, type) else next.data = uri
             next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+        if (src?.getBooleanExtra("open_last", false) == true) next.putExtra("open_last", true)
         next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(next)
         finish()

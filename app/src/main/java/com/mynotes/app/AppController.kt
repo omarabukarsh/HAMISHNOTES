@@ -130,7 +130,10 @@ object AppController {
     private fun saveStats() {
         if (!statsLoaded) return
         val snap = stats.toMap()
-        scope.launch { repo.saveStats(snap) }
+        scope.launch {
+            repo.saveStats(snap)
+            StudyWidget.refresh(appContext)
+        }
     }
     var librarySort by mutableStateOf(SortMode.LAST_OPENED)
     var libraryQuery by mutableStateOf("")
@@ -449,6 +452,58 @@ object AppController {
         Reminders.schedule(appContext)
     }
 
+    // ---------- قفل المستندات ----------
+
+    /** مستندات فُتح قفلها في هذه الجلسة (تُقفل من جديد عند إعادة تشغيل التطبيق). */
+    val unlocked = mutableStateListOf<String>()
+
+    /** مستند ينتظر إدخال الرمز أو البصمة قبل فتحه. */
+    var unlockRequest by mutableStateOf<String?>(null)
+
+    /** طلب تعيين رمز جديد (ثم قفل هذا المستند). */
+    var setPinFor by mutableStateOf<String?>(null)
+
+    fun hasPin(): Boolean = prefs.getString("lock_pin", null) != null
+
+    private fun hashPin(pin: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return md.digest(("mynotes:" + pin).toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    fun setPin(pin: String) {
+        prefs.edit().putString("lock_pin", hashPin(pin)).apply()
+    }
+
+    fun checkPin(pin: String): Boolean = prefs.getString("lock_pin", null) == hashPin(pin)
+
+    fun toggleLock(id: String) {
+        val e = library.firstOrNull { it.id == id } ?: return
+        if (!e.locked && !hasPin()) {
+            setPinFor = id
+            return
+        }
+        updateEntry(id) { it.copy(locked = !it.locked) }
+        if (e.locked) unlocked.remove(id) else unlocked.add(id)
+        saveLibrary()
+        messages.tryEmit(if (e.locked) L("أُلغي قفل المستند", "Document unlocked") else L("قُفل المستند: يحتاج الرمز أو البصمة لفتحه", "Document locked: needs your PIN or fingerprint to open"))
+    }
+
+    /** بعد التحقق: يُفتح المستند المطلوب. */
+    fun unlockGranted() {
+        val id = unlockRequest ?: return
+        unlockRequest = null
+        if (id !in unlocked) unlocked.add(id)
+        openDocument(id)
+    }
+
+    /** فتح آخر مستند (من أداة الشاشة الرئيسية). */
+    fun openLast() {
+        scope.launch {
+            while (!libraryLoaded) kotlinx.coroutines.delay(50)
+            library.filter { !it.locked }.maxByOrNull { it.lastOpened }?.let { openDocument(it.id) }
+        }
+    }
+
     /** لغة الواجهة. */
     fun setEnglish(en: Boolean) {
         I18n.english = en
@@ -701,7 +756,8 @@ object AppController {
             val ids = (prefs.getString("open", "") ?: "").split(",").filter { it.isNotBlank() }
             val active = prefs.getString("active", null)
             ids.forEach { id ->
-                library.firstOrNull { it.id == id }?.let { openSession(it, activate = false) }
+                // المستندات المقفلة لا تُفتح تلقائيًا بعد إعادة تشغيل التطبيق
+                library.firstOrNull { it.id == id && !it.locked }?.let { openSession(it, activate = false) }
             }
             activeId = active?.takeIf { a -> tabs.any { it.id == a } }
             libraryLoaded = true
@@ -711,6 +767,11 @@ object AppController {
     // ---------- التبويبات ----------
 
     fun openDocument(id: String) {
+        val e0 = library.firstOrNull { it.id == id }
+        if (e0 != null && e0.locked && id !in unlocked) {
+            unlockRequest = id
+            return
+        }
         if (tabs.any { it.id == id }) {
             activate(id)
             return
@@ -784,6 +845,7 @@ object AppController {
         if (tokens.isEmpty()) return@withContext emptyList()
         val out = ArrayList<LibraryHit>()
         for (e in library.toList()) {
+            if (e.locked && e.id !in unlocked) continue
             val pages = repo.loadOcrAll(e.id)
             for (page in pages.keys.sorted()) {
                 val words = pages[page]?.words ?: continue

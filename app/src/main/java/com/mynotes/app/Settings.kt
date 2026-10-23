@@ -238,6 +238,21 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     item { SectionTitle(L("مؤقت الدراسة", "Study timer")) }
                     item { PomodoroSettings() }
 
+                    item { SectionTitle(L("قفل المستندات", "Document lock")) }
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                L("اقفل مستندًا من قائمته في المكتبة؛ يُفتح بالرمز أو البصمة.", "Lock a document from its menu in the library; it opens with your PIN or fingerprint."),
+                                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
+                            )
+                            if (c.hasPin()) {
+                                androidx.compose.material3.TextButton(onClick = { c.setPinFor = "" }) {
+                                    Text(L("تغيير الرمز", "Change PIN"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
                     item { SectionTitle(L("التذكير اليومي", "Daily reminder")) }
                     item { ReminderRow() }
 

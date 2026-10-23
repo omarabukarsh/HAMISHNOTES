@@ -41,7 +41,8 @@ class StartActivity : Activity() {
         }
         if (uri != null) {
             next.action = Intent.ACTION_VIEW
-            next.setDataAndType(uri, src?.type ?: "application/pdf")
+            val type = src?.type
+            if (type != null) next.setDataAndType(uri, type) else next.data = uri
             next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

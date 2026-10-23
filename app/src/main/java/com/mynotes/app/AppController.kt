@@ -1131,7 +1131,10 @@ object AppController {
      * يفتح ملف PDF جاء من تطبيق آخر. إن كان في المكتبة نفس الملف (نفس الاسم والحجم) يُفتح هو،
      * وإلا يُستورد ثم يُفتح، فتبقى كتابتك محفوظة عليه في المكتبة.
      */
-    fun openExternal(uri: Uri) {
+    /** عرض باوربوينت ينتظر التحويل إلى PDF (تعرضه نافذة التحويل). */
+    var pptJob by mutableStateOf<Presentations.Job?>(null)
+
+    fun openExternal(uri: Uri, mime: String? = null) {
         scope.launch {
             // ننتظر تحميل المكتبة حتى لا يتكرر الملف
             while (!libraryLoaded) kotlinx.coroutines.delay(50)
@@ -1153,6 +1156,28 @@ object AppController {
             }
             val baseName = info?.first?.substringBeforeLast('.', info.first)
             val size = info?.second ?: -1L
+            val realMime = mime ?: try {
+                appContext.contentResolver.getType(uri)
+            } catch (t: Throwable) {
+                null
+            }
+            // باوربوينت: نسخة مؤقتة تُرسل إلى أداة التحويل
+            if (Presentations.isPresentation(realMime, info?.first)) {
+                val name = info?.first ?: "presentation.pptx"
+                try {
+                    val f = withContext(Dispatchers.IO) {
+                        val dir = Presentations.dir(appContext)
+                        dir.listFiles()?.forEach { it.delete() }
+                        val out = File(dir, name.replace(Regex("[\\/:*?\"<>|]"), "-"))
+                        appContext.contentResolver.openInputStream(uri)!!.use { ins -> out.outputStream().use { ins.copyTo(it) } }
+                        out
+                    }
+                    pptJob = Presentations.Job(name, f, Presentations.mimeFor(name))
+                } catch (t: Throwable) {
+                    messages.tryEmit(L("تعذر قراءة ملف العرض", "Could not read the presentation"))
+                }
+                return@launch
+            }
             val existing = if (baseName != null && size > 0) {
                 library.firstOrNull { !it.isNote && it.name == baseName && it.sizeBytes == size }
             } else null

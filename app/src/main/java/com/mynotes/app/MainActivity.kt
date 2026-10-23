@@ -109,8 +109,9 @@ class MainActivity : ComponentActivity() {
     private fun handleOpenIntent(i: android.content.Intent?) {
         if (i?.action != android.content.Intent.ACTION_VIEW) return
         val uri = i.data ?: return
+        val type = i.type
         i.data = null
-        AppController.openExternal(uri)
+        AppController.openExternal(uri, type)
     }
 
     /** النقر المزدوج على القلم يصل كمفتاح (حسب نوع القلم والجهاز). */
@@ -179,6 +180,8 @@ fun MyNotesApp() {
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
     }
     if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
+    // عرض باوربوينت فُتح من تطبيق آخر: تحويله إلى PDF
+    PresentationConvertDialog()
 }
 
 @Composable

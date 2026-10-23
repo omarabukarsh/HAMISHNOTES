@@ -293,10 +293,10 @@ private fun PenKeyLearnRow() {
         Spacer(Modifier.width(10.dp))
         ChoiceChip(if (c.penKeyLearning) L("إلغاء", "Cancel") else L("تعليم", "Teach"), c.penKeyLearning) {
             if (c.penKeyLearning) {
-                c.setPenKeyLearning(false)
+                c.learnPenKey(false)
             } else {
                 // نافذة الإعدادات تحجب إشارات القلم عن الشاشة الرئيسية، فنغلقها أثناء التعليم
-                c.setPenKeyLearning(true)
+                c.learnPenKey(true)
                 c.settingsOpen = false
                 c.messages.tryEmit(L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
             }

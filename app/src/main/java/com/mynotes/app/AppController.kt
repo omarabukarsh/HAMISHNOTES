@@ -466,7 +466,7 @@ object AppController {
     private var learnJob: Job? = null
 
     /** يبدأ تعلّم إشارة القلم لمدة 20 ثانية فقط، حتى لا يُلتقط مفتاح لوحة مفاتيح لاحقًا بالخطأ. */
-    fun setPenKeyLearning(on: Boolean) {
+    fun learnPenKey(on: Boolean) {
         learnJob?.cancel()
         penKeyLearning = on
         if (on) learnJob = scope.launch {
@@ -499,7 +499,7 @@ object AppController {
         if (penKeyLearning && down && code != android.view.KeyEvent.KEYCODE_BACK &&
             code != android.view.KeyEvent.KEYCODE_HOME
         ) {
-            setPenKeyLearning(false)
+            learnPenKey(false)
             penKeyCode = code
             prefs.edit().putInt("pen_key", code).apply()
             messages.tryEmit(L("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم", "Done: double-tapping the pen now switches between the eraser and your last pen"))

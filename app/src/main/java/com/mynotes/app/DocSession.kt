@@ -150,7 +150,15 @@ class DocSession(entry: DocEntry) {
     var pendingPage: Int = 0
 
     /** يطبق بحثًا مؤجلًا (من البحث في كل المكتبة): يفتح شريط البحث وينتقل لأول نتيجة في الصفحة المطلوبة. */
+    /** صفحة يُنتقل إليها بعد اكتمال فتح المستند (من رابط)، -1 = لا شيء. */
+    var pendingJump = -1
+
     fun applyPending() {
+        val j = pendingJump
+        if (j >= 0) {
+            pendingJump = -1
+            AppController.scope.launch { listState.scrollToItem(j.coerceIn(0, maxOf(0, (pdf?.count ?: 1) - 1))) }
+        }
         val q = pendingQuery ?: return
         pendingQuery = null
         searchOpen = true

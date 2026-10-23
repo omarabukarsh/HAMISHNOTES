@@ -245,8 +245,19 @@ object AppController {
         private set
     private var pomoEndsAt = 0L
     private var pomoJob: Job? = null
-    private const val STUDY_MS = 25L * 60_000L
-    private const val BREAK_MS = 5L * 60_000L
+    /** مدة جلسة الدراسة والراحة بالدقائق (يختارها المستخدم). */
+    var studyMin by mutableStateOf(25)
+        private set
+    var breakMin by mutableStateOf(5)
+        private set
+    private val STUDY_MS get() = studyMin * 60_000L
+    private val BREAK_MS get() = breakMin * 60_000L
+
+    fun setPomodoro(study: Int, rest: Int) {
+        studyMin = study.coerceIn(5, 180)
+        breakMin = rest.coerceIn(1, 60)
+        prefs.edit().putInt("pomo_study", studyMin).putInt("pomo_break", breakMin).apply()
+    }
 
     /** المؤقت متوقف مؤقتًا (يحتفظ بالوقت المتبقي). */
     var pomoPaused by mutableStateOf(false)
@@ -291,11 +302,11 @@ object AppController {
                         saveStats()
                         pomoPhase = 2
                         pomoEndsAt = now + BREAK_MS
-                        messages.tryEmit(L("انتهت جلسة الدراسة. استرح 5 دقائق", "Study session finished. Take a 5-minute break"))
+                        messages.tryEmit(L("انتهت جلسة الدراسة. استرح $breakMin دقائق", "Study session finished. Take a $breakMin-minute break"))
                     } else {
                         pomoPhase = 1
                         pomoEndsAt = now + STUDY_MS
-                        messages.tryEmit(L("انتهت الراحة. جلسة دراسة جديدة 25 دقيقة", "Break over. New 25-minute study session"))
+                        messages.tryEmit(L("انتهت الراحة. جلسة دراسة جديدة $studyMin دقيقة", "Break over. New $studyMin-minute study session"))
                     }
                     pomoLeftMs = pomoEndsAt - now
                 }
@@ -622,6 +633,8 @@ object AppController {
         fingerUndo = prefs.getBoolean("finger_undo", true)
         penKeyCode = prefs.getInt("pen_key", -1)
         I18n.english = prefs.getBoolean("lang_en", false)
+        studyMin = prefs.getInt("pomo_study", 25)
+        breakMin = prefs.getInt("pomo_break", 5)
         nightPages = prefs.getBoolean("night_pages", false)
         reminderOn = prefs.getBoolean("reminder_on", false)
         reminderMinute = prefs.getInt("reminder_min", 20 * 60)
@@ -797,6 +810,30 @@ object AppController {
     }
 
     /** يفتح مستندًا ويبحث فيه عن النص وينتقل إلى الصفحة. */
+    /** الرجوع من آخر رابط تبعته (المستند والصفحة). */
+    var linkBack by mutableStateOf<Pair<String, Int>?>(null)
+
+    /** يتبع رابطًا: يفتح المستند على الصفحة، ويحفظ مكانك للرجوع. */
+    fun followLink(from: DocSession, docId: String, page: Int) {
+        if (library.none { it.id == docId }) {
+            messages.tryEmit(L("المستند المرتبط لم يعد موجودًا", "The linked document no longer exists"))
+            return
+        }
+        linkBack = from.id to from.listState.firstVisibleItemIndex
+        openPage(docId, page)
+    }
+
+    /** يفتح مستندًا على صفحة محددة. */
+    fun openPage(id: String, page: Int) {
+        openDocument(id)
+        val s = tabs.firstOrNull { it.id == id } ?: return
+        if (s.status is SessionStatus.Ready) {
+            scope.launch { s.listState.scrollToItem(page.coerceIn(0, maxOf(0, (s.pdf?.count ?: 1) - 1))) }
+        } else {
+            s.pendingJump = page
+        }
+    }
+
     fun openAt(id: String, page: Int, query: String) {
         openDocument(id)
         val s = tabs.firstOrNull { it.id == id } ?: return

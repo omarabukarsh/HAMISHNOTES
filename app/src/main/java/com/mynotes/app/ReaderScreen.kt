@@ -24,6 +24,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
@@ -39,6 +40,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -228,6 +232,24 @@ private fun ReaderContent(s: DocSession) {
             if (s.zoomBox != null && !c.focusMode) ZoomPanel(s, pdf)
         }
         if (c.focusMode) FocusOverlay(Modifier.align(Alignment.TopEnd).padding(14.dp))
+        // رجوع بعد تتبّع رابط
+        c.linkBack?.let { (backId, backPage) ->
+            run {
+                val backName = c.library.firstOrNull { it.id == backId }?.name ?: ""
+                Row(
+                    Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                        .shadow(6.dp, RoundedCornerShape(20.dp))
+                        .background(Color.White, RoundedCornerShape(20.dp))
+                        .padding(start = 4.dp, end = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { c.linkBack = null; c.openPage(backId, backPage) }) {
+                        Text(L("↩ رجوع إلى $backName ص ${backPage + 1}", "↩ Back to $backName p. ${backPage + 1}"), color = Palette.Navy, maxLines = 1)
+                    }
+                    IconButton(onClick = { c.linkBack = null }) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 16.dp) }
+                }
+            }
+        }
     }
 
     val req = s.textDialog
@@ -360,6 +382,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     LaunchedEffect(c.tool) { settingsFor = null }
     var showPicker by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
+    var linkDialog by remember { mutableStateOf(false) }
     var pdfAfter by remember { mutableStateOf(0) }
     val cur = s.listState.firstVisibleItemIndex
     val pill = RoundedCornerShape(28.dp)
@@ -531,6 +554,9 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         PhIcon(R.drawable.ph_note, Palette.TextSecondary)
                     }
                 }
+                if (v("link")) {
+                    TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
+                }
                 if (v("zoomwin")) {
                     TBtn(selected = s.zoomBox != null, onClick = {
                         s.zoomBox = if (s.zoomBox != null) null else ZoomBox(cur, if (I18n.english) 0.04f else 0.56f, 0.12f, 0.4f)
@@ -646,6 +672,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
             onDismiss = { showPicker = false }
         )
     }
+    if (linkDialog) LinkDialog(s, cur) { linkDialog = false }
     if (addDialog) {
         AddPagesDialog(
             onBlank = { template, atEnd, color ->
@@ -1571,6 +1598,9 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             )
         }
 
+        // شريط التمرير بالصفحات على الحافة
+        if (!s.summaryOpen) PageScrubber(s, pdf, Modifier.align(Alignment.TopEnd).padding(vertical = 10.dp))
+
         // عداد وقت القراءة لهذا المستند
         if (!s.drawerOpen && AppController.toolVisible("readtimer")) {
             Row(
@@ -1716,6 +1746,18 @@ private fun TextBoxBar(s: DocSession) {
     val tb = s.textBox(id)
     if (tb == null) {
         SideEffect { s.selectedTextId = null }
+        return
+    }
+    if (tb.linkDoc != null) {
+        Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
+            Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { s.selectedTextId = null; AppController.followLink(s, tb.linkDoc, tb.linkPage) }) {
+                    Text(L("فتح الرابط", "Open link"), fontWeight = FontWeight.Bold, color = Palette.Navy)
+                }
+                TextButton(onClick = { s.deleteTextBox(id) }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
+                TextButton(onClick = { s.selectedTextId = null }) { Text(L("تم", "Done")) }
+            }
+        }
         return
     }
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
@@ -2061,6 +2103,23 @@ private fun PageView(
                                 .then(if (selected) Modifier.border(1.5.dp, Palette.Navy, RoundedCornerShape(6.dp)) else Modifier),
                             contentAlignment = Alignment.Center
                         ) { PhIcon(R.drawable.ph_note, Color(0xFF6B4E00), side * 0.6f) }
+                    } else if (tb.linkDoc != null) {
+                        // رابط إلى صفحة: شارة بعنوانه (نقرة تحدده، ونقرة ثانية تفتحه)
+                        Row(
+                            Modifier.align(AbsoluteAlignment.TopLeft)
+                                .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
+                                .widthIn(max = with(density) { (tb.w * wp).toDp() })
+                                .onSizeChanged { textHeights[tb.id] = it.height / wp }
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Palette.NavySoft)
+                                .border(if (selected) 1.5.dp else 1.dp, if (selected) Palette.Navy else Palette.Gold, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PhIcon(R.drawable.ph_link, Palette.Navy, 16.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(tb.text, fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
                     } else {
                     Text(
                         tb.text,
@@ -2383,7 +2442,11 @@ private fun PageView(
                                     session.endEdit()
                                 }
                                 // نقرة على المربع المحدد (بلا سحب) تفتح التعديل
-                                if (!moved && inside) session.textDialog = TextDialogReq(selText.id, index)
+                                if (!moved && inside) {
+                                    val ld = selText.linkDoc
+                                    if (ld != null) AppController.followLink(session, ld, selText.linkPage)
+                                    else session.textDialog = TextDialogReq(selText.id, index)
+                                }
                                 return@awaitEachGesture
                             }
                         }
@@ -2649,5 +2712,148 @@ private fun PageView(
                 Text(L("جارٍ قراءة الصفحة…", "Reading page…"), fontSize = 13.sp, color = Palette.TextPrimary)
             }
         }
+    }
+}
+
+
+/** إنشاء رابط من الصفحة الحالية إلى صفحة في هذا المستند أو مستند آخر. */
+@Composable
+private fun LinkDialog(s: DocSession, cur: Int, onDismiss: () -> Unit) {
+    val c = AppController
+    val docs = remember { listOfNotNull(c.library.firstOrNull { it.id == s.id }) + c.library.filter { it.id != s.id }.sortedByDescending { it.lastOpened } }
+    var target by remember { mutableStateOf(docs.firstOrNull()) }
+    var pageText by remember { mutableStateOf("1") }
+    var label by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("رابط إلى صفحة", "Link to a page")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(L("المستند", "Document"), fontSize = 13.sp, color = Palette.TextSecondary)
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState())
+                        .clip(RoundedCornerShape(10.dp)).border(1.dp, Palette.Divider, RoundedCornerShape(10.dp))
+                ) {
+                    docs.forEach { d ->
+                        val sel = target?.id == d.id
+                        Text(
+                            if (d.id == s.id) L("هذا المستند", "This document") + " — " + d.name else d.name,
+                            fontSize = 14.sp, maxLines = 1,
+                            color = if (sel) Color.White else Palette.TextPrimary,
+                            modifier = Modifier.fillMaxWidth().background(if (sel) Palette.Navy else Color.Transparent)
+                                .clickable { target = d }.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = pageText, onValueChange = { pageText = it.filter { ch -> ch.isDigit() }.take(4) },
+                    label = { Text(L("رقم الصفحة (من ${target?.pageCount ?: 1})", "Page (of ${target?.pageCount ?: 1})")) },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = label, onValueChange = { label = it },
+                    label = { Text(L("عنوان الرابط (اختياري)", "Link title (optional)")) },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = target != null, onClick = {
+                val t = target ?: return@TextButton
+                val p = ((pageText.toIntOrNull() ?: 1) - 1).coerceIn(0, maxOf(0, t.pageCount - 1))
+                val title = label.trim().ifEmpty {
+                    (if (t.id == s.id) L("صفحة", "Page") else t.name + L(" — ص", " — p.")) + " ${p + 1}"
+                }
+                s.addTextBox(
+                    TextBox(
+                        id = java.util.UUID.randomUUID().toString(), page = cur, x = 0.06f, y = 0.06f, w = 0.42f,
+                        text = title, color = Palette.Navy, size = 0.02f, linkDoc = t.id, linkPage = p
+                    )
+                )
+                c.messages.tryEmit(L("أُضيف الرابط: اسحبه لمكانه، وانقر عليه مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
+                onDismiss()
+            }) { Text(L("إضافة", "Add")) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+    )
+}
+
+/**
+ * شريط تمرير بالصفحات على حافة الشاشة: اسحب المقبض فتظهر صورة الصفحة ورقمها،
+ * وعند الإفلات تنتقل إليها مباشرة.
+ */
+@Composable
+fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
+    val n = pdf.count
+    if (n < 4) return
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    var dragPage by remember { mutableStateOf(0) }
+    val cur = s.listState.firstVisibleItemIndex
+    BoxWithConstraints(modifier.fillMaxHeight().width(150.dp)) {
+        val trackH = constraints.maxHeight.toFloat()
+        val density = LocalDensity.current
+        val handleH = with(density) { 54.dp.toPx() }
+        val shown = if (dragging) dragPage else cur
+        val frac = shown / (n - 1).toFloat()
+        val y = (trackH - handleH) * frac
+        // فقاعة المعاينة أثناء السحب
+        if (dragging) {
+            val ref = pdf.pages.getOrNull(dragPage)
+            val bmp by produceState<Bitmap?>(pdf.cached(ref, PREVIEW_W), ref) {
+                value = pdf.cached(ref, PREVIEW_W) ?: withContext(Dispatchers.IO) {
+                    try {
+                        pdf.render(ref, PREVIEW_W)
+                    } catch (t: Throwable) {
+                        null
+                    }
+                }
+            }
+            Column(
+                Modifier.align(Alignment.TopEnd)
+                    .offset { IntOffset(-with(density) { 34.dp.roundToPx() }, (y - handleH).roundToInt().coerceAtLeast(0)) }
+                    .width(104.dp)
+                    .shadow(8.dp, RoundedCornerShape(10.dp))
+                    .background(Color.White, RoundedCornerShape(10.dp))
+                    .padding(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val b = bmp
+                if (b != null) {
+                    val img = remember(b) { b.asImageBitmap() }
+                    Image(img, null, Modifier.fillMaxWidth().aspectRatio(pdf.ratio(dragPage)), contentScale = ContentScale.FillBounds)
+                } else {
+                    Box(Modifier.fillMaxWidth().aspectRatio(pdf.ratio(dragPage)).background(Palette.Background))
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("${dragPage + 1} / $n", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+            }
+        }
+        Box(
+            Modifier.align(Alignment.TopEnd)
+                .offset { IntOffset(0, y.roundToInt()) }
+                .width(22.dp).height(54.dp)
+                .padding(end = 4.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (dragging) Palette.Navy else Palette.Navy.copy(alpha = 0.35f))
+                .pointerInput(n, trackH) {
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            dragging = true
+                            dragPage = s.listState.firstVisibleItemIndex
+                        },
+                        onDragEnd = {
+                            dragging = false
+                            val p = dragPage
+                            scope.launch { s.listState.scrollToItem(p) }
+                        },
+                        onDragCancel = { dragging = false }
+                    ) { change, dy ->
+                        change.consume()
+                        val curY = (trackH - handleH) * (dragPage / (n - 1).toFloat()) + dy
+                        dragPage = ((curY / (trackH - handleH).coerceAtLeast(1f)) * (n - 1)).roundToInt().coerceIn(0, n - 1)
+                    }
+                }
+        )
     }
 }

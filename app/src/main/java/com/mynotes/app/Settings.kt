@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -98,10 +99,11 @@ object ToolCatalog {
         ToolInfo("shapes", L("الأشكال", "Shapes"), L("ارسم خطًا أو سهمًا أو مستطيلًا أو دائرة باليد فيصبح شكلًا مرتبًا. يُفعّل من إعدادات القلم.", "Draw a line, arrow, rectangle or circle by hand and it becomes a neat shape. Enable it in pen settings."), R.drawable.ph_shapes, Demo.SHAPES, tourOnly = true),
         ToolInfo("nav", L("التنقل بين الصفحات", "Page navigation"), L("السهمان ورقم الصفحة: اضغط الرقم لتنتقل مباشرة إلى أي صفحة.", "Arrows and page number: tap the number to jump to any page."), R.drawable.ph_pages, Demo.NAV),
         ToolInfo("bookmark", L("العلامة المرجعية", "Bookmark"), L("علّم الصفحات المهمة بشريط ذهبي، وتجدها في «العلامات» داخل درج الصفحات.", "Mark important pages with a gold ribbon; find them under “Bookmarks” in the pages drawer."), R.drawable.ph_bookmark, Demo.BOOKMARK),
-        ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("25 دقيقة دراسة ثم 5 راحة. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "25 minutes of study, then a 5-minute break. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
+        ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("جلسة دراسة ثم راحة بالمدة التي تختارها في الإعدادات. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "A study session then a break, with durations you choose in Settings. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
         ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
         ToolInfo("lasso", L("التحديد الحر", "Lasso"), L("أحِط بالقلم حول كتابتك لتحديدها، ثم اسحبها أو كبّرها بالمقبض أو غيّر لونها أو انسخها أو احذفها.", "Loop around your writing to select it, then drag it, resize with the handle, recolor, duplicate or delete."), R.drawable.ph_lasso, Demo.LASSO),
         ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("ملاحظة مطوية في زاوية الصفحة لا تغطي النص؛ انقرها لتقرأها، واسحبها لتحريكها.", "A folded note on the page that doesn’t cover the text; tap to read it, drag to move it."), R.drawable.ph_note, Demo.STICKY),
+        ToolInfo("link", L("رابط إلى صفحة", "Page link"), L("ضع على الصفحة رابطًا إلى صفحة أخرى أو مستند آخر (مثل «جدول المضادات ص 12»)؛ انقر عليه مرتين لتنتقل، ويظهر زر للرجوع.", "Place a link to another page or document (e.g. “antibiotics table p. 12”); tap it twice to jump, with a Back button."), R.drawable.ph_link, Demo.NAV),
         ToolInfo("zoomwin", L("نافذة الكتابة المكبّرة", "Zoom writing window"), L("اكتب بخط كبير في نافذة أسفل الشاشة فيظهر صغيرًا ومرتبًا على الصفحة. انقر الصفحة بإصبعك لنقل المنطقة.", "Write large in a window at the bottom; it appears small and neat on the page. Tap the page with a finger to move the area."), R.drawable.ph_zoom_write, Demo.ZOOMWIN),
         ToolInfo("night", L("القراءة الليلية", "Night reading"), L("صفحات داكنة ونص فاتح للمذاكرة ليلًا، مع بقاء ألوان كتابتك وتظليلك.", "Dark pages with light text for night study; your ink and highlight colors are kept."), R.drawable.ph_moon, Demo.NIGHT),
         ToolInfo("text", L("مربع نص", "Text box"), L("اكتب بلوحة المفاتيح في أي مكان من الصفحة.", "Type with the keyboard anywhere on the page."), R.drawable.ph_text, Demo.TEXT),
@@ -232,6 +234,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             c.fingerUndo
                         ) { c.toggleFingerUndo() }
                     }
+
+                    item { SectionTitle(L("مؤقت الدراسة", "Study timer")) }
+                    item { PomodoroSettings() }
 
                     item { SectionTitle(L("التذكير اليومي", "Daily reminder")) }
                     item { ReminderRow() }
@@ -1114,4 +1119,48 @@ private fun DrawScope.demoNight(t: Float) {
         Color(0xFFFFE066).copy(alpha = 0.55f + 0.2f * (1f - dark)), Offset(o.x - 4f, o.y - hh * 0.32f), Size(w + 8f, hh),
         CornerRadius(hh * 0.32f), blendMode = if (dark > 0.5f) BlendMode.Screen else BlendMode.Multiply
     )
+}
+
+/** مدة الدراسة والراحة: اختيارات جاهزة أو مدة يكتبها المستخدم. */
+@Composable
+private fun PomodoroSettings() {
+    val c = AppController
+    var custom by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            L("دراسة ${c.studyMin} دقيقة، ثم راحة ${c.breakMin} دقائق", "Study ${c.studyMin} min, then break ${c.breakMin} min"),
+            fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
+        )
+        Row(
+            Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(25 to 5, 45 to 10, 50 to 10, 90 to 15).forEach { (st, br) ->
+                ChoiceChip("$st / $br", c.studyMin == st && c.breakMin == br && !custom) { custom = false; c.setPomodoro(st, br) }
+            }
+            ChoiceChip(L("مدة أخرى", "Custom"), custom) { custom = true }
+        }
+        if (custom) {
+            var st by remember { mutableStateOf(c.studyMin.toString()) }
+            var br by remember { mutableStateOf(c.breakMin.toString()) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = st, onValueChange = { st = it.filter { ch -> ch.isDigit() }.take(3) },
+                    label = { Text(L("دراسة (د)", "Study (min)")) }, singleLine = true, modifier = Modifier.weight(1f)
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = br, onValueChange = { br = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text(L("راحة (د)", "Break (min)")) }, singleLine = true, modifier = Modifier.weight(1f)
+                )
+                androidx.compose.material3.TextButton(onClick = {
+                    c.setPomodoro(st.toIntOrNull() ?: 25, br.toIntOrNull() ?: 5)
+                    custom = false
+                }) { Text(L("حفظ", "Save"), fontWeight = FontWeight.Bold, color = Palette.Navy) }
+            }
+        }
+    }
 }

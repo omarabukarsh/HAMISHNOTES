@@ -489,7 +489,9 @@ class LibraryRepository(context: Context) {
                                 text = o.optString("t", ""),
                                 color = Color(o.getInt("c")),
                                 size = o.getDouble("s").toFloat(),
-                                sticky = o.optBoolean("st", false)
+                                sticky = o.optBoolean("st", false),
+                                linkDoc = o.optString("ld", "").ifEmpty { null },
+                                linkPage = o.optInt("lp", 0)
                             )
                         )
                     } catch (e: Throwable) {
@@ -604,6 +606,8 @@ class LibraryRepository(context: Context) {
                                 .put("c", tb.color.toArgb())
                                 .put("s", tb.size.toDouble())
                                 .put("st", tb.sticky)
+                                .put("ld", tb.linkDoc ?: "")
+                                .put("lp", tb.linkPage)
                         )
                     }
                 }

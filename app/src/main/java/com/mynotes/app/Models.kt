@@ -80,7 +80,10 @@ data class TextBox(
     val color: Color,
     val size: Float,
     /** ملاحظة لاصقة: تظهر أيقونة صغيرة مطوية، وتُفتح بالنقر. */
-    val sticky: Boolean = false
+    val sticky: Boolean = false,
+    /** رابط إلى مستند (معرّفه) وصفحة فيه؛ null = ليس رابطًا. */
+    val linkDoc: String? = null,
+    val linkPage: Int = 0
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */

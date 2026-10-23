@@ -2490,7 +2490,8 @@ private fun PageView(
                                         ch.consume()
                                     }
                                 } else {
-                                    AppController.messages.tryEmit(L("لا يوجد نص عند هذه النقطة", "No text at this point"))
+                                    // ضغط مطوّل على مكان ليس فيه نص: لا شيء (دون رسالة)
+                                    Unit
                                 }
                             } else {
                                 // الصفحة لم تُقرأ بعد: اقرأها الآن ثم حدّد الكلمة
@@ -2500,14 +2501,16 @@ private fun PageView(
                                     session.pageBusy = null
                                     val list = page?.words
                                     if (list == null || list.isEmpty()) {
-                                        AppController.messages.tryEmit(L("لم يُعثر على نص مقروء في هذه الصفحة", "No readable text found on this page"))
+                                        // صفحة بلا نص مقروء: لا شيء (دون رسالة)
+                                        Unit
                                     } else {
                                         val i = nearestWord(list, nx, ny, 0.06f)
                                         if (i >= 0) {
                                             session.selectedImageId = null
                                             session.selection = TextSelection(index, i, i)
                                         } else {
-                                            AppController.messages.tryEmit(L("لا يوجد نص عند هذه النقطة", "No text at this point"))
+                                            // ضغط مطوّل على مكان ليس فيه نص: لا شيء (دون رسالة)
+                                    Unit
                                         }
                                     }
                                 }

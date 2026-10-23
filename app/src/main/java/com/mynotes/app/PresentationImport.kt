@@ -154,7 +154,7 @@ fun PresentationConvertDialog() {
     val stageNow by rememberUpdatedState(stage)
     DisposableEffect(lifecycle, job) {
         val obs = LifecycleEventObserver { _, e ->
-            if (e == Lifecycle.Event.ON_RESUME && stageNow == 1 && System.currentTimeMillis() - launchedAt > 1500L) {
+            if (e == Lifecycle.Event.ON_RESUME && stageNow == 1 && System.currentTimeMillis() - launchedAt > 600L) {
                 stage = 2
                 picker.launch(arrayOf("application/pdf"))
             }

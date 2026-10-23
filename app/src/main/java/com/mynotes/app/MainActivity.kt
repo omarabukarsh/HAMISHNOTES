@@ -2,6 +2,7 @@ package com.mynotes.app
 
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -96,6 +97,15 @@ class MainActivity : ComponentActivity() {
             window.attributes = lp
         } catch (t: Throwable) {
         }
+    }
+
+    /** النقر المزدوج على القلم يصل كمفتاح (حسب نوع القلم والجهاز). */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val down = event.action == KeyEvent.ACTION_DOWN
+        if (event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_UP) {
+            if (AppController.handlePenKey(event.keyCode, down, event.repeatCount)) return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onResume() {

@@ -336,6 +336,62 @@ object AppController {
     }
 
     /** تحويل رسم القلم إلى أشكال مرتبة (خط، سهم، مستطيل، مثلث، دائرة). */
+    // ---------- إيماءات القلم والأصابع ----------
+
+    /** نقرتان على القلم (أو زره) تبدّلان بين الممحاة وآخر قلم مستخدم. */
+    var penDoubleTapEnabled by mutableStateOf(true)
+        private set
+
+    fun togglePenDoubleTap() {
+        penDoubleTapEnabled = !penDoubleTapEnabled
+        prefs.edit().putBoolean("pen_dtap", penDoubleTapEnabled).apply()
+    }
+
+    /** نقرة بإصبعين للتراجع، وبثلاثة للإعادة. */
+    var fingerUndo by mutableStateOf(true)
+        private set
+
+    fun toggleFingerUndo() {
+        fingerUndo = !fingerUndo
+        prefs.edit().putBoolean("finger_undo", fingerUndo).apply()
+    }
+
+    /** رمز المفتاح الذي يرسله القلم عند النقر المزدوج (يتعلّمه التطبيق إن لم يكن معروفًا). */
+    var penKeyCode by mutableStateOf(-1)
+        private set
+    var penKeyLearning by mutableStateOf(false)
+
+    private var lastPenToggleAt = 0L
+
+    fun penDoubleTap() {
+        if (!penDoubleTapEnabled || activeId == null) return
+        val now = System.currentTimeMillis()
+        if (now - lastPenToggleAt < 250L) return
+        lastPenToggleAt = now
+        if (tool == Tool.ERASER) selectTool(lastWriting) else selectTool(Tool.ERASER)
+    }
+
+    /** مفاتيح أزرار القلم في أندرويد 14 (STYLUS_BUTTON_PRIMARY..TAIL). */
+    private val stylusKeys = setOf(308, 309, 310, 311)
+
+    /** يعالج مفتاحًا من القلم؛ true = استُهلك. */
+    fun handlePenKey(code: Int, down: Boolean, repeat: Int): Boolean {
+        if (penKeyLearning && down && code != android.view.KeyEvent.KEYCODE_BACK &&
+            code != android.view.KeyEvent.KEYCODE_HOME
+        ) {
+            penKeyLearning = false
+            penKeyCode = code
+            prefs.edit().putInt("pen_key", code).apply()
+            messages.tryEmit("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم")
+            return true
+        }
+        if (code in stylusKeys || (penKeyCode >= 0 && code == penKeyCode)) {
+            if (down && repeat == 0) penDoubleTap()
+            return activeId != null && penDoubleTapEnabled
+        }
+        return false
+    }
+
     // ---------- الإعدادات: شكل شريط الأدوات والأدوات الظاهرة ----------
 
     /** نافذة الإعدادات (تُفتح من المكتبة أو من داخل المستند). */
@@ -424,6 +480,9 @@ object AppController {
         highlightSnap = prefs.getBoolean("hl_snap", false)
         highlightToSummary = prefs.getBoolean("hl_summary", true)
         shapeSnap = prefs.getBoolean("shape_snap", true)
+        penDoubleTapEnabled = prefs.getBoolean("pen_dtap", true)
+        fingerUndo = prefs.getBoolean("finger_undo", true)
+        penKeyCode = prefs.getInt("pen_key", -1)
         toolbarStyle = try {
             ToolbarStyle.valueOf(prefs.getString("toolbar_style", "PEN_BAR") ?: "PEN_BAR")
         } catch (e: Throwable) {

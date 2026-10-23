@@ -103,7 +103,7 @@ object ToolCatalog {
         ToolInfo("ocr", "قراءة النص", "يقرأ نص الصفحات (العربية مدعومة في ملفات PDF الرقمية) ليعمل البحث والتقاط النص.", R.drawable.ph_scan, Demo.OCR),
         ToolInfo("search", "البحث", "ابحث عن كلمة داخل المستند وتنقّل بين النتائج.", R.drawable.ph_search, Demo.SEARCH),
         ToolInfo("export", "الحفظ PDF", "احفظ المستند مع كتابتك وتظليلك، أو احفظ الملخص وحده كملف PDF.", R.drawable.ph_export, Demo.EXPORT),
-        ToolInfo("undo", "التراجع والإعادة", "تراجع عن آخر تعديل أو أعده.", R.drawable.ph_undo, Demo.UNDO),
+        ToolInfo("undo", "التراجع والإعادة", "تراجع عن آخر تعديل أو أعده. أو انقر الصفحة بإصبعين للتراجع وبثلاثة للإعادة.", R.drawable.ph_undo, Demo.UNDO),
         ToolInfo("zoom", "التكبير والتصغير", "كبّر الصفحة لقراءة التفاصيل أو صغّرها لرؤية أكثر. يعمل أيضًا بإصبعين.", R.drawable.ph_zoom_in, Demo.ZOOM),
         ToolInfo("fit", "ملاءمة الصفحة", "اعرض الصفحة كاملة على الشاشة، ونقرة ثانية تعيد ملء العرض.", R.drawable.ph_fit, Demo.FIT),
         ToolInfo("focus", "وضع التركيز", "يخفي كل الأشرطة لتبقى مع الصفحة فقط، والمؤقت يبقى معك.", R.drawable.ph_eye, Demo.FOCUS),
@@ -193,6 +193,23 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     }
 
+                    item { SectionTitle("القلم والأصابع") }
+                    item {
+                        SettingSwitch(
+                            "النقر المزدوج على القلم",
+                            "يبدّل بين الممحاة وآخر قلم استخدمته",
+                            c.penDoubleTapEnabled
+                        ) { c.togglePenDoubleTap() }
+                    }
+                    item { PenKeyLearnRow() }
+                    item {
+                        SettingSwitch(
+                            "نقرة بإصبعين للتراجع، وبثلاثة للإعادة",
+                            "انقر الصفحة بإصبعين معًا للتراجع، وبثلاثة أصابع لإعادة ما تراجعت عنه",
+                            c.fingerUndo
+                        ) { c.toggleFingerUndo() }
+                    }
+
                     item { SectionTitle("التمييز والملخص") }
                     item {
                         SettingSwitch("التقاط النص", "يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", c.highlightSnap) {
@@ -226,6 +243,35 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** إن لم يعمل النقر المزدوج تلقائيًا: يتعلّم التطبيق الإشارة التي يرسلها القلم. */
+@Composable
+private fun PenKeyLearnRow() {
+    val c = AppController
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("تعليم التطبيق نقرتي القلم", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            Text(
+                when {
+                    c.penKeyLearning -> "انقر الآن مرتين على القلم…"
+                    c.penKeyCode >= 0 -> "مربوطة. أعد التعليم إن غيّرت القلم"
+                    else -> "إن لم تعمل النقرتان: اضغط «تعليم» ثم انقر على القلم مرتين"
+                },
+                fontSize = 12.sp, lineHeight = 18.sp,
+                color = if (c.penKeyLearning) Palette.GoldDeep else Palette.TextSecondary
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        ChoiceChip(if (c.penKeyLearning) "إلغاء" else "تعليم", c.penKeyLearning) {
+            c.penKeyLearning = !c.penKeyLearning
         }
     }
 }

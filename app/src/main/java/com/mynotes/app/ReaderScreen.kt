@@ -101,6 +101,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerInputChange
@@ -1146,6 +1147,43 @@ private fun ReaderSearchBar(s: DocSession) {
  * قرصة بإصبعين للتكبير حول نقطة الأصابع، وسحب أفقي بإصبع واحد عند التكبير.
  * لا يتدخل في القلم، ولا في التمرير الرأسي بإصبع واحد.
  */
+/**
+ * نقرة سريعة بإصبعين = تراجع، بثلاثة أصابع = إعادة. يراقب اللمس فقط دون أن يستهلكه،
+ * ولا يُحسب إن تحركت الأصابع (قرصة أو تمرير) أو طال الضغط.
+ */
+private fun Modifier.multiFingerTap(onTwo: () -> Unit, onThree: () -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        val first = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (first.type != PointerType.Touch) return@awaitEachGesture
+        val start = first.uptimeMillis
+        val origin = HashMap<PointerId, Offset>()
+        origin[first.id] = first.position
+        var maxFingers = 1
+        var valid = true
+        var end = start
+        val slop = viewConfiguration.touchSlop * 1.5f
+        while (true) {
+            val ev = awaitPointerEvent(PointerEventPass.Initial)
+            for (ch in ev.changes) {
+                if (ch.type != PointerType.Touch) valid = false
+                if (ch.pressed && ch.id !in origin) origin[ch.id] = ch.position
+                val o = origin[ch.id]
+                if (o != null && ch.pressed && (ch.position - o).getDistance() > slop) valid = false
+                end = maxOf(end, ch.uptimeMillis)
+            }
+            maxFingers = maxOf(maxFingers, ev.changes.count { it.pressed })
+            if (end - start > 450L) valid = false
+            if (ev.changes.none { it.pressed }) break
+        }
+        if (valid && end - start <= 450L) {
+            when (maxFingers) {
+                2 -> onTwo()
+                3 -> onThree()
+            }
+        }
+    }
+}
+
 private fun Modifier.zoomAndPan(
     zoomed: () -> Boolean,
     onPinch: (Float, Offset, Offset) -> Unit,
@@ -1321,7 +1359,10 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         }
 
         Box(
-            Modifier.fillMaxSize().zoomAndPan(
+            Modifier.fillMaxSize().multiFingerTap(
+                onTwo = { if (AppController.fingerUndo && s.undoStack.isNotEmpty()) s.undo() },
+                onThree = { if (AppController.fingerUndo && s.redoStack.isNotEmpty()) s.redo() }
+            ).zoomAndPan(
                 zoomed = { s.scale > 1.01f },
                 onPinch = { r, a, b -> zoomFn.value(r, a, b) },
                 onPanX = { dx -> panFn.value(dx) }

@@ -584,6 +584,7 @@ class DocSession(entry: DocEntry) {
     private fun afterPagesChanged() {
         val doc = pdf ?: return
         lassoSel = null
+        zoomBox = null
         undoStack.clear()
         redoStack.clear()
         snapshot = null

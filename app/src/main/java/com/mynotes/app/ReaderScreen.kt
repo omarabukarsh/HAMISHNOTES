@@ -477,8 +477,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 } else {
                     // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
-                    val penSelected = c.tool.isPen()
-                    val shownPen = if (penSelected) c.tool else c.lastPen
+                    val penSelected = c.tool.isPen() && !c.lassoActive
+                    val shownPen = if (c.tool.isPen()) c.tool else c.lastPen
                     ToolSlot(
                         tool = shownPen, selected = penSelected, open = settingsFor == "pen",
                         onTap = { if (penSelected) settingsFor = "pen" else c.selectToolWithHint(c.lastPen) },
@@ -486,8 +486,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         onCustomColor = { settingsFor = null; showPicker = true }
                     )
                     ToolSlot(
-                        tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER, open = settingsFor == "hl",
-                        onTap = { if (c.tool == Tool.HIGHLIGHTER) settingsFor = "hl" else c.selectToolWithHint(Tool.HIGHLIGHTER) },
+                        tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER && !c.lassoActive, open = settingsFor == "hl",
+                        onTap = { if (c.tool == Tool.HIGHLIGHTER && !c.lassoActive) settingsFor = "hl" else c.selectToolWithHint(Tool.HIGHLIGHTER) },
                         onDismiss = { settingsFor = null },
                         onCustomColor = { settingsFor = null; showPicker = true }
                     )
@@ -499,14 +499,14 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 }
                 ToolSlot(
-                    tool = Tool.ERASER, selected = c.tool == Tool.ERASER, open = settingsFor == "er",
-                    onTap = { if (c.tool == Tool.ERASER) settingsFor = "er" else c.selectToolWithHint(Tool.ERASER) },
+                    tool = Tool.ERASER, selected = c.tool == Tool.ERASER && !c.lassoActive, open = settingsFor == "er",
+                    onTap = { if (c.tool == Tool.ERASER && !c.lassoActive) settingsFor = "er" else c.selectToolWithHint(Tool.ERASER) },
                     onDismiss = { settingsFor = null },
                     onCustomColor = {}
                 )
                 ToolSlot(
-                    tool = Tool.LASER, selected = c.tool == Tool.LASER, open = settingsFor == "ls",
-                    onTap = { if (c.tool == Tool.LASER) settingsFor = "ls" else c.selectToolWithHint(Tool.LASER) },
+                    tool = Tool.LASER, selected = c.tool == Tool.LASER && !c.lassoActive, open = settingsFor == "ls",
+                    onTap = { if (c.tool == Tool.LASER && !c.lassoActive) settingsFor = "ls" else c.selectToolWithHint(Tool.LASER) },
                     onDismiss = { settingsFor = null },
                     onCustomColor = { settingsFor = null; showPicker = true }
                 )

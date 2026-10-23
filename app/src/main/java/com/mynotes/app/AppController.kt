@@ -462,6 +462,21 @@ object AppController {
     var penKeyCode by mutableStateOf(-1)
         private set
     var penKeyLearning by mutableStateOf(false)
+        private set
+    private var learnJob: Job? = null
+
+    /** يبدأ تعلّم إشارة القلم لمدة 20 ثانية فقط، حتى لا يُلتقط مفتاح لوحة مفاتيح لاحقًا بالخطأ. */
+    fun setPenKeyLearning(on: Boolean) {
+        learnJob?.cancel()
+        penKeyLearning = on
+        if (on) learnJob = scope.launch {
+            delay(20_000)
+            if (penKeyLearning) {
+                penKeyLearning = false
+                messages.tryEmit(L("لم تصل إشارة من القلم، أُلغي التعليم", "No signal from the pen; teaching cancelled"))
+            }
+        }
+    }
 
     private var lastPenToggleAt = 0L
 
@@ -484,7 +499,7 @@ object AppController {
         if (penKeyLearning && down && code != android.view.KeyEvent.KEYCODE_BACK &&
             code != android.view.KeyEvent.KEYCODE_HOME
         ) {
-            penKeyLearning = false
+            setPenKeyLearning(false)
             penKeyCode = code
             prefs.edit().putInt("pen_key", code).apply()
             messages.tryEmit(L("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم", "Done: double-tapping the pen now switches between the eraser and your last pen"))

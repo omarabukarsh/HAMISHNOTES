@@ -1127,6 +1127,54 @@ object AppController {
         }
     }
 
+    /**
+     * يفتح ملف PDF جاء من تطبيق آخر. إن كان في المكتبة نفس الملف (نفس الاسم والحجم) يُفتح هو،
+     * وإلا يُستورد ثم يُفتح، فتبقى كتابتك محفوظة عليه في المكتبة.
+     */
+    fun openExternal(uri: Uri) {
+        scope.launch {
+            // ننتظر تحميل المكتبة حتى لا يتكرر الملف
+            while (!libraryLoaded) kotlinx.coroutines.delay(50)
+            val info = withContext(Dispatchers.IO) {
+                try {
+                    appContext.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE),
+                        null, null, null
+                    )?.use { cur ->
+                        if (cur.moveToFirst()) {
+                            val n = cur.getString(0)
+                            val sz = if (cur.isNull(1)) -1L else cur.getLong(1)
+                            n to sz
+                        } else null
+                    }
+                } catch (t: Throwable) {
+                    null
+                }
+            }
+            val baseName = info?.first?.substringBeforeLast('.', info.first)
+            val size = info?.second ?: -1L
+            val existing = if (baseName != null && size > 0) {
+                library.firstOrNull { !it.isNote && it.name == baseName && it.sizeBytes == size }
+            } else null
+            if (existing != null) {
+                openDocument(existing.id)
+                return@launch
+            }
+            importing = true
+            try {
+                val e = withContext(Dispatchers.IO) { repo.importFile(uri) }
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+                queueOcr(e)
+            } catch (t: Throwable) {
+                messages.tryEmit(L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
+            } finally {
+                importing = false
+            }
+        }
+    }
+
     fun toggleFavorite(id: String) {
         updateEntry(id) { it.copy(favorite = !it.favorite) }
         saveLibrary()

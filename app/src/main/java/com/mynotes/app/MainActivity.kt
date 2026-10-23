@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)
         requestHighRefreshRate()
+        handleOpenIntent(intent)
         setContent {
             val light = ThemeState.light
             SideEffect { applySystemBars(light) }
@@ -97,6 +98,19 @@ class MainActivity : ComponentActivity() {
             window.attributes = lp
         } catch (t: Throwable) {
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleOpenIntent(intent)
+    }
+
+    /** ملف PDF فُتح من تطبيق آخر: يُضاف إلى المكتبة (أو يُفتح إن كان موجودًا) ويظهر مباشرة. */
+    private fun handleOpenIntent(i: android.content.Intent?) {
+        if (i?.action != android.content.Intent.ACTION_VIEW) return
+        val uri = i.data ?: return
+        i.data = null
+        AppController.openExternal(uri)
     }
 
     /** النقر المزدوج على القلم يصل كمفتاح (حسب نوع القلم والجهاز). */

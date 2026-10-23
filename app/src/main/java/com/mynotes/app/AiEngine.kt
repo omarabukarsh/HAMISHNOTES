@@ -308,9 +308,18 @@ object Ai {
                         samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.3)
                     )
                 ).use { conv ->
-                    conv.sendMessageAsync(prompt, extraContext = mapOf("enable_thinking" to false)).collect { chunk ->
-                        out.append(chunk.toString())
-                        onPartial(cleanThinking(out.toString()))
+                    try {
+                        conv.sendMessageAsync(prompt, extraContext = mapOf("enable_thinking" to false)).collect { chunk ->
+                            out.append(chunk.toString())
+                            onPartial(cleanThinking(out.toString()))
+                        }
+                    } catch (e: CancellationException) {
+                        // إيقاف من المستخدم: نوقف النموذج نفسه أيضًا
+                        try {
+                            conv.cancelProcess()
+                        } catch (t: Throwable) {
+                        }
+                        throw e
                     }
                 }
             }

@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
@@ -50,6 +51,7 @@ import kotlin.math.roundToInt
  * ما تكتبه فيها بالقلم يظهر صغيرًا ومرتبًا في مكانه على الصفحة.
  * النقر بالإصبع على الصفحة ينقل المنطقة، والأسهم تنقلها جانبيًا أو لسطر جديد.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
     val zb = s.zoomBox ?: return

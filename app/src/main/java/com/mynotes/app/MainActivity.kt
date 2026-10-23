@@ -53,11 +53,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)
         requestHighRefreshRate()
+        handleOpenIntent(intent)
         setContent {
             val light = ThemeState.light
             SideEffect { applySystemBars(light) }
@@ -97,6 +98,26 @@ class MainActivity : ComponentActivity() {
             window.attributes = lp
         } catch (t: Throwable) {
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleOpenIntent(intent)
+    }
+
+    /** ملف PDF فُتح من تطبيق آخر: يُضاف إلى المكتبة (أو يُفتح إن كان موجودًا) ويظهر مباشرة. */
+    private fun handleOpenIntent(i: android.content.Intent?) {
+        // أداة الشاشة الرئيسية: متابعة آخر مستند
+        if (i?.getBooleanExtra("open_last", false) == true) {
+            i.removeExtra("open_last")
+            AppController.openLast()
+            return
+        }
+        if (i?.action != android.content.Intent.ACTION_VIEW) return
+        val uri = i.data ?: return
+        val type = i.type
+        i.data = null
+        AppController.openExternal(uri, type)
     }
 
     /** النقر المزدوج على القلم يصل كمفتاح (حسب نوع القلم والجهاز). */
@@ -158,13 +179,21 @@ fun MyNotesApp() {
                 if (active == null) {
                     LibraryScreen()
                 } else {
-                    key(active.id) { ReaderScreen(active) }
+                    val second = c.tabs.firstOrNull { it.id == c.splitId && it.id != active.id }
+                    if (second == null || c.focusMode) {
+                        key(active.id) { ReaderScreen(active) }
+                    } else {
+                        SplitReaders(active, second)
+                    }
                 }
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
     }
     if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
+    // عرض باوربوينت فُتح من تطبيق آخر: تحويله إلى PDF
+    PresentationConvertDialog()
+    LockDialogs()
 }
 
 @Composable

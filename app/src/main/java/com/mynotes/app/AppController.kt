@@ -130,7 +130,10 @@ object AppController {
     private fun saveStats() {
         if (!statsLoaded) return
         val snap = stats.toMap()
-        scope.launch { repo.saveStats(snap) }
+        scope.launch {
+            repo.saveStats(snap)
+            StudyWidget.refresh(appContext)
+        }
     }
     var librarySort by mutableStateOf(SortMode.LAST_OPENED)
     var libraryQuery by mutableStateOf("")
@@ -245,8 +248,19 @@ object AppController {
         private set
     private var pomoEndsAt = 0L
     private var pomoJob: Job? = null
-    private const val STUDY_MS = 25L * 60_000L
-    private const val BREAK_MS = 5L * 60_000L
+    /** مدة جلسة الدراسة والراحة بالدقائق (يختارها المستخدم). */
+    var studyMin by mutableStateOf(25)
+        private set
+    var breakMin by mutableStateOf(5)
+        private set
+    private val STUDY_MS get() = studyMin * 60_000L
+    private val BREAK_MS get() = breakMin * 60_000L
+
+    fun setPomodoro(study: Int, rest: Int) {
+        studyMin = study.coerceIn(5, 180)
+        breakMin = rest.coerceIn(1, 60)
+        prefs.edit().putInt("pomo_study", studyMin).putInt("pomo_break", breakMin).apply()
+    }
 
     /** المؤقت متوقف مؤقتًا (يحتفظ بالوقت المتبقي). */
     var pomoPaused by mutableStateOf(false)
@@ -291,11 +305,11 @@ object AppController {
                         saveStats()
                         pomoPhase = 2
                         pomoEndsAt = now + BREAK_MS
-                        messages.tryEmit(L("انتهت جلسة الدراسة. استرح 5 دقائق", "Study session finished. Take a 5-minute break"))
+                        messages.tryEmit(L("انتهت جلسة الدراسة. استرح $breakMin دقائق", "Study session finished. Take a $breakMin-minute break"))
                     } else {
                         pomoPhase = 1
                         pomoEndsAt = now + STUDY_MS
-                        messages.tryEmit(L("انتهت الراحة. جلسة دراسة جديدة 25 دقيقة", "Break over. New 25-minute study session"))
+                        messages.tryEmit(L("انتهت الراحة. جلسة دراسة جديدة $studyMin دقيقة", "Break over. New $studyMin-minute study session"))
                     }
                     pomoLeftMs = pomoEndsAt - now
                 }
@@ -438,6 +452,58 @@ object AppController {
         Reminders.schedule(appContext)
     }
 
+    // ---------- قفل المستندات ----------
+
+    /** مستندات فُتح قفلها في هذه الجلسة (تُقفل من جديد عند إعادة تشغيل التطبيق). */
+    val unlocked = mutableStateListOf<String>()
+
+    /** مستند ينتظر إدخال الرمز أو البصمة قبل فتحه. */
+    var unlockRequest by mutableStateOf<String?>(null)
+
+    /** طلب تعيين رمز جديد (ثم قفل هذا المستند). */
+    var setPinFor by mutableStateOf<String?>(null)
+
+    fun hasPin(): Boolean = prefs.getString("lock_pin", null) != null
+
+    private fun hashPin(pin: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return md.digest(("mynotes:" + pin).toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    fun setPin(pin: String) {
+        prefs.edit().putString("lock_pin", hashPin(pin)).apply()
+    }
+
+    fun checkPin(pin: String): Boolean = prefs.getString("lock_pin", null) == hashPin(pin)
+
+    fun toggleLock(id: String) {
+        val e = library.firstOrNull { it.id == id } ?: return
+        if (!e.locked && !hasPin()) {
+            setPinFor = id
+            return
+        }
+        updateEntry(id) { it.copy(locked = !it.locked) }
+        if (e.locked) unlocked.remove(id) else unlocked.add(id)
+        saveLibrary()
+        messages.tryEmit(if (e.locked) L("أُلغي قفل المستند", "Document unlocked") else L("قُفل المستند: يحتاج الرمز أو البصمة لفتحه", "Document locked: needs your PIN or fingerprint to open"))
+    }
+
+    /** بعد التحقق: يُفتح المستند المطلوب. */
+    fun unlockGranted() {
+        val id = unlockRequest ?: return
+        unlockRequest = null
+        if (id !in unlocked) unlocked.add(id)
+        openDocument(id)
+    }
+
+    /** فتح آخر مستند (من أداة الشاشة الرئيسية). */
+    fun openLast() {
+        scope.launch {
+            while (!libraryLoaded) kotlinx.coroutines.delay(50)
+            library.filter { !it.locked }.maxByOrNull { it.lastOpened }?.let { openDocument(it.id) }
+        }
+    }
+
     /** لغة الواجهة. */
     fun setEnglish(en: Boolean) {
         I18n.english = en
@@ -533,6 +599,15 @@ object AppController {
 
     fun toolVisible(id: String): Boolean = id !in hiddenTools
 
+    /** الأدوات المخفية في الشريط الافتراضي (تظهر بقية الأدوات). */
+    val DEFAULT_HIDDEN_TOOLS = listOf("zoomwin", "ocr", "zoom", "night")
+
+    fun resetToolbar() {
+        hiddenTools.clear()
+        hiddenTools.addAll(DEFAULT_HIDDEN_TOOLS)
+        prefs.edit().putString("hidden_tools", hiddenTools.joinToString(",")).apply()
+    }
+
     fun setToolVisible(id: String, visible: Boolean) {
         if (visible) hiddenTools.remove(id) else if (id !in hiddenTools) hiddenTools.add(id)
         prefs.edit().putString("hidden_tools", hiddenTools.joinToString(",")).apply()
@@ -597,6 +672,7 @@ object AppController {
         appContext = app
         Ai.init(app)
         repo = LibraryRepository(app)
+        AudioNotes.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {
@@ -614,6 +690,8 @@ object AppController {
         fingerUndo = prefs.getBoolean("finger_undo", true)
         penKeyCode = prefs.getInt("pen_key", -1)
         I18n.english = prefs.getBoolean("lang_en", false)
+        studyMin = prefs.getInt("pomo_study", 25)
+        breakMin = prefs.getInt("pomo_break", 5)
         nightPages = prefs.getBoolean("night_pages", false)
         reminderOn = prefs.getBoolean("reminder_on", false)
         reminderMinute = prefs.getInt("reminder_min", 20 * 60)
@@ -641,7 +719,9 @@ object AppController {
             ToolbarStyle.PEN_BAR
         }
         hiddenTools.clear()
-        (prefs.getString("hidden_tools", "") ?: "").split(",").filter { it.isNotBlank() }.forEach { hiddenTools.add(it) }
+        // أول تشغيل: الشريط الافتراضي، ثم يضيف المستخدم ما يريد من الإعدادات
+        val savedHidden = prefs.getString("hidden_tools", null)
+        (savedHidden?.split(",")?.filter { it.isNotBlank() } ?: DEFAULT_HIDDEN_TOOLS).forEach { hiddenTools.add(it) }
         summaryByColor = prefs.getBoolean("sum_by_color", false)
         try {
             val o = org.json.JSONObject(prefs.getString("color_labels", "{}") ?: "{}")
@@ -678,7 +758,8 @@ object AppController {
             val ids = (prefs.getString("open", "") ?: "").split(",").filter { it.isNotBlank() }
             val active = prefs.getString("active", null)
             ids.forEach { id ->
-                library.firstOrNull { it.id == id }?.let { openSession(it, activate = false) }
+                // المستندات المقفلة لا تُفتح تلقائيًا بعد إعادة تشغيل التطبيق
+                library.firstOrNull { it.id == id && !it.locked }?.let { openSession(it, activate = false) }
             }
             activeId = active?.takeIf { a -> tabs.any { it.id == a } }
             libraryLoaded = true
@@ -688,6 +769,11 @@ object AppController {
     // ---------- التبويبات ----------
 
     fun openDocument(id: String) {
+        val e0 = library.firstOrNull { it.id == id }
+        if (e0 != null && e0.locked && id !in unlocked) {
+            unlockRequest = id
+            return
+        }
         if (tabs.any { it.id == id }) {
             activate(id)
             return
@@ -713,8 +799,33 @@ object AppController {
         saveSession()
     }
 
+    // ---------- عرض مستندين جنبًا إلى جنب ----------
+
+    /** المستند الظاهر في النصف الثاني من الشاشة؛ null = بدون تقسيم. */
+    var splitId by mutableStateOf<String?>(null)
+        private set
+    /** نسبة عرض المستند الأول (0.25..0.75). */
+    var splitFrac by mutableStateOf(0.5f)
+
+    fun openSplit(id: String) {
+        val entry = library.firstOrNull { it.id == id } ?: return
+        if (entry.locked && id !in unlocked) {
+            messages.tryEmit(L("افتح قفل المستند أولًا", "Unlock the document first"))
+            return
+        }
+        if (id == activeId) return
+        if (tabs.none { it.id == id }) openSession(entry, activate = false)
+        splitId = id
+        updateEntry(id) { it.copy(lastOpened = System.currentTimeMillis()) }
+    }
+
+    fun closeSplit() {
+        splitId = null
+    }
+
     fun activate(id: String?) {
         if (id != null && tabs.none { it.id == id }) return
+        if (id == null || id == splitId) splitId = null
         recordPage(activeId)
         activeId = id
         noteInteraction()
@@ -729,6 +840,7 @@ object AppController {
         recordPage(id)
         tabs.removeAt(idx)
         s.dispose()
+        if (splitId == id) splitId = null
         if (activeId == id) {
             activeId = tabs.getOrNull(minOf(idx, tabs.lastIndex))?.id
         }
@@ -745,6 +857,7 @@ object AppController {
     }
 
     fun flush() {
+        tabs.forEach { it.flushPersist() }
         tabs.forEach { recordPage(it.id) }
         saveLibrary()
         if (stats.isNotEmpty()) saveStats()
@@ -761,6 +874,7 @@ object AppController {
         if (tokens.isEmpty()) return@withContext emptyList()
         val out = ArrayList<LibraryHit>()
         for (e in library.toList()) {
+            if (e.locked && e.id !in unlocked) continue
             val pages = repo.loadOcrAll(e.id)
             for (page in pages.keys.sorted()) {
                 val words = pages[page]?.words ?: continue
@@ -787,6 +901,30 @@ object AppController {
     }
 
     /** يفتح مستندًا ويبحث فيه عن النص وينتقل إلى الصفحة. */
+    /** الرجوع من آخر رابط تبعته (المستند والصفحة). */
+    var linkBack by mutableStateOf<Pair<String, Int>?>(null)
+
+    /** يتبع رابطًا: يفتح المستند على الصفحة، ويحفظ مكانك للرجوع. */
+    fun followLink(from: DocSession, docId: String, page: Int) {
+        if (library.none { it.id == docId }) {
+            messages.tryEmit(L("المستند المرتبط لم يعد موجودًا", "The linked document no longer exists"))
+            return
+        }
+        linkBack = from.id to from.listState.firstVisibleItemIndex
+        openPage(docId, page)
+    }
+
+    /** يفتح مستندًا على صفحة محددة. */
+    fun openPage(id: String, page: Int) {
+        openDocument(id)
+        val s = tabs.firstOrNull { it.id == id } ?: return
+        if (s.status is SessionStatus.Ready) {
+            scope.launch { s.listState.scrollToItem(page.coerceIn(0, maxOf(0, (s.pdf?.count ?: 1) - 1))) }
+        } else {
+            s.pendingJump = page
+        }
+    }
+
     fun openAt(id: String, page: Int, query: String) {
         openDocument(id)
         val s = tabs.firstOrNull { it.id == id } ?: return
@@ -802,6 +940,8 @@ object AppController {
         if (exporting != null) return
         val docs = library.filter { it.folder == folder }
         if (docs.isEmpty()) return
+        // الملخص يُقرأ من الملفات المحفوظة: ما لم يُحفظ بعد من المستندات المفتوحة يُكتب أولًا
+        tabs.forEach { it.flushPersist() }
         exporting = L("جارٍ حفظ ملخص المادة…", "Saving subject summary…")
         scope.launch {
             try {
@@ -1135,6 +1275,79 @@ object AppController {
         }
     }
 
+    /**
+     * يفتح ملف PDF جاء من تطبيق آخر. إن كان في المكتبة نفس الملف (نفس الاسم والحجم) يُفتح هو،
+     * وإلا يُستورد ثم يُفتح، فتبقى كتابتك محفوظة عليه في المكتبة.
+     */
+    /** عرض باوربوينت ينتظر التحويل إلى PDF (تعرضه نافذة التحويل). */
+    var pptJob by mutableStateOf<Presentations.Job?>(null)
+
+    fun openExternal(uri: Uri, mime: String? = null) {
+        scope.launch {
+            // ننتظر تحميل المكتبة حتى لا يتكرر الملف
+            while (!libraryLoaded) kotlinx.coroutines.delay(50)
+            val info = withContext(Dispatchers.IO) {
+                try {
+                    appContext.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE),
+                        null, null, null
+                    )?.use { cur ->
+                        if (cur.moveToFirst()) {
+                            val n = cur.getString(0)
+                            val sz = if (cur.isNull(1)) -1L else cur.getLong(1)
+                            n to sz
+                        } else null
+                    }
+                } catch (t: Throwable) {
+                    null
+                }
+            }
+            val baseName = info?.first?.substringBeforeLast('.', info.first)
+            val size = info?.second ?: -1L
+            val realMime = mime ?: try {
+                appContext.contentResolver.getType(uri)
+            } catch (t: Throwable) {
+                null
+            }
+            // باوربوينت: نسخة مؤقتة تُرسل إلى أداة التحويل
+            if (Presentations.isPresentation(realMime, info?.first)) {
+                val name = info?.first ?: "presentation.pptx"
+                try {
+                    val f = withContext(Dispatchers.IO) {
+                        val dir = Presentations.dir(appContext)
+                        dir.listFiles()?.forEach { it.delete() }
+                        val out = File(dir, name.replace(Regex("[\\/:*?\"<>|]"), "-"))
+                        appContext.contentResolver.openInputStream(uri)!!.use { ins -> out.outputStream().use { ins.copyTo(it) } }
+                        out
+                    }
+                    pptJob = Presentations.Job(name, f, Presentations.mimeFor(name))
+                } catch (t: Throwable) {
+                    messages.tryEmit(L("تعذر قراءة ملف العرض", "Could not read the presentation"))
+                }
+                return@launch
+            }
+            val existing = if (baseName != null && size > 0) {
+                library.firstOrNull { !it.isNote && it.name == baseName && it.sizeBytes == size }
+            } else null
+            if (existing != null) {
+                openDocument(existing.id)
+                return@launch
+            }
+            importing = true
+            try {
+                val e = withContext(Dispatchers.IO) { repo.importFile(uri) }
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+                queueOcr(e)
+            } catch (t: Throwable) {
+                messages.tryEmit(L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
+            } finally {
+                importing = false
+            }
+        }
+    }
+
     fun toggleFavorite(id: String) {
         updateEntry(id) { it.copy(favorite = !it.favorite) }
         saveLibrary()
@@ -1149,6 +1362,8 @@ object AppController {
     }
 
     fun duplicate(entry: DocEntry) {
+        // المستند المفتوح قد يكون له حفظ منتظر: يُكتب أولًا حتى تشمله النسخة
+        tabs.firstOrNull { it.id == entry.id }?.flushPersist()
         scope.launch {
             try {
                 val copy = withContext(Dispatchers.IO) { repo.duplicate(entry, L(" (نسخة)", " (copy)")) }
@@ -1162,6 +1377,7 @@ object AppController {
     }
 
     fun delete(entry: DocEntry) {
+        tabs.firstOrNull { it.id == entry.id }?.cancelPendingPersist()
         closeTab(entry.id)
         library.removeAll { it.id == entry.id }
         saveLibrary()

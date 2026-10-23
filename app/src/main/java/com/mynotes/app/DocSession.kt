@@ -153,7 +153,15 @@ class DocSession(entry: DocEntry) {
     var pendingPage: Int = 0
 
     /** يطبق بحثًا مؤجلًا (من البحث في كل المكتبة): يفتح شريط البحث وينتقل لأول نتيجة في الصفحة المطلوبة. */
+    /** صفحة يُنتقل إليها بعد اكتمال فتح المستند (من رابط)، -1 = لا شيء. */
+    var pendingJump = -1
+
     fun applyPending() {
+        val j = pendingJump
+        if (j >= 0) {
+            pendingJump = -1
+            AppController.scope.launch { listState.scrollToItem(j.coerceIn(0, maxOf(0, (pdf?.count ?: 1) - 1))) }
+        }
         val q = pendingQuery ?: return
         pendingQuery = null
         searchOpen = true
@@ -1017,12 +1025,42 @@ class DocSession(entry: DocEntry) {
         hitIndex = 0
     }
 
+    private var saveJob: Job? = null
+
+    /**
+     * يحفظ المستند بعد 1.5 ثانية من آخر تغيير (لا بعد كل خط)، فلا يُعاد تحويل المستند كله
+     * إلى JSON أثناء الكتابة. الحفظ فوري عند إغلاق المستند وعند خروج التطبيق للخلفية (flushPersist).
+     */
     fun persist() {
+        saveJob?.cancel()
+        saveJob = AppController.scope.launch {
+            delay(1500)
+            saveJob = null
+            saveNow()
+        }
+    }
+
+    /** يحفظ الآن إن كان هناك حفظ منتظر. */
+    fun flushPersist() {
+        val j = saveJob ?: return
+        saveJob = null
+        j.cancel()
+        saveNow()
+    }
+
+    /** يلغي الحفظ المنتظر (عند حذف المستند). */
+    fun cancelPendingPersist() {
+        saveJob?.cancel()
+        saveJob = null
+    }
+
+    private fun saveNow() {
         val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks)
         AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 
     fun dispose() {
+        flushPersist()
         disposed = true
         ocrJob?.cancel()
         textLayer?.close()

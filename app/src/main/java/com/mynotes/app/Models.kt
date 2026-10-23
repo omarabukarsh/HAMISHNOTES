@@ -24,7 +24,9 @@ data class Ink(
     val pts: List<Pt>,
     val color: Color,
     val width: Float,
-    val tool: Tool = Tool.FOUNTAIN
+    val tool: Tool = Tool.FOUNTAIN,
+    /** وقت كتابة الخط (للربط بتسجيل الصوت)؛ 0 = غير معروف. */
+    val t: Long = 0L
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */
@@ -80,7 +82,10 @@ data class TextBox(
     val color: Color,
     val size: Float,
     /** ملاحظة لاصقة: تظهر أيقونة صغيرة مطوية، وتُفتح بالنقر. */
-    val sticky: Boolean = false
+    val sticky: Boolean = false,
+    /** رابط إلى مستند (معرّفه) وصفحة فيه؛ null = ليس رابطًا. */
+    val linkDoc: String? = null,
+    val linkPage: Int = 0
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */
@@ -147,7 +152,9 @@ data class DocEntry(
     /** مجموع وقت القراءة الفعلي بالمللي ثانية. */
     val readMs: Long = 0L,
     /** المادة (المجلد) التي ينتمي إليها المستند؛ فارغ = بدون مادة. */
-    val folder: String = ""
+    val folder: String = "",
+    /** مستند مقفل برمز أو بصمة. */
+    val locked: Boolean = false
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

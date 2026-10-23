@@ -1129,6 +1129,10 @@ private fun DocCard(
                     DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; onRename() })
                     DropdownMenuItem(text = { Text(L("إنشاء نسخة", "Duplicate")) }, onClick = { menu = false; onDuplicate() })
                     DropdownMenuItem(
+                        text = { Text(if (entry.locked) L("إلغاء القفل", "Unlock") else L("قفل المستند", "Lock document")) },
+                        onClick = { menu = false; AppController.toggleLock(entry.id) }
+                    )
+                    DropdownMenuItem(
                         text = { Text(if (entry.folder.isEmpty()) L("نقل إلى مادة…", "Move to subject…") else L("المادة: ${entry.folder}…", "Subject: ${entry.folder}…")) },
                         onClick = { menu = false; onMove() }
                     )
@@ -1151,6 +1155,13 @@ private fun DocCard(
 
 @Composable
 private fun Thumbnail(entry: DocEntry) {
+    // المستند المقفل لا تظهر صفحته الأولى في المكتبة
+    if (entry.locked && entry.id !in AppController.unlocked) {
+        Box(Modifier.fillMaxSize().background(Palette.Navy), contentAlignment = Alignment.Center) {
+            PhIcon(R.drawable.ph_lock, Palette.Gold, 40.dp)
+        }
+        return
+    }
     val bmp by produceState<Bitmap?>(null, entry.id) {
         value = withContext(Dispatchers.IO) {
             try {

@@ -10,7 +10,8 @@ object Templates {
         "plain" to L("بيضاء", "Plain"),
         "lined" to L("مسطّرة", "Lined"),
         "grid" to L("مربعات", "Grid"),
-        "dots" to L("نقاط", "Dots")
+        "dots" to L("نقاط", "Dots"),
+        "cornell" to L("كورنيل", "Cornell")
     )
 
     /** ألوان الورق الجاهزة (ARGB، الاسم). */
@@ -62,6 +63,26 @@ object Templates {
                 var y = step
                 while (y < h) {
                     canvas.drawLine(0f, y, w, y, paint)
+                    y += step
+                }
+            }
+            // قالب كورنيل: عمود الكلمات المفتاحية، مساحة الشرح بأسطر، وخلاصة في الأسفل
+            "cornell" -> {
+                val strong = Paint(paint).apply { strokeWidth = max(2f, w / 330f) }
+                val top = h * 0.085f
+                val cueX = w * 0.30f
+                val sumY = h * 0.80f
+                canvas.drawLine(0f, top, w, top, strong)
+                canvas.drawLine(cueX, top, cueX, sumY, strong)
+                canvas.drawLine(0f, sumY, w, sumY, strong)
+                var y = top + step * 1.2f
+                while (y < sumY - step * 0.3f) {
+                    canvas.drawLine(cueX + step * 0.5f, y, w - step * 0.6f, y, paint)
+                    y += step
+                }
+                y = sumY + step * 1.2f
+                while (y < h - step * 0.5f) {
+                    canvas.drawLine(step * 0.6f, y, w - step * 0.6f, y, paint)
                     y += step
                 }
             }

@@ -33,7 +33,7 @@ fun PomodoroControl(showStartLabel: Boolean = true) {
                 PhIcon(R.drawable.ph_timer, Palette.Navy, 20.dp, L("تشغيل مؤقت الدراسة", "Start study timer"))
                 if (showStartLabel) {
                     Spacer(Modifier.width(6.dp))
-                    Text(L("مؤقت 25 د", "Timer 25 min"), color = Palette.Navy, fontSize = 13.sp)
+                    Text(L("مؤقت ${c.studyMin} د", "Timer ${c.studyMin} min"), color = Palette.Navy, fontSize = 13.sp)
                 }
             }
         } else {

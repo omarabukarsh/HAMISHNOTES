@@ -96,7 +96,9 @@ object Ai {
         if (::ctx.isInitialized) return
         ctx = context.applicationContext
         selectedId = prefs.getString("model", "qwen17") ?: "qwen17"
-        useGpu = prefs.getBoolean("gpu", false)
+        // زر معالج الرسوم أُلغي: التشغيل على المعالج (CPU) دائمًا، ويُمسح الاختيار القديم
+        useGpu = false
+        if (prefs.contains("gpu")) prefs.edit().remove("gpu").apply()
     }
 
     fun modelDir(): File = File(ctx.filesDir, "models").also { it.mkdirs() }

@@ -127,7 +127,8 @@ class LibraryRepository(context: Context) {
                         lastPage = o.optInt("page"),
                         isNote = o.optBoolean("note"),
                         readMs = o.optLong("read"),
-                        folder = o.optString("folder", "")
+                        folder = o.optString("folder", ""),
+                        locked = o.optBoolean("lock", false)
                     )
                 } catch (e: Throwable) {
                     null
@@ -162,6 +163,7 @@ class LibraryRepository(context: Context) {
                             .put("note", e.isNote)
                             .put("read", e.readMs)
                             .put("folder", e.folder)
+                            .put("lock", e.locked)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
@@ -386,7 +388,7 @@ class LibraryRepository(context: Context) {
                             Tool.FOUNTAIN
                         }
                         val safeKind = if (kind == Tool.ERASER || kind == Tool.LASER) Tool.FOUNTAIN else kind
-                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind))
+                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L)))
                     }
                     ink[key.toInt()] = list
                 }
@@ -489,7 +491,9 @@ class LibraryRepository(context: Context) {
                                 text = o.optString("t", ""),
                                 color = Color(o.getInt("c")),
                                 size = o.getDouble("s").toFloat(),
-                                sticky = o.optBoolean("st", false)
+                                sticky = o.optBoolean("st", false),
+                                linkDoc = o.optString("ld", "").ifEmpty { null },
+                                linkPage = o.optInt("lp", 0)
                             )
                         )
                     } catch (e: Throwable) {
@@ -540,6 +544,7 @@ class LibraryRepository(context: Context) {
                                     .put("c", s.color.toArgb())
                                     .put("w", s.width.toDouble())
                                     .put("k", s.tool.name)
+                                    .put("t", s.t)
                                     .put("p", flat)
                             )
                         }
@@ -604,6 +609,8 @@ class LibraryRepository(context: Context) {
                                 .put("c", tb.color.toArgb())
                                 .put("s", tb.size.toDouble())
                                 .put("st", tb.sticky)
+                                .put("ld", tb.linkDoc ?: "")
+                                .put("lp", tb.linkPage)
                         )
                     }
                 }

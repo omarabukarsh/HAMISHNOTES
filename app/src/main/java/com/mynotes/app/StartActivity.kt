@@ -28,7 +28,26 @@ class StartActivity : Activity() {
             try { f.writeText(Log.getStackTraceString(e)) } catch (_: Throwable) {}
             old?.uncaughtException(t, e)
         }
-        startActivity(Intent(this, MainActivity::class.java))
+        // ملف مفتوح من تطبيق آخر (عرض أو مشاركة): نمرره مع صلاحية القراءة إلى الشاشة الرئيسية
+        val next = Intent(this, MainActivity::class.java)
+        val src = intent
+        val uri = when (src?.action) {
+            Intent.ACTION_VIEW -> src.data
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                src.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            }
+            else -> null
+        }
+        if (uri != null) {
+            next.action = Intent.ACTION_VIEW
+            val type = src?.type
+            if (type != null) next.setDataAndType(uri, type) else next.data = uri
+            next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        if (src?.getBooleanExtra("open_last", false) == true) next.putExtra("open_last", true)
+        next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(next)
         finish()
     }
 }

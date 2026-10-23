@@ -37,6 +37,56 @@ import com.google.mlkit.nl.translate.TranslatorOptions
 
 /** ترجمة على الجهاز: إنجليزي ← عربي، وعربي ← إنجليزي (حسب لغة النص المحدد). */
 object Translate {
+    /**
+     * تهيئة النص قبل الترجمة: فك الاختصارات الشائعة في المحاضرات (i.e، e.g، vit…)
+     * ثم تقسيمه إلى جمل، لأن الترجمة على الجهاز تخطئ كثيرًا مع الاختصارات والجمل الطويلة.
+     */
+    fun prepare(text: String): List<String> {
+        if (isArabic(text)) return listOf(text)
+        var t = text.replace(Regex("\\s+"), " ").trim()
+        val rules = listOf(
+            "\\(?\\bi\\.\\s?e\\.?,?\\)?(?=\\s)" to ". That is,",
+            "\\be\\.\\s?g\\.?,?(?=\\s)" to "for example,",
+            "\\bvs\\.?(?=\\s)" to "versus",
+            "\\betc\\.?(?=\\s|$)" to "and so on",
+            "\\bapprox\\.?(?=\\s)" to "approximately",
+            "\\bvits?\\.?(?=\\s)" to "vitamin",
+            "\\bw/o\\b" to "without",
+            "\\bw/(?=\\s)" to "with",
+            "\\bwith out\\b" to "without",
+            "\\ba prolong\\b" to "a prolonged",
+            "\\bpts\\b" to "patients",
+            "\\bpt\\b" to "patient",
+            "\\bdx\\b" to "diagnosis",
+            "\\btx\\b" to "treatment",
+            "\\bhx\\b" to "history",
+            "\\bsx\\b" to "symptoms",
+            "\\bb/c\\b" to "because",
+            "\\bdec\\.?(?=\\s)" to "decreased",
+            "\\binc\\.?(?=\\s)" to "increased"
+        )
+        for ((re, rep) in rules) t = t.replace(Regex(re, RegexOption.IGNORE_CASE), rep)
+        t = t.replace(Regex("\\s*\\.\\s*\\.\\s*"), ". ").replace(Regex("^\\.\\s*"), "").replace(Regex("\\s+\\."), ".")
+        // «vitamin k» → «vitamin K»
+        t = t.replace(Regex("\\bvitamin ([a-z])\\b")) { "vitamin " + it.groupValues[1].uppercase() }
+        return t.split(Regex("(?<=[.!?;])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    /** يترجم الأجزاء واحدًا تلو الآخر ثم يجمعها. */
+    fun translateAll(tr: Translator, parts: List<String>, done: (String?) -> Unit) {
+        val out = ArrayList<String>()
+        fun next(i: Int) {
+            if (i >= parts.size) {
+                done(out.joinToString(" "))
+                return
+            }
+            tr.translate(parts[i])
+                .addOnSuccessListener { out.add(it); next(i + 1) }
+                .addOnFailureListener { done(null) }
+        }
+        next(0)
+    }
+
     fun isArabic(text: String) = text.count { it in '؀'..'ۿ' } * 2 >= text.count { it.isLetter() }
 
     fun client(text: String): Translator {
@@ -64,9 +114,11 @@ fun TranslateDialog(text: String, onDismiss: () -> Unit) {
             .addOnSuccessListener {
                 if (!alive) return@addOnSuccessListener
                 downloading = false
-                tr.translate(text)
-                    .addOnSuccessListener { if (alive) result = it }
-                    .addOnFailureListener { if (alive) error = L("تعذرت الترجمة", "Translation failed") }
+                Translate.translateAll(tr, Translate.prepare(text)) { r ->
+                    if (alive) {
+                        if (r != null) result = r else error = L("تعذرت الترجمة", "Translation failed")
+                    }
+                }
             }
             .addOnFailureListener {
                 if (alive) error = L(

@@ -22,7 +22,8 @@ jobs:
       - name: Report compile errors
         if: failure()
         shell: bash
-        run: grep -E '^e: |What went wrong' -A2 build.log | head -40 | sed 's/^/::error::/' || true
+        run: |
+          grep -E '^e: |What went wrong' -A2 build.log | head -40 | sed 's/^/::error::/' || true
       - uses: actions/upload-artifact@v4
         with:
           name: MyNotes-debug

@@ -3,6 +3,7 @@
     <application
         android:label="MyNotes"
         android:icon="@mipmap/ic_launcher"
+        android:largeHeap="true"
         android:theme="@style/Theme.MyNotes">
 
         <activity

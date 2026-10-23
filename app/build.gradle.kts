@@ -30,7 +30,16 @@ android {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("stable")
         }
+        // نسخة الاستخدام: محسّنة ومضغوطة (R8) وغير قابلة للتصحيح، فتعمل Compose بأقصى سرعة.
+        // نفس مفتاح التوقيع، فتُثبَّت كتحديث فوق النسخة الحالية.
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("stable")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
+    lint { checkReleaseBuilds = false }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -52,6 +61,8 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.2")
+    // يثبّت ملفات الأداء الجاهزة (Baseline Profiles) لمكتبات Compose: فتح أسرع وتمرير أنعم من أول تشغيل
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // قراءة النص الرقمي داخل PDF (يدعم العربية) والكتابة على PDF عند الحفظ
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")

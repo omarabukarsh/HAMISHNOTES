@@ -1,5 +1,6 @@
 package com.mynotes.app
 
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.activity.ComponentActivity
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)
+        requestHighRefreshRate()
         setContent {
             val light = ThemeState.light
             SideEffect { applySystemBars(light) }
@@ -76,8 +78,29 @@ class MainActivity : ComponentActivity() {
         window.decorView.systemUiVisibility = flags
     }
 
+    /**
+     * يطلب أعلى معدل تحديث تدعمه الشاشة (90/120/144 هرتز) بنفس الدقة،
+     * فتكون الحركة والتمرير والكتابة بالقلم أنعم على الشاشات عالية الهرتز.
+     */
+    private fun requestHighRefreshRate() {
+        try {
+            @Suppress("DEPRECATION")
+            val d = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay) ?: return
+            val cur = d.mode
+            val best = d.supportedModes
+                .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+                .maxByOrNull { it.refreshRate } ?: return
+            val lp = window.attributes
+            lp.preferredDisplayModeId = best.modeId
+            lp.preferredRefreshRate = best.refreshRate
+            window.attributes = lp
+        } catch (t: Throwable) {
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        requestHighRefreshRate()
         AppController.setVisible(true)
     }
 

@@ -856,6 +856,7 @@ object AppController {
     }
 
     fun flush() {
+        tabs.forEach { it.flushPersist() }
         tabs.forEach { recordPage(it.id) }
         saveLibrary()
         if (stats.isNotEmpty()) saveStats()
@@ -938,6 +939,8 @@ object AppController {
         if (exporting != null) return
         val docs = library.filter { it.folder == folder }
         if (docs.isEmpty()) return
+        // الملخص يُقرأ من الملفات المحفوظة: ما لم يُحفظ بعد من المستندات المفتوحة يُكتب أولًا
+        tabs.forEach { it.flushPersist() }
         exporting = L("جارٍ حفظ ملخص المادة…", "Saving subject summary…")
         scope.launch {
             try {
@@ -1351,6 +1354,8 @@ object AppController {
     }
 
     fun duplicate(entry: DocEntry) {
+        // المستند المفتوح قد يكون له حفظ منتظر: يُكتب أولًا حتى تشمله النسخة
+        tabs.firstOrNull { it.id == entry.id }?.flushPersist()
         scope.launch {
             try {
                 val copy = withContext(Dispatchers.IO) { repo.duplicate(entry, L(" (نسخة)", " (copy)")) }
@@ -1364,6 +1369,7 @@ object AppController {
     }
 
     fun delete(entry: DocEntry) {
+        tabs.firstOrNull { it.id == entry.id }?.cancelPendingPersist()
         closeTab(entry.id)
         library.removeAll { it.id == entry.id }
         saveLibrary()

@@ -106,7 +106,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -2188,10 +2187,8 @@ private fun PageView(
             }
         }
 
-        // الخطوط المثبّتة: طبقة رسم مستقلة تُسجَّل مرة واحدة ولا يُعاد رسمها مع كل حركة للقلم
-        Canvas(Modifier.fillMaxSize().graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)) {
-            strokes.forEach { drawInk(it.pts, if (night) nightOf(it.color) else it.color, it.width, it.tool) }
-        }
+        // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
+        InkLayer(strokes, night, Modifier.fillMaxSize())
 
         // الخط الحي + الليزر + استقبال القلم والإصبع (طبقة مستقلة: تحديثها لا يعيد رسم الصفحة)
         Canvas(

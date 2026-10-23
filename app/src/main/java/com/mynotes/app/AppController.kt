@@ -798,8 +798,33 @@ object AppController {
         saveSession()
     }
 
+    // ---------- عرض مستندين جنبًا إلى جنب ----------
+
+    /** المستند الظاهر في النصف الثاني من الشاشة؛ null = بدون تقسيم. */
+    var splitId by mutableStateOf<String?>(null)
+        private set
+    /** نسبة عرض المستند الأول (0.25..0.75). */
+    var splitFrac by mutableStateOf(0.5f)
+
+    fun openSplit(id: String) {
+        val entry = library.firstOrNull { it.id == id } ?: return
+        if (entry.locked && id !in unlocked) {
+            messages.tryEmit(L("افتح قفل المستند أولًا", "Unlock the document first"))
+            return
+        }
+        if (id == activeId) return
+        if (tabs.none { it.id == id }) openSession(entry, activate = false)
+        splitId = id
+        updateEntry(id) { it.copy(lastOpened = System.currentTimeMillis()) }
+    }
+
+    fun closeSplit() {
+        splitId = null
+    }
+
     fun activate(id: String?) {
         if (id != null && tabs.none { it.id == id }) return
+        if (id == null || id == splitId) splitId = null
         recordPage(activeId)
         activeId = id
         noteInteraction()
@@ -814,6 +839,7 @@ object AppController {
         recordPage(id)
         tabs.removeAt(idx)
         s.dispose()
+        if (splitId == id) splitId = null
         if (activeId == id) {
             activeId = tabs.getOrNull(minOf(idx, tabs.lastIndex))?.id
         }

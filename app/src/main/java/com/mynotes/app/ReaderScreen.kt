@@ -389,6 +389,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     var addDialog by remember { mutableStateOf(false) }
     var linkDialog by remember { mutableStateOf(false) }
     var audioDialog by remember { mutableStateOf(false) }
+    var splitDialog by remember { mutableStateOf(false) }
     var pdfAfter by remember { mutableStateOf(0) }
     val cur = s.listState.firstVisibleItemIndex
     val pill = RoundedCornerShape(28.dp)
@@ -563,6 +564,12 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 if (v("link")) {
                     TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
                 }
+                if (v("split")) {
+                    val splitOn = c.splitId != null
+                    TBtn(selected = splitOn, onClick = { if (splitOn) c.closeSplit() else splitDialog = true }) {
+                        PhIcon(R.drawable.ph_split, tintFor(splitOn))
+                    }
+                }
                 if (v("record")) {
                     val recHere = AudioNotes.recordingDoc == s.id
                     TBtn(selected = recHere, onClick = { audioDialog = true }) {
@@ -688,6 +695,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     }
     if (linkDialog) LinkDialog(s, cur) { linkDialog = false }
     if (audioDialog) AudioDialog(s) { audioDialog = false }
+    if (splitDialog) SplitPickerDialog(s) { splitDialog = false }
     if (addDialog) {
         AddPagesDialog(
             onBlank = { template, atEnd, color ->

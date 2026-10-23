@@ -179,7 +179,12 @@ fun MyNotesApp() {
                 if (active == null) {
                     LibraryScreen()
                 } else {
-                    key(active.id) { ReaderScreen(active) }
+                    val second = c.tabs.firstOrNull { it.id == c.splitId && it.id != active.id }
+                    if (second == null || c.focusMode) {
+                        key(active.id) { ReaderScreen(active) }
+                    } else {
+                        SplitReaders(active, second)
+                    }
                 }
             }
         }

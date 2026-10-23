@@ -48,7 +48,11 @@ object Exporter {
 
     fun snapshotOf(s: DocSession): Snapshot? {
         val pdf = s.pdf ?: return null
-        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, s.texts, s.id)
+        // الملاحظات اللاصقة تُحفظ في الملف كنص مقروء بعرض مناسب
+        val texts = s.texts.mapValues { (_, l) ->
+            l.map { if (it.sticky) it.copy(w = 0.3f, x = it.x.coerceAtMost(0.68f)) else it }
+        }
+        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id)
     }
 
     /** يعيد عدد الصفحات المصدَّرة. */

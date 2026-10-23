@@ -30,6 +30,8 @@ object AppController {
     lateinit var repo: LibraryRepository
         private set
     private lateinit var prefs: SharedPreferences
+    lateinit var appContext: Context
+        private set
     private var initialized = false
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -81,6 +83,7 @@ object AppController {
         if (n in folders) folders.removeAt(i) else folders[i] = n
         for (k in library.indices) if (library[k].folder == old) library[k] = library[k].copy(folder = n)
         if (libraryFolder == old) libraryFolder = n
+        examDates.remove(old)?.let { examDates[n] = it; saveExamDates() }
         saveFolders()
         saveLibrary()
     }
@@ -89,6 +92,7 @@ object AppController {
         folders.remove(name)
         for (k in library.indices) if (library[k].folder == name) library[k] = library[k].copy(folder = "")
         if (libraryFolder == name) libraryFolder = null
+        if (examDates.remove(name) != null) saveExamDates()
         saveFolders()
         saveLibrary()
     }
@@ -215,7 +219,11 @@ object AppController {
     var lastWriting by mutableStateOf(Tool.FOUNTAIN)
         private set
 
+    /** أداة التحديد الحر (لاسو) فعّالة بدل أداة الكتابة. */
+    var lassoActive by mutableStateOf(false)
+
     fun selectTool(t: Tool) {
+        lassoActive = false
         tool = t
         if (t.isPen()) lastPen = t
         if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t
@@ -341,6 +349,94 @@ object AppController {
     /** نقرتان على القلم (أو زره) تبدّلان بين الممحاة وآخر قلم مستخدم. */
     var penDoubleTapEnabled by mutableStateOf(true)
         private set
+
+    // ---------- أقلامي المفضلة ----------
+
+    class PenPreset(val tool: Tool, val color: Int, val size: Int)
+
+    val presets = mutableStateListOf<PenPreset>()
+
+    private fun savePresets() {
+        val a = org.json.JSONArray()
+        presets.forEach { a.put(org.json.JSONObject().put("t", it.tool.name).put("c", it.color).put("s", it.size)) }
+        prefs.edit().putString("pen_presets", a.toString()).apply()
+    }
+
+    /** يحفظ الأداة الحالية بلونها وحجمها كقلم مفضل. */
+    fun addPreset() {
+        val t = tool
+        if (!(t.isPen() || t == Tool.HIGHLIGHTER)) return
+        val p = PenPreset(t, colorFor(t).toArgb(), sizeFor(t))
+        if (presets.any { it.tool == p.tool && it.color == p.color && it.size == p.size }) return
+        if (presets.size >= 12) presets.removeAt(0)
+        presets.add(p)
+        savePresets()
+        messages.tryEmit(L("حُفظ في أقلامي المفضلة (اضغط مطولًا لحذفه)", "Saved to favorite pens (long-press to remove)"))
+    }
+
+    fun applyPreset(p: PenPreset) {
+        selectTool(p.tool)
+        setColor(Color(p.color))
+        setSize(p.size)
+    }
+
+    fun removePreset(p: PenPreset) {
+        presets.remove(p)
+        savePresets()
+    }
+
+    // ---------- القراءة الليلية ----------
+
+    /** عكس ألوان الصفحات (خلفية داكنة ونص فاتح) مع الحفاظ على ألوان الكتابة والتمييز. */
+    var nightPages by mutableStateOf(false)
+        private set
+
+    fun toggleNightPages() {
+        nightPages = !nightPages
+        prefs.edit().putBoolean("night_pages", nightPages).apply()
+    }
+
+    // ---------- مواعيد الامتحانات ----------
+
+    /** موعد امتحان كل مادة (epochDay). */
+    val examDates = mutableStateMapOf<String, Long>()
+
+    private fun saveExamDates() {
+        val o = org.json.JSONObject()
+        examDates.forEach { (k, v) -> o.put(k, v) }
+        prefs.edit().putString("exam_dates", o.toString()).apply()
+        Reminders.schedule(appContext)
+    }
+
+    fun setExamDate(folder: String, epochDay: Long?) {
+        if (epochDay == null) examDates.remove(folder) else examDates[folder] = epochDay
+        saveExamDates()
+    }
+
+    /** أيام متبقية حتى امتحان المادة (0 = اليوم)، أو null إن لم يُحدد أو مضى. */
+    fun daysToExam(folder: String): Long? {
+        val d = examDates[folder] ?: return null
+        val left = d - java.time.LocalDate.now().toEpochDay()
+        return if (left < 0) null else left
+    }
+
+    /** الصفحات التي لم تصلها بعد في مستندات المادة. */
+    fun pagesLeft(folder: String): Int =
+        library.filter { it.folder == folder }.sumOf { e -> (e.pageCount - (e.lastPage + 1)).coerceAtLeast(0) }
+
+    // ---------- التذكير اليومي ----------
+
+    var reminderOn by mutableStateOf(false)
+        private set
+    var reminderMinute by mutableStateOf(20 * 60)
+        private set
+
+    fun setReminder(on: Boolean, minuteOfDay: Int = reminderMinute) {
+        reminderOn = on
+        reminderMinute = minuteOfDay.coerceIn(0, 24 * 60 - 1)
+        prefs.edit().putBoolean("reminder_on", reminderOn).putInt("reminder_min", reminderMinute).apply()
+        Reminders.schedule(appContext)
+    }
 
     /** لغة الواجهة. */
     fun setEnglish(en: Boolean) {
@@ -483,6 +579,7 @@ object AppController {
         if (initialized) return
         initialized = true
         val app = context.applicationContext
+        appContext = app
         repo = LibraryRepository(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
@@ -501,6 +598,22 @@ object AppController {
         fingerUndo = prefs.getBoolean("finger_undo", true)
         penKeyCode = prefs.getInt("pen_key", -1)
         I18n.english = prefs.getBoolean("lang_en", false)
+        nightPages = prefs.getBoolean("night_pages", false)
+        reminderOn = prefs.getBoolean("reminder_on", false)
+        reminderMinute = prefs.getInt("reminder_min", 20 * 60)
+        try {
+            val a = org.json.JSONArray(prefs.getString("pen_presets", "[]") ?: "[]")
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                presets.add(PenPreset(Tool.valueOf(o.getString("t")), o.getInt("c"), o.getInt("s")))
+            }
+        } catch (e: Throwable) {
+        }
+        try {
+            val o = org.json.JSONObject(prefs.getString("exam_dates", "{}") ?: "{}")
+            for (k in o.keys()) examDates[k] = o.getLong(k)
+        } catch (e: Throwable) {
+        }
         eraserMode = try {
             EraserMode.valueOf(prefs.getString("eraser_mode", "STROKE") ?: "STROKE")
         } catch (e: Throwable) {
@@ -807,6 +920,17 @@ object AppController {
             return
         }
         if (clean.isBlank()) return
+        if (req.sticky) {
+            s.addTextBox(
+                TextBox(
+                    id = UUID.randomUUID().toString(), page = req.page,
+                    x = 0.82f, y = 0.08f, w = 0.05f,
+                    text = clean, color = Color(0xFF6B4E00), size = 0.022f, sticky = true
+                )
+            )
+            messages.tryEmit(L("أُضيفت الملاحظة اللاصقة. انقر عليها لفتحها، واسحبها لتحريكها", "Sticky note added. Tap to open it, drag to move it"))
+            return
+        }
         val pen = if (tool.isPen()) tool else lastPen
         s.addTextBox(
             TextBox(

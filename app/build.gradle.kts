@@ -64,6 +64,9 @@ dependencies {
     // يثبّت ملفات الأداء الجاهزة (Baseline Profiles) لمكتبات Compose: فتح أسرع وتمرير أنعم من أول تشغيل
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // ترجمة مصطلح بالضغط المطول (حزمة لغة تُنزَّل مرة واحدة ثم تعمل دون إنترنت)
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("androidx.core:core-ktx:1.13.1")
     // قراءة النص الرقمي داخل PDF (يدعم العربية) والكتابة على PDF عند الحفظ
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 

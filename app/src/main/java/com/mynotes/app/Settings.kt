@@ -38,6 +38,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -70,7 +72,7 @@ import kotlin.math.sin
 /** نوع الرسم المتحرك الذي يشرح الأداة. */
 enum class Demo {
     PEN, HIGHLIGHT, ERASER, LASER, SHAPES, SNAP, NO_SUMMARY, NAV, BOOKMARK, TIMER, IMAGE, TEXT,
-    ADD_PAGE, OCR, SEARCH, EXPORT, UNDO, ZOOM, FIT, FOCUS, CARDS, SUMMARY
+    ADD_PAGE, OCR, SEARCH, EXPORT, UNDO, ZOOM, FIT, FOCUS, CARDS, SUMMARY, LASSO, STICKY, ZOOMWIN, NIGHT
 }
 
 /** أداة في الشريط: id للإخفاء والإظهار، essential = لا تُخفى. */
@@ -98,6 +100,10 @@ object ToolCatalog {
         ToolInfo("bookmark", L("العلامة المرجعية", "Bookmark"), L("علّم الصفحات المهمة بشريط ذهبي، وتجدها في «العلامات» داخل درج الصفحات.", "Mark important pages with a gold ribbon; find them under “Bookmarks” in the pages drawer."), R.drawable.ph_bookmark, Demo.BOOKMARK),
         ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("25 دقيقة دراسة ثم 5 راحة. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "25 minutes of study, then a 5-minute break. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
         ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
+        ToolInfo("lasso", L("التحديد الحر", "Lasso"), L("أحِط بالقلم حول كتابتك لتحديدها، ثم اسحبها أو كبّرها بالمقبض أو غيّر لونها أو انسخها أو احذفها.", "Loop around your writing to select it, then drag it, resize with the handle, recolor, duplicate or delete."), R.drawable.ph_lasso, Demo.LASSO),
+        ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("ملاحظة مطوية في زاوية الصفحة لا تغطي النص؛ انقرها لتقرأها، واسحبها لتحريكها.", "A folded note on the page that doesn’t cover the text; tap to read it, drag to move it."), R.drawable.ph_note, Demo.STICKY),
+        ToolInfo("zoomwin", L("نافذة الكتابة المكبّرة", "Zoom writing window"), L("اكتب بخط كبير في نافذة أسفل الشاشة فيظهر صغيرًا ومرتبًا على الصفحة. انقر الصفحة بإصبعك لنقل المنطقة.", "Write large in a window at the bottom; it appears small and neat on the page. Tap the page with a finger to move the area."), R.drawable.ph_zoom_write, Demo.ZOOMWIN),
+        ToolInfo("night", L("القراءة الليلية", "Night reading"), L("صفحات داكنة ونص فاتح للمذاكرة ليلًا، مع بقاء ألوان كتابتك وتظليلك.", "Dark pages with light text for night study; your ink and highlight colors are kept."), R.drawable.ph_moon, Demo.NIGHT),
         ToolInfo("text", L("مربع نص", "Text box"), L("اكتب بلوحة المفاتيح في أي مكان من الصفحة.", "Type with the keyboard anywhere on the page."), R.drawable.ph_text, Demo.TEXT),
         ToolInfo("addpage", L("إضافة صفحات", "Add pages"), L("أضف صفحة فارغة (مسطرة أو مربعات) أو صفحات من ملف PDF آخر.", "Add a blank page (lined or grid) or pages from another PDF."), R.drawable.ph_add_page, Demo.ADD_PAGE),
         ToolInfo("ocr", L("قراءة النص", "Read text"), L("يقرأ نص الصفحات (العربية مدعومة في ملفات PDF الرقمية) ليعمل البحث والتقاط النص.", "Reads page text (Arabic supported in digital PDFs) so search and text snap work."), R.drawable.ph_scan, Demo.OCR),
@@ -109,6 +115,11 @@ object ToolCatalog {
         ToolInfo("focus", L("وضع التركيز", "Focus mode"), L("يخفي كل الأشرطة لتبقى مع الصفحة فقط، والمؤقت يبقى معك.", "Hides all bars so only the page remains; the timer stays with you."), R.drawable.ph_eye, Demo.FOCUS),
         ToolInfo("readtimer", L("عداد وقت القراءة", "Reading time counter"), L("يظهر في الزاوية كم قضيت في قراءة هذا المستند.", "Shows in the corner how long you have spent reading this document."), R.drawable.ph_timer, Demo.TIMER),
         ToolInfo("summary", L("الملخصات", "Summaries"), L("كل ما تلتقطه بالهايلايتر يُجمع مرتبًا في درج «ملخصات»: عناوين وفقرات وجداول تعدّلها بنفسك.", "Everything you snap with the highlighter is collected in the “Summaries” drawer: headings, paragraphs and tables you can edit."), R.drawable.ph_summary, Demo.SUMMARY, tourOnly = true),
+        ToolInfo("presets", L("أقلامي المفضلة", "Favorite pens"), L("في شريط الأقلام: النجمة تحفظ القلم الحالي بلونه وحجمه، ونقرة واحدة تعيده. اضغط مطولًا لحذفه.", "In the pen bar: the star saves the current pen with its color and size; one tap brings it back. Long-press to remove."), R.drawable.ph_star_plus, Demo.PEN, tourOnly = true),
+        ToolInfo("outline", L("فهرس المحاضرة", "Lecture contents"), L("إن كان في ملف PDF فهرس عناوين يظهر في درج الصفحات تحت «الفهرس»، والنقر ينقلك للفصل.", "If the PDF has a table of contents it appears under “Contents” in the pages drawer; tap to jump."), R.drawable.ph_list, Demo.NAV, tourOnly = true),
+        ToolInfo("pages", L("ترتيب الصفحات", "Arrange pages"), L("اضغط مطولًا على صفحة في درج الصفحات لتحريكها أو نسخها أو حذفها.", "Long-press a page in the pages drawer to move, duplicate or delete it."), R.drawable.ph_pages, Demo.ADD_PAGE, tourOnly = true),
+        ToolInfo("translate", L("الترجمة", "Translation"), L("حدد نصًا بالضغط المطول واختر «ترجمة»: إنجليزي ↔ عربي على الجهاز.", "Long-press to select text and choose “Translate”: English ↔ Arabic on the device."), R.drawable.ph_translate, Demo.TEXT, tourOnly = true),
+        ToolInfo("exam", L("موعد الامتحان", "Exam countdown"), L("اضغط مطولًا على المادة واختر «موعد الامتحان»: ترى الأيام المتبقية وكم صفحة تحتاج يوميًا.", "Long-press a subject and choose “Exam date”: see days left and pages needed per day."), R.drawable.ph_timer, Demo.TIMER, tourOnly = true),
         ToolInfo("cards", L("البطاقات", "Cards"), L("اصنع بطاقة بعنوان ومحتوى تكتبهما بنفسك، واقلبها للمراجعة. من «بطاقات» في درج الملخصات.", "Make cards with your own title and content and flip them to review. From “Cards” in the summaries drawer."), R.drawable.ph_cards, Demo.CARDS, tourOnly = true)
     )
     val tour get() = all
@@ -216,6 +227,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             c.fingerUndo
                         ) { c.toggleFingerUndo() }
                     }
+
+                    item { SectionTitle(L("التذكير اليومي", "Daily reminder")) }
+                    item { ReminderRow() }
 
                     item { SectionTitle(L("التمييز والملخص", "Highlights and summary")) }
                     item {
@@ -524,6 +538,10 @@ fun ToolDemo(demo: Demo, modifier: Modifier) {
             Demo.FIT -> demoFit(t)
             Demo.FOCUS -> demoFocus(t)
             Demo.CARDS -> demoCards(t)
+            Demo.LASSO -> demoLasso(t)
+            Demo.STICKY -> demoSticky(t)
+            Demo.ZOOMWIN -> demoZoomWin(t)
+            Demo.NIGHT -> demoNight(t)
         }
     }
 }
@@ -950,4 +968,145 @@ private fun DrawScope.demoCards(t: Float) {
             for (i in 0 until 3) drawRoundRect(DemoLine, Offset(cx - w * sx * 0.35f, tp + h * (0.4f + i * 0.14f)), Size(w * sx * 0.7f, 7f), CornerRadius(3f))
         }
     }
+}
+
+// ---------------------------------------------------------------- التذكير اليومي
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderRow() {
+    val c = AppController
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var picking by remember { mutableStateOf(false) }
+    val permission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { ok ->
+        if (!ok) c.messages.tryEmit(L("لن تظهر التذكيرات دون السماح بالإشعارات", "Reminders won’t show without notification permission"))
+    }
+    fun hhmm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(L("تذكير بالمذاكرة كل يوم", "Remind me to study every day"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            Text(
+                L("إشعار بما تبقى من هدف اليوم وأقرب امتحان", "A notification with what’s left of today’s goal and your nearest exam"),
+                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+            )
+        }
+        ChoiceChip(hhmm(c.reminderMinute), false) { picking = true }
+        Spacer(Modifier.width(8.dp))
+        NavySwitch(c.reminderOn) { on ->
+            c.setReminder(on)
+            if (on && android.os.Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    if (picking) {
+        val state = androidx.compose.material3.rememberTimePickerState(c.reminderMinute / 60, c.reminderMinute % 60, true)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text(L("وقت التذكير", "Reminder time")) },
+            text = { androidx.compose.material3.TimePicker(state = state) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    c.setReminder(true, state.hour * 60 + state.minute)
+                    picking = false
+                }) { Text(L("حفظ", "Save")) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { picking = false }) { Text(L("إلغاء", "Cancel")) } }
+        )
+    }
+}
+
+// ---------------------------------------------------------------- رسوم الأدوات الجديدة
+
+private fun DrawScope.demoLasso(t: Float) {
+    val f = page()
+    val cx = f[0] + f[2] * 0.5f
+    val cy = f[1] + f[3] * 0.45f
+    val shift = phase(t, 0.6f, 0.85f) * f[2] * 0.12f
+    // كتابة داخل الحلقة
+    drawPath(wave(cx - f[2] * 0.22f + shift, cx + f[2] * 0.22f + shift, cy, f[3] * 0.04f, 1f), DemoInk, style = Stroke(4f, cap = StrokeCap.Round))
+    // الحلقة ترسم نفسها ثم يظهر الإطار
+    val loop = phase(t, 0.05f, 0.45f)
+    val p = Path()
+    val n = 48
+    for (i in 0..(n * loop).toInt()) {
+        val a = i / n.toFloat() * 2f * PI.toFloat()
+        val x = cx + f[2] * 0.3f * cos(a)
+        val y = cy + f[3] * 0.12f * sin(a)
+        if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+    }
+    if (t < 0.5f) drawPath(p, Palette.Navy, style = Stroke(2.5f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(9f, 7f))))
+    else {
+        val l = cx - f[2] * 0.25f + shift
+        drawRect(Palette.Navy, Offset(l, cy - f[3] * 0.07f), Size(f[2] * 0.5f, f[3] * 0.14f),
+            style = Stroke(2f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(9f, 7f))))
+        drawCircle(Palette.Navy, 7f, Offset(l + f[2] * 0.5f, cy + f[3] * 0.07f))
+    }
+}
+
+private fun DrawScope.demoSticky(t: Float) {
+    val f = page()
+    textLines(f)
+    val open = phase(t, 0.3f, 0.5f) * (1f - phase(t, 0.82f, 0.95f))
+    val ix = f[0] + f[2] * 0.72f
+    val iy = f[1] + f[3] * 0.1f
+    val s = f[2] * 0.14f
+    drawRoundRect(Color(0xFFFFE27A), Offset(ix, iy), Size(s, s), CornerRadius(6f))
+    if (open > 0f) {
+        val w = size.width * 0.42f * open
+        val h = size.height * 0.5f * open
+        val l = size.width * 0.55f - w / 2f
+        val tp = size.height * 0.3f
+        drawRoundRect(Color(0xFFFFF3B8), Offset(l, tp), Size(w, h), CornerRadius(10f))
+        for (i in 0 until 3) {
+            drawRoundRect(Color(0xFF6B4E00).copy(alpha = 0.6f * open), Offset(l + 14f, tp + 16f + i * h * 0.26f), Size((w - 28f).coerceAtLeast(0f), 6f), CornerRadius(3f))
+        }
+    }
+}
+
+private fun DrawScope.demoZoomWin(t: Float) {
+    val f = page(cx = size.width * 0.25f, scale = 0.9f)
+    textLines(f, 3)
+    // المنطقة على الصفحة
+    val bx = f[0] + f[2] * 0.15f
+    val by = f[1] + f[3] * 0.62f
+    val bw = f[2] * 0.6f
+    val bh = f[3] * 0.12f
+    drawRect(Palette.Gold, Offset(bx, by), Size(bw, bh), style = Stroke(2f))
+    val prog = phase(t, 0.1f, 0.75f)
+    // النافذة المكبّرة
+    val px = size.width * 0.5f
+    val py = size.height * 0.3f
+    val pw = size.width * 0.46f
+    val ph = size.height * 0.42f
+    drawRoundRect(Color.White, Offset(px, py), Size(pw, ph), CornerRadius(10f))
+    drawRoundRect(Palette.Gold, Offset(px, py), Size(pw, ph), CornerRadius(10f), style = Stroke(2.5f))
+    drawPath(wave(px + pw * 0.08f, px + pw * 0.92f, py + ph * 0.55f, ph * 0.14f, prog), DemoInk, style = Stroke(5f, cap = StrokeCap.Round))
+    drawPath(wave(bx + bw * 0.08f, bx + bw * 0.92f, by + bh * 0.55f, bh * 0.14f, prog), DemoInk, style = Stroke(1.6f, cap = StrokeCap.Round))
+}
+
+private fun DrawScope.demoNight(t: Float) {
+    val dark = phase(t, 0.25f, 0.45f) * (1f - phase(t, 0.85f, 0.98f))
+    val f = page()
+    drawRoundRect(Color(0xFF1E232B).copy(alpha = dark), Offset(f[0], f[1]), Size(f[2], f[3]), CornerRadius(6f))
+    val lineCol = Color(
+        DemoLine.red + (0.85f - DemoLine.red) * dark,
+        DemoLine.green + (0.87f - DemoLine.green) * dark,
+        DemoLine.blue + (0.9f - DemoLine.blue) * dark
+    )
+    val lines = textLines(f, 6, lineCol)
+    val (o, w) = lines[2]
+    val hh = f[3] / 8f * 0.62f
+    drawRoundRect(
+        Color(0xFFFFE066).copy(alpha = 0.55f + 0.2f * (1f - dark)), Offset(o.x - 4f, o.y - hh * 0.32f), Size(w + 8f, hh),
+        CornerRadius(hh * 0.32f), blendMode = if (dark > 0.5f) BlendMode.Screen else BlendMode.Multiply
+    )
 }

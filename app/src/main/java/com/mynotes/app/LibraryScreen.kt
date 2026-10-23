@@ -136,6 +136,7 @@ fun LibraryScreen() {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 LibraryHeader(wide, docs.size, startImport) { showNewNote = true }
                 if (!wide) FilterRow()
+                c.libraryFolder?.let { f -> ExamPlanCard(f) }
                 if (c.importing) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = Palette.Gold)
                 }
@@ -525,15 +526,22 @@ private fun FolderSection() {
             modifier = Modifier.padding(top = 4.dp, start = 4.dp)
         )
     }
+    var examFor by remember { mutableStateOf<String?>(null) }
     c.folders.toList().forEach { f ->
         var menu by remember(f) { mutableStateOf(false) }
-        Box {
+        Column {
             SpineItem(
                 f, R.drawable.ph_note, c.library.count { it.folder == f }, c.libraryFolder == f,
                 onLongClick = { menu = true }
             ) {
                 c.libraryFolder = f
                 c.libraryFilter = LibraryFilter.ALL
+            }
+            c.daysToExam(f)?.let { d ->
+                Text(
+                    examLabel(d), color = Palette.Gold, fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 44.dp, bottom = 4.dp)
+                )
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text(L("حفظ ملخص المادة كاملة (PDF)", "Save the whole subject summary (PDF)")) }, onClick = {
@@ -542,6 +550,7 @@ private fun FolderSection() {
                     val safeF = f.replace(Regex("[\\\\/:*?\"<>|]"), "-")
                     saver.launch(L("ملخص مادة $safeF.pdf", "Subject summary $safeF.pdf"))
                 })
+                DropdownMenuItem(text = { Text(L("موعد الامتحان…", "Exam date…")) }, onClick = { menu = false; examFor = f })
                 DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; renaming = f })
                 DropdownMenuItem(
                     text = { Text(L("حذف المادة (تبقى المستندات)", "Delete subject (documents stay)"), color = Palette.Danger) },
@@ -550,6 +559,7 @@ private fun FolderSection() {
             }
         }
     }
+    examFor?.let { f -> ExamDateDialog(f) { examFor = null } }
     if (adding) {
         NameDialog(L("مادة جديدة", "New subject"), "", onSave = { c.addFolder(it); adding = false }, onDismiss = { adding = false })
     }
@@ -557,6 +567,95 @@ private fun FolderSection() {
     if (r != null) {
         NameDialog(L("إعادة تسمية المادة", "Rename subject"), r, onSave = { c.renameFolder(r, it); renaming = null }, onDismiss = { renaming = null })
     }
+}
+
+/** «امتحان بعد N يومًا» بكلمات قصيرة. */
+fun examLabel(days: Long): String = when (days) {
+    0L -> L("الامتحان اليوم", "Exam today")
+    1L -> L("الامتحان غدًا", "Exam tomorrow")
+    else -> L("الامتحان بعد $days يومًا", "Exam in $days days")
+}
+
+/** اختيار موعد امتحان المادة (أو حذفه). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun ExamDateDialog(folder: String, onDismiss: () -> Unit) {
+    val c = AppController
+    val initial = c.examDates[folder]?.let { java.time.LocalDate.ofEpochDay(it) } ?: java.time.LocalDate.now().plusWeeks(2)
+    val state = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = initial.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+    )
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { ms ->
+                    val day = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toEpochDay()
+                    c.setExamDate(folder, day)
+                }
+                onDismiss()
+            }) { Text(L("حفظ", "Save")) }
+        },
+        dismissButton = {
+            Row {
+                if (c.examDates.containsKey(folder)) {
+                    TextButton(onClick = { c.setExamDate(folder, null); onDismiss() }) {
+                        Text(L("حذف الموعد", "Remove date"), color = Palette.Danger)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+            }
+        }
+    ) {
+        androidx.compose.material3.DatePicker(
+            state = state,
+            title = {
+                Text(
+                    L("موعد امتحان $folder", "$folder exam date"),
+                    modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp)
+                )
+            }
+        )
+    }
+}
+
+/** بطاقة المادة المختارة: العد التنازلي للامتحان وخطة القراءة اليومية. */
+@Composable
+private fun ExamPlanCard(folder: String) {
+    val c = AppController
+    var picking by remember { mutableStateOf(false) }
+    val days = c.daysToExam(folder)
+    val left = c.pagesLeft(folder)
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 4.dp).clip(shape)
+            .background(Palette.GoldSoft).border(1.dp, Palette.Gold.copy(alpha = 0.5f), shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PhIcon(R.drawable.ph_timer, Palette.GoldDeep, 22.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            if (days == null) {
+                Text(
+                    L("حدد موعد امتحان المادة لترى خطتك اليومية", "Set the exam date to see your daily plan"),
+                    fontSize = 14.sp, color = Palette.Navy, fontWeight = FontWeight.Medium
+                )
+            } else {
+                Text(examLabel(days), fontSize = 16.sp, color = Palette.Navy, fontWeight = FontWeight.Bold)
+                val perDay = if (left <= 0) 0 else ((left + days) / (days + 1)).toInt().coerceAtLeast(1)
+                Text(
+                    if (left <= 0) L("وصلت إلى آخر صفحة في كل مستندات المادة، ركّز على المراجعة", "You reached the last page of every document, focus on review")
+                    else L("باقي $left صفحة لم تصلها: نحو $perDay صفحة يوميًا", "$left pages left: about $perDay pages a day"),
+                    fontSize = 13.sp, color = Palette.TextSecondary
+                )
+            }
+        }
+        TextButton(onClick = { picking = true }) {
+            Text(if (days == null) L("تحديد الموعد", "Set date") else L("تغيير", "Change"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+        }
+    }
+    if (picking) ExamDateDialog(folder) { picking = false }
 }
 
 @Composable

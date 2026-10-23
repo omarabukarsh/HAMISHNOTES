@@ -84,7 +84,13 @@ fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float): List<Ink> {
 }
 
 /** طلب فتح نافذة مربع النص: boxId = null لإنشاء مربع جديد في الصفحة page. */
-data class TextDialogReq(val boxId: String?, val page: Int)
+data class TextDialogReq(val boxId: String?, val page: Int, val sticky: Boolean = false)
+
+/** منطقة نافذة الكتابة المكبّرة على الصفحة (إحداثيات الصفحة، h يُحسب من نسبة النافذة). */
+data class ZoomBox(val page: Int, val x: Float, val y: Float, val w: Float, val h: Float = w * 0.3f)
+
+/** خطوط محددة بأداة التحديد الحر في صفحة واحدة (المقارنة بالمرجع ===). */
+class LassoSel(val page: Int, val strokes: List<Ink>)
 
 class EditSnapshot(
     val ink: Map<Int, List<Ink>>,
@@ -217,6 +223,13 @@ class DocSession(entry: DocEntry) {
 
     /** النص الرقمي داخل ملفات PDF (يدعم العربية). يُنشأ عند فتح المستند. */
     private var textLayer: PdfTextLayer? = null
+
+    /** فهرس عناوين الملف الأصلي (فارغ إن لم يكن فيه فهرس). */
+    var outline by mutableStateOf<List<PdfTextLayer.OutlineItem>>(emptyList())
+
+    /** رقم الصفحة الحالي لصفحة من الملف الأصلي (بعد أي إضافة أو ترتيب)، أو -1. */
+    fun pageOfMain(mainIndex: Int): Int =
+        pdf?.pages?.indexOfFirst { it.src == "main" && it.index == mainIndex } ?: -1
     private var snapshot: EditSnapshot? = null
     private var disposed = false
 
@@ -239,6 +252,12 @@ class DocSession(entry: DocEntry) {
                     src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
                     else -> null
                 }
+            }
+            // فهرس الملف (إن وُجد) يُقرأ في الخلفية
+            val layer = textLayer
+            AppController.scope.launch {
+                val items = withContext(Dispatchers.IO) { layer?.outline("main") ?: emptyList() }
+                if (!disposed) outline = items
             }
             annotations = loaded.second.ink
             images = loaded.second.images
@@ -271,10 +290,108 @@ class DocSession(entry: DocEntry) {
         summaryEdits = s.edits
         selectedImageId = null
         selectedTextId = null
+        lassoSel = null
     }
 
     fun beginEdit() {
         snapshot = snap()
+    }
+
+    // ---------- التحديد الحر (لاسو) ----------
+
+    var lassoSel by mutableStateOf<LassoSel?>(null)
+
+    /** نافذة الكتابة المكبّرة (null = مغلقة). */
+    var zoomBox by mutableStateOf<ZoomBox?>(null)
+
+    /** يحدد الخطوط التي يقع معظمها داخل المضلع (إحداثيات الصفحة). */
+    fun lassoSelect(page: Int, poly: List<Pt>) {
+        val list = annotations[page] ?: emptyList()
+        if (poly.size < 3) {
+            lassoSel = null
+            return
+        }
+        fun inside(x: Float, y: Float): Boolean {
+            var c = false
+            var j = poly.size - 1
+            for (i in poly.indices) {
+                val a = poly[i]
+                val b = poly[j]
+                if ((a.y > y) != (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c
+                j = i
+            }
+            return c
+        }
+        val picked = list.filter { s ->
+            s.pts.isNotEmpty() && s.pts.count { inside(it.x, it.y) } >= s.pts.size * 0.6f
+        }
+        lassoSel = if (picked.isEmpty()) null else LassoSel(page, picked)
+        if (picked.isEmpty()) AppController.messages.tryEmit(L("لم تحدد أي كتابة", "Nothing selected"))
+    }
+
+    /** المستطيل المحيط بالتحديد (l, t, r, b) بإحداثيات الصفحة. */
+    fun lassoBounds(): FloatArray? {
+        val sel = lassoSel ?: return null
+        var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+        for (s in sel.strokes) for (p in s.pts) {
+            if (p.x < l) l = p.x; if (p.x > r) r = p.x
+            if (p.y < t) t = p.y; if (p.y > b) b = p.y
+        }
+        if (l > r) return null
+        val pad = 0.008f
+        return floatArrayOf(l - pad, t - pad, r + pad, b + pad)
+    }
+
+    /** يستبدل الخطوط المحددة بنسخ معدّلة (دون تسجيل في التراجع؛ يُلف بـ beginEdit/endEdit). */
+    private fun lassoReplace(transform: (Ink) -> Ink?) {
+        val sel = lassoSel ?: return
+        val list = annotations[sel.page] ?: return
+        val picked = sel.strokes
+        val next = ArrayList<Ink>(list.size)
+        val newSel = ArrayList<Ink>()
+        for (s in list) {
+            if (picked.any { it === s }) {
+                val t = transform(s)
+                if (t != null) {
+                    next.add(t)
+                    newSel.add(t)
+                }
+            } else next.add(s)
+        }
+        annotations = annotations + (sel.page to next)
+        lassoSel = if (newSel.isEmpty()) null else LassoSel(sel.page, newSel)
+    }
+
+    /** تحريك بمقدار (dx, dy) وتكبير بنسبة k حول النقطة (px, py). */
+    fun lassoTransform(dx: Float, dy: Float, k: Float = 1f, px: Float = 0f, py: Float = 0f) {
+        lassoReplace { s ->
+            s.copy(
+                pts = s.pts.map { p -> Pt(px + (p.x - px) * k + dx, py + (p.y - py) * k + dy, p.p) },
+                width = s.width * k
+            )
+        }
+    }
+
+    fun lassoRecolor(color: Color) {
+        beginEdit()
+        lassoReplace { it.copy(color = color) }
+        endEdit()
+    }
+
+    fun lassoDelete() {
+        beginEdit()
+        lassoReplace { null }
+        endEdit()
+    }
+
+    /** نسخة مزاحة قليلًا من التحديد، وتصبح هي المحددة. */
+    fun lassoDuplicate() {
+        val sel = lassoSel ?: return
+        beginEdit()
+        val copies = sel.strokes.map { s -> s.copy(pts = s.pts.map { Pt(it.x + 0.03f, it.y + 0.03f, it.p) }) }
+        annotations = annotations + (sel.page to ((annotations[sel.page] ?: emptyList()) + copies))
+        lassoSel = LassoSel(sel.page, copies)
+        endEdit()
     }
 
     fun addInk(page: Int, ink: Ink) {
@@ -380,6 +497,45 @@ class DocSession(entry: DocEntry) {
         endEdit()
     }
 
+    // ---------- ترتيب الصفحات: حذف، نسخ، تحريك ----------
+
+    /**
+     * يعيد بناء المستند بترتيب جديد: order[i] = رقم الصفحة القديمة التي تصبح في الموضع i
+     * (صفحة محذوفة لا تظهر، وصفحة منسوخة تظهر مرتين). الكتابة والصور والتمييز تنتقل مع صفحاتها.
+     */
+    fun rearrangePages(order: List<Int>) {
+        val doc = pdf ?: return
+        val old = doc.pages
+        if (order.isEmpty() || order.any { it !in old.indices }) return
+        stopOcr()
+        doc.replacePages(order.map { old[it] })
+        val seen = HashSet<Int>()
+        val nAnn = HashMap<Int, List<Ink>>()
+        val nImg = HashMap<Int, List<ImageItem>>()
+        val nMarks = HashMap<Int, List<TextMark>>()
+        val nTexts = HashMap<Int, List<TextBox>>()
+        val nBm = HashSet<Int>()
+        val nOcr = HashMap<Int, OcrPage>()
+        order.forEachIndexed { ni, oi ->
+            val first = seen.add(oi)
+            fun newId(id: String) = if (first) id else UUID.randomUUID().toString()
+            annotations[oi]?.let { nAnn[ni] = it }
+            images[oi]?.let { l -> nImg[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
+            marks[oi]?.let { l -> nMarks[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
+            texts[oi]?.let { l -> nTexts[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
+            if (oi in bookmarks) nBm.add(ni)
+            ocr[oi]?.let { nOcr[ni] = it }
+        }
+        annotations = nAnn
+        images = nImg
+        marks = nMarks
+        texts = nTexts
+        bookmarks = nBm
+        ocr.clear()
+        ocr.putAll(nOcr)
+        afterPagesChanged()
+    }
+
     // ---------- إدراج صفحات ----------
 
     /**
@@ -421,7 +577,13 @@ class DocSession(entry: DocEntry) {
         ocr.forEach { (k, v) -> shiftedOcr[shift(k)] = v }
         ocr.clear()
         ocr.putAll(shiftedOcr)
+        afterPagesChanged()
+    }
 
+    /** بعد تغيّر أرقام الصفحات: مسح التراجع والتحديد، والحفظ، وإعادة تشغيل القراءة. */
+    private fun afterPagesChanged() {
+        val doc = pdf ?: return
+        lassoSel = null
         undoStack.clear()
         redoStack.clear()
         snapshot = null

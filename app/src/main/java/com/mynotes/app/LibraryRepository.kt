@@ -488,7 +488,8 @@ class LibraryRepository(context: Context) {
                                 w = o.getDouble("w").toFloat(),
                                 text = o.optString("t", ""),
                                 color = Color(o.getInt("c")),
-                                size = o.getDouble("s").toFloat()
+                                size = o.getDouble("s").toFloat(),
+                                sticky = o.optBoolean("st", false)
                             )
                         )
                     } catch (e: Throwable) {
@@ -602,6 +603,7 @@ class LibraryRepository(context: Context) {
                                 .put("t", tb.text)
                                 .put("c", tb.color.toArgb())
                                 .put("s", tb.size.toDouble())
+                                .put("st", tb.sticky)
                         )
                     }
                 }

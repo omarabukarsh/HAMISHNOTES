@@ -78,7 +78,9 @@ data class TextBox(
     val w: Float,
     val text: String,
     val color: Color,
-    val size: Float
+    val size: Float,
+    /** ملاحظة لاصقة: تظهر أيقونة صغيرة مطوية، وتُفتح بالنقر. */
+    val sticky: Boolean = false
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */

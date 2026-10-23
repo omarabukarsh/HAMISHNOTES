@@ -38,11 +38,12 @@ internal fun DrawScope.drawInk(
     color: Color,
     width: Float,
     tool: Tool,
-    extra: Pt? = null
+    extra: Pt? = null,
+    scaleW: Float = size.width
 ) {
     val n = pts.size + (if (extra != null) 1 else 0)
     if (n == 0) return
-    val w = size.width
+    val w = scaleW
     when (tool) {
         Tool.FOUNTAIN -> {
             fun pt(i: Int): Pt = if (i < pts.size) pts[i] else extra!!
@@ -85,11 +86,33 @@ internal fun DrawScope.drawInk(
 fun markCorner(heightPx: Float): Float = heightPx * 0.32f
 
 /** مستطيل تمييز بحواف دائرية بمزج «ضرب» (يبدو خلف النص). */
-fun DrawScope.drawMarkRect(color: Color, r: MarkRect, w: Float) {
+fun DrawScope.drawMarkRect(color: Color, r: MarkRect, w: Float, night: Boolean = false) {
     val h = (r.b - r.t) * w
+    // ليلًا: الصفحة داكنة والنص فاتح، فيُرسم التمييز بمزج «تفتيح» بلون أخفت (يبقى النص الفاتح واضحًا)
+    val c = if (night) Color(color.red * 0.55f, color.green * 0.55f, color.blue * 0.55f) else color
     drawRoundRect(
-        color, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, h),
+        c, Offset(r.l * w, r.t * w), Size((r.r - r.l) * w, h),
         cornerRadius = CornerRadius(markCorner(h)),
-        blendMode = BlendMode.Multiply
+        blendMode = if (night) BlendMode.Screen else BlendMode.Multiply
     )
+}
+
+/**
+ * القراءة الليلية: يعكس السطوع مع الحفاظ على اللون تقريبًا (عكس ثم تدوير اللون 180°)،
+ * فالحبر الأسود يصبح أبيض والأزرق يبقى أزرق.
+ */
+val NightMatrix = floatArrayOf(
+    0.333f, -0.667f, -0.667f, 0f, 255f,
+    -0.667f, 0.333f, -0.667f, 0f, 255f,
+    -0.667f, -0.667f, 0.333f, 0f, 255f,
+    0f, 0f, 0f, 1f, 0f
+)
+
+fun nightOf(c: Color): Color {
+    val m = NightMatrix
+    val r = c.red * 255f
+    val g = c.green * 255f
+    val b = c.blue * 255f
+    fun ch(i: Int) = ((m[i] * r + m[i + 1] * g + m[i + 2] * b + m[i + 4]) / 255f).coerceIn(0f, 1f)
+    return Color(ch(0), ch(5), ch(10), c.alpha)
 }

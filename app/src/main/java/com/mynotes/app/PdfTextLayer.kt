@@ -53,6 +53,40 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
         }
     }
 
+    /** عنصر في فهرس الملف: عنوان، مستواه، ورقم صفحته في الملف الأصلي (من 0). */
+    class OutlineItem(val title: String, val level: Int, val pageIndex: Int)
+
+    /** فهرس عناوين الملف (Bookmarks) إن وُجد. */
+    fun outline(src: String): List<OutlineItem> {
+        val doc = docFor(src) ?: return emptyList()
+        return synchronized(this) {
+            if (closed) return emptyList()
+            val out = ArrayList<OutlineItem>()
+            try {
+                val root = doc.documentCatalog.documentOutline ?: return emptyList()
+                fun walk(node: com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineNode, level: Int) {
+                    var item = node.firstChild
+                    var guard = 0
+                    while (item != null && guard++ < 2000 && out.size < 1500) {
+                        val page = try {
+                            item.findDestinationPage(doc)
+                        } catch (t: Throwable) {
+                            null
+                        }
+                        val idx = if (page != null) doc.pages.indexOf(page) else -1
+                        val title = (item.title ?: "").trim()
+                        if (idx >= 0 && title.isNotEmpty()) out.add(OutlineItem(title, level, idx))
+                        if (level < 4) walk(item, level + 1)
+                        item = item.nextSibling
+                    }
+                }
+                walk(root, 0)
+            } catch (t: Throwable) {
+            }
+            out
+        }
+    }
+
     fun close() = synchronized(this) {
         closed = true
         docs.values.forEach {

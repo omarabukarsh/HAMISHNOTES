@@ -802,6 +802,18 @@ class DocSession(entry: DocEntry) {
     /** تمييزات الملخص فقط (بدون التمييز المخصص للصفحة وحدها). */
     fun allMarks(): List<TextMark> = MarkMerge.readingOrder(marks.values).filter { it.inSummary }
 
+    /** MyNotes Pro: يضيف نصًا (قراءة الصفحة بالذكاء الاصطناعي) إلى الملخصات دون تظليل على الصفحة. */
+    fun addTextMark(page: Int, text: String) {
+        if (text.isBlank()) return
+        val m = TextMark(
+            id = UUID.randomUUID().toString(), page = page, rects = emptyList(),
+            color = Color(0xFFFFE066), text = text, createdAt = System.currentTimeMillis()
+        )
+        beginEdit()
+        marks = marks + (page to ((marks[page] ?: emptyList()) + m))
+        endEdit()
+    }
+
     fun updateMarkText(markId: String, text: String) {
         val page = marks.entries.firstOrNull { e -> e.value.any { it.id == markId } }?.key ?: return
         beginEdit()

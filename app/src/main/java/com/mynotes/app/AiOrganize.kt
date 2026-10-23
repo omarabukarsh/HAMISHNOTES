@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,11 +65,66 @@ Strict rules:
 - Keep every note in its original language (Arabic stays Arabic, English stays English). Keep drug names and medical terms exactly as written.
 - Group related points under short headings. Merge repeated points.
 - When several items share the same attributes (for example drug, class, mechanism, side effects), present them as a table.
+You may also receive SOURCE: the text of the document pages the notes come from. Use the source only as a reference:
+- to understand each note in its context and put it under the right heading of the document,
+- to complete a note whose words or sentence were cut, and to fix broken words,
+- to rebuild a table when the notes contain parts of it.
+The summary stays about the notes: do not copy other parts of the source that the notes do not mention.
 Output format (plain text only, no other markdown, no introduction, no closing remarks):
 # Heading
 ## Subheading
 - bullet point
 Tables: one row per line, cells separated by " | ", first row is the header."""
+
+    /** نص صفحة كمصدر: القراءة المنظمة بالذكاء الاصطناعي إن وُجدت، وإلا نص الصفحة المقروء. */
+    private fun pageSource(s: DocSession, page: Int): String =
+        AiPageReader.result(s.id, page) ?: s.ocr[page]?.words?.let { AiPageReader.plainText(it) } ?: ""
+
+    private fun tokens(t: String): Set<String> =
+        t.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
+
+    /** يختار من صفحات المستند ما يناسب هذا الجزء من الملخص (حسب الكلمات المشتركة) ضمن حدّ الطول. */
+    private fun sourceFor(part: String, pages: Map<Int, String>, budget: Int): String {
+        val want = tokens(part)
+        if (want.isEmpty() || pages.isEmpty()) return ""
+        val ranked = pages.mapNotNull { (p, txt) ->
+            val score = tokens(txt).count { it in want }
+            if (score >= 2) Triple(p, txt, score) else null
+        }.sortedByDescending { it.third }.take(3)
+        if (ranked.isEmpty()) return ""
+        val each = budget / ranked.size
+        return ranked.sortedBy { it.first }.joinToString("\n\n") { (p, txt, _) ->
+            "[Page ${p + 1}]\n" + bestWindow(txt, want, each)
+        }
+    }
+
+    /** إن كانت الصفحة أطول من الحد: الجزء الذي فيه أكثر الكلمات المشتركة. */
+    private fun bestWindow(txt: String, want: Set<String>, max: Int): String {
+        if (txt.length <= max) return txt
+        val lines = txt.lines()
+        var best = 0
+        var bestScore = -1
+        for (i in lines.indices) {
+            var len = 0
+            var sc = 0
+            var j = i
+            while (j < lines.size && len + lines[j].length <= max) {
+                sc += tokens(lines[j]).count { it in want }
+                len += lines[j].length + 1
+                j++
+            }
+            if (sc > bestScore) {
+                bestScore = sc
+                best = i
+            }
+        }
+        val sb = StringBuilder()
+        for (j in best until lines.size) {
+            if (sb.length + lines[j].length > max) break
+            sb.append(lines[j]).append('\n')
+        }
+        return sb.toString().ifBlank { txt.take(max) }
+    }
 
     /** حالة الترتيب الجاري (واحد فقط في كل مرة). */
     var runningDoc by mutableStateOf<String?>(null)
@@ -180,11 +236,13 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
     }
 
     fun start(s: DocSession, notes: String) {
-        if (job?.isActive == true) return
+        if (job?.isActive == true || AiPageReader.runningKey != null) return
         val docId = s.id
-        // ذاكرة النموذج 4096 رمزًا: العربية تأخذ رموزًا أكثر، فأجزاء أصغر
+        // ذاكرة النموذج 4096 رمزًا: العربية تأخذ رموزًا أكثر، فأجزاء أصغر.
+        // جزء من الذاكرة لنص صفحات المستند (المصدر)، فالملاحظات في كل جزء أقل قليلًا.
         val arabic = notes.count { it in '؀'..'ۿ' } > notes.length / 4
-        val parts = chunks(notes, if (arabic) 1800 else 3200)
+        val parts = chunks(notes, if (arabic) 1300 else 2400)
+        val sourceBudget = if (arabic) 1300 else 2400
         if (parts.isEmpty()) return
         runningDoc = docId
         partial = ""
@@ -192,11 +250,18 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         job = AppController.scope.launch {
             val done = StringBuilder()
             try {
+                // نص صفحات المستند كاملًا مصدرًا: تُقرأ الصفحات التي فيها تمييزات إن لم تكن مقروءة
+                stepText = L("جارٍ قراءة صفحات المستند…", "Reading the document pages…")
+                s.allMarks().map { it.page }.distinct().forEach { p -> if (s.ocr[p] == null) s.ocrPage(p) }
+                val pages = (0 until (s.pdf?.count ?: 0)).associateWith { pageSource(s, it) }.filterValues { it.isNotBlank() }
                 parts.forEachIndexed { i, part ->
                     stepText = if (parts.size == 1) L("جارٍ الترتيب…", "Organizing…")
                     else L("جارٍ ترتيب الجزء ${i + 1} من ${parts.size}…", "Organizing part ${i + 1} of ${parts.size}…")
                     stepFraction = i / parts.size.toFloat()
-                    val res = Ai.generate(SYSTEM, "Notes:\n\n$part") { p ->
+                    val src = sourceFor(part, pages, sourceBudget)
+                    val prompt = if (src.isBlank()) "Notes:\n\n$part"
+                    else "SOURCE (document text, reference only):\n\n$src\n\nNOTES (organize these):\n\n$part"
+                    val res = Ai.generate(SYSTEM, prompt) { p ->
                         partial = (done.toString() + "\n\n" + clean(p)).trim()
                     }
                     if (done.isNotEmpty()) done.append("\n\n")
@@ -304,7 +369,29 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
     val busyElsewhere = AiOrganizer.runningDoc != null && !running
     val saved = AiOrganizer.result(s.id)
     var editing by remember { mutableStateOf(false) }
+    var readPage by remember { mutableStateOf<Int?>(null) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        // قراءة منظمة للصفحة الحالية (عناوين، جداول، نقاط) — تُستعمل أيضًا مصدرًا للترتيب
+        val cur = s.listState.firstVisibleItemIndex
+        val pageDone = AiPageReader.result(s.id, cur) != null
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, Palette.Gold, RoundedCornerShape(10.dp))
+                .clickable { readPage = cur }.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    L("✦ قراءة الصفحة ${cur + 1} بالذكاء", "✦ Read page ${cur + 1} with AI"),
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy
+                )
+                Text(
+                    if (pageDone) L("مقروءة ومنظمة — اضغط للعرض", "Read and structured — tap to view")
+                    else L("يتعرّف على العناوين والجداول والنقاط في الصفحة", "Recognizes headings, tables and bullets on the page"),
+                    fontSize = 12.sp, color = Palette.TextSecondary
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         // تنبيه دائم: اقتراح يُراجع
         Text(
             L("ترتيب مقترح من نموذج يعمل داخل جهازك دون إنترنت. ملخصك الأصلي لا يتغير. راجع المعلومات قبل الاعتماد عليها.",
@@ -341,7 +428,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
             else -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Button(
-                        enabled = notes.isNotBlank() && !busyElsewhere,
+                        enabled = notes.isNotBlank() && !busyElsewhere && AiPageReader.runningKey == null,
                         onClick = { AiOrganizer.start(s, notes) },
                         colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
                     ) { Text(if (saved == null) L("رتّب الملخص", "Organize summary") else L("أعد الترتيب", "Organize again")) }
@@ -371,6 +458,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
             }
         }
     }
+    readPage?.let { p -> AiPageDialog(s, p) { readPage = null } }
     if (editing && saved != null) {
         var t by remember { mutableStateOf(saved) }
         AlertDialog(

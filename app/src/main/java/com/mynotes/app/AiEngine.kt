@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
@@ -38,7 +39,9 @@ object Ai {
         val desc: () -> String,
         val repo: String?,
         val file: String,
-        val sizeMb: Int
+        val sizeMb: Int,
+        /** يقرأ الصور أيضًا (يُستعمل لقراءة صفحات المستند بالذكاء الاصطناعي). */
+        val vision: Boolean = false
     ) {
         val url: String? get() = repo?.let { "https://huggingface.co/$it/resolve/main/$file?download=true" }
     }
@@ -57,7 +60,7 @@ object Ai {
         Model(
             "gemma4", { L("الأدق (أبطأ وأكبر)", "Most accurate (slower, larger)") },
             { L("Gemma 4 E2B من Google — يحتاج ذاكرة أكبر", "Google Gemma 4 E2B — needs more memory") },
-            "litert-community/gemma-4-E2B-it-litert-lm", "gemma-4-E2B-it.litertlm", 2583
+            "litert-community/gemma-4-E2B-it-litert-lm", "gemma-4-E2B-it.litertlm", 2583, vision = true
         ),
         Model(
             "custom", { L("ملف مستورد", "Imported file") },
@@ -110,6 +113,11 @@ object Ai {
 
     val selected: Model get() = models.firstOrNull { it.id == selectedId } ?: models[0]
     val ready: Boolean get() = installed(selected)
+
+    /** النموذج المختار يقرأ صورة الصفحة نفسها (Gemma 4)، وإلا يُستعمل النص المقروء فقط. */
+    val canSee: Boolean get() = ready && selected.vision && !visionFailed
+    private var visionFailed = false
+    private var engineVision = false
 
     fun select(id: String) {
         selectedId = id
@@ -252,17 +260,29 @@ object Ai {
     private suspend fun ensureEngine(): Engine = withContext(dispatcher) {
         val path = fileOf(selected).path
         val e = engine
-        if (e != null && enginePath == path && engineGpu == useGpu) return@withContext e
+        val wantVision = selected.vision && !visionFailed
+        if (e != null && enginePath == path && engineGpu == useGpu && engineVision == wantVision) return@withContext e
         closeEngineNow()
         engineStatus = L("جارٍ تحميل النموذج في الذاكرة…", "Loading the model into memory…")
+        fun create(vision: Boolean) = Engine(
+            EngineConfig(
+                modelPath = path,
+                backend = if (useGpu) Backend.GPU() else Backend.CPU(),
+                visionBackend = if (vision) Backend.CPU() else null,
+                cacheDir = ctx.cacheDir.path
+            )
+        ).also { it.initialize() }
+        var usedVision = wantVision
         val created = try {
-            Engine(
-                EngineConfig(
-                    modelPath = path,
-                    backend = if (useGpu) Backend.GPU() else Backend.CPU(),
-                    cacheDir = ctx.cacheDir.path
-                )
-            ).also { it.initialize() }
+            try {
+                create(wantVision)
+            } catch (t: Throwable) {
+                if (!wantVision) throw t
+                // تعذّر تشغيل قارئ الصور: نكمل بالنص فقط
+                visionFailed = true
+                usedVision = false
+                create(false)
+            }
         } catch (t: Throwable) {
             engineStatus = ""
             throw t
@@ -270,6 +290,7 @@ object Ai {
         engine = created
         enginePath = path
         engineGpu = useGpu
+        engineVision = usedVision
         engineStatus = ""
         created
     }
@@ -297,7 +318,12 @@ object Ai {
     /**
      * يرسل طلبًا واحدًا (محادثة جديدة بلا ذاكرة سابقة) ويعيد النص كاملًا، مع تحديث جزئي أثناء الكتابة.
      */
-    suspend fun generate(system: String, prompt: String, onPartial: (String) -> Unit = {}): String {
+    suspend fun generate(
+        system: String,
+        prompt: String,
+        image: ByteArray? = null,
+        onPartial: (String) -> Unit = {}
+    ): String {
         if (!ready) throw IllegalStateException("model not installed")
         idleJob?.cancel()
         val eng = ensureEngine()
@@ -311,7 +337,10 @@ object Ai {
                     )
                 ).use { conv ->
                     try {
-                        conv.sendMessageAsync(prompt, extraContext = mapOf("enable_thinking" to false)).collect { chunk ->
+                        // صورة الصفحة (إن وُجدت وكان النموذج يقرأ الصور) قبل النص
+                        val contents = if (image != null && engineVision) Contents.of(Content.ImageBytes(image), Content.Text(prompt))
+                            else Contents.of(prompt)
+                        conv.sendMessageAsync(contents, extraContext = mapOf("enable_thinking" to false)).collect { chunk ->
                             out.append(chunk.toString())
                             onPartial(cleanThinking(out.toString()))
                         }

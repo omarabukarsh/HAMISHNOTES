@@ -1142,64 +1142,126 @@ object AppController {
     var exporting by mutableStateOf<String?>(null)
         private set
 
-    fun exportDocument(context: Context, s: DocSession, uri: Uri) {
-        if (exporting != null) return
-        val snap = Exporter.snapshotOf(s) ?: return
+    /** يكتب PDF المستند مع التعليقات. editable = نسخة قابلة للتعديل عند فتحها في التطبيق. يعيد true إن كان النص قابلًا للتحديد. */
+    private suspend fun writeDocPdf(context: Context, s: DocSession, uri: Uri, editable: Boolean): Boolean {
+        val snap = Exporter.snapshotOf(s) ?: throw IllegalStateException("not ready")
         val total = snap.pages.size
-        exporting = L("جارٍ حفظ PDF…", "Saving PDF…")
+        val data = if (editable) repo.docDataJson(
+            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes)
+        ) else null
+        val imgs = if (editable) s.images.values.flatten().map { repo.imageFile(s.id, it.file) } else emptyList()
+        return withContext(Dispatchers.IO) {
+            val entry = library.firstOrNull { it.id == s.id }
+            val partsDir = repo.partsDir(s.id)
+            try {
+                // أولًا: نص قابل للتحديد فوق صفحات الملف الأصلية
+                Exporter.exportVector(context.applicationContext, snap, { src ->
+                    when {
+                        src == "main" && entry != null -> repo.file(entry)
+                        src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
+                        else -> null
+                    }
+                }, uri, { i -> exporting = L("جارٍ تجهيز PDF: صفحة ${i + 1} من $total", "Preparing PDF: page ${i + 1} of $total") }, data, imgs)
+                true
+            } catch (t: Throwable) {
+                // احتياط: صفحات كصور (نسخة نهائية فقط)
+                Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
+                    exporting = L("جارٍ تجهيز PDF كصور: صفحة ${i + 1} من $total", "Preparing PDF as images: page ${i + 1} of $total")
+                }
+                false
+            }
+        }
+    }
+
+    /** المستند مفتوحًا في تبويب، أو تحميله مؤقتًا (من المكتبة) ثم إغلاقه. */
+    private suspend fun <T> withDocSession(id: String, block: suspend (DocSession) -> T): T? {
+        tabs.firstOrNull { it.id == id && it.status is SessionStatus.Ready }?.let { return block(it) }
+        val entry = library.firstOrNull { it.id == id } ?: return null
+        val s = DocSession(entry)
+        s.load(repo.file(entry), repo)
+        return try {
+            if (s.status is SessionStatus.Ready) block(s) else null
+        } finally {
+            s.dispose()
+        }
+    }
+
+    private fun shareTarget(name: String): File {
+        val dir = File(appContext.cacheDir, "share").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80).ifBlank { "document" }
+        return File(dir, "$safe.pdf")
+    }
+
+    private fun launchShare(context: Context, f: File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", f)
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+            .setType("application/pdf")
+            .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val chooser = android.content.Intent.createChooser(send, L("مشاركة عبر", "Share via"))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
+    }
+
+    /**
+     * مشاركة المستند (تلغرام، واتساب…) أو حفظه على الجهاز.
+     * saveUri = null للمشاركة. editable = نسخة قابلة للتعديل عند فتحها في التطبيق.
+     */
+    fun shareOrSaveDoc(context: Context, docId: String, editable: Boolean, saveUri: Uri?) {
+        if (exporting != null) return
+        val name = library.firstOrNull { it.id == docId }?.name ?: "document"
+        exporting = L("جارٍ تجهيز PDF…", "Preparing PDF…")
         scope.launch {
             try {
-                val selectable = withContext(Dispatchers.IO) {
-                    val entry = library.firstOrNull { it.id == s.id }
-                    val partsDir = repo.partsDir(s.id)
-                    try {
-                        // أولًا: نص قابل للتحديد فوق صفحات الملف الأصلية
-                        Exporter.exportVector(context.applicationContext, snap, { src ->
-                            when {
-                                src == "main" && entry != null -> repo.file(entry)
-                                src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
-                                else -> null
-                            }
-                        }, uri) { i -> exporting = L("جارٍ حفظ PDF: صفحة ${i + 1} من $total", "Saving PDF: page ${i + 1} of $total") }
-                        true
-                    } catch (t: Throwable) {
-                        // احتياط: صفحات كصور (الطريقة السابقة)
-                        Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
-                            exporting = L("جارٍ حفظ PDF كصور: صفحة ${i + 1} من $total", "Saving PDF as images: page ${i + 1} of $total")
-                        }
-                        false
+                val file = if (saveUri == null) shareTarget(name + if (editable) "" else L(" - نهائي", " - final")) else null
+                val target = saveUri ?: Uri.fromFile(file)
+                val selectable = withDocSession(docId) { s -> writeDocPdf(context, s, target, editable) }
+                    ?: throw IllegalStateException("not ready")
+                if (file != null) launchShare(context, file)
+                else messages.tryEmit(
+                    when {
+                        editable && selectable -> L("حُفظت نسخة قابلة للتعديل: افتحها في التطبيق لتعديل الكتابة", "Editable copy saved: open it in the app to edit the writing")
+                        selectable -> L("حُفظت نسخة نهائية مع التعليقات", "Final copy saved with annotations")
+                        else -> L("حُفظ المستند كصور (نسخة نهائية)", "Document saved as images (final copy)")
                     }
-                }
-                messages.tryEmit(
-                    if (selectable) L("تم حفظ المستند مع التعليقات ($total صفحة)، والنص قابل للتحديد", "Document saved with annotations ($total pages), text is selectable")
-                    else L("تم حفظ المستند مع التعليقات ($total صفحة) كصور", "Document saved with annotations ($total pages) as images")
                 )
+                if (editable && !selectable) messages.tryEmit(L("تعذر عمل نسخة قابلة للتعديل لهذا الملف، فحُفظت نسخة نهائية", "Couldn’t make an editable copy of this file; a final copy was made"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر حفظ ملف PDF", "Could not save the PDF"))
+                messages.tryEmit(L("تعذر تجهيز ملف PDF", "Could not prepare the PDF"))
             } finally {
                 exporting = null
             }
         }
     }
 
-    fun exportSummary(context: Context, s: DocSession, uri: Uri) {
+    /** مشاركة الملخصات أو حفظها (saveUri = null للمشاركة). */
+    fun shareOrSaveSummary(context: Context, docId: String, saveUri: Uri?) {
         if (exporting != null) return
-        val blocks = Summary.display(s.allMarks(), summaryTidy, s.summaryEdits, null, summaryByColor) { labelOf(it) }
-        val title = s.title
-        exporting = L("جارٍ حفظ الملخصات…", "Saving summaries…")
+        val name = library.firstOrNull { it.id == docId }?.name ?: "document"
+        exporting = L("جارٍ تجهيز الملخصات…", "Preparing summaries…")
         scope.launch {
             try {
-                val pages = withContext(Dispatchers.IO) {
-                    Exporter.exportSummary(context.applicationContext, title, blocks, uri)
-                }
-                messages.tryEmit(L("تم حفظ الملخصات ($pages صفحة)", "Summaries saved ($pages pages)"))
+                val file = if (saveUri == null) shareTarget(L("ملخص ", "Summary ") + name) else null
+                val target = saveUri ?: Uri.fromFile(file)
+                val pages = withDocSession(docId) { s ->
+                    val blocks = Summary.display(s.allMarks(), summaryTidy, s.summaryEdits, null, summaryByColor) { labelOf(it) }
+                    val title = s.title
+                    withContext(Dispatchers.IO) { Exporter.exportSummary(context.applicationContext, title, blocks, target) }
+                } ?: throw IllegalStateException("not ready")
+                if (file != null) launchShare(context, file)
+                else messages.tryEmit(L("تم حفظ الملخصات ($pages صفحة)", "Summaries saved ($pages pages)"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر حفظ الملخصات", "Could not save the summaries"))
+                messages.tryEmit(L("تعذر تجهيز الملخصات", "Could not prepare the summaries"))
             } finally {
                 exporting = null
             }
         }
     }
+
+    fun exportDocument(context: Context, s: DocSession, uri: Uri) = shareOrSaveDoc(context, s.id, false, uri)
+
+    fun exportSummary(context: Context, s: DocSession, uri: Uri) = shareOrSaveSummary(context, s.id, uri)
 
     // ---------- الصفحات والملاحظات ----------
 

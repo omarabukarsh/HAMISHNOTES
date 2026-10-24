@@ -648,27 +648,11 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }) { SearchGlyph(tintFor(s.searchOpen)) }
                 }
                 if (v("export")) {
-                    Box {
-                        TBtn(enabled = c.exporting == null, onClick = { exportMenu = true }) {
-                            ExportGlyph(Palette.TextSecondary)
-                        }
-                        DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(L("حفظ المستند مع التعليقات (PDF)", "Save document with annotations (PDF)")) },
-                                onClick = {
-                                    exportMenu = false
-                                    onExportDoc()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(L("حفظ الملخصات (PDF)", "Save summaries (PDF)")) },
-                                onClick = {
-                                    exportMenu = false
-                                    onExportSummary()
-                                }
-                            )
-                        }
+                    // مشاركة مباشرة أو حفظ: نسخة قابلة للتعديل أو نهائية، والملخصات
+                    TBtn(enabled = c.exporting == null, onClick = { exportMenu = true }) {
+                        ExportGlyph(Palette.TextSecondary)
                     }
+                    if (exportMenu) ShareExportDialog(s.id) { exportMenu = false }
                 }
 
                 // تراجع وإعادة

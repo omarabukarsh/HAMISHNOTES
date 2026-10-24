@@ -1161,6 +1161,7 @@ private fun DocCard(
     onDelete: () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
+    var shareOpen by remember { mutableStateOf(false) }
     val sheet = RoundedCornerShape(3.dp)
     // في وضع التحديد: النقر يحدد، والضغط المطول يبدأ التحديد
     Column(
@@ -1255,6 +1256,15 @@ private fun DocCard(
                     DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; onRename() })
                     DropdownMenuItem(text = { Text(L("إنشاء نسخة", "Duplicate")) }, onClick = { menu = false; onDuplicate() })
                     DropdownMenuItem(
+                        text = { Text(L("مشاركة أو تصدير…", "Share or export…")) },
+                        leadingIcon = { PhIcon(R.drawable.ph_export, Palette.TextSecondary, 18.dp) },
+                        onClick = {
+                            menu = false
+                            if (entry.locked) AppController.messages.tryEmit(L("افتح قفل المستند أولًا", "Unlock the document first"))
+                            else shareOpen = true
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(if (entry.locked) L("إلغاء القفل", "Unlock") else L("قفل المستند", "Lock document")) },
                         onClick = { menu = false; AppController.toggleLock(entry.id) }
                     )
@@ -1268,6 +1278,7 @@ private fun DocCard(
                     )
                 }
             }
+            if (shareOpen) ShareExportDialog(entry.id) { shareOpen = false }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

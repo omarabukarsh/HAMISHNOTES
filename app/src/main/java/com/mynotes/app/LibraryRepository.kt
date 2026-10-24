@@ -254,6 +254,10 @@ class LibraryRepository(context: Context) {
         try {
             val input = resolver.openInputStream(uri) ?: throw IOException(L("تعذر قراءة الملف", "Could not read the file"))
             input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
+            // نسخة «قابلة للتعديل» من هامش: تُستعاد تعليقاتها قابلة للتعديل
+            if (type == DocType.PDF) {
+                EditablePdf.restore(dest, { json -> atomicWrite(File(annDir, "$id.json"), json) }, File(imgRoot, id))
+            }
             val pages = probePageCount(dest)
             if (pages <= 0) throw IOException(L("الملف فارغ", "The file is empty"))
             val now = System.currentTimeMillis()
@@ -361,7 +365,20 @@ class LibraryRepository(context: Context) {
         val f = File(annDir, "$id.json")
         if (!f.exists()) return DocData(emptyMap(), emptyMap())
         return try {
-            val root = JSONObject(f.readText())
+            parseDocData(f.readText())
+        } catch (e: Throwable) {
+            try {
+                f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
+            } catch (x: Throwable) {
+            }
+            DocData(emptyMap(), emptyMap())
+        }
+    }
+
+    /** يقرأ بيانات المستند من نص JSON (يرمي استثناءً إن كان تالفًا). */
+    fun parseDocData(text: String): DocData {
+        run {
+            val root = JSONObject(text)
 
             val ink = HashMap<Int, List<Ink>>()
             val pages = root.optJSONObject("pages")
@@ -551,143 +568,139 @@ class LibraryRepository(context: Context) {
                 }
                 all.groupBy { it.page }.forEach { (p, l) -> notes[p] = l }
             }
-            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes)
-        } catch (e: Throwable) {
-            try {
-                f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
-            } catch (x: Throwable) {
-            }
-            DocData(emptyMap(), emptyMap())
+            return DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes)
         }
     }
 
-    suspend fun saveDocData(id: String, data: DocData) {
+    /** نص JSON لبيانات المستند (الكتابة، الصور، التمييز، النصوص، الملاحظات…). */
+    fun docDataJson(data: DocData): String {
         val ink = data.ink
         val images = data.images
+            val pages = JSONObject()
+            ink.forEach { (page, list) ->
+                if (list.isNotEmpty()) {
+                    val arr = JSONArray()
+                    list.forEach { s ->
+                        val flat = JSONArray()
+                        s.pts.forEach {
+                            flat.put(it.x.toDouble())
+                            flat.put(it.y.toDouble())
+                            flat.put(it.p.toDouble())
+                        }
+                        arr.put(
+                            JSONObject()
+                                .put("c", s.color.toArgb())
+                                .put("w", s.width.toDouble())
+                                .put("k", s.tool.name)
+                                .put("t", s.t)
+                                .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                                .put("p", flat)
+                        )
+                    }
+                    pages.put(page.toString(), arr)
+                }
+            }
+            val imgs = JSONArray()
+            images.values.forEach { list ->
+                list.forEach { im ->
+                    imgs.put(
+                        JSONObject()
+                            .put("id", im.id)
+                            .put("file", im.file)
+                            .put("page", im.page)
+                            .put("x", im.x.toDouble())
+                            .put("y", im.y.toDouble())
+                            .put("w", im.w.toDouble())
+                            .put("a", im.aspect.toDouble())
+                    )
+                }
+            }
+            val marks = JSONArray()
+            data.marks.values.forEach { list ->
+                list.forEach { m ->
+                    val flat = JSONArray()
+                    m.rects.forEach {
+                        flat.put(it.l.toDouble())
+                        flat.put(it.t.toDouble())
+                        flat.put(it.r.toDouble())
+                        flat.put(it.b.toDouble())
+                    }
+                    marks.put(
+                        JSONObject()
+                            .put("id", m.id)
+                            .put("page", m.page)
+                            .put("c", m.color.toArgb())
+                            .put("t", m.text)
+                            .put("at", m.createdAt)
+                            .put("r", flat)
+                            .put("lv", m.level)
+                            .put("sum", m.inSummary)
+                            .put("em", JSONArray().apply { m.emphasis.forEach { put(it) } })
+                            .put("sr", JSONArray().apply {
+                                m.strongRects.forEach {
+                                    put(it.l.toDouble()); put(it.t.toDouble()); put(it.r.toDouble()); put(it.b.toDouble())
+                                }
+                            })
+                    )
+                }
+            }
+            val texts = JSONArray()
+            data.texts.values.forEach { list ->
+                list.forEach { tb ->
+                    texts.put(
+                        JSONObject()
+                            .put("id", tb.id)
+                            .put("page", tb.page)
+                            .put("x", tb.x.toDouble())
+                            .put("y", tb.y.toDouble())
+                            .put("w", tb.w.toDouble())
+                            .put("t", tb.text)
+                            .put("c", tb.color.toArgb())
+                            .put("s", tb.size.toDouble())
+                            .put("st", tb.sticky)
+                            .put("ld", tb.linkDoc ?: "")
+                            .put("lp", tb.linkPage)
+                    )
+                }
+            }
+            return JSONObject().put("version", 3).put("pages", pages).put("images", imgs)
+                    .put("marks", marks).put("texts", texts).put("summary", editsJson(data.edits))
+                    .put("cards", JSONArray().apply {
+                        data.cards.forEach { c -> put(JSONObject().put("id", c.id).put("f", c.front).put("b", c.back)) }
+                    })
+                    .put("starred", JSONArray().apply { data.starred.forEach { put(it) } })
+                    .put("bookmarks", JSONArray().apply { data.bookmarks.sorted().forEach { put(it) } })
+                    .put("notes", JSONArray().apply {
+                        data.notes.values.forEach { list ->
+                            list.forEach { n ->
+                                put(
+                                    JSONObject().put("id", n.id).put("page", n.page)
+                                        .put("x", n.x.toDouble()).put("y", n.y.toDouble())
+                                        .put("w", n.w.toDouble()).put("h", n.h.toDouble())
+                                        .put("c", n.color).put("st", n.style).put("cl", n.collapsed).put("a", n.author).put("tx", n.text)
+                                        .put("ink", JSONArray().apply {
+                                            n.ink.forEach { s ->
+                                                val flat = JSONArray()
+                                                s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+                                                put(
+                                                    JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble())
+                                                        .put("k", s.tool.name).put("t", s.t)
+                                                        .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                                                        .put("p", flat)
+                                                )
+                                            }
+                                        })
+                                )
+                            }
+                        }
+                    })
+                    .toString()
+    }
+
+    suspend fun saveDocData(id: String, data: DocData) {
         withContext(writer) {
             try {
-                val pages = JSONObject()
-                ink.forEach { (page, list) ->
-                    if (list.isNotEmpty()) {
-                        val arr = JSONArray()
-                        list.forEach { s ->
-                            val flat = JSONArray()
-                            s.pts.forEach {
-                                flat.put(it.x.toDouble())
-                                flat.put(it.y.toDouble())
-                                flat.put(it.p.toDouble())
-                            }
-                            arr.put(
-                                JSONObject()
-                                    .put("c", s.color.toArgb())
-                                    .put("w", s.width.toDouble())
-                                    .put("k", s.tool.name)
-                                    .put("t", s.t)
-                                    .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
-                                    .put("p", flat)
-                            )
-                        }
-                        pages.put(page.toString(), arr)
-                    }
-                }
-                val imgs = JSONArray()
-                images.values.forEach { list ->
-                    list.forEach { im ->
-                        imgs.put(
-                            JSONObject()
-                                .put("id", im.id)
-                                .put("file", im.file)
-                                .put("page", im.page)
-                                .put("x", im.x.toDouble())
-                                .put("y", im.y.toDouble())
-                                .put("w", im.w.toDouble())
-                                .put("a", im.aspect.toDouble())
-                        )
-                    }
-                }
-                val marks = JSONArray()
-                data.marks.values.forEach { list ->
-                    list.forEach { m ->
-                        val flat = JSONArray()
-                        m.rects.forEach {
-                            flat.put(it.l.toDouble())
-                            flat.put(it.t.toDouble())
-                            flat.put(it.r.toDouble())
-                            flat.put(it.b.toDouble())
-                        }
-                        marks.put(
-                            JSONObject()
-                                .put("id", m.id)
-                                .put("page", m.page)
-                                .put("c", m.color.toArgb())
-                                .put("t", m.text)
-                                .put("at", m.createdAt)
-                                .put("r", flat)
-                                .put("lv", m.level)
-                                .put("sum", m.inSummary)
-                                .put("em", JSONArray().apply { m.emphasis.forEach { put(it) } })
-                                .put("sr", JSONArray().apply {
-                                    m.strongRects.forEach {
-                                        put(it.l.toDouble()); put(it.t.toDouble()); put(it.r.toDouble()); put(it.b.toDouble())
-                                    }
-                                })
-                        )
-                    }
-                }
-                val texts = JSONArray()
-                data.texts.values.forEach { list ->
-                    list.forEach { tb ->
-                        texts.put(
-                            JSONObject()
-                                .put("id", tb.id)
-                                .put("page", tb.page)
-                                .put("x", tb.x.toDouble())
-                                .put("y", tb.y.toDouble())
-                                .put("w", tb.w.toDouble())
-                                .put("t", tb.text)
-                                .put("c", tb.color.toArgb())
-                                .put("s", tb.size.toDouble())
-                                .put("st", tb.sticky)
-                                .put("ld", tb.linkDoc ?: "")
-                                .put("lp", tb.linkPage)
-                        )
-                    }
-                }
-                atomicWrite(
-                    File(annDir, "$id.json"),
-                    JSONObject().put("version", 3).put("pages", pages).put("images", imgs)
-                        .put("marks", marks).put("texts", texts).put("summary", editsJson(data.edits))
-                        .put("cards", JSONArray().apply {
-                            data.cards.forEach { c -> put(JSONObject().put("id", c.id).put("f", c.front).put("b", c.back)) }
-                        })
-                        .put("starred", JSONArray().apply { data.starred.forEach { put(it) } })
-                        .put("bookmarks", JSONArray().apply { data.bookmarks.sorted().forEach { put(it) } })
-                        .put("notes", JSONArray().apply {
-                            data.notes.values.forEach { list ->
-                                list.forEach { n ->
-                                    put(
-                                        JSONObject().put("id", n.id).put("page", n.page)
-                                            .put("x", n.x.toDouble()).put("y", n.y.toDouble())
-                                            .put("w", n.w.toDouble()).put("h", n.h.toDouble())
-                                            .put("c", n.color).put("st", n.style).put("cl", n.collapsed).put("a", n.author).put("tx", n.text)
-                                            .put("ink", JSONArray().apply {
-                                                n.ink.forEach { s ->
-                                                    val flat = JSONArray()
-                                                    s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
-                                                    put(
-                                                        JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble())
-                                                            .put("k", s.tool.name).put("t", s.t)
-                                                            .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
-                                                            .put("p", flat)
-                                                    )
-                                                }
-                                            })
-                                    )
-                                }
-                            }
-                        })
-                        .toString()
-                )
+                atomicWrite(File(annDir, "$id.json"), docDataJson(data))
             } catch (e: Throwable) {
             }
         }

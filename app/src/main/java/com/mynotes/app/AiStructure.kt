@@ -645,10 +645,18 @@ Otherwise answer only the corrected section in the same format: no title, no exp
         val noTitle0 = cleaned.lines().filter { l -> norm(l.trimStart('#', '-', ' ')) !in heads }
             .map { l -> if (l.trimStart().startsWith("#")) "- " + l.trimStart('#', ' ') else l }
             .joinToString("\n").trim()
-        val noTitle = if (tidyIt) tidy(noTitle0) else noTitle0
+        var noTitle = if (tidyIt) tidy(noTitle0) else noTitle0
         if (noTitle.isBlank()) return null
-        val bad = suspicious(noTitle, p.notes + " " + (p.title ?: "") + " " + (p.sub ?: "")) ||
-            badLines(noTitle, p.notes).isNotEmpty() || dropped(noTitle, p.notes)
+        // سطر نقطة بلا أصل (مقدمة أضافها النموذج مثلًا) يُحذف وحده ويُعاد الفحص كله: إن بقيت كل المعلومات
+        // تُقبل البقية المرتبة بدل رمي الجزء كله. سطر جدول بلا أصل = يُرفض الجزء.
+        val badL = badLines(noTitle, p.notes)
+        if (badL.isNotEmpty()) {
+            if (badL.any { it.contains(" | ") }) return null
+            val drop = badL.map { it.trim() }.toSet()
+            noTitle = noTitle.lines().filter { it.trim() !in drop }.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
+            if (noTitle.isBlank() || badLines(noTitle, p.notes).isNotEmpty()) return null
+        }
+        val bad = suspicious(noTitle, p.notes + " " + (p.title ?: "") + " " + (p.sub ?: "")) || dropped(noTitle, p.notes)
         return if (bad) null else noTitle
     }
 
@@ -718,6 +726,21 @@ Otherwise answer only the corrected section in the same format: no title, no exp
     /** طلب البطاقات: الملخص، ولغة الأسئلة صريحة للعربية (النموذج الصغير يميل إلى أسئلة إنجليزية). */
     fun cardsPrompt(src: String): String =
         (if (isArabic(src)) "اكتب الأسئلة والأجوبة بالعربية لأن الملخص عربي (المصطلحات الإنجليزية تبقى كما هي).\n\n" else "") + "SUMMARY:\n\n" + src
+
+    /**
+     * بطاقات بالكود من نقاط «بند: تفصيل» في الملخص (دقيقة وفورية، بلا نموذج):
+     * السؤال = الموضوع: البند؟ والجواب = التفصيل كما هو. تُفحص مثل غيرها.
+     */
+    fun keyedCards(lines: List<String>, topic: String?): List<Pair<String, String>> {
+        val src = lines.joinToString("\n") + " " + (topic ?: "")
+        return lines.mapNotNull { l0 ->
+            val l = l0.replace("**", "")
+            if (!l.trim().startsWith("- ")) return@mapNotNull null
+            val (k, v) = keyed(l) ?: return@mapNotNull null
+            val q = (if (topic != null) "$topic: " else "") + k.trimEnd(':', ' ') + (if (isArabic(l)) "؟" else "?")
+            q to v.trim().trimEnd('.')
+        }.filter { (q, a) -> cardOk(q, a, src) }
+    }
 
     /** تشابه نصين بالكلمات المهمة (0..1). */
     fun similar(a: String, b: String): Float {

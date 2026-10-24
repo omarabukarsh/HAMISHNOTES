@@ -323,7 +323,7 @@ def run():
                         "cards": card_metrics(cs, notes + " " + heads + " " + heads_tab),
                         "t_summary": stats["t_summary"], "t_mm": stats["t_mm"], "t_cards": stats["t_cards"],
                         "ai_parts": stats["ai_parts"], "fallbacks": stats["fallbacks"], "reviews": stats["reviews"],
-                        "code_tables": stats["tables"], "mm_fixed": stats["mm_fixed"], "cards_rejected": stats["cards_rejected"]}
+                        "code_tables": stats["tables"], "salvaged": stats["salvaged"], "mm_fixed": stats["mm_fixed"], "cards_rejected": stats["cards_rejected"]}
             report.append((name, tag, marks, summary, log + stats.get("rejected_log", []), tree, cs))
             print(f"[{name}] {tag}: summary {stats['t_summary']:.0f}s, mind map {stats['t_mm']:.0f}s, cards {stats['t_cards']:.0f}s", flush=True)
         metrics.append(row)
@@ -337,7 +337,8 @@ def fmt_metrics(metrics):
     tot = collections.defaultdict(float)
     keys = [
         ("summary time s", lambda r: r["t_summary"]), ("mind map time s", lambda r: r["t_mm"]), ("cards time s", lambda r: r["t_cards"]),
-        ("AI parts", lambda r: r["ai_parts"]), ("fallbacks", lambda r: r["fallbacks"]), ("self-reviews run", lambda r: r["reviews"]),
+        ("AI parts", lambda r: r["ai_parts"]), ("fallbacks", lambda r: r["fallbacks"]), ("salvaged (bad line removed)", lambda r: r["salvaged"]),
+        ("self-reviews run", lambda r: r["reviews"]),
         ("tables in summary", lambda r: r["summary"]["tables"]),
         ("invented words", lambda r: r["summary"]["invented"]), ("coverage %", lambda r: 100 * r["summary"]["coverage"]),
         ("numbers kept %", lambda r: 100 * r["summary"]["numbers"]),

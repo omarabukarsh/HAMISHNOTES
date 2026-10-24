@@ -567,6 +567,8 @@ A: بسرعة ثابتة"""
                 val cardTables = ArrayList<Pair<String, String>>()
                 suspend fun flushCards(force: Boolean) {
                     if (!autoCards) return
+                    // أقل من نقطتين للنموذج: لا طلب (لا يستحق وقته على الجهاز)
+                    if (cardBuf.isNotBlank() && cardBuf.lines().count { it.startsWith("- ") } < 2 && force) cardBuf.clear()
                     if (cardBuf.isNotBlank() && (force || cardBuf.length >= budget / 2)) {
                         // ذاكرة البطاقات: نفس النقاط = نفس البطاقات (إعادة الترتيب بعد حذف تظليل لا تعيد كتابتها)
                         val src = cardBuf.toString()
@@ -632,7 +634,13 @@ A: بسرعة ثابتة"""
                     if (p.table != null) {
                         cardTables.addAll(AiStructure.tableCards(p.table, p.headed, topic))
                     } else {
-                        val pts = body.lines().filter { it.isNotBlank() }
+                        val all = body.lines().filter { it.isNotBlank() }
+                        // نقاط «بند: تفصيل» بطاقات بالكود، والباقي للنموذج
+                        val pts = ArrayList<String>()
+                        for (l in all) {
+                            val c = AiStructure.keyedCards(listOf(l), topic)
+                            if (c.isEmpty()) pts.add(l) else cardTables.addAll(c)
+                        }
                         if (pts.isNotEmpty()) {
                             if (cardBuf.isNotEmpty()) cardBuf.append("\n\n")
                             if (topic != null) cardBuf.append("## ").append(topic).append('\n')

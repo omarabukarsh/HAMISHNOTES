@@ -386,15 +386,23 @@ def checked(p, raw, legacy, tidy_it=True):
         if old_dropped(body, p["notes"]):
             return None, "dropped"
         return body, ""
+    bl = C.bad_lines(body, p["notes"])
+    salvaged = ""
+    if bl:
+        # مثل AiStructure.checked: يُحذف سطر النقطة بلا أصل وحده ويُعاد الفحص كله
+        if any(" | " in x for x in bl):
+            return None, "ungrounded row: " + bl[0][:70]
+        drop = {x.strip() for x in bl}
+        body = re.sub(r"\n{3,}", "\n\n", "\n".join(l for l in body.splitlines() if l.strip() not in drop)).strip()
+        if not body or C.bad_lines(body, p["notes"]):
+            return None, "ungrounded: " + bl[0][:70]
+        salvaged = " (removed: " + " / ".join(x[:60] for x in bl) + ")"
     if C.suspicious(body, allowed):
         return None, "suspicious"
-    bl = C.bad_lines(body, p["notes"])
-    if bl:
-        return None, "ungrounded: " + bl[0][:70]
     why = C.dropped(body, p["notes"])
     if why:
-        return None, "dropped " + why
-    return body, ""
+        return None, "dropped " + why + salvaged
+    return body, salvaged
 
 
 def prompt(p):
@@ -420,7 +428,9 @@ def process(p, gen, legacy, log, stats):
         stats["fallbacks"] += 1
         log.append(f"- [{tag}] model {dt:.1f}s → fallback ({why})")
         return emphasize(fb(p["notes"]), p["emph"])
-    log.append(f"- [{tag}] model {dt:.1f}s → accepted")
+    log.append(f"- [{tag}] model {dt:.1f}s → accepted{why}")
+    if why:
+        stats["salvaged"] += 1
     if draft == fb(p["notes"]) or (not legacy and not C.needs_review(draft)):
         return emphasize(draft, p["emph"])
     o2, dt2 = gen(PR["REVIEW_SYSTEM"], prompt(p) + "\n\nDRAFT:\n" + draft)
@@ -745,11 +755,32 @@ def parse_cards(raw, legacy=False):
     return out
 
 
+def keyed_cards(lines, topic):
+    """مثل AiStructure.keyedCards."""
+    src = "\n".join(lines) + " " + (topic or "")
+    out = []
+    for l0 in lines:
+        l = l0.replace("**", "")
+        if not l.strip().startswith("- "):
+            continue
+        kv = C.keyed(l)
+        if not kv:
+            continue
+        q = ((topic + ": ") if topic else "") + kv[0].rstrip(": ") + ("؟" if C.is_arabic(l) else "?")
+        a = kv[1].strip().rstrip(".")
+        if C.card_ok(q, a, src):
+            out.append((q, a))
+    return out
+
+
 def cards(ps, done, gen, legacy, stats, budget):
     out, buf, tables = [], [], []
 
     def flush(force):
         text = "\n\n".join(buf) if not legacy else "\n".join(buf)
+        if not legacy and force and text.strip() and sum(1 for l in text.splitlines() if l.startswith("- ")) < 2:
+            buf.clear()
+            text = ""
         if text.strip() and (force or len(text) >= budget // 2):
             if legacy:
                 o, dt = gen(OLD["CARDS_SYSTEM"], "Notes:\n\n" + text)
@@ -782,7 +813,13 @@ def cards(ps, done, gen, legacy, stats, budget):
             if p["table"] is not None:
                 tables.extend(C.table_cards(p["table"].splitlines(), p["headed"], topic))
             else:
-                pts = [l for l in body.splitlines() if l.strip()]
+                pts = []
+                for l in [x for x in body.splitlines() if x.strip()]:
+                    c = keyed_cards([l], topic)
+                    if c:
+                        tables.extend(c)
+                    else:
+                        pts.append(l)
                 if pts:
                     buf.append((("## " + topic + "\n") if topic else "") + "\n".join(pts))
         flush(False)

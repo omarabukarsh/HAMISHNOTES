@@ -856,6 +856,10 @@ object AppController {
         if (id != null && tabs.none { it.id == id }) return
         if (id == null || id == splitId) splitId = null
         recordPage(activeId)
+        // المستند الذي كنت تقرؤه للتو، والذي تنتقل إليه، يصيران «آخر ما فُتح» (أعلى «الأحدث»)
+        val now = System.currentTimeMillis()
+        activeId?.let { old -> updateEntry(old) { it.copy(lastOpened = now) } }
+        if (id != null) updateEntry(id) { it.copy(lastOpened = now + 1) }
         activeId = id
         noteInteraction()
         saveLibrary()

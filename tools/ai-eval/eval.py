@@ -116,9 +116,25 @@ def gen(system, prompt):
     return out.strip(), time.time() - t0
 
 
+LATEX = {"\\beta": "β", "\\alpha": "α", "\\rightarrow": "→", "\\to": "→", "\\uparrow": "↑", "\\downarrow": "↓",
+         "\\approx": "≈", "\\geq": "≥", "\\ge": "≥", "\\leq": "≤", "\\le": "≤", "\\times": "×", "\\%": "%"}
+
+
+def latex(s):
+    def rep(m):
+        x = m.group(1)
+        for k in sorted(LATEX, key=len, reverse=True):
+            x = x.replace(k, LATEX[k])
+        return re.sub(r"_\{([^}]*)\}", r"\1", x).replace("{", "").replace("}", "").strip()
+    s = re.sub(r"\$([^$\n]{1,40})\$", rep, s)
+    for k in sorted(LATEX, key=len, reverse=True):
+        s = s.replace(k, LATEX[k])
+    return s
+
+
 def clean(raw):
     out = []
-    for l in raw.replace("```", "").splitlines():
+    for l in latex(raw).replace("```", "").splitlines():
         l = l.replace("**", "").replace("__", "").rstrip()
         t = l.strip()
         if t.startswith("* "):
@@ -173,11 +189,12 @@ for part in old_parts:
 NEW_SYSTEM = """You rewrite highlighted notes from ONE section of a pharmacy lecture into a clean part of a study summary.
 Rules:
 - Use ONLY the notes. Never add facts, numbers, doses or drug names that are not in the notes.
-- Keep every fact. Merge repeated points. Keep drug names and medical terms exactly as written. Arabic stays Arabic.
+- Keep every fact and keep the original meaning and wording; only split, shorten and order. Do not add explanations.
+- Merge repeated points. Keep drug names and medical terms exactly as written. Arabic stays Arabic.
 - Do NOT write the section title; it is added for you.
-- If the notes are rows of a table (cells separated by " | "), or several items share the same attributes, output a table: one row per line, cells separated by " | ", first row is a short header.
+- If several items share the same attributes, output a table: one row per line, cells separated by " | ", first row is a short header.
 - Otherwise output short bullets starting with "- ", one fact per bullet, in the same order as the notes.
-- Output only the result. No introduction, no markdown symbols other than "- " and " | ".
+- Plain text only: no LaTeX, no "$", no markdown symbols other than "- " and " | ". No introduction.
 
 Example
 NOTES:

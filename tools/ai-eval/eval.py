@@ -165,33 +165,36 @@ def random_marks_pages(P, pages, rng):
 
 
 def random_marks_doc(doc, P, rng):
-    """مستند تجربة: فقرة كاملة أو جزء منها، صفوف متتالية من جدول، وأحيانًا فقرتان معًا. العناوين لا تُظلَّل."""
-    ms, bl = [], doc.blocks
-    k = 0
-    while k < len(bl):
-        kind, ids = bl[k]
-        if kind == "heading" or rng.random() > 0.55:
-            k += 1
-            continue
-        if kind == "table":
-            data = ids[1:] or ids
-            a = rng.randrange(len(data))
-            span = data[a:a + rng.randint(1, len(data) - a)]
-        elif rng.random() < 0.65 or len(ids) == 1:
-            span = list(ids)
-            if k + 1 < len(bl) and bl[k + 1][0] == "para" and rng.random() < 0.12 and bl[k + 1][1][0][0] == ids[0][0]:
-                span += bl[k + 1][1]
-                k += 1
-        else:
-            a = rng.randrange(len(ids))
-            span = ids[a:a + rng.randint(1, len(ids) - a)]
-        # التظليل في صفحة واحدة (مثل التطبيق)
+    """مستند تجربة: داخل كل كتلة (قائمة/فقرات) تظليلات من 1–3 أسطر متتالية (قد تبدأ أو تنتهي وسط جملة)،
+    أو الكتلة كلها أحيانًا؛ صفوف متتالية من جدول؛ العناوين لا تُظلَّل. التظليل في صفحة واحدة (مثل التطبيق)."""
+    ms = []
+
+    def add(span):
         page = span[0][0]
         lines = [ln for p, ln in span if p == page]
         m = PL.make_mark(P, page, lines)
         m["emph"] = random_emph(rng, m["text"])
         ms.append(m)
-        k += 1
+    for kind, ids in doc.blocks:
+        if kind == "heading":
+            continue
+        if kind == "table":
+            data = ids[1:] or ids
+            if rng.random() < 0.8:
+                a = rng.randrange(len(data))
+                add(data[a:a + rng.randint(1, len(data) - a)])
+            continue
+        if rng.random() < 0.2:
+            add(list(ids))
+            continue
+        i = 0
+        while i < len(ids):
+            if rng.random() < 0.6:
+                n = rng.randint(1, 3)
+                add(ids[i:i + n])
+                i += n + rng.randint(0, 1)
+            else:
+                i += 1
     return ms
 
 
@@ -278,7 +281,7 @@ def card_metrics(cards, notes):
     qn = sum(1 for q, _ in cards if any(n not in nums for n in C.NUM.findall(q)))
     yn = sum(1 for q, _ in cards if C.YESNO.match(q.strip()))
     inq = sum(1 for q, a in cards if set(C.content(a)) and set(C.content(a)) <= set(C.content(q)))
-    dups = sum(1 for i in range(len(cards)) for j in range(i) if C.jaccard(cards[i][0], cards[j][0]) >= 0.6)
+    dups = sum(1 for i in range(len(cards)) for j in range(i) if C.same_card(*cards[i], *cards[j]))
     aw = [len(a.split()) for _, a in cards]
     return {"cards": len(cards), "answer_not_in_notes": ung, "new_number_in_q": qn, "yes_no": yn, "answer_in_q": inq,
             "near_dup_pairs": dups, "avg_answer_words": sum(aw) / len(aw), "long_answers": sum(1 for x in aw if x > 25)}
@@ -292,11 +295,13 @@ def docs():
     rng = random.Random(SEED)
     P2 = antibiotics_pages()
     yield "antibiotics (random highlights)", P2, random_marks_pages(P2, [3, 4, 5, 9, 10, 29], rng)
+    # كل مستند بمجموعتين مختلفتين من التظليلات العشوائية (A وB)
     for path in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "*.txt"))):
-        d = layout.Doc(path)
-        P3 = PL.Pages(d.rows)
-        rng = random.Random(SEED + sum(map(ord, os.path.basename(path))))
-        yield os.path.basename(path)[:-4] + " (random highlights)", P3, random_marks_doc(d, P3, rng)
+        for k, tag in enumerate("AB"):
+            d = layout.Doc(path)
+            P3 = PL.Pages(d.rows)
+            rng = random.Random(SEED + 7919 * k + sum(map(ord, os.path.basename(path))))
+            yield os.path.basename(path)[:-4] + f" (random {tag})", P3, random_marks_doc(d, P3, rng)
 
 
 def run():

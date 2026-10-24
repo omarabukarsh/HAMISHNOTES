@@ -517,7 +517,15 @@ def cut(t, mx):
 
 
 TRAIL = {"a", "an", "the", "of", "to", "and", "or", "is", "are", "was", "be", "in", "on", "at", "for", "with", "by",
-         "from", "as", "that", "which", "في", "من", "على", "إلى", "الى", "عن", "و", "أو", "ثم", "أن", "التي", "الذي", "هو", "هي", "مع"}
+         "from", "as", "that", "which", "it", "its", "they", "their", "this", "these", "those", "but", "so", "when", "if", "than",
+         "also", "very", "then", "such", "في", "من", "على", "إلى", "الى", "عن", "و", "أو", "ثم", "أن", "التي", "الذي", "هو", "هي", "مع",
+         "لكن", "بل", "له", "لها", "فإن"}
+CONNECT = {"or", "and", "but", "so", "because", "which", "أو", "و", "ثم", "لكن", "بل", "لأن", "حيث"}
+
+
+def fragment(p):
+    ws = p.split()
+    return bool(ws) and ws[0].lower().strip(",،") in CONNECT
 
 
 def brief(t0, max_words=7):
@@ -613,7 +621,7 @@ NEG_MM = re.compile(r"(?i)\b(not|no|never|without|except|cannot)\b|(?<![^\W\d_])
 
 def phrase_ok(ph, line):
     n = len(ph.split())
-    if not (2 <= n <= 8) or len(ph) > 60:
+    if not (2 <= n <= 7) or len(ph) > 60:
         return False
     nums = C.numbers(line)
     if any(x not in nums for x in C.NUM.findall(ph)):
@@ -622,6 +630,15 @@ def phrase_ok(ph, line):
     cw = C.content(ph)
     if not cw or sum(1 for w in cw if w not in src) > (1 if len(cw) >= 5 else 0):
         return False
+    seq = C.content(line)
+    pos = 0
+    for w in cw:
+        if w not in src:
+            continue
+        j = next((i for i in range(pos, len(seq)) if seq[i] == w), None)
+        if j is None:
+            return False
+        pos = j + 1
     return not (NEG_MM.search(line) and not NEG_MM.search(ph))
 
 
@@ -693,7 +710,7 @@ def mind_map(summary, gen, legacy, stats):
                 tx = got if len(got) >= 2 else new_code_points(text)
                 how = f"ai {dt:.0f}s"
             seen, pts = set(), []
-            for q in tx[:5] + tp:
+            for q in [x for x in tx if not fragment(x)][:5] + tp:
                 if q.lower() not in seen:
                     seen.add(q.lower())
                     pts.append(q)
@@ -703,7 +720,7 @@ def mind_map(summary, gen, legacy, stats):
 
 # ---------------------------------------------------------------- البطاقات
 
-def parse_cards(raw):
+def parse_cards(raw, legacy=False):
     out, q, a = [], None, []
     qre = re.compile(r"(?i)^(?:\d+[.)]\s*)?(?:Q|Question|س|سؤال)\s*[:：]\s*(.*)$")
     are = re.compile(r"(?i)^(?:A|Answer|ج|جواب|الإجابة)\s*[:：]\s*(.*)$")
@@ -714,7 +731,7 @@ def parse_cards(raw):
             out.append((q.strip(), " ".join(a).strip()))
         q = None
         a.clear()
-    for l in raw.replace("**", "").splitlines():
+    for l in (raw if legacy else latex(raw)).replace("**", "").splitlines():
         l = l.strip()
         qm, am = qre.match(l), are.match(l)
         if qm:
@@ -736,7 +753,7 @@ def cards(ps, done, gen, legacy, stats, budget):
         if text.strip() and (force or len(text) >= budget // 2):
             if legacy:
                 o, dt = gen(OLD["CARDS_SYSTEM"], "Notes:\n\n" + text)
-                made = parse_cards(o)
+                made = parse_cards(o, legacy=True)
             else:
                 o, dt = gen(NEW["CARDS_SYSTEM"], "SUMMARY:\n\n" + text)
                 raw = parse_cards(o)

@@ -354,7 +354,20 @@ Rules:
 Output format (plain text only, nothing else):
 Q: question
 A: answer
-(blank line between cards)"""
+(blank line between cards)
+
+Example
+SUMMARY:
+## Light
+- Light travels in straight lines in a uniform medium.
+## الضوء
+- لا ينتقل الضوء في الفراغ ببطء، بل بسرعة ثابتة.
+OUTPUT:
+Q: How does light travel in a uniform medium?
+A: In straight lines
+
+Q: كيف ينتقل الضوء في الفراغ؟
+A: بسرعة ثابتة"""
 
     /** يقرأ البطاقات من مخرجات النموذج (Q:/A: أو س:/ج:). */
     fun parseCards(raw: String): List<Pair<String, String>> {
@@ -370,7 +383,7 @@ A: answer
         }
         val qRe = Regex("^(?:\\d+[.)]\\s*)?(?:Q|Question|س|سؤال)\\s*[:：]\\s*(.*)$", RegexOption.IGNORE_CASE)
         val aRe = Regex("^(?:A|Answer|ج|جواب|الإجابة)\\s*[:：]\\s*(.*)$", RegexOption.IGNORE_CASE)
-        for (raw0 in raw.replace("**", "").lines()) {
+        for (raw0 in latex(raw).replace("**", "").lines()) {
             val l = raw0.trim()
             val qm = qRe.find(l)
             val am = aRe.find(l)

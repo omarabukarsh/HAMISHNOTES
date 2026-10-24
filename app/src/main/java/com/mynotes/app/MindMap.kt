@@ -98,7 +98,13 @@ object MindMap {
     }
 
     private val TRAIL = setOf("a", "an", "the", "of", "to", "and", "or", "is", "are", "was", "be", "in", "on", "at", "for", "with", "by",
-        "from", "as", "that", "which", "في", "من", "على", "إلى", "الى", "عن", "و", "أو", "ثم", "أن", "التي", "الذي", "هو", "هي", "مع")
+        "from", "as", "that", "which", "it", "its", "they", "their", "this", "these", "those", "but", "so", "when", "if", "than",
+        "also", "very", "then", "such", "في", "من", "على", "إلى", "الى", "عن", "و", "أو", "ثم", "أن", "التي", "الذي", "هو", "هي", "مع",
+        "لكن", "بل", "له", "لها", "فإن")
+
+    /** نقطة تبدأ بأداة ربط («أو…»، «and…») = جزء من جملة، لا تصلح نقطة في الخريطة. */
+    private val CONNECT = setOf("or", "and", "but", "so", "because", "which", "أو", "و", "ثم", "لكن", "بل", "لأن", "حيث")
+    fun fragment(p: String): Boolean = p.trim().split(Regex("\\s+")).firstOrNull()?.lowercase()?.trim(',', '،')?.let { it in CONNECT } == true
 
     /** عبارة قصيرة: حتى maxWords كلمات، تنتهي بكلمة لها معنى (لا «of/the/في»)، والنفي لا يُحذف. */
     fun brief(t0: String, maxWords: Int = 7): String {
@@ -448,12 +454,20 @@ Output only the lines."""
     /** العبارة من سطرها: 2..8 كلمات، كل كلماتها المهمة وأرقامها من ذلك السطر، ونفي السطر محفوظ. */
     fun phraseOk(phrase: String, line: String): Boolean {
         val n = phrase.split(Regex("\\s+")).count { it.isNotBlank() }
-        if (n !in 2..8 || phrase.length > 60) return false
+        if (n !in 2..7 || phrase.length > 60) return false
         val nums = NUM.findAll(line).map { it.value }.toSet()
         if (NUM.findAll(phrase).any { it.value !in nums }) return false
         val src = AiStructure.content(line).toSet()
         val cw = AiStructure.content(phrase)
         if (cw.isEmpty() || cw.count { it !in src } > (if (cw.size >= 5) 1 else 0)) return false
+        // بنفس ترتيب السطر (حذف كلمات فقط): «PBPs inactivate penicillins» من «…penicillins inactivate them» مرفوضة
+        val seq = AiStructure.content(line)
+        var pos = 0
+        for (w in cw) {
+            if (w !in src) continue
+            val j = (pos until seq.size).firstOrNull { seq[it] == w } ?: return false
+            pos = j + 1
+        }
         return !(NEG.containsMatchIn(line) && !NEG.containsMatchIn(phrase))
     }
 
@@ -510,7 +524,7 @@ Output only the lines."""
                     fin
                 }
             }
-            points.add((textPts.take(5) + tablePts).distinctBy { it.lowercase() })
+            points.add((textPts.filter { !MindMap.fragment(it) }.take(5) + tablePts).distinctBy { it.lowercase() })
         }
         if (changed) withContext(Dispatchers.IO) { try { file(docId).writeText(org.json.JSONObject(cache as Map<*, *>).toString()) } catch (t: Throwable) {} }
         step = ""

@@ -112,8 +112,27 @@ def blocks(lines):
     return out
 
 
+def sentences_of(notes):
+    return [c for c in (content(x) for x in re.split(r"(?<=[.!?؟;؛])\s+|\n", notes)) if c]
+
+
+def moved_label(line, sents):
+    """«وسم: نص» صنع النموذج وسمه من جملة أخرى (مثل «Pen G: Food delays…»)."""
+    kv = keyed(line)
+    if not kv:
+        return False
+    k, r = content(kv[0]), content(kv[1])
+    if not k or len(r) < 2:
+        return False
+    st = next((x for x in sents if any(a == r[0] and b == r[1] for a, b in zip(x, x[1:]))), None)
+    if st is None:
+        return False
+    return any(w not in st for w in k)
+
+
 def bad_lines(out, notes, extra=""):
     """أسطر الناتج التي لا أصل لها في الملاحظات (رأس الجدول مستثنى: كلمات قصيرة)."""
+    sents = sentences_of(notes)
     allowed = set(content(notes))
     nums = numbers(notes)
     np_ = pairs_of(content(notes))
@@ -126,7 +145,7 @@ def bad_lines(out, notes, extra=""):
                 continue
             if not grounded(l.replace("**", ""), allowed, nums):
                 bad.append(l)
-            elif not is_t and not faithful(l.replace("**", ""), np_, allowed):
+            elif not is_t and (not faithful(l.replace("**", ""), np_, allowed) or moved_label(l.replace("**", ""), sents)):
                 bad.append(l)
     return bad
 
@@ -345,6 +364,7 @@ def ended(l):
 # ---------------------------------------------------------------- البطاقات
 
 YESNO = re.compile(r"(?i)^(is|are|does|do|can|was|were|has|have|will|هل)\b")
+EN_QUESTION = re.compile(r"(?i)^(what|which|why|how|when|where|who|whom|whose|name|list|define|describe|state|explain)\b")
 
 
 def card_ok(q, a, source):
@@ -363,6 +383,8 @@ def card_ok(q, a, source):
         return False
     if neg_count(a) > 0 and neg_count(source) == 0:
         return False
+    if is_arabic(a) and EN_QUESTION.match(q):
+        return False
     return not YESNO.match(q)
 
 
@@ -373,11 +395,15 @@ def jaccard(a, b):
     return len(a & b) / len(a | b)
 
 
+def same_card(q1, a1, q2, a2):
+    return q1.strip().lower() == q2.strip().lower() or (jaccard(q1, q2) >= 0.6 and jaccard(a1, a2) >= 0.3) or \
+        (jaccard(a1, a2) >= 0.8 and jaccard(q1, q2) >= 0.3)
+
+
 def dedupe_cards(cards):
     out = []
     for q, a in cards:
-        if any(q.strip().lower() == oq.strip().lower() or jaccard(q, oq) >= 0.6 or (jaccard(a, oa) >= 0.8 and jaccard(q, oq) >= 0.3)
-               for oq, oa in out):
+        if any(same_card(q, a, oq, oa) for oq, oa in out):
             continue
         out.append((q, a))
     return out

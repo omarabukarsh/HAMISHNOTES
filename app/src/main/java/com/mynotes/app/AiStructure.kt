@@ -137,8 +137,26 @@ OUTPUT:
         return ps.count { it in notePairs } * 2 >= ps.size
     }
 
+    /** جمل الملاحظات (بكلماتها المهمة). */
+    private fun sentencesOf(notes: String): List<List<String>> =
+        notes.split(Regex("(?<=[.!?؟;؛])\\s+|\n")).map { content(it) }.filter { it.isNotEmpty() }
+
+    /**
+     * «وسم: نص» صنع النموذج وسمه من جملة أخرى (مثل «Pen G: Food delays…» والأصل «…Pen G. Food delays…»):
+     * كلمات الوسم ليست في الجملة التي يبدأ منها النص.
+     */
+    private fun movedLabel(line: String, sents: List<List<String>>): Boolean {
+        val kv = keyed(line) ?: return false
+        val k = content(kv.first)
+        val r = content(kv.second)
+        if (k.isEmpty() || r.size < 2) return false
+        val st = sents.firstOrNull { x -> x.zipWithNext().any { it.first == r[0] && it.second == r[1] } } ?: return false
+        return k.any { it !in st }
+    }
+
     /** أسطر الناتج التي لا أصل لها في الملاحظات. رأس الجدول يُقبل إن كانت خلاياه قصيرة وبلا أرقام جديدة. */
     fun badLines(out: String, notes: String): List<String> {
+        val sents = sentencesOf(notes)
         val seq = content(notes)
         val allowed = seq.toSet()
         val nums = numbers(notes)
@@ -159,7 +177,7 @@ OUTPUT:
                 k = j
             } else {
                 val l = ls[k].replace("**", "")
-                if (!grounded(l, allowed, nums) || !faithful(l, np, allowed)) bad.add(ls[k])
+                if (!grounded(l, allowed, nums) || !faithful(l, np, allowed) || movedLabel(l, sents)) bad.add(ls[k])
                 k++
             }
         }
@@ -656,6 +674,7 @@ Otherwise answer only the corrected section in the same format: no title, no exp
     // ---------- بطاقات المراجعة: فحص، ومنع التكرار، وبطاقات الجداول بالكود ----------
 
     private val YESNO = Regex("(?i)^(is|are|does|do|can|was|were|has|have|will|هل)\\b")
+    private val EN_QUESTION = Regex("(?i)^(what|which|why|how|when|where|who|whom|whose|name|list|define|describe|state|explain)\\b")
 
     /** البطاقة صحيحة: الجواب قصير ومن المصدر نفسه، والسؤال بلا أرقام أو كلمات غريبة، وليس نعم/لا، ولا يحوي جوابه. */
     fun cardOk(q0: String, a0: String, source: String): Boolean {
@@ -670,6 +689,8 @@ Otherwise answer only the corrected section in the same format: no title, no exp
         val aw = content(a).toSet()
         if (aw.isNotEmpty() && qw.toSet().containsAll(aw)) return false
         if (negations(a) > 0 && negations(source) == 0) return false
+        // ملاحظة عربية ← سؤال عربي (لا «What is الغلط?»)
+        if (isArabic(a) && EN_QUESTION.containsMatchIn(q)) return false
         return !YESNO.containsMatchIn(q)
     }
 
@@ -681,9 +702,12 @@ Otherwise answer only the corrected section in the same format: no title, no exp
         return x.intersect(y).size / x.union(y).size.toFloat()
     }
 
-    /** بطاقتان عن الشيء نفسه: سؤال متشابه، أو جواب متطابق تقريبًا لسؤال قريب. */
+    /**
+     * بطاقتان عن الشيء نفسه: سؤال متشابه وجواب قريب، أو جواب متطابق تقريبًا لسؤال قريب.
+     * (سؤالان متشابهان بجوابين مختلفين معلومتان مختلفتان، مثل صفّين من جدول.)
+     */
     fun sameCard(q1: String, a1: String, q2: String, a2: String): Boolean =
-        q1.trim().equals(q2.trim(), ignoreCase = true) || similar(q1, q2) >= 0.6f ||
+        q1.trim().equals(q2.trim(), ignoreCase = true) || (similar(q1, q2) >= 0.6f && similar(a1, a2) >= 0.3f) ||
             (similar(a1, a2) >= 0.8f && similar(q1, q2) >= 0.3f)
 
     fun dedupeCards(cards: List<Pair<String, String>>): List<Pair<String, String>> {

@@ -346,7 +346,7 @@ object Ai {
                 eng.createConversation(
                     ConversationConfig(
                         systemInstruction = Contents.of(system),
-                        samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.3)
+                        samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.2)
                     )
                 ).use { conv ->
                     try {

@@ -218,8 +218,26 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
     }
 
     /** ينظّف مخرجات النموذج إلى صيغة العرض: عناوين، نقاط، جداول بـ " | ". */
+    /** النماذج تكتب أحيانًا رموز LaTeX مثل $\\beta$ و $\\rightarrow$: تُحوّل إلى رموزها. */
+    fun latex(s: String): String {
+        if (!s.contains('$') && !s.contains('\\')) return s
+        val map = mapOf(
+            "\\beta" to "β", "\\alpha" to "α", "\\gamma" to "γ", "\\delta" to "δ", "\\mu" to "µ",
+            "\\rightarrow" to "→", "\\to" to "→", "\\leftarrow" to "←", "\\uparrow" to "↑", "\\downarrow" to "↓",
+            "\\approx" to "≈", "\\ge" to "≥", "\\geq" to "≥", "\\le" to "≤", "\\leq" to "≤", "\\times" to "×",
+            "\\pm" to "±", "\\%" to "%", "\\frac{1}{2}" to "½"
+        )
+        var out = Regex("\\$([^$\\n]{1,40})\\$").replace(s) { m ->
+            var x = m.groupValues[1]
+            map.entries.sortedByDescending { it.key.length }.forEach { (k, v) -> x = x.replace(k, v) }
+            x.replace(Regex("_\\{([^}]*)\\}"), "$1").replace("{", "").replace("}", "").trim()
+        }
+        map.entries.sortedByDescending { it.key.length }.forEach { (k, v) -> out = out.replace(k, v) }
+        return out
+    }
+
     fun clean(raw: String): String {
-        val lines = raw.replace("```", "").lines().map { it.trimEnd() }
+        val lines = latex(raw).replace("```", "").lines().map { it.trimEnd() }
         val out = ArrayList<String>()
         for (l0 in lines) {
             var l = l0.replace("**", "").replace("__", "")
@@ -390,14 +408,11 @@ A: answer
 
     private fun organize(s: DocSession, notes: String, append: Boolean, marks: List<TextMark>, quiet: Boolean = false) {
         if (job?.isActive == true || AiPageReader.runningKey != null) return
-        if (!Ai.ready) return
+        if (!Ai.ready || marks.isEmpty() || notes.isBlank()) return
         val docId = s.id
-        // ذاكرة النموذج 4096 رمزًا: العربية تأخذ رموزًا أكثر، فأجزاء أصغر.
-        // جزء من الذاكرة لنص صفحات المستند (المصدر)، فالملاحظات في كل جزء أقل قليلًا.
+        // ذاكرة النموذج على الجهاز صغيرة: طلبات صغيرة لكل عنوان (Claude/ChatGPT يقبلان أكثر)
         val arabic = notes.count { it in '؀'..'ۿ' } > notes.length / 4
-        val parts = chunks(notes, Ai.budget(if (arabic) 1300 else 2400))
-        val sourceBudget = Ai.budget(if (arabic) 1300 else 2400)
-        if (parts.isEmpty()) return
+        val budget = Ai.budget(if (arabic) 1300 else 2400)
         // ما رُتّب: نص كل تمييز كما هو الآن (للتمييز الذي أضيف إليه نص: نصه الكامل)
         val snapshot = s.allMarks().filter { m -> marks.any { it.id == m.id } }.associate { it.id to it.text }
         val before = if (append) result(docId) ?: "" else ""
@@ -405,71 +420,68 @@ A: answer
         partial = ""
         stepFraction = 0f
         job = AppController.scope.launch {
-            val done = StringBuilder()
+            val done = ArrayList<Pair<String?, String>>()
             val cards = ArrayList<Pair<String, String>>()
-            fun shown() = if (append) merge(before, done.toString()) else done.toString()
+            fun shown(extra: Pair<String?, String>? = null): String {
+                val cur = AiStructure.assemble(if (extra == null) done else done + extra)
+                return if (append) merge(before, cur) else cur
+            }
             try {
-                // نص صفحات المستند كاملًا مصدرًا: تُقرأ الصفحات التي فيها تمييزات إن لم تكن مقروءة
+                // الصفحات التي فيها تمييزات تُقرأ إن لم تكن مقروءة: منها تُؤخذ عناوين المحاضرة ورؤوس الجداول
                 stepText = L("جارٍ قراءة صفحات المستند…", "Reading the document pages…")
                 marks.map { it.page }.distinct().forEach { p -> if (s.ocr[p] == null) s.ocrPage(p) }
-                val pages = (0 until (s.pdf?.count ?: 0)).associateWith { pageSource(s, it) }.filterValues { it.isNotBlank() }
-                val heads = if (append) before.lines().filter { it.trim().startsWith("# ") }.joinToString("\n").take(900) else ""
-                parts.forEachIndexed { i, part ->
+                val parts = AiStructure.parts(s, marks, budget)
+                val cardBuf = StringBuilder()
+                suspend fun flushCards(force: Boolean) {
+                    if (!autoCards || cardBuf.isBlank() || (!force && cardBuf.length < budget / 2)) return
+                    stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
+                    try {
+                        cards.addAll(parseCards(Ai.generate(CARDS_SYSTEM, "Notes:\n\n$cardBuf")))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                    }
+                    cardBuf.clear()
+                }
+                parts.forEachIndexed { i, p ->
+                    stepFraction = i / parts.size.toFloat()
                     stepText = when {
                         append -> L("جارٍ إكمال الملخص بالتظليل الجديد…", "Adding new highlights to the summary…")
-                        parts.size == 1 -> L("جارٍ الترتيب…", "Organizing…")
-                        else -> L("جارٍ ترتيب الجزء ${i + 1} من ${parts.size}…", "Organizing part ${i + 1} of ${parts.size}…")
+                        else -> L("جارٍ الترتيب: ${p.title ?: "…"} (${i + 1} من ${parts.size})", "Organizing: ${p.title ?: "…"} (${i + 1} of ${parts.size})")
                     }
-                    stepFraction = i / parts.size.toFloat()
-                    val src = sourceFor(part, pages, sourceBudget)
-                    val sb = StringBuilder()
-                    if (src.isNotBlank()) sb.append("SOURCE (document text, reference only):\n\n").append(src).append("\n\n")
-                    if (heads.isNotBlank()) {
-                        sb.append("EXISTING HEADINGS of the summary (when a note belongs under one of them, use that heading exactly):\n")
-                            .append(heads).append("\n\n")
-                    }
-                    sb.append(if (sb.isEmpty()) "Notes:\n\n" else "NOTES (organize these):\n\n").append(part)
-                    val res = Ai.generate(SYSTEM, sb.toString()) { p ->
-                        partial = (if (append) merge(before, (done.toString() + "\n\n" + clean(p)).trim())
-                        else (done.toString() + "\n\n" + clean(p)).trim())
-                    }
-                    if (done.isNotEmpty()) done.append("\n\n")
-                    done.append(clean(res))
+                    val body = p.table ?: AiStructure.body(
+                        p,
+                        Ai.generate(AiStructure.SYSTEM, AiStructure.prompt(p)) { x -> partial = shown(Pair(p.title, clean(x))) }
+                    )
+                    done.add(Pair(p.title, body))
                     partial = shown()
-                    if (autoCards) {
-                        stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
-                        try {
-                            cards.addAll(parseCards(Ai.generate(CARDS_SYSTEM, "Notes:\n\n$part")))
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (t: Throwable) {
-                        }
-                    }
+                    if (cardBuf.isNotEmpty()) cardBuf.append("\n")
+                    cardBuf.append(p.notes)
+                    flushCards(false)
                 }
+                flushCards(true)
                 save(docId, shown())
                 setProcessed(docId, if (append) processed(docId) + snapshot else snapshot)
                 if (autoCards) s.putAiCards(cards, replace = !append)
                 refreshPending(s)
-                run {
-                    AppController.messages.tryEmit(
-                        when {
-                            append && cards.isNotEmpty() -> L("أُكمل الملخص وأُضيفت ${cards.size} بطاقة مراجعة", "Summary updated, ${cards.size} review cards added")
-                            append -> L("أُكمل الملخص بالتظليل الجديد", "Summary updated with new highlights")
-                            cards.isNotEmpty() -> L("اكتمل ترتيب الملخص و${cards.size} بطاقة مراجعة. راجعها قبل الاعتماد عليها", "Summary organized with ${cards.size} review cards. Review before relying on them")
-                            else -> L("اكتمل ترتيب الملخص. راجعه قبل الاعتماد عليه", "Summary organized. Review it before relying on it")
-                        }
-                    )
-                }
+                AppController.messages.tryEmit(
+                    when {
+                        append && cards.isNotEmpty() -> L("أُكمل الملخص وأُضيفت ${cards.size} بطاقة مراجعة", "Summary updated, ${cards.size} review cards added")
+                        append -> L("أُكمل الملخص بالتظليل الجديد", "Summary updated with new highlights")
+                        cards.isNotEmpty() -> L("اكتمل ترتيب الملخص و${cards.size} بطاقة مراجعة. راجعها قبل الاعتماد عليها", "Summary organized with ${cards.size} review cards. Review before relying on them")
+                        else -> L("اكتمل ترتيب الملخص. راجعه قبل الاعتماد عليه", "Summary organized. Review it before relying on it")
+                    }
+                )
             } catch (e: CancellationException) {
                 // ترتيب كامل لم يكتمل: يُحفظ ما كُتب، ولا يُعرف ما رُتّب فيُطفأ الإكمال حتى يُعاد الترتيب
                 if (!append && done.isNotEmpty()) {
-                    save(docId, done.toString())
+                    save(docId, shown())
                     setProcessed(docId, emptyMap())
                 }
             } catch (t: Throwable) {
                 if (!quiet) AppController.messages.tryEmit(
-                    Ai.errorText(t, L("تعذر تشغيل النموذج. جرّب النموذج «الخفيف» من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
-                        "Could not run the model. Try the “Light” model in Settings, or close other apps to free memory."))
+                    Ai.errorText(t, L("تعذر تشغيل النموذج. جرّب نموذجًا آخر من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
+                        "Could not run the model. Try another model in Settings, or close other apps to free memory."))
                 )
             } finally {
                 runningDoc = null

@@ -69,7 +69,7 @@ internal fun drawStrokesInto(bmp: Bitmap, strokes: List<Ink>, night: Boolean, ch
     ) {
         for (s in strokes) {
             check()
-            drawInk(s.pts, if (night) nightOf(s.color) else s.color, s.width, s.tool)
+            drawStroke(s, if (night) nightOf(s.color) else s.color)
         }
     }
 }
@@ -187,7 +187,7 @@ fun InkLayer(strokes: List<Ink>, night: Boolean, modifier: Modifier = Modifier) 
         val img = cache.image
         if (img == null) {
             // قبل جهوز الصورة الأولى: الرسم المباشر كما كان
-            strokes.forEach { drawInk(it.pts, if (night) nightOf(it.color) else it.color, it.width, it.tool) }
+            strokes.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
         } else {
             drawImage(
                 image = img,

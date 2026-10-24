@@ -27,8 +27,8 @@ sealed interface SessionStatus {
 }
 
 /** يمسح كل خط تلمسه الممحاة كاملًا. يعيد القائمة نفسها إن لم يتغير شيء. */
-fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float): List<Ink> {
-    val next = list.filterNot { s -> s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
+fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink) -> Boolean = { true }): List<Ink> {
+    val next = list.filterNot { s -> canErase(s) && s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
     return if (next.size == list.size) list else next
 }
 
@@ -36,11 +36,14 @@ fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float): List<Ink> {
  * يمسح الجزء الذي تلمسه الممحاة فقط: يُقسم الخط عند دائرة الممحاة إلى قطعتين ويبقى الباقي.
  * تُضاف نقاط وسيطة أولًا حتى لا تعبر الممحاة بين نقطتين متباعدتين دون أن تقطع الخط.
  */
-fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float): List<Ink> {
+fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink) -> Boolean = { true }): List<Ink> {
     fun inside(p: Pt) = hypot(p.x - at.x, p.y - at.y) < radius
     var changed = false
     val out = ArrayList<Ink>(list.size + 2)
     for (s in list) {
+        if (!canErase(s)) {
+            out.add(s); continue
+        }
         // رفض سريع بالمستطيل المحيط
         var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         for (p in s.pts) {
@@ -90,7 +93,14 @@ data class TextDialogReq(val boxId: String?, val page: Int, val sticky: Boolean 
 data class ZoomBox(val page: Int, val x: Float, val y: Float, val w: Float, val h: Float = w * 0.3f)
 
 /** خطوط محددة بأداة التحديد الحر في صفحة واحدة (المقارنة بالمرجع ===). */
-class LassoSel(val page: Int, val strokes: List<Ink>)
+class LassoSel(
+    val page: Int,
+    val strokes: List<Ink>,
+    val imageIds: List<String> = emptyList(),
+    val textIds: List<String> = emptyList()
+) {
+    fun isEmpty() = strokes.isEmpty() && imageIds.isEmpty() && textIds.isEmpty()
+}
 
 class EditSnapshot(
     val ink: Map<Int, List<Ink>>,
@@ -238,6 +248,56 @@ class DocSession(entry: DocEntry) {
     /** فهرس عناوين الملف الأصلي (فارغ إن لم يكن فيه فهرس). */
     var outline by mutableStateOf<List<PdfTextLayer.OutlineItem>>(emptyList())
 
+    // ---- الفهرس القابل للتعديل ----
+    private val outlinePrefs by lazy {
+        AppController.appContext.getSharedPreferences("mynotes_outline", android.content.Context.MODE_PRIVATE)
+    }
+
+    /** فهرس عدّله المستخدم؛ null = فهرس الملف الأصلي كما هو. */
+    var outlineCustom by mutableStateOf<List<OutlineEntry>?>(null)
+        private set
+    private var outlineLoaded = false
+
+    /** العناوين المعروضة في درج الصفحات. */
+    fun outlineEntries(): List<OutlineEntry> {
+        if (!outlineLoaded) {
+            outlineLoaded = true
+            outlineCustom = try {
+                val raw = outlinePrefs.getString(id, null)
+                if (raw == null) null else {
+                    val a = org.json.JSONArray(raw)
+                    (0 until a.length()).map { i ->
+                        val o = a.getJSONObject(i)
+                        OutlineEntry(o.getString("t"), o.optInt("l", 0), o.optInt("p", 0))
+                    }
+                }
+            } catch (t: Throwable) {
+                null
+            }
+        }
+        return outlineCustom ?: outline.map { OutlineEntry(it.title, it.level, pageOfMain(it.pageIndex)) }
+    }
+
+    fun setOutline(list: List<OutlineEntry>) {
+        outlineCustom = list
+        val a = org.json.JSONArray()
+        list.forEach { a.put(org.json.JSONObject().put("t", it.title).put("l", it.level).put("p", it.page)) }
+        outlinePrefs.edit().putString(id, a.toString()).apply()
+    }
+
+    /** يضيف عنوانًا للصفحة في موضعه حسب ترتيب الصفحات. */
+    fun addOutlineEntry(page: Int, title: String) {
+        val list = outlineEntries().toMutableList()
+        val at = list.indexOfFirst { it.page > page }.let { if (it < 0) list.size else it }
+        list.add(at, OutlineEntry(title, 0, page))
+        setOutline(list)
+    }
+
+    fun resetOutline() {
+        outlineCustom = null
+        outlinePrefs.edit().remove(id).apply()
+    }
+
     /** رقم الصفحة الحالي لصفحة من الملف الأصلي (بعد أي إضافة أو ترتيب)، أو -1. */
     fun pageOfMain(mainIndex: Int): Int =
         pdf?.pages?.indexOfFirst { it.src == "main" && it.index == mainIndex } ?: -1
@@ -334,10 +394,18 @@ class DocSession(entry: DocEntry) {
             return c
         }
         val picked = list.filter { s ->
-            s.pts.isNotEmpty() && s.pts.count { inside(it.x, it.y) } >= s.pts.size * 0.6f
+            PenPrefs.lassoable(s) && s.pts.isNotEmpty() && s.pts.count { inside(it.x, it.y) } >= s.pts.size * 0.6f
         }
-        lassoSel = if (picked.isEmpty()) null else LassoSel(page, picked)
-        if (picked.isEmpty()) AppController.messages.tryEmit(L("لم تحدد أي كتابة", "Nothing selected"))
+        // الصور ومربعات النص والملاحظات اللاصقة: يكفي أن يقع مركزها داخل التحديد
+        val imgs = if (!PenPrefs.lassoImages) emptyList() else (images[page] ?: emptyList()).filter { im ->
+            inside(im.x + im.w / 2f, im.y + im.w / im.aspect / 2f)
+        }.map { it.id }
+        val txts = (texts[page] ?: emptyList()).filter { tb ->
+            (if (tb.sticky) PenPrefs.lassoStickies else PenPrefs.lassoTexts) && inside(tb.x + tb.w / 2f, tb.y + textHeightOf(tb) / 2f)
+        }.map { it.id }
+        val sel = LassoSel(page, picked, imgs, txts)
+        lassoSel = if (sel.isEmpty()) null else sel
+        if (sel.isEmpty()) AppController.messages.tryEmit(L("لم تحدد أي شيء", "Nothing selected"))
     }
 
     /** المستطيل المحيط بالتحديد (l, t, r, b) بإحداثيات الصفحة. */
@@ -348,6 +416,12 @@ class DocSession(entry: DocEntry) {
             if (p.x < l) l = p.x; if (p.x > r) r = p.x
             if (p.y < t) t = p.y; if (p.y > b) b = p.y
         }
+        fun box(x0: Float, y0: Float, x1: Float, y1: Float) {
+            if (x0 < l) l = x0; if (x1 > r) r = x1
+            if (y0 < t) t = y0; if (y1 > b) b = y1
+        }
+        (images[sel.page] ?: emptyList()).filter { it.id in sel.imageIds }.forEach { box(it.x, it.y, it.x + it.w, it.y + it.w / it.aspect) }
+        (texts[sel.page] ?: emptyList()).filter { it.id in sel.textIds }.forEach { box(it.x, it.y, it.x + it.w, it.y + textHeightOf(it)) }
         if (l > r) return null
         val pad = 0.008f
         return floatArrayOf(l - pad, t - pad, r + pad, b + pad)
@@ -370,11 +444,32 @@ class DocSession(entry: DocEntry) {
             } else next.add(s)
         }
         annotations = annotations + (sel.page to next)
-        lassoSel = if (newSel.isEmpty()) null else LassoSel(sel.page, newSel)
+        val ns = LassoSel(sel.page, newSel, sel.imageIds, sel.textIds)
+        lassoSel = if (ns.isEmpty()) null else ns
     }
+
+    /** ارتفاع تقريبي لمربع نص (نسبة لعرض الصفحة). */
+    fun textHeightOf(tb: TextBox): Float =
+        if (tb.sticky) 0.045f else (tb.size * 1.45f * tb.text.lines().size.coerceAtLeast(1)).coerceAtLeast(0.02f)
 
     /** تحريك بمقدار (dx, dy) وتكبير بنسبة k حول النقطة (px, py). */
     fun lassoTransform(dx: Float, dy: Float, k: Float = 1f, px: Float = 0f, py: Float = 0f) {
+        val sel = lassoSel ?: return
+        if (sel.imageIds.isNotEmpty()) {
+            val list = images[sel.page] ?: emptyList()
+            images = images + (sel.page to list.map { im ->
+                if (im.id in sel.imageIds) im.copy(x = px + (im.x - px) * k + dx, y = py + (im.y - py) * k + dy, w = im.w * k) else im
+            })
+        }
+        if (sel.textIds.isNotEmpty()) {
+            val list = texts[sel.page] ?: emptyList()
+            texts = texts + (sel.page to list.map { tb ->
+                if (tb.id in sel.textIds) tb.copy(
+                    x = px + (tb.x - px) * k + dx, y = py + (tb.y - py) * k + dy,
+                    w = tb.w * k, size = if (tb.sticky) tb.size else tb.size * k
+                ) else tb
+            })
+        }
         lassoReplace { s ->
             s.copy(
                 pts = s.pts.map { p -> Pt(px + (p.x - px) * k + dx, py + (p.y - py) * k + dy, p.p) },
@@ -384,14 +479,23 @@ class DocSession(entry: DocEntry) {
     }
 
     fun lassoRecolor(color: Color) {
+        val sel = lassoSel ?: return
         beginEdit()
+        if (sel.textIds.isNotEmpty()) {
+            texts = texts + (sel.page to (texts[sel.page] ?: emptyList()).map { if (it.id in sel.textIds && !it.sticky) it.copy(color = color) else it })
+        }
         lassoReplace { it.copy(color = color) }
         endEdit()
     }
 
     fun lassoDelete() {
+        val sel = lassoSel ?: return
         beginEdit()
+        if (sel.imageIds.isNotEmpty()) images = images + (sel.page to (images[sel.page] ?: emptyList()).filter { it.id !in sel.imageIds })
+        if (sel.textIds.isNotEmpty()) texts = texts + (sel.page to (texts[sel.page] ?: emptyList()).filter { it.id !in sel.textIds })
+        lassoSel = LassoSel(sel.page, sel.strokes)
         lassoReplace { null }
+        lassoSel = null
         endEdit()
     }
 
@@ -401,7 +505,13 @@ class DocSession(entry: DocEntry) {
         beginEdit()
         val copies = sel.strokes.map { s -> s.copy(pts = s.pts.map { Pt(it.x + 0.03f, it.y + 0.03f, it.p) }) }
         annotations = annotations + (sel.page to ((annotations[sel.page] ?: emptyList()) + copies))
-        lassoSel = LassoSel(sel.page, copies)
+        val imgCopies = (images[sel.page] ?: emptyList()).filter { it.id in sel.imageIds }
+            .map { it.copy(id = java.util.UUID.randomUUID().toString(), x = it.x + 0.03f, y = it.y + 0.03f) }
+        if (imgCopies.isNotEmpty()) images = images + (sel.page to ((images[sel.page] ?: emptyList()) + imgCopies))
+        val txtCopies = (texts[sel.page] ?: emptyList()).filter { it.id in sel.textIds }
+            .map { it.copy(id = java.util.UUID.randomUUID().toString(), x = it.x + 0.03f, y = it.y + 0.03f) }
+        if (txtCopies.isNotEmpty()) texts = texts + (sel.page to ((texts[sel.page] ?: emptyList()) + txtCopies))
+        lassoSel = LassoSel(sel.page, copies, imgCopies.map { it.id }, txtCopies.map { it.id })
         endEdit()
     }
 
@@ -412,8 +522,8 @@ class DocSession(entry: DocEntry) {
     fun eraseAt(page: Int, at: Offset, radius: Float) {
         val cur = annotations[page]
         if (cur != null) {
-            val next = if (AppController.eraserMode == EraserMode.AREA) eraseStrokesArea(cur, at, radius)
-            else eraseStrokes(cur, at, radius)
+            val next = if (AppController.eraserMode == EraserMode.AREA) eraseStrokesArea(cur, at, radius, PenPrefs::erasable)
+            else eraseStrokes(cur, at, radius, PenPrefs::erasable)
             if (next !== cur) annotations = annotations + (page to next)
         }
         // الممحاة تزيل من التمييز الملتقط الكلمات التي تمرّ عليها فقط، ويبقى باقي التمييز ونصه في الملخص

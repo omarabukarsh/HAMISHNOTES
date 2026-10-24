@@ -39,6 +39,7 @@ fun toolIcon(tool: Tool, filled: Boolean): Int = when (tool) {
     Tool.HIGHLIGHTER -> if (filled) R.drawable.ph_highlighter_fill else R.drawable.ph_highlighter
     Tool.ERASER -> if (filled) R.drawable.ph_eraser_fill else R.drawable.ph_eraser
     Tool.LASER -> if (filled) R.drawable.ph_laser_fill else R.drawable.ph_laser
+    Tool.BRUSH -> R.drawable.ph_brush
 }
 
 /** النسخة الممتلئة من أيقونة إن وُجدت. */

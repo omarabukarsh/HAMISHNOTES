@@ -2,7 +2,23 @@ package com.mynotes.app
 
 import androidx.compose.ui.graphics.Color
 
-enum class Tool { BALLPOINT, FOUNTAIN, PENCIL, HIGHLIGHTER, ERASER, LASER }
+enum class Tool { BALLPOINT, FOUNTAIN, PENCIL, HIGHLIGHTER, ERASER, LASER, BRUSH }
+
+/** نمط الخط: متصل، متقطع، منقّط. */
+object LineStyle {
+    const val SOLID = 0
+    const val DASHED = 1
+    const val DOTTED = 2
+}
+
+/** أشكال أداة «الأشكال». */
+enum class ShapeKind { LINE, ELBOW, CURVE, RECT, CIRCLE, TRIANGLE, DIAMOND, ELLIPSE }
+
+/** رأس السهم في طرف الخط. */
+enum class ArrowHead { NONE, OPEN, CLOSED }
+
+/** عنوان في فهرس المستند (قابل للتعديل): page = رقم الصفحة الحالي. */
+data class OutlineEntry(val title: String, val level: Int, val page: Int)
 
 /** نمط الليزر: نقطة متوهجة، أو خط مستمر يتلاشى بعد ثانية ونصف. */
 enum class LaserMode { DOT, LINE }
@@ -15,7 +31,7 @@ enum class ToolbarStyle { CLASSIC, PEN_BAR }
 
 /** الأقلام العادية الثلاثة (جاف، حبر، رصاص). */
 fun Tool.isPen(): Boolean =
-    this == Tool.BALLPOINT || this == Tool.FOUNTAIN || this == Tool.PENCIL
+    this == Tool.BALLPOINT || this == Tool.FOUNTAIN || this == Tool.PENCIL || this == Tool.BRUSH
 
 data class Pt(val x: Float, val y: Float, val p: Float)
 
@@ -26,7 +42,11 @@ data class Ink(
     val width: Float,
     val tool: Tool = Tool.FOUNTAIN,
     /** وقت كتابة الخط (للربط بتسجيل الصوت)؛ 0 = غير معروف. */
-    val t: Long = 0L
+    val t: Long = 0L,
+    /** نمط الخط (LineStyle). */
+    val style: Int = LineStyle.SOLID,
+    /** رُسم بأداة الأشكال أو حُوّل إلى شكل. */
+    val shape: Boolean = false
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */

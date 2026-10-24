@@ -52,6 +52,7 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     val blank = ref?.src?.startsWith("blank:") == true
     var jump by remember { mutableStateOf(false) }
     var addPage by remember { mutableStateOf(false) }
+    var outlineAdd by remember { mutableStateOf(false) }
     var changeTpl by remember { mutableStateOf(false) }
     var moveOpen by remember { mutableStateOf(false) }
     var itemsDialog by remember { mutableStateOf(false) }
@@ -103,6 +104,8 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                 PanelDivider()
                 PanelRow(L("إضافة صفحة بعدها", "Add page after"), R.drawable.ph_add_page) { addPage = true }
                 PanelDivider()
+                PanelRow(L("إضافة الصفحة إلى الفهرس", "Add page to outline"), R.drawable.ph_list) { outlineAdd = true }
+                PanelDivider()
                 PanelRow(
                     L("تغيير القالب", "Change template"), R.drawable.ph_pages,
                     sub = if (blank) null else L("لصفحات الملاحظات الفارغة فقط", "Blank note pages only"),
@@ -149,6 +152,13 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
 
     if (jump) PageJumpDialog(n, page, onGo = { p -> jump = false; go(p) }, onDismiss = { jump = false })
 
+    if (outlineAdd) {
+        OutlineTitleDialog(L("عنوان للصفحة ${page + 1}", "Heading for page ${page + 1}"), "", onDismiss = { outlineAdd = false }) { t ->
+            outlineAdd = false
+            s.addOutlineEntry(page, t)
+            c.messages.tryEmit(L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
+        }
+    }
     if (addPage) {
         TemplatePickerDialog(
             mode = PickerMode.ADD_PAGE,

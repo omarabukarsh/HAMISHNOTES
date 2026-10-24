@@ -227,6 +227,7 @@ object AppController {
 
     fun selectTool(t: Tool) {
         lassoActive = false
+        PenPrefs.shapeActive = false
         tool = t
         if (t.isPen()) lastPen = t
         if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t
@@ -676,6 +677,7 @@ object AppController {
         appContext = app
         repo = LibraryRepository(app)
         AudioNotes.init(app)
+        PenPrefs.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {

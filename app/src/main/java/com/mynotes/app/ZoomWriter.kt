@@ -144,7 +144,7 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                                     val color = c.colorFor(tool)
                                     val width = Sizes.width(tool, c.sizeFor(tool))
                                     if (tool == Tool.HIGHLIGHTER && c.highlightSnap) snap = live.toList()
-                                    else s.addInk(b.page, Ink(live.toList(), color, width, tool, System.currentTimeMillis()))
+                                    else s.addInk(b.page, Ink(PenPrefs.taper(live.toList(), tool), color, width, tool, System.currentTimeMillis(), if (tool.isPen()) PenPrefs.lineStyle else LineStyle.SOLID))
                                 }
                                 live.clear()
                                 tick++
@@ -176,11 +176,11 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                 )
             }
             withTransform({ translate(-b.x * k, -b.y * k) }) {
-                for (st in strokes) drawInk(st.pts, if (night) nightOf(st.color) else st.color, st.width, st.tool, scaleW = k)
+                for (st in strokes) drawStroke(st, if (night) nightOf(st.color) else st.color, scaleW = k)
                 if (live.isNotEmpty()) {
                     val tool = c.tool
                     val col = c.colorFor(tool)
-                    drawInk(live, if (night) nightOf(col) else col, Sizes.width(tool, c.sizeFor(tool)), tool, scaleW = k)
+                    drawInk(live, if (night) nightOf(col) else col, Sizes.width(tool, c.sizeFor(tool)), tool, scaleW = k, style = if (tool.isPen()) PenPrefs.lineStyle else LineStyle.SOLID)
                 }
             }
             // خط أساس خفيف للكتابة

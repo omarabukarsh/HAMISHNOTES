@@ -143,13 +143,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
 
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
-                    1 -> if (s.outline.isEmpty()) {
-                        EmptyPanel(
-                            R.drawable.ph_list,
-                            L("الفهرس: خريطة لمستندك", "Outline: a map of your document"),
-                            L("يظهر هنا فهرس الملف إن كان فيه عناوين، والنقر على عنوان ينقلك إلى صفحته.", "The file's table of contents appears here when it has headings; tap a heading to jump to its page.")
-                        )
-                    } else OutlineList(s) { p -> go(p) }
+                    1 -> OutlineList(s, cur) { p -> go(p) }
                     3 -> RecordingsList(s)
                     else -> {
                         val shown = if (tab == 2) s.bookmarks.filter { it < n }.sorted() else (0 until n).toList()
@@ -366,7 +360,7 @@ private fun PageThumb(
                     val col = Exporter.markColor(m.color, strong = m.level >= 2)
                     m.rects.forEach { r -> drawMarkRect(col, r, w) }
                 }
-                strokes.forEach { drawInk(it.pts, it.color, it.width, it.tool) }
+                strokes.forEach { drawStroke(it, it.color) }
             }
             // علامة الصفحة في الزاوية: تُضاف أو تُزال بالنقر
             Box(
@@ -456,31 +450,119 @@ private fun PageMenu(s: DocSession, pdf: PdfDoc, i: Int, open: Boolean, onClose:
     }
 }
 
-/** فهرس الملف: عناوين متدرجة، والنقر ينتقل إلى الصفحة. */
+/**
+ * فهرس المستند: عناوين متدرجة، والنقر ينتقل إلى الصفحة.
+ * زر «⋯» بجانب كل عنوان: إعادة التسمية، إزاحة المستوى، الحذف؛ وزر لإضافة عنوان للصفحة الحالية.
+ */
 @Composable
-private fun OutlineList(s: DocSession, onGo: (Int) -> Unit) {
-    val list = s.outline
-    androidx.compose.foundation.lazy.LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 8.dp)
-    ) {
-        items(list.size) { k ->
-            val it = list[k]
-            val page = s.pageOfMain(it.pageIndex)
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = page >= 0) { onGo(page) }
-                    .padding(start = (12 + it.level * 14).dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    it.title, modifier = Modifier.weight(1f),
-                    fontSize = if (it.level == 0) 14.sp else 13.sp,
-                    fontWeight = if (it.level == 0) FontWeight.Bold else FontWeight.Normal,
-                    color = if (page >= 0) Palette.TextPrimary else Palette.TextSecondary,
-                    maxLines = 2
+private fun OutlineList(s: DocSession, current: Int, onGo: (Int) -> Unit) {
+    val list = s.outlineEntries()
+    var editIndex by remember { mutableStateOf<Int?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (list.isEmpty()) {
+                EmptyPanel(
+                    R.drawable.ph_list,
+                    L("الفهرس: خريطة لمستندك", "Outline: a map of your document"),
+                    L("أضف عناوين لتنظيم مستندك والتنقل فيه بسرعة.", "Add headings to organize your document and move through it quickly.")
                 )
-                if (page >= 0) Text("${page + 1}", fontSize = 12.sp, color = Palette.TextSecondary)
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    items(list.size) { k ->
+                        val it = list[k]
+                        var menu by remember { mutableStateOf(false) }
+                        Row(
+                            Modifier.fillMaxWidth().clickable(enabled = it.page >= 0) { onGo(it.page) }
+                                .padding(start = (12 + it.level * 14).dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                it.title, modifier = Modifier.weight(1f),
+                                fontSize = if (it.level == 0) 14.sp else 13.sp,
+                                fontWeight = if (it.level == 0) FontWeight.Bold else FontWeight.Normal,
+                                color = if (it.page >= 0) Palette.TextPrimary else Palette.TextSecondary,
+                                maxLines = 2
+                            )
+                            if (it.page >= 0) Text("${it.page + 1}", fontSize = 12.sp, color = Palette.TextSecondary)
+                            Box {
+                                Box(
+                                    Modifier.size(34.dp).clip(CircleShape).clickable { menu = true },
+                                    contentAlignment = Alignment.Center
+                                ) { PhIcon(R.drawable.ph_more, Palette.TextSecondary, 16.dp) }
+                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                    DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; editIndex = k })
+                                    if (it.level < 3) DropdownMenuItem(text = { Text(L("عنوان فرعي (إزاحة للداخل)", "Make subheading (indent)")) }, onClick = {
+                                        menu = false
+                                        s.setOutline(list.toMutableList().also { l -> l[k] = it.copy(level = it.level + 1) })
+                                    })
+                                    if (it.level > 0) DropdownMenuItem(text = { Text(L("عنوان رئيسي (إزاحة للخارج)", "Promote (outdent)")) }, onClick = {
+                                        menu = false
+                                        s.setOutline(list.toMutableList().also { l -> l[k] = it.copy(level = it.level - 1) })
+                                    })
+                                    if (k > 0) DropdownMenuItem(text = { Text(L("تحريك لأعلى", "Move up")) }, onClick = {
+                                        menu = false
+                                        s.setOutline(list.toMutableList().also { l -> l.add(k - 1, l.removeAt(k)) })
+                                    })
+                                    if (k < list.size - 1) DropdownMenuItem(text = { Text(L("تحريك لأسفل", "Move down")) }, onClick = {
+                                        menu = false
+                                        s.setOutline(list.toMutableList().also { l -> l.add(k + 1, l.removeAt(k)) })
+                                    })
+                                    DropdownMenuItem(text = { Text(L("حذف", "Delete"), color = Palette.Danger) }, onClick = {
+                                        menu = false
+                                        s.setOutline(list.filterIndexed { i, _ -> i != k })
+                                    })
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { adding = true }) {
+                PhIcon(R.drawable.ph_plus, Palette.Navy, 18.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(L("عنوان للصفحة ${current + 1}", "Heading for page ${current + 1}"), color = Palette.Navy)
+            }
+            Spacer(Modifier.weight(1f))
+            if (s.outlineCustom != null && s.outline.isNotEmpty()) {
+                TextButton(onClick = { s.resetOutline() }) { Text(L("استعادة الأصلي", "Restore original"), color = Palette.TextSecondary, fontSize = 12.sp) }
             }
         }
     }
+    val ei = editIndex
+    if (ei != null && ei < list.size) {
+        OutlineTitleDialog(L("إعادة تسمية العنوان", "Rename heading"), list[ei].title, onDismiss = { editIndex = null }) { t ->
+            editIndex = null
+            s.setOutline(list.toMutableList().also { l -> l[ei] = l[ei].copy(title = t) })
+        }
+    }
+    if (adding) {
+        OutlineTitleDialog(L("عنوان للصفحة ${current + 1}", "Heading for page ${current + 1}"), "", onDismiss = { adding = false }) { t ->
+            adding = false
+            s.addOutlineEntry(current, t)
+        }
+    }
+}
+
+@Composable
+fun OutlineTitleDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = text, onValueChange = { text = it }, singleLine = true,
+                label = { Text(L("العنوان", "Title")) }, modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSave(text.trim()) }) { Text(L("حفظ", "Save")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+    )
 }

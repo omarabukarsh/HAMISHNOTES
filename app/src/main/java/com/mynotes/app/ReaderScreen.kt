@@ -1567,7 +1567,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
                 onExport = onExportSummary
             )
         }
-        // MyNotes Pro: درج خيارات الصفحة على اليمين
+        // درج خيارات الصفحة على اليمين
         AnimatedVisibility(
             visible = s.pageMenuOpen,
             modifier = Modifier.align(Alignment.CenterEnd),

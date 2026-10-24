@@ -835,7 +835,7 @@ object AppController {
         splitId = null
     }
 
-    /** إعدادات المستندات (MyNotes Pro). */
+    /** إعدادات المستندات. */
     var resumeLast by mutableStateOf(true)
         private set
     var openAsTabs by mutableStateOf(true)

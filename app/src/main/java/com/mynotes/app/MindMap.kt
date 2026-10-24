@@ -70,46 +70,118 @@ object MindMap {
         val id: String get() = "$level:$label"
     }
 
-    /** نص قصير مقروء للعقدة: ما قبل «:» إن كان عنوانًا قصيرًا، وإلا أول الجملة. */
+    /** نص قصير مقروء للعقدة. */
     fun shortLabel(s: String, max: Int = 90): String {
         val t = s.replace("**", "").replace(Regex("^[-•]\\s*"), "").trim()
         return if (t.length <= max) t else t.take(max - 1).trimEnd() + "…"
     }
 
-    fun parse(title: String, text: String): Node {
+    /** أقسام الشرح والملاحظات لا تدخل الخريطة: الخريطة نقاط فقط. */
+    private val EXPLAIN = Regex("(?i)^(شرح|توضيح|ملاحظ|explanation|explain|lecture notes|notes?\\b|figure|شكل)")
+
+    /**
+     * النقطة كعبارة مفتاحية قصيرة بلا شرح: يُحذف ما بين الأقواس، ويُقطع عند التعليل («لأن»، because، —)،
+     * وتُؤخذ أول جملة؛ والصيغة «مصطلح: قيمة» تبقى بالطرفين.
+     */
+    fun keyPhrase(s: String, max: Int = 55): String {
+        var t = s.replace("**", "").replace(Regex("^[-•]\\s*"), "").trim()
+        t = t.replace(Regex("\\s*\\([^)]{0,80}\\)"), "").replace(Regex("\\s*\\[[^\\]]{0,80}\\]"), "")
+        val cutters = listOf(" because ", " since ", " which ", " meaning ", " i.e.", " e.g.", " — ", " – ", " لأن", " لان", " حيث ", " أي ", " مثل ", "; ", "؛ ")
+        for (c in cutters) {
+            val i = t.indexOf(c, ignoreCase = true)
+            if (i in 12 until t.length) t = t.substring(0, i)
+        }
+        val dot = Regex("[.!؟?](\\s|$)").find(t)
+        if (dot != null && dot.range.first >= 12) t = t.substring(0, dot.range.first)
+        t = t.trim().trimEnd(',', '،', ':', '.')
+        return if (t.length <= max) t else t.take(max - 1).trimEnd() + "…"
+    }
+
+    /** أهمية النقطة: المظلل مرتين، الأرقام والجرعات، الأدوية المختارة، النفي والتحذير، والآثار الجانبية. */
+    private fun score(line: String): Int {
+        var s = 0
+        if (line.contains("**")) s += 6
+        if (Regex("\\d").containsMatchIn(line)) s += 2
+        if (Regex("(?i)\\b(DOC|drug of choice|first[- ]line|contraindicat|toxic|side effect|adverse|mechanism|MOA|not|never|avoid|only|most)\\b|لا |ممنوع|سام|أعراض|آلية|الأفضل|فقط").containsMatchIn(line)) s += 2
+        if (line.length < 70) s += 1
+        return s
+    }
+
+    /**
+     * important = true: النقاط المهمة فقط (حتى 4 لكل فرع، وصفوف الجداول بأسماءها وأهم خليتين)، دون أقسام الشرح،
+     * وكل نقطة عبارة مفتاحية قصيرة. false: كل ما في الملخص.
+     */
+    fun parse(title: String, text: String, important: Boolean = true): Node {
         val root = Node(shortLabel(title, 60), 0)
         var h1: Node? = null
         var h2: Node? = null
         var header: List<String>? = null
+        var skip1 = false
+        var skip2 = false
+        // نقاط كل فرع مع درجتها، لاختيار الأهم في النهاية
+        val scored = HashMap<Node, MutableList<Pair<Node, Int>>>()
         fun parent(): Node = h2 ?: h1 ?: root
+        fun skipping() = important && (skip2 || (skip1 && h2 == null))
         for (raw in text.lines()) {
             val l = raw.trim()
             if (l.isEmpty()) { header = null; continue }
             when {
                 l.startsWith("## ") -> {
-                    h2 = Node(shortLabel(l.removePrefix("## "), 60), 2).also { (h1 ?: root).children.add(it) }
+                    val name = l.removePrefix("## ").trim()
+                    skip2 = EXPLAIN.containsMatchIn(name)
+                    h2 = if (important && skip2) null else Node(shortLabel(name, 60), 2).also { (h1 ?: root).children.add(it) }
                     header = null
                 }
                 l.startsWith("# ") -> {
-                    h1 = Node(shortLabel(l.removePrefix("# "), 60), 1).also { root.children.add(it) }
+                    val name = l.removePrefix("# ").trim()
+                    skip1 = EXPLAIN.containsMatchIn(name)
+                    skip2 = false
+                    h1 = if (important && skip1) null else Node(shortLabel(name, 60), 1).also { root.children.add(it) }
                     h2 = null
                     header = null
                 }
+                skipping() -> {}
                 l.contains(" | ") -> {
                     val cells = l.replace("**", "").split(" | ").map { it.trim() }
                     if (header == null) header = cells
                     else {
                         // صف جدول: الخلية الأولى ثم البقية «العمود: القيمة»
                         val rest = cells.drop(1).mapIndexedNotNull { k, c ->
-                            if (c.isBlank() || c == "—") null else (header?.getOrNull(k + 1)?.let { "$it: " } ?: "") + c
+                            if (c.isBlank() || c == "—") null
+                            else (header?.getOrNull(k + 1)?.let { "$it: " } ?: "") + (if (important) keyPhrase(c, 40) else c)
                         }
                         val node = Node(shortLabel(cells.first(), 60), 3)
-                        rest.forEach { node.children.add(Node(shortLabel(it), 4)) }
-                        parent().children.add(node)
+                        (if (important) rest.take(2) else rest).forEach { node.children.add(Node(shortLabel(it), 4)) }
+                        val par = parent()
+                        if (important) scored.getOrPut(par) { ArrayList() }.add(node to (score(l) + 1))
+                        else par.children.add(node)
                     }
                 }
-                else -> parent().children.add(Node(shortLabel(l), 3))
+                else -> {
+                    val par = parent()
+                    if (important) {
+                        val k = keyPhrase(l)
+                        if (k.length >= 3) scored.getOrPut(par) { ArrayList() }.add(Node(k, 3) to score(l))
+                    } else par.children.add(Node(shortLabel(l), 3))
+                }
             }
+        }
+        if (important) {
+            // الأهم أولًا (حتى 4 نقاط و6 صفوف جدول لكل فرع)، مع الحفاظ على ترتيبها في الملخص
+            for ((par, items) in scored) {
+                val rows = items.filter { it.first.children.isNotEmpty() }
+                val points = items.filter { it.first.children.isEmpty() }
+                val keepRows = rows.withIndex().sortedByDescending { it.value.second }.take(6).sortedBy { it.index }.map { it.value.first }
+                val keepPts = points.withIndex().sortedByDescending { it.value.second }.take(4).sortedBy { it.index }.map { it.value.first }
+                val seen = HashSet<String>()
+                (keepPts + keepRows).forEach { n -> if (seen.add(n.label.lowercase())) par.children.add(n) }
+            }
+            // فروع فارغة (بلا نقاط) تُحذف
+            fun prune(n: Node) {
+                n.children.forEach { prune(it) }
+                n.children.removeAll { it.level in 1..2 && it.children.isEmpty() }
+            }
+            prune(root)
         }
         root.children.forEachIndexed { i, n -> paint(n, i) }
         return root
@@ -258,7 +330,8 @@ object MindMap {
 @Composable
 fun MindMapDialog(title: String, summary: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val root = remember(summary) { MindMap.parse(title, summary) }
+    var important by remember { mutableStateOf(true) }
+    val root = remember(summary, important) { MindMap.parse(title, summary, important) }
     val collapsed = remember(summary) { mutableStateListOf<String>() }
     var zoom by remember { mutableStateOf(1f) }
     val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -287,6 +360,8 @@ fun MindMapDialog(title: String, summary: String, onDismiss: () -> Unit) {
                         L("✦ خريطة ذهنية", "✦ Mind map"), fontFamily = Fonts.Display, fontSize = 20.sp,
                         fontWeight = FontWeight.Bold, color = Palette.Navy, modifier = Modifier.weight(1f)
                     )
+                    ChoiceChip(L("المهم فقط", "Key points"), important) { important = true; collapsed.clear() }
+                    ChoiceChip(L("كل النقاط", "All points"), !important) { important = false; collapsed.clear() }
                     TextButton(onClick = { zoom = (zoom / 1.2f).coerceAtLeast(0.4f) }) { Text("−", fontSize = 20.sp) }
                     Text("${(zoom * 100).toInt()}%", fontSize = 13.sp, color = Palette.TextSecondary)
                     TextButton(onClick = { zoom = (zoom * 1.2f).coerceAtMost(2.5f) }) { Text("+", fontSize = 20.sp) }
@@ -299,8 +374,8 @@ fun MindMapDialog(title: String, summary: String, onDismiss: () -> Unit) {
                     TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) }
                 }
                 Text(
-                    L("انقر على فرع لطيّه أو فتحه. الخريطة من ملخصك المرتّب نفسه دون إضافات.",
-                        "Tap a branch to fold or unfold it. The map comes from your organized summary, nothing added."),
+                    L("انقر على فرع لطيّه أو فتحه. «المهم فقط»: أهم النقاط كعبارات قصيرة دون الشرح، من ملخصك نفسه دون إضافات.",
+                        "Tap a branch to fold or unfold it. “Key points”: the most important points as short phrases without explanations, from your own summary."),
                     fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 18.dp)
                 )
                 Box(

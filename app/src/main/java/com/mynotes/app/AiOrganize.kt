@@ -814,27 +814,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
     var mindMap by remember { mutableStateOf(false) }
     var tablePick by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // قراءة منظمة للصفحة الحالية (عناوين، جداول، نقاط) — تُستعمل أيضًا مصدرًا للترتيب
-        val cur = s.listState.firstVisibleItemIndex
-        val pageDone = AiPageReader.result(s.id, cur) != null
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, Palette.Gold, RoundedCornerShape(10.dp))
-                .clickable { readPage = cur }.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    L("✦ قراءة الصفحة ${cur + 1} بالذكاء", "✦ Read page ${cur + 1} with AI"),
-                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy
-                )
-                Text(
-                    if (pageDone) L("مقروءة ومنظمة — اضغط للعرض", "Read and structured — tap to view")
-                    else L("يتعرّف على العناوين والجداول والنقاط في الصفحة", "Recognizes headings, tables and bullets on the page"),
-                    fontSize = 12.sp, color = Palette.TextSecondary
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
+        // بطاقة «قراءة الصفحة بالذكاء» أُزيلت بطلب المستخدم: الصفحات تُقرأ تلقائيًا (في الخلفية وقبل الترتيب)
         // تنبيه دائم: اقتراح يُراجع
         Text(
             (if (Ai.isCloud) L("ترتيب مقترح من ${CloudAi.label} عبر الإنترنت بمفتاحك. ", "Suggested by ${CloudAi.label} online with your key. ")

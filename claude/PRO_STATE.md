@@ -8,6 +8,7 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 - "Make Pro like the regular app" = merge feature/premium-ui INTO pro (pro only), keeping Pro identity and AI.
 - After every build give the direct artifact link: https://github.com/omarabukarsh/Mynotes/actions/runs/<runId>/artifacts/<artifactId>.
 - Whole-document AI reading must be fully offline (on-device model only).
+- (2026-10-24) PRIORITY: accuracy of summaries over speed.
 - (2026-10-24) AI must work for ANY subject and file type, not only pharmacy and not only the user's own highlights; send a plan and wait for «نفّذ» before big AI changes; never ask for API keys in chat.
 
 ## Branch and identity
@@ -15,7 +16,9 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 - Branch pro. Merges of feature/premium-ui into pro: f858071 (2026-10-23), 80ea49a (2026-10-24). On merge keep: label «MyNotes Pro» (no «هامش / Hamish»), AI settings section, summaryAiMode, Pro comments, and the Pro UI removals below.
 - applicationId com.mynotes.app.pro, versionName pro-1.0.<run>, versionCode = 100 + GITHUB_RUN_NUMBER of build.yml. Committed keystore → installs as update. Install only the «MyNotes-Pro» artifact.
 - Latest good build before the AI v4 round: #169 (8afc919), run 40127399922, artifact 12573704554.
-- "CI tests" workflow (unit tests/lint + emulator) has been failing since before #166 (runs 73–75); Build APK and AI eval succeed. Not investigated.
+- Latest build: #175 (8ff6dc6 = AI v4.3 + CLAUDE.md), run 40142039055, artifact 12579770101.
+- (2026-10-24 23:36 UTC) GitHub Actions stopped starting jobs (Build APK + CI tests failed in 1 s with no log, run 176/84). Most likely the account's Actions minutes ran out; user asked to check github.com/settings/billing. Commits with [skip ci] avoid wasting minutes.
+- "CI tests" has NEVER passed: the same 19/26 unit tests failed on its first run (22 Oct, c1bce74, audit session) — they are targets written from antibiotics.pdf, not regressions. Lint: 6 errors (e.g. dispatchKeyEvent restricted API). ci.yml now prints the golden report (expected vs produced) in the log.
 - Kotlin 2.4.0 on this branch. No Android SDK in the cloud session: CI is the compiler.
 - Pitfalls: nested horizontal scroll rows crash (infinite width); `var x by mutableStateOf` with `private set` + a `fun setX(...)` → JVM "Platform declaration clash"; Compose offset is RTL-mirrored — use absoluteOffset when matching a Canvas; Java regex needs `[^\]]` (not `[^]]`); Android refuses to draw bitmaps over ~100 MB (PdfDoc.safeWidth caps page bitmaps at 12 MP).
 - Cloud session cannot reach huggingface.co or GitHub artifact/log blob storage. CI results are read via check-run annotations (::notice) or get_job_logs.
@@ -52,6 +55,20 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 - Whole-document background reading (AiDocReader.kt): on-device only, each page once.
 - In-app Arabic: «✦ عدّل الملخص بالذكاء» accepts Arabic instructions; «✦ اشرح» answers in Arabic. No free chat window yet («اسأل الذكاء» offered, not requested).
 
+## AI rounds (2026-10-24, after #169)
+- v4 (#170): subject-neutral prompts, line-level grounding/faithfulness/dropped checks (AR+EN), keyed tables, joined sentence lines, conditional self-review, mind map mm2, cards from the summary.
+- v4.1 (#171): moved-label check ("Pen G: Food…"), mind-map word-order check, LaTeX in cards, English question for Arabic answer rejected, sameCard needs similar answer too.
+- v4.2 (#172/#173): Arabic cards — language stated in the prompt, "What is X?"→«ما هو X؟»; short lines not deduped (lost "not stable"); "X:" + sub-bullets → one line.
+- v4.3 (#174/#175): salvage — remove only the unsupported bullet and re-check; "item: detail" bullets → cards by code; no model call for < 2 bullets.
+- Eval totals (before → after): #10 summary 1070→477 s, mind map 334→200 s, cards 845→629 s, invented words 24→4, wrong section 15→1, mm cut mid-word 25→0; #13 (v4.3, 14 highlight sets): summary 363→184 s, mm 128→75 s, cards 450→226 s, invented 20→6, negations lost 1→0, wrong section 16→0, fallbacks 8→8 (+2 salvaged), yes/no 6→0, answer-in-question 11→0, near-dup 15→0. Remaining: English questions for Arabic notes (7 rejected), fallbacks ~8/28.
+
+## Investigation of bad PDF summaries (user screenshots, NSAIDs lecture)
+- Root causes found in TextLayout (shared by the regular and the AI summary): bullet glyph «•» + gap becomes a table cell; a gap left by an arrow/image inside a sentence makes a one-row "table" (startsTable accepts a single row with 3 cells or with a continuation line); single-word slide title needs 1.6× body to be a heading so «Inflammation» merged into the next sentence; separate bullet sentences merged into one paragraph; Arabic mixed-direction word order reversed; Arabic letters inside words damaged («ألن», «خصوًصا», «باألسئلة»); hyphen line-break not joined; wrapped cells in both table columns; «t1⁄2»; two colours on one sentence.
+- In AiStructure: normal text size = median of LINES, so small figure labels make slide body lines look like headings («associated with:»). Use a word-weighted median.
+- tools/ai-eval/textlayout.py = faithful Python port of TextLayout.kt; fixed=True applies F1 (bullet glyph not a cell), F2 (one-row table only if an aligned multi-cell neighbour exists on the page), F3 (short bold line ≥1.2× body = heading). golden.py runs AntibioticsCases on it (port: 3/17 pass like the app's 4/17; F1–F3 break none). slides.py → docs/slides_nsaids.pdf reproduces the user's slides (titles, «•», text arrows, drawn arrows, figure labels).
+- Plan sent to the user (waiting for «نفّذ» and GitHub Actions): A = F1–F3 + bullet paragraph split + hyphen + fraction + word-weighted size; B = Arabic order and letters; C = wrapped cells, two colours; D = image-reading experiment (image decides layout/roles, words stay from the PDF; LiteRT-LM Python supports Content.ImageFile + vision_backend).
+- User cannot share the NSAIDs PDF; use slides_nsaids.pdf.
+
 ## Eval (tools/ai-eval, v4)
 - Runs the same Gemma 4 E2B .litertlm on CPU; BEFORE (pro@8afc919 logic, prompts copied in legacy_prompts.py) and AFTER (prompts read from the Kotlin files) in the same run, same highlights.
 - Documents: antibiotics.pdf (fixed highlights as v1–v3 + random highlights) and docs/*.txt laid out as pages by layout.py (history EN, cell biology AR, sorting algorithms EN, economics AR+EN terms, contract law AR, physics EN) with random highlights (seed EVAL_SEED=2026): whole paragraphs, partial lines, table row runs, two paragraphs at once, 15% double-highlighted phrases.
@@ -67,4 +84,5 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 - #132 template picker crash (fixed #136). #163: mind map PDF crash → fixed #164.
 
 ## Next steps
-- User installs the AI v4 build and reports: summary quality/tables, mind map, cards, and real time per summary on the MatePad.
+- Wait for GitHub Actions and «نفّذ», then stage A (text reading fixes) verified with golden.py and slides before pushing.
+- User installs #175 and reports real time per summary on the MatePad.

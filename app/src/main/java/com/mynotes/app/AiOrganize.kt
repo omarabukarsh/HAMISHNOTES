@@ -507,12 +507,13 @@ A: answer
                 marks.map { it.page }.distinct().forEach { p -> if (s.ocr[p] == null) s.ocrPage(p) }
                 // «قراءة الصفحة بالذكاء» تلقائيًا لكل صفحة فيها تظليل ولم تُقرأ بعد: عناوينها تُستعمل في الهيكل.
                 // من النص المقروء فقط (أسرع)؛ الصورة فقط للصفحات التي لا نص فيها. كل صفحة تُقرأ مرة واحدة وتُحفظ.
-                if (autoReadPages) {
+                // دائمًا بالنموذج الذي على الجهاز (مجاني)، حتى لو اختير Claude/ChatGPT للترتيب
+                if (autoReadPages && Ai.installed(Ai.selected)) {
                     val todo = marks.map { it.page }.distinct().sorted().filter { AiPageReader.result(docId, it) == null }
                     todo.forEachIndexed { k, pg ->
                         stepFraction = k / (todo.size + 1f)
                         try {
-                            AiPageReader.read(s, pg, useImage = false, onStep = {
+                            AiPageReader.read(s, pg, useImage = false, local = true, onStep = {
                                 stepText = L("قراءة صفحات التظليل قبل الكتابة (${k + 1} من ${todo.size})", "Reading highlighted pages first (${k + 1} of ${todo.size})")
                             })
                         } catch (e: CancellationException) {
@@ -581,6 +582,90 @@ A: answer
                     Ai.errorText(t, L("تعذر تشغيل النموذج. جرّب نموذجًا آخر من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
                         "Could not run the model. Try another model in Settings, or close other apps to free memory."))
                 )
+            } finally {
+                runningDoc = null
+                stepText = ""
+                partial = ""
+            }
+        }
+    }
+
+    private const val TABLE_SYSTEM = """You turn the points of ONE section of a pharmacy study summary into ONE comparison table.
+Rules:
+- Choose 2 to 5 columns from the attributes the points share (for example: Drug | Route | Use | Side effect).
+- One row per item. Use ONLY the words, numbers and drug names in the points. Keep every number, every drug name and every negation (not, no, لا).
+- Keep the language of the points. Empty cell: "—".
+- Output only the table: one row per line, cells separated by " | ", first row is the header. No introduction.
+
+Example
+POINTS:
+Pen G: destroyed by gastric acid, given IV or IM
+Pen V: acid-stable, given orally, only for mild infections
+OUTPUT:
+Drug | Acid stability | Route | Note
+Pen G | Destroyed by gastric acid | IV or IM | —
+Pen V | Acid-stable | Oral | Only for mild infections"""
+
+    /** أقسام الملخص المرتّب التي فيها نقطتان أو أكثر (تصلح لجدول): سطر العنوان كما هو. */
+    fun tableSections(text: String): List<String> {
+        val lines = text.lines()
+        val out = ArrayList<String>()
+        lines.forEachIndexed { i, l ->
+            val h = l.trim()
+            if (!h.startsWith("# ") && !h.startsWith("## ")) return@forEachIndexed
+            var n = 0
+            var j = i + 1
+            while (j < lines.size && !lines[j].trim().startsWith("#")) {
+                val x = lines[j].trim()
+                if (x.isNotEmpty() && !x.contains(" | ")) n++
+                j++
+            }
+            if (n >= 2) out.add(h)
+        }
+        return out
+    }
+
+    /** يحوّل نقاط قسم إلى جدول مقارنة بالذكاء؛ يُستبدل فقط إن لم يُسقط رقمًا أو دواءً أو نفيًا. */
+    fun tableFromSection(s: DocSession, heading: String) {
+        if (job?.isActive == true || AiPageReader.runningKey != null || !Ai.ready) return
+        val docId = s.id
+        val text = result(docId) ?: return
+        runningDoc = docId
+        partial = ""
+        stepFraction = 0f
+        stepText = L("جارٍ إعداد جدول: ${heading.trimStart('#', ' ')}", "Making a table: ${heading.trimStart('#', ' ')}")
+        job = AppController.scope.launch {
+            try {
+                val lines = text.lines().toMutableList()
+                val i = lines.indexOfFirst { it.trim() == heading.trim() }
+                if (i < 0) return@launch
+                var j = i + 1
+                while (j < lines.size && !lines[j].trim().startsWith("#")) j++
+                val block = lines.subList(i + 1, j).toList()
+                val points = block.map { it.trim() }.filter { it.isNotEmpty() && !it.contains(" | ") }
+                    .map { it.removePrefix("- ").replace("**", "").trim() }
+                if (points.size < 2) return@launch
+                val notes = points.joinToString("\n")
+                val res = clean(Ai.generate(TABLE_SYSTEM, "SECTION: ${heading.trimStart('#', ' ')}\nPOINTS:\n$notes") { partial = clean(it) })
+                val table = res.lines().map { it.trim() }.filter { it.contains(" | ") }
+                val tableText = table.joinToString("\n")
+                val ok = table.size >= 3 && !AiStructure.suspicious(tableText, notes + " " + heading) && !AiStructure.dropped(tableText, notes)
+                if (!ok) {
+                    AppController.messages.tryEmit(
+                        L("لم يكن الجدول دقيقًا (أسقط أو أضاف معلومة)، فبقي القسم كما هو. جرّب قسمًا آخر أو Claude/ChatGPT.",
+                            "The table wasn’t accurate (it dropped or added information), so the section was kept. Try another section or Claude/ChatGPT.")
+                    )
+                    return@launch
+                }
+                // النقاط تُستبدل بالجدول، والجداول الموجودة في القسم تبقى بعده
+                val keep = block.filter { it.trim().contains(" | ") }
+                val newBlock = listOf("") + table + (if (keep.isNotEmpty()) listOf("") + keep else emptyList()) + listOf("")
+                val updated = lines.subList(0, i + 1) + newBlock + lines.subList(j, lines.size)
+                save(docId, updated.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim())
+                AppController.messages.tryEmit(L("صار القسم جدولًا. راجعه قبل الاعتماد عليه", "The section is now a table. Review it before relying on it"))
+            } catch (e: CancellationException) {
+            } catch (t: Throwable) {
+                AppController.messages.tryEmit(Ai.errorText(t, L("تعذر تشغيل النموذج", "Could not run the model")))
             } finally {
                 runningDoc = null
                 stepText = ""
@@ -724,6 +809,8 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
     val saved = AiOrganizer.result(s.id)
     var editing by remember { mutableStateOf(false) }
     var readPage by remember { mutableStateOf<Int?>(null) }
+    var mindMap by remember { mutableStateOf(false) }
+    var tablePick by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         // قراءة منظمة للصفحة الحالية (عناوين، جداول، نقاط) — تُستعمل أيضًا مصدرًا للترتيب
         val cur = s.listState.firstVisibleItemIndex
@@ -818,6 +905,17 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                     AiOrganizer.autoContinue
                 ) { AiOrganizer.toggleAutoContinue(!AiOrganizer.autoContinue) }
                 AiToggle(
+                    L("قراءة المستند كاملًا بالذكاء في الخلفية (مجاني على الجهاز، للملخص والشرح)", "Read the whole document with AI in the background (free, on device; for summaries and explanations)"),
+                    AiDocReader.enabled
+                ) { AiDocReader.toggle(!AiDocReader.enabled); if (AiDocReader.enabled) AiDocReader.enqueue(s.id) }
+                AiDocReader.progress[s.id]?.let { (r, n) ->
+                    Text(
+                        if (r >= n) L("قُرئ المستند كاملًا ✓ ($n صفحة)", "Whole document read ✓ ($n pages)")
+                        else L("قُرئت $r من $n صفحة" + if (AiDocReader.currentDoc == s.id) " — جارٍ القراءة…" else "", "$r of $n pages read" + if (AiDocReader.currentDoc == s.id) " — reading…" else ""),
+                        fontSize = 12.sp, color = Palette.TextSecondary
+                    )
+                }
+                AiToggle(
                     L("قراءة صفحات التظليل بالذكاء تلقائيًا قبل الكتابة (عناوين أدق، أبطأ أول مرة)", "Read highlighted pages with AI before writing (better headings, slower the first time)"),
                     AiOrganizer.autoReadPages
                 ) { AiOrganizer.toggleAutoReadPages(!AiOrganizer.autoReadPages) }
@@ -825,6 +923,21 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                     L("بطاقات مراجعة تلقائية بالذكاء الاصطناعي (تظهر في «بطاقات»)", "Automatic AI review cards (shown in “Cards”)"),
                     AiOrganizer.autoCards
                 ) { AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards) }
+                // ✦ خريطة ذهنية وجدول مقارنة
+                if (saved != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = { mindMap = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Palette.GoldDeep)
+                        ) { Text(L("✦ خريطة ذهنية", "✦ Mind map")) }
+                        Button(
+                            enabled = !busyElsewhere && AiPageReader.runningKey == null && AiOrganizer.tableSections(saved).isNotEmpty(),
+                            onClick = { tablePick = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
+                        ) { Text(L("✦ جدول مقارنة", "✦ Comparison table")) }
+                    }
+                }
                 // ✦ تعديل الملخص بتعليمات (يعمل مع النموذج المحلي، وأفضل مع Claude أو ChatGPT)
                 if (saved != null) {
                     var instr by remember { mutableStateOf("") }
@@ -862,6 +975,30 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
         }
     }
     readPage?.let { p -> AiPageDialog(s, p) { readPage = null } }
+    if (mindMap && saved != null) MindMapDialog(s.title, saved) { mindMap = false }
+    if (tablePick && saved != null) {
+        val secs = AiOrganizer.tableSections(saved)
+        AlertDialog(
+            onDismissRequest = { tablePick = false },
+            title = { Text(L("أي قسم تريده جدولًا؟", "Which section should become a table?")) },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    secs.forEach { h ->
+                        Text(
+                            h.trimStart('#', ' '),
+                            fontSize = if (h.startsWith("## ")) 14.sp else 15.sp,
+                            fontWeight = if (h.startsWith("## ")) FontWeight.Normal else FontWeight.Bold,
+                            color = Palette.Navy,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                .clickable { tablePick = false; AiOrganizer.tableFromSection(s, h) }
+                                .padding(start = if (h.startsWith("## ")) 18.dp else 4.dp, top = 10.dp, bottom = 10.dp, end = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { tablePick = false }) { Text(L("إلغاء", "Cancel")) } }
+        )
+    }
     if (editing && saved != null) {
         var t by remember { mutableStateOf(saved) }
         AlertDialog(
@@ -892,7 +1029,7 @@ private fun AiToggle(label: String, on: Boolean, onToggle: () -> Unit) {
 
 /** نافذة «اشرح» لنص محدد: تُكتب الإجابة تدريجيًا. */
 @Composable
-fun AiExplainDialog(text: String, onDismiss: () -> Unit) {
+fun AiExplainDialog(text: String, context: String = "", onDismiss: () -> Unit) {
     var answer by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var done by remember { mutableStateOf(false) }
@@ -903,12 +1040,18 @@ fun AiExplainDialog(text: String, onDismiss: () -> Unit) {
                     error = L("نزّل نموذج الذكاء الاصطناعي أولًا من الإعدادات", "Download the AI model first from Settings")
                     return@launch
                 }
-                val r = Ai.generate(AiOrganizer.explainSystem(), text) { answer = AiOrganizer.clean(it) }
+                AiExplain.running = true
+                // سياق من قراءة المستند (إن قُرئت الصفحة) ليكون الشرح مرتبطًا بالمحاضرة نفسها
+                val prompt = if (context.isBlank()) text
+                else "CONTEXT (from the same lecture page, reference only):\n$context\n\nEXPLAIN THIS TEXT:\n$text"
+                val r = Ai.generate(AiOrganizer.explainSystem(), prompt) { answer = AiOrganizer.clean(it) }
                 answer = AiOrganizer.clean(r)
                 done = true
             } catch (e: CancellationException) {
             } catch (t: Throwable) {
                 error = Ai.errorText(t, L("تعذر تشغيل النموذج", "Could not run the model"))
+            } finally {
+                AiExplain.running = false
             }
         }
         onDispose { j.cancel() }

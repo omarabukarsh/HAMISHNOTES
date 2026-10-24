@@ -181,6 +181,7 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         s: DocSession,
         page: Int,
         useImage: Boolean = true,
+        local: Boolean = false,
         onStep: (String) -> Unit = {},
         onPartial: (String) -> Unit = {}
     ): String? {
@@ -190,11 +191,12 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
             onStep(L("جارٍ قراءة الصفحة ${page + 1}…", "Reading page ${page + 1}…"))
             val words = s.ocrPage(page)?.words ?: emptyList()
             val text = layoutText(words)
-            val img = if (Ai.canSee && (useImage || text.isBlank())) pageImage(s, page) else null
+            val see = if (local) Ai.installed(Ai.selected) && Ai.selected.vision else Ai.canSee
+            val img = if (see && (useImage || text.isBlank())) pageImage(s, page) else null
             if (text.isBlank() && img == null) return null
             val arabic = isArabic(text)
-            val parts = if (img != null) listOf(text.take(Ai.budget(if (arabic) 1500 else 2600)))
-            else split(text, Ai.budget(if (arabic) 2000 else 3600))
+            val parts = if (img != null) listOf(text.take(if (local) (if (arabic) 1500 else 2600) else Ai.budget(if (arabic) 1500 else 2600)))
+            else split(text, if (local) (if (arabic) 2000 else 3600) else Ai.budget(if (arabic) 2000 else 3600))
             parts.forEachIndexed { i, part ->
                 onStep(
                     if (parts.size == 1) L("جارٍ تنظيم الصفحة ${page + 1}…", "Structuring page ${page + 1}…")
@@ -205,7 +207,7 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
                     img != null -> "The page image is attached. OCR text of the page (hints, may be incomplete or wrong):\n\n$part"
                     else -> "OCR text of the page:\n\n$part"
                 }
-                val res = Ai.generate(SYSTEM, prompt, if (i == 0) img else null) { p ->
+                val res = Ai.generate(SYSTEM, prompt, if (i == 0) img else null, local) { p ->
                     onPartial((done.toString() + "\n\n" + AiOrganizer.clean(p)).trim())
                 }
                 if (done.isNotEmpty()) done.append("\n\n")

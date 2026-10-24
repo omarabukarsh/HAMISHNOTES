@@ -1623,7 +1623,8 @@ private fun SelectionBar(s: DocSession) {
     var translateText by remember { mutableStateOf<String?>(null) }
     translateText?.let { t -> TranslateDialog(t) { translateText = null } }
     var explainText by remember { mutableStateOf<String?>(null) }
-    explainText?.let { t -> AiExplainDialog(t) { explainText = null } }
+    var explainCtx by remember { mutableStateOf("") }
+    explainText?.let { t -> AiExplainDialog(t, explainCtx) { explainText = null } }
     cardBack?.let { back ->
         AddCardDialog(
             initialFront = "",
@@ -1662,7 +1663,10 @@ private fun SelectionBar(s: DocSession) {
             }) { Text(L("ترجمة", "Translate")) }
             TextButton(onClick = {
                 val text = s.selectionText()
-                if (text.isNotEmpty()) explainText = TextTidy.clean(text)
+                if (text.isNotEmpty()) {
+                    explainCtx = AiDocReader.context(s.id, sel.page, if (Ai.isCloud) 12000 else 1800)
+                    explainText = TextTidy.clean(text)
+                }
             }) { Text(L("✦ اشرح", "✦ Explain"), color = Palette.GoldDeep) }
             TextButton(onClick = {
                 val n = s.ocr[sel.page]?.words?.size ?: 0

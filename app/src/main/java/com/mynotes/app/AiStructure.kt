@@ -275,6 +275,23 @@ OUTPUT:
         return unknown > maxOf(3, words.size / 4)
     }
 
+    private val NEGATION = Regex("(?i)\\b(not|no|never|without|except|avoid|contraindicated)\\b|(?<![\\p{L}])[وف]?(لا|ليس|ليست|غير|لن|لم|بدون|دون|يُمنع|ممنوع)(?![\\p{L}])")
+
+    /**
+     * هل أسقط الناتج شيئًا مهمًا من الملاحظات؟ رقم مفقود، أو أكثر من ربع المصطلحات الإنجليزية (أسماء الأدوية)،
+     * أو نفي («لا»، not…) — فقدان النفي يقلب المعنى.
+     */
+    fun dropped(out: String, notes: String): Boolean {
+        val num = Regex("\\d+(?:[.,]\\d+)?")
+        val outNums = num.findAll(out).map { it.value }.toSet()
+        if (num.findAll(notes).any { it.value !in outNums }) return true
+        val word = Regex("[A-Za-z][A-Za-z-]{4,}")
+        val outWords = word.findAll(out).map { it.value.lowercase() }.toSet()
+        val terms = word.findAll(notes).map { it.value.lowercase() }.filter { it !in COMMON }.toSet()
+        if (terms.size >= 4 && terms.count { it !in outWords } * 4 > terms.size) return true
+        return NEGATION.findAll(out).count() < NEGATION.findAll(notes).count()
+    }
+
     /** بديل آمن: الملاحظات نفسها نقاطًا (والجداول كما هي). */
     fun fallback(notes: String): String =
         notes.lines().filter { it.isNotBlank() }.joinToString("\n") { if (it.contains(" | ")) it else "- " + it.trim() }
@@ -287,7 +304,8 @@ OUTPUT:
             .map { l -> if (l.trimStart().startsWith("#")) "- " + l.trimStart('#', ' ') else l }
             .joinToString("\n").trim()
         if (noTitle.isBlank()) return fallback(p.notes)
-        return if (suspicious(noTitle, p.notes + " " + (p.title ?: ""))) fallback(p.notes) else noTitle
+        val bad = suspicious(noTitle, p.notes + " " + (p.title ?: "") + " " + (p.sub ?: "")) || dropped(noTitle, p.notes)
+        return if (bad) fallback(p.notes) else noTitle
     }
 
     /** يجمع الأجزاء: عنوان لكل قسم، وعنوان فرعي عند الحاجة، وجداول مفصولة بسطر فارغ، ودون نقاط مكررة. */

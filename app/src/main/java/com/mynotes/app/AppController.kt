@@ -816,6 +816,8 @@ object AppController {
                 s.applyPending()
                 // قراءة النص تبدأ تلقائيًا دون انتظار المستخدم
                 s.startOcr()
+                // MyNotes Pro: قراءة المستند كاملًا بالذكاء الذي على الجهاز في الخلفية (مجاني)
+                AiDocReader.enqueue(entry.id)
             }
         }
         saveSession()
@@ -1058,6 +1060,7 @@ object AppController {
                 try {
                     s.load(repo.file(e), repo)
                     if (s.status is SessionStatus.Ready) s.startOcr()?.join()
+                    AiDocReader.enqueue(e.id)
                 } finally {
                     s.dispose()
                 }

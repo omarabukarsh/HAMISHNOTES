@@ -334,10 +334,12 @@ object Ai {
         system: String,
         prompt: String,
         image: ByteArray? = null,
+        /** true = النموذج الذي على الجهاز دائمًا (مجاني)، حتى لو اختير Claude/ChatGPT. */
+        local: Boolean = false,
         onPartial: (String) -> Unit = {}
     ): String {
-        if (isCloud) return CloudAi.generate(system, prompt, image) { onPartial(cleanThinking(it)) }.let { cleanThinking(it) }
-        if (!ready) throw IllegalStateException("model not installed")
+        if (isCloud && !local) return CloudAi.generate(system, prompt, image) { onPartial(cleanThinking(it)) }.let { cleanThinking(it) }
+        if (!installed(selected)) throw IllegalStateException("model not installed")
         idleJob?.cancel()
         val eng = ensureEngine()
         val out = StringBuilder()

@@ -1,0 +1,30 @@
+# Chapter 4 · Sorting Algorithms
+## 4.1 Basic ideas
+A sorting algorithm puts the elements of a list into an order, usually ascending.
+Stable sort: keeps equal elements in their original relative order.
+In-place sort: needs only O(1) extra memory besides the input.
+Comparison sort: decides the order only by comparing pairs of elements.
+No comparison sort can be faster than O(n log n) in the worst case.
+
+## 4.2 Time complexity
+| Algorithm | Best | Average | Worst
+| Bubble sort | O(n) | O(n^2) | O(n^2)
+| Insertion sort | O(n) | O(n^2) | O(n^2)
+| Merge sort | O(n log n) | O(n log n) | O(n log n)
+| Quick sort | O(n log n) | O(n log n) | O(n^2)
+| Heap sort | O(n log n) | O(n log n) | O(n log n)
+
+## 4.3 Properties of common algorithms
+Merge sort is stable but it is not in-place, because it needs O(n) extra memory for merging.
+Quick sort is usually the fastest in practice, but it is not stable and its worst case happens when the pivot is always the smallest or largest element.
+Heap sort is in-place and always O(n log n), but it is not stable.
+Insertion sort is very efficient for small or almost sorted lists.
+
+!! Choosing a pivot
+Choosing a random pivot or the median of three elements makes the worst case of quick sort very unlikely.
+
+# Chapter 5 · Searching
+## 5.1 Linear and binary search
+Linear search checks the elements one by one and takes O(n) time.
+Binary search works only on a sorted list and takes O(log n) time.
+Binary search compares the target with the middle element and discards half of the list at each step.

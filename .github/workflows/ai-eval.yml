@@ -1,14 +1,20 @@
 name: AI summary eval
-# تجربة ترتيب الملخص على نموذج Gemma 4 E2B نفسه (MyNotes Pro). تعمل فقط عند تعديل tools/ai-eval
+# تجربة الملخص والخريطة الذهنية والبطاقات على نموذج Gemma 4 E2B نفسه (MyNotes Pro)، قبل التحديث وبعده في نفس التشغيل.
+# تعمل عند تعديل tools/ai-eval أو ملفات الذكاء في التطبيق
 on:
   push:
     branches: [pro]
-    paths: ["tools/ai-eval/**"]
+    paths:
+      - "tools/ai-eval/**"
+      - "app/src/main/java/com/mynotes/app/AiStructure.kt"
+      - "app/src/main/java/com/mynotes/app/AiOrganize.kt"
+      - "app/src/main/java/com/mynotes/app/MindMap.kt"
+      - ".github/workflows/ai-eval.yml"
   workflow_dispatch:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,11 +27,19 @@ jobs:
           python -c "from huggingface_hub import hf_hub_download; p=hf_hub_download('litert-community/gemma-4-E2B-it-litert-lm','gemma-4-E2B-it.litertlm',local_dir='.'); print(p)"
       - name: Run
         run: python tools/ai-eval/eval.py gemma-4-E2B-it.litertlm
-      - name: Publish results
+      - name: Publish metrics (before / after)
         if: always()
-        run: python tools/ai-eval/notice.py
+        run: python tools/ai-eval/notice.py notice_metrics.md metrics
+      - name: Publish summaries (after)
+        if: always()
+        run: python tools/ai-eval/notice.py notice_summary.md summary
+      - name: Publish mind map and cards (after)
+        if: always()
+        run: python tools/ai-eval/notice.py notice_mm_cards.md mindmap-cards
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ai-eval
-          path: results.md
+          path: |
+            results.md
+            notice_*.md

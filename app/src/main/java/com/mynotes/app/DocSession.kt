@@ -205,18 +205,26 @@ class DocSession(entry: DocEntry) {
 
     /** MyNotes Pro: بطاقات مراجعة من الذكاء الاصطناعي (معرّفها يبدأ بـ ai:). replace = تُستبدل بطاقات الذكاء السابقة. */
     fun putAiCards(cards: List<Pair<String, String>>, replace: Boolean) {
-        // البطاقة التي بقي سؤالها كما هو تحتفظ بمعرّفها، فلا يضيع تقدّم مراجعتها عند إعادة الترتيب
-        val oldAi = customCards.filter { it.id.startsWith("ai:") }.associateBy { it.front.trim().lowercase() }
+        // البطاقة التي بقي سؤالها كما هو (أو قريبًا جدًا منه) تحتفظ بمعرّفها، فلا يضيع تقدّم مراجعتها عند إعادة الترتيب
+        val oldAi = customCards.filter { it.id.startsWith("ai:") }
+        val oldByFront = oldAi.associateBy { it.front.trim().lowercase() }
         val keep = if (replace) customCards.filter { !it.id.startsWith("ai:") } else customCards
-        val seen = keep.map { it.front.trim().lowercase() }.toMutableSet()
-        val add = cards.mapNotNull { (f, b) ->
+        val taken = HashSet<String>()
+        val added = ArrayList<Card>()
+        for ((f, b) in cards) {
             val ff = f.trim()
             val bb = b.trim()
-            if (ff.isEmpty() || bb.isEmpty() || !seen.add(ff.lowercase())) null
-            else Card(oldAi[ff.lowercase()]?.id ?: ("ai:" + UUID.randomUUID().toString()), ff, bb)
+            if (ff.isEmpty() || bb.isEmpty()) continue
+            // مكررة بالمعنى مع بطاقة موجودة أو أضيفت الآن
+            if ((keep + added).any { AiStructure.sameCard(ff, bb, it.front, it.back) }) continue
+            val old = oldByFront[ff.lowercase()]?.takeIf { it.id !in taken }
+                ?: oldAi.filter { it.id !in taken && AiStructure.similar(it.front, ff) >= 0.75f }.maxByOrNull { AiStructure.similar(it.front, ff) }
+            val id = old?.id ?: ("ai:" + UUID.randomUUID().toString())
+            taken.add(id)
+            added.add(Card(id, ff, bb))
         }
-        if (!replace && add.isEmpty()) return
-        customCards = keep + add
+        if (!replace && added.isEmpty()) return
+        customCards = keep + added
         val ids = customCards.map { it.id }.toSet()
         starred = starred.filter { !it.startsWith("ai:") || it in ids }.toSet()
         persist()

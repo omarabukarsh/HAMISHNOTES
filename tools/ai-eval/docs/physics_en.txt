@@ -1,0 +1,28 @@
+# Unit 2 · Forces and Motion
+## 2.1 Newton's laws of motion
+First law (inertia): an object stays at rest or moves at constant velocity unless a net external force acts on it.
+Second law: the net force on an object equals its mass times its acceleration, F = m × a.
+Third law: when one object exerts a force on a second object, the second exerts an equal and opposite force on the first.
+Action and reaction forces act on different objects, so they do not cancel each other.
+
+## 2.2 SI units
+| Quantity | SI unit | Symbol
+| Force | newton | N
+| Mass | kilogram | kg
+| Acceleration | metre per second squared | m/s²
+| Momentum | kilogram metre per second | kg·m/s
+
+## 2.3 Weight and mass
+Mass is the amount of matter in an object and does not change from place to place.
+Weight is the gravitational force on an object, W = m × g, where g ≈ 9.8 m/s² near the Earth's surface.
+An astronaut has the same mass on the Moon but a smaller weight, because gravity on the Moon is about one sixth of that on Earth.
+
+!! Friction
+Friction always acts opposite to the direction of motion or attempted motion.
+Static friction is usually larger than kinetic friction for the same pair of surfaces.
+
+# Unit 3 · Momentum
+## 3.1 Conservation of momentum
+Momentum is the product of mass and velocity, p = m × v.
+In a closed system with no external force, the total momentum before a collision equals the total momentum after it.
+In an elastic collision kinetic energy is conserved; in an inelastic collision it is not conserved.

@@ -1,165 +1,31 @@
 """
-تجربة الترتيب المنظَّم للملخص بنموذج Gemma 4 E2B (نفس ملف .litertlm الذي في التطبيق)
-على تظليلات حقيقية من antibiotics.pdf (إنجليزي وعربي). يطابق منطق AiStructure.kt:
-عناوين بالحجم (مستوى 1 و2) وبالخط العريض (مستوى 2)، جداول بالكود برأسها من الصفحة،
-أجزاء صغيرة بالكود، فحص ضد الاختلاق، إبراز المهم، ودمج التكرار. يكتب results.md.
+تجربة الذكاء في MyNotes Pro على نموذج Gemma 4 E2B نفسه (ملف .litertlm الذي في التطبيق، CPU):
+الملخص المنظَّم، والخريطة الذهنية (المهم فقط)، وبطاقات المراجعة — قبل التحديث (legacy) وبعده (new) في نفس التشغيل.
+
+المستندات:
+  - antibiotics.pdf (صيدلة، إنجليزي وعربي): تظليلات ثابتة (كالتجارب السابقة) + تظليلات عشوائية.
+  - tools/ai-eval/docs/*.txt: تاريخ، أحياء (عربي)، حاسوب، اقتصاد (عربي + مصطلحات إنجليزية)، قانون (عربي)، فيزياء،
+    تُرسم كصفحات (layout.py) وتُظلَّل عشوائيًا (بذرة ثابتة SEED لتكون المقارنة عادلة).
+المقاييس مستقلة عن فحوص التطبيق: كلمات مخترعة، تغطية، أرقام، نفي، أسطر في غير قسمها، نقاط مقصوصة، بطاقات مكررة...
 """
 import collections
+import glob
+import os
+import random
 import re
 import sys
 import time
 
-TSV = "app/src/sharedTest/assets/antibiotics_words.tsv"
-PDF = "app/src/sharedTest/assets/antibiotics.pdf"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import checks as C  # noqa: E402
+import layout  # noqa: E402
+import pipeline as PL  # noqa: E402
+
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "model.litertlm"
 STUB = MODEL == "--stub"
-
-# ---------------------------------------------------------------- الكلمات + الخط العريض
-
-rows = [l.rstrip("\n").split("\t") for l in open(TSV, encoding="utf-8") if not l.startswith("#")]
-bold_of = {}
-try:
-    import pdfplumber
-
-    with pdfplumber.open(PDF) as pdf:
-        for pno in sorted({int(r[0]) for r in rows}):
-            pg = pdf.pages[pno]
-            ws = pg.extract_words(extra_attrs=["fontname"])
-            W = float(pg.width)
-            for w in ws:
-                bold_of.setdefault(pno, []).append(
-                    (w["x0"] / W, w["top"] / W, w["text"], bool(re.search(r"(?i)bold|black|heavy|semibold|demi", w["fontname"]))))
-except Exception as e:  # noqa
-    print("pdfplumber unavailable, no bold info:", e)
-
-
-def is_bold(page, l, t, text):
-    best = None
-    for x, y, tx, b in bold_of.get(page, []):
-        d = abs(x - l) + abs(y - t)
-        if d < 0.03 and (best is None or d < best[0]):
-            best = (d, b)
-    return bool(best and best[1])
-
-
-def arabic_fix(w):
-    """مثل ArabicFix.word في التطبيق: «ال» المستقلة ← «لا»، و«األ» ← «الأ»."""
-    core = w.strip("()[]«».,،:؛;!؟?\"'")
-    fixed = {"ال": "لا", "وال": "ولا", "فال": "فلا"}.get(core)
-    if fixed:
-        w = w.replace(core, fixed)
-    if re.search(r"[\u0600-\u06FF]", w):
-        for a, b in (("األ", "الأ"), ("اإل", "الإ"), ("اآل", "الآ")):
-            w = w.replace(a, b)
-    return w
-
-
-pages = collections.defaultdict(lambda: collections.OrderedDict())
-for p, ln, l, t, r, b, txt in rows:
-    p, l, t, r, b = int(p), float(l), float(t), float(r), float(b)
-    pages[p].setdefault(int(ln), []).append((l, t, r, b, arabic_fix(txt), is_bold(p, l, t, txt)))
-
-
-def med(v):
-    v = sorted(v)
-    return v[len(v) // 2] if v else 0
-
-
-def is_ar(s):
-    return sum(1 for c in s if "؀" <= c <= "ۿ") > sum(1 for c in s if c.isalpha()) / 3
-
-
-def line_h(ws):
-    return max(med([w[3] - w[1] for w in ws]), 1e-4)
-
-
-def line_text(ws, cells=True):
-    ar = is_ar(" ".join(w[4] for w in ws))
-    ws = sorted(ws, key=lambda w: -w[2] if ar else w[0])
-    h = line_h(ws)
-    out = ws[0][4]
-    for a, b in zip(ws, ws[1:]):
-        gap = (a[0] - b[2]) if ar else (b[0] - a[2])
-        out += (" | " if cells and gap > h * 1.6 else " ") + b[4]
-    return out
-
-
-# ---------------------------------------------------------------- تظليلات طالب
-
-# (صفحة، أسطر أو None، مدى رأسي أو None، أجزاء مظللة مرتين)
-HIGHLIGHTS = [
-    (3, None, (0.685, 0.740), []), (3, None, (0.750, 0.810), []), (3, None, (0.850, 0.860), ["active against growing, not resting cells"]),
-    (3, [40, 41, 42], None, []),
-    (4, [2, 3], None, []), (4, [4, 5], None, []), (4, [6, 7], None, []), (4, [8], None, []),
-    (4, [10], None, []), (4, [11], None, []), (4, [12], None, []),
-    (4, [14, 15], None, []), (4, [17], None, ["NOT recommended"]), (4, [18, 19], None, []), (4, [20], None, []),
-    (4, [24], None, []), (4, [25, 26], None, []),
-    (5, [4, 5], None, []), (5, [6], None, []), (5, [7, 8], None, []), (5, [10], None, ["drug of choice"]), (5, [13], None, []),
-    (5, [18], None, []), (5, [19], None, []),
-    (5, [21], None, []), (5, [22], None, []), (5, [23], None, []),
-    (9, [1, 2], None, []), (9, [3], None, []), (9, [4, 5], None, []),
-    (10, [3], None, []), (10, [4], None, []), (10, [6], None, []),
-    (10, [29], None, []), (10, [30], None, []), (10, [37], None, []), (10, [38], None, []),
-]
-
-marks = []
-for page, lines, trange, emph in HIGHLIGHTS:
-    pl = pages[page]
-    if lines is None:
-        lines = [ln for ln, ws in pl.items() if trange[0] <= ws[0][1] <= trange[1]]
-    texts = [line_text(pl[ln]) for ln in lines]
-    text = texts[0]
-    for t in texts[1:]:
-        text += " " + t.replace(" | ", " ")
-    top = min(pl[ln][0][1] for ln in lines)
-    marks.append({"page": page, "top": top, "text": text, "emph": emph})
-
-
-# ---------------------------------------------------------------- العناوين (مثل AiStructure.pageHeadings)
-
-def pct(v, q):
-    v = sorted(v)
-    return v[min(len(v) - 1, int(len(v) * q))] if v else 0
-
-
-def page_headings(page):
-    pl = pages[page]
-    normal = med([line_h(ws) for ws in pl.values()])
-    left = pct([min(w[0] for w in ws) for ws in pl.values()], 0.1)
-    right = pct([max(w[2] for w in ws) for ws in pl.values()], 0.9)
-    out = []
-    for ws in pl.values():
-        txt = " ".join(w[4] for w in ws)
-        at_margin = (max(w[2] for w in ws) >= right - 0.06) if is_ar(txt) else (min(w[0] for w in ws) <= left + 0.03)
-        t = line_text(ws, cells=False).strip()
-        if not (3 <= len(t) <= 90) or not re.search(r"[^\W\d_]", t) or re.search(r"(?i)page \d+|^\d+$", t):
-            continue
-        h = line_h(ws)
-        pos = min(w[1] for w in ws)
-        if h >= normal * 1.25:
-            out.append((page, pos, t, 1))
-        elif not at_margin:
-            continue
-        elif h >= normal * 1.15:
-            out.append((page, pos, t, 2))
-        elif sum(1 for w in ws if w[5]) * 5 >= len(ws) * 4 and len(ws) <= 10 and " | " not in line_text(ws) and not t.endswith("."):
-            out.append((page, pos, t.rstrip(":").strip(), 2))
-    return sorted(out, key=lambda h: h[1])
-
-
-DETECTED = {p: page_headings(p) for p in sorted({m["page"] for m in marks})}
-
-
-def title_for(m):
-    before = []
-    for p in range(max(0, m["page"] - 3), m["page"] + 1):
-        before += [h for h in (DETECTED.get(p) or page_headings(p)) if p < m["page"] or h[1] <= m["top"] + 0.002]
-    main = next((h for h in reversed(before) if h[3] == 1), None)
-    sub = next((h for h in reversed(before) if h[3] == 2 and (main is None or (h[0], h[1]) > (main[0], main[1]))), None)
-    if sub and m["page"] - sub[0] > 1:
-        sub = None
-    return (main[2] if main else None, sub[2] if sub else None)
-
+SEED = int(os.environ.get("EVAL_SEED", "2026"))
+TSV = "app/src/sharedTest/assets/antibiotics_words.tsv"
+PDF = "app/src/sharedTest/assets/antibiotics.pdf"
 
 # ---------------------------------------------------------------- النموذج
 
@@ -175,7 +41,14 @@ if not STUB:
 
 def gen(system, prompt):
     if STUB:
-        return "- stub", 0.0
+        # نموذج وهمي للتجربة المحلية: يعيد الملاحظات نفسها نقاطًا، وبطاقة واحدة
+        if "flashcards" in system:
+            return "Q: What is stated first?\nA: " + " ".join(prompt.split()[2:6]), 0.0
+        if "numbered LINES" in system:
+            return "\n".join(f"- {k + 1}: " + " ".join(l.split()[1:5]) for k, l in enumerate(prompt.split("LINES:\n")[-1].splitlines()[:4])), 0.0
+        if "DRAFT" in prompt:
+            return "OK", 0.0
+        return "\n".join("- " + l for l in prompt.split("NOTES:\n")[-1].splitlines()), 0.0
     kw = {"sampler_config": SAMPLER} if SAMPLER is not None else {}
     try:
         conv = engine.create_conversation(system_message=system, extra_context={"enable_thinking": False}, **kw)
@@ -190,268 +63,337 @@ def gen(system, prompt):
     return out.strip(), time.time() - t0
 
 
-LATEX = {"\\beta": "β", "\\alpha": "α", "\\rightarrow": "→", "\\to": "→", "\\uparrow": "↑", "\\downarrow": "↓",
-         "\\approx": "≈", "\\geq": "≥", "\\ge": "≥", "\\leq": "≤", "\\le": "≤", "\\times": "×", "\\%": "%"}
+# ---------------------------------------------------------------- antibiotics.pdf
+
+def arabic_fix(w):
+    """مثل ArabicFix.word في التطبيق: «ال» المستقلة ← «لا»، و«األ» ← «الأ»."""
+    core = w.strip("()[]«».,،:؛;!؟?\"'")
+    fixed = {"ال": "لا", "وال": "ولا", "فال": "فلا"}.get(core)
+    if fixed:
+        w = w.replace(core, fixed)
+    if re.search(r"[؀-ۿ]", w):
+        for a, b in (("األ", "الأ"), ("اإل", "الإ"), ("اآل", "الآ")):
+            w = w.replace(a, b)
+    return w
 
 
-def latex(s):
-    def rep(m):
-        x = m.group(1)
-        for k in sorted(LATEX, key=len, reverse=True):
-            x = x.replace(k, LATEX[k])
-        return re.sub(r"_\{([^}]*)\}", r"\1", x).replace("{", "").replace("}", "").strip()
-    s = re.sub(r"\$([^$\n]{1,40})\$", rep, s)
-    for k in sorted(LATEX, key=len, reverse=True):
-        s = s.replace(k, LATEX[k])
-    return s
+def antibiotics_pages():
+    rows = [l.rstrip("\n").split("\t") for l in open(TSV, encoding="utf-8") if not l.startswith("#")]
+    bold_of = {}
+    try:
+        import pdfplumber
 
+        with pdfplumber.open(PDF) as pdf:
+            for pno in sorted({int(r[0]) for r in rows}):
+                pg = pdf.pages[pno]
+                W = float(pg.width)
+                for w in pg.extract_words(extra_attrs=["fontname"]):
+                    bold_of.setdefault(pno, []).append(
+                        (w["x0"] / W, w["top"] / W, bool(re.search(r"(?i)bold|black|heavy|semibold|demi", w["fontname"]))))
+    except Exception as e:  # noqa
+        print("pdfplumber unavailable, no bold info:", e)
 
-def clean(raw):
+    def is_bold(page, l, t):
+        best = None
+        for x, y, b in bold_of.get(page, []):
+            d = abs(x - l) + abs(y - t)
+            if d < 0.03 and (best is None or d < best[0]):
+                best = (d, b)
+        return bool(best and best[1])
     out = []
-    for l in latex(raw).replace("```", "").replace("**", "").splitlines():
-        l = l.rstrip()
-        t = l.strip()
-        if t.startswith("* ") or t.startswith("• "):
-            l = "- " + t[2:]
-        if t and all(c in "|-: " for c in t):
-            continue
-        if t.startswith("|") and t.endswith("|") and len(t) > 2:
-            l = " | ".join(c.strip() for c in t.strip("|").split("|"))
-        out.append(l)
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    for p, ln, l, t, r, b, txt in rows:
+        p, l, t, r, b = int(p), float(l), float(t), float(r), float(b)
+        out.append((p, int(ln), l, t, r, b, arabic_fix(txt), is_bold(p, l, t)))
+    return PL.Pages(out)
 
 
-SYSTEM = open("app/src/main/java/com/mynotes/app/AiStructure.kt", encoding="utf-8").read()
-_ST = SYSTEM
-SYSTEM = re.search(r'const val SYSTEM = """(.*?)"""', _ST, re.S).group(1)
-REVIEW_SYSTEM = re.search(r'const val REVIEW_SYSTEM = """(.*?)"""', _ST, re.S).group(1)
-
-COMMON = set("""drug drugs class route spectrum mechanism action uses use side effect effects adverse notes note example examples
-generation dose doses indication indications contraindication feature features type group name comparison summary important
-other infection infections inhibitor combined brand detail details resistance treatment organism given used only
-with from that this table header""".split())
-
-
-def norm(s):
-    return re.sub(r"[^\w]+", " ", s.lower()).strip()
-
-
-NEG = re.compile(r"(?i)\b(not|no|never|without|except|avoid|contraindicated)\b|(?<![^\W\d_])[وف]?(لا|ليس|ليست|غير|لن|لم|بدون|دون|يُمنع|ممنوع)(?![^\W\d_])")
-
-
-def dropped(out, notes):
-    nums = set(re.findall(r"\d+(?:[.,]\d+)?", out))
-    if any(n not in nums for n in re.findall(r"\d+(?:[.,]\d+)?", notes)):
-        return "number"
-    ow = set(w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{4,}", out))
-    terms = set(w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{4,}", notes)) - COMMON
-    if len(terms) >= 4 and sum(1 for w in terms if w not in ow) * 4 > len(terms):
-        return "terms"
-    if len(NEG.findall(out)) < len(NEG.findall(notes)):
-        return "negation"
-    return ""
+# تظليلات طالب ثابتة (صفحة، أسطر أو None، مدى رأسي أو None، أجزاء مظللة مرتين) — نفس تجارب v1–v3
+FIXED = [
+    (3, None, (0.685, 0.740), []), (3, None, (0.750, 0.810), []), (3, None, (0.850, 0.860), ["active against growing, not resting cells"]),
+    (3, [40, 41, 42], None, []),
+    (4, [2, 3], None, []), (4, [4, 5], None, []), (4, [6, 7], None, []), (4, [8], None, []),
+    (4, [10], None, []), (4, [11], None, []), (4, [12], None, []),
+    (4, [14, 15], None, []), (4, [17], None, ["NOT recommended"]), (4, [18, 19], None, []), (4, [20], None, []),
+    (4, [24], None, []), (4, [25, 26], None, []),
+    (5, [4, 5], None, []), (5, [6], None, []), (5, [7, 8], None, []), (5, [10], None, ["drug of choice"]), (5, [13], None, []),
+    (5, [18], None, []), (5, [19], None, []),
+    (5, [21], None, []), (5, [22], None, []), (5, [23], None, []),
+    (9, [1, 2], None, []), (9, [3], None, []), (9, [4, 5], None, []),
+    (10, [3], None, []), (10, [4], None, []), (10, [6], None, []),
+    (10, [29], None, []), (10, [30], None, []), (10, [37], None, []), (10, [38], None, []),
+]
 
 
-def suspicious(out, allowed):
-    nums = set(re.findall(r"\d+(?:[.,]\d+)?", out))
-    ok_nums = set(re.findall(r"\d+(?:[.,]\d+)?", allowed))
-    bad_nums = [n for n in nums if n not in ok_nums]
-    words = [w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{4,}", out)]
-    ok_words = set(w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{4,}", allowed)) | COMMON
-    unknown = [w for w in words if w not in ok_words]
-    return bool(bad_nums) or len(unknown) > max(3, len(words) // 4), bad_nums, unknown
+def fixed_marks(P):
+    ms = []
+    for page, lines, trange, emph in FIXED:
+        if lines is None:
+            lines = [ln for ln, ws in P.p[page].items() if trange[0] <= min(w[1] for w in ws) <= trange[1]]
+        ms.append(PL.make_mark(P, page, lines, emph))
+    return ms
 
 
-def well_formed(s):
-    run, n = 0, -1
-    for l in [x.strip() for x in s.splitlines()] + [""]:
-        if not l:
-            if run == 1: return False
-            run, n = 0, -1; continue
-        if "|" in l:
-            if l.startswith(("- ", "|")) or l.endswith("|"): return False
-            c = [x.strip() for x in l.split("|")]
-            if len(c) < 2 or any(not x for x in c) or (run and len(c) != n): return False
-            n, run = len(c), run + 1
-        else:
-            if run == 1: return False
-            run, n = 0, -1
-            if not l.startswith(("- ", "**")): return False
-    return True
+def random_emph(rng, text):
+    # مثل التطبيق: نص المظلل مرتين بلا فواصل الخلايا
+    ws = [w for w in text.replace("\n", " ").replace("# ", " ").split() if w != "|"]
+    if len(ws) < 6 or rng.random() > 0.15:
+        return []
+    k = rng.randint(2, 4)
+    i = rng.randrange(0, len(ws) - k)
+    return [" ".join(ws[i:i + k])]
 
 
-def fallback(notes):
-    return "\n".join(l if " | " in l else "- " + l.strip() for l in notes.splitlines() if l.strip())
-
-
-def emphasize(body, emph):
-    for e in sorted(emph, key=len, reverse=True):
-        i = body.lower().find(e.lower())
-        if i < 0 or body[:i].count("*") % 4:
-            continue
-        body = body[:i] + "**" + body[i:i + len(e)] + "**" + body[i + len(e):]
-    return body
-
-
-def cells(text):
-    return text.count(" | ") + 1 if " | " in text else 0
-
-
-def table_header(m, n):
-    def block_of(page, before_top):
-        ls = sorted(pages[page].values(), key=lambda ws: ws[0][1])
-        if before_top is not None:
-            ls = [ws for ws in ls if ws[0][1] < before_top - 0.001]
-        block = []
-        for ws in reversed(ls):
-            lt = line_text(ws)
-            if cells(lt) == n:
-                block.insert(0, lt)
-            elif block:
-                break
-        return block
-    block = block_of(m["page"], m["top"]) or (block_of(m["page"] - 1, None) if m["page"] > 0 else [])
-    if not block or m["text"].startswith(block[0]):
-        return None
-    cs = [c.strip() for c in block[0].split(" | ")]
-    return cs if len(cs) == n and all(len(c) <= 22 for c in cs) and len(block[0]) <= 60 else None
-
-
-# ---------------------------------------------------------------- الأجزاء (مثل AiStructure.parts)
-
-groups = []
-for m in marks:
-    key = title_for(m)
-    if groups and groups[-1][0] == key:
-        groups[-1][1].append(m)
-    else:
-        groups.append((key, [m]))
-
-done, log, total = [], [], 0.0
-for (title, sub), ms in groups:
-    runs_ = []
-    for m in ms:
-        k = cells(m["text"])
-        if runs_ and runs_[-1][0] == k and (k >= 2 or k == 0):
-            runs_[-1][1].append(m)
-        else:
-            runs_.append((k, [m]))
-    for k, rm in runs_:
-        emph = [e for m in rm for e in m["emph"]]
-        if k >= 2:
-            head = table_header(rm[0], k)
-            body = "\n".join(([" | ".join(head)] if head else []) + [m["text"].replace("®", "") for m in rm])
-            log.append(f"- [{title} › {sub}] table by code ({len(rm)} rows, header={'yes' if head else 'no'})")
-        else:
-            notes = "\n".join(m["text"] for m in rm)
-            if len(notes) <= 200 and len([l for l in notes.splitlines() if l.strip()]) <= 2:
-                body = fallback(notes)
-                log.append(f"- [{title} › {sub}] small part by code")
+def random_marks_pages(P, pages, rng):
+    """antibiotics: مقاطع عشوائية من 1–3 أسطر متتالية (قد تبدأ أو تنتهي وسط جملة)، دون العناوين وتذييل الصفحة."""
+    ms = []
+    for page in pages:
+        heads = {round(h[1], 4) for h in PL.page_headings(P, page) if h[3] == 1}
+        ls = [ln for ln, ws in P.lines(page) if round(min(w[1] for w in ws), 4) not in heads
+              and not re.search(r"(?i)exam summary — page", PL.line_text(ws, False))]
+        i = 0
+        while i < len(ls):
+            if rng.random() < 0.3:
+                n = rng.randint(1, 3)
+                span = ls[i:i + n]
+                m = PL.make_mark(P, page, span)
+                m["emph"] = random_emph(rng, m["text"])
+                ms.append(m)
+                i += n + rng.randint(1, 3)
             else:
-                o, dt = gen(SYSTEM, "SECTION: " + " › ".join(x for x in (title, sub) if x) + "\nNOTES:\n" + notes)
-                total += dt
-                body = clean(o)
-                heads = [norm(x) for x in (title, sub) if x]
-                body = "\n".join(("- " + l.lstrip("# ") if l.lstrip().startswith("#") else l)
-                                 for l in body.splitlines() if norm(l.lstrip("#- ")) not in heads).strip()
-                bad, bn, unk = suspicious(body, notes + " " + (title or "") + " " + (sub or ""))
-                why = dropped(body, notes)
-                if why:
-                    log.append(f"  dropped check → fallback ({why})")
-                    bad = True
-                log.append(f"- [{title} › {sub}] model {dt:.1f}s, fallback={bad}, new numbers={bn}, unknown={unk[:6]}")
-                if bad or not body:
-                    body = fallback(notes)
-                else:
-                    # مراجعة ذاتية (مثل REVIEW_SYSTEM في AiStructure)
-                    o2, dt2 = gen(REVIEW_SYSTEM, "SECTION: " + " › ".join(x for x in (title, sub) if x) + "\nNOTES:\n" + notes + "\n\nDRAFT:\n" + body)
-                    total += dt2
-                    r = clean(o2).strip()
-                    if not r or re.match(r"(?i)^ok\b", r):
-                        log.append(f"  review {dt2:.1f}s → OK")
-                    else:
-                        r = "\n".join(("- " + l.lstrip("# ") if l.lstrip().startswith("#") else l)
-                                      for l in r.splitlines() if norm(l.lstrip("#- ")) not in heads).strip()
-                        b2, _, u2 = suspicious(r, notes + " " + (title or "") + " " + (sub or ""))
-                        w2 = dropped(r, notes)
-                        if r and not b2 and not w2 and not well_formed(r):
-                            log.append(f"  review {dt2:.1f}s → correction rejected (bad format)")
-                        elif r and not b2 and not w2:
-                            log.append(f"  review {dt2:.1f}s → CORRECTED")
-                            body = r
-                        else:
-                            log.append(f"  review {dt2:.1f}s → correction rejected ({w2 or u2[:4]})")
-        done.append((title, sub, emphasize(body, emph)))
+                i += 1
+    return ms
 
-# ---------------------------------------------------------------- التجميع (مثل AiStructure.assemble)
 
-sections = collections.OrderedDict()
-for t, s, b in done:
-    sections.setdefault((t, s), []).append(b)
-seen, out, last = set(), [], "\0"
-for (title, sub), bodies in sections.items():
-    if title != last:
-        if out and out[-1].strip():
-            out.append("")
-        if title:
-            out.append("# " + title)
-        last = title
-    if sub:
-        out.append("## " + sub)
-    for line in "\n\n".join(bodies).splitlines():
-        k = norm(line.replace("**", ""))
-        if line.strip() and " | " not in line and k and k in seen:
+def random_marks_doc(doc, P, rng):
+    """مستند تجربة: فقرة كاملة أو جزء منها، صفوف متتالية من جدول، وأحيانًا فقرتان معًا. العناوين لا تُظلَّل."""
+    ms, bl = [], doc.blocks
+    k = 0
+    while k < len(bl):
+        kind, ids = bl[k]
+        if kind == "heading" or rng.random() > 0.55:
+            k += 1
             continue
-        seen.add(k)
-        if not line.strip() and (not out or not out[-1].strip()):
+        if kind == "table":
+            data = ids[1:] or ids
+            a = rng.randrange(len(data))
+            span = data[a:a + rng.randint(1, len(data) - a)]
+        elif rng.random() < 0.65 or len(ids) == 1:
+            span = list(ids)
+            if k + 1 < len(bl) and bl[k + 1][0] == "para" and rng.random() < 0.12 and bl[k + 1][1][0][0] == ids[0][0]:
+                span += bl[k + 1][1]
+                k += 1
+        else:
+            a = rng.randrange(len(ids))
+            span = ids[a:a + rng.randint(1, len(ids) - a)]
+        # التظليل في صفحة واحدة (مثل التطبيق)
+        page = span[0][0]
+        lines = [ln for p, ln in span if p == page]
+        m = PL.make_mark(P, page, lines)
+        m["emph"] = random_emph(rng, m["text"])
+        ms.append(m)
+        k += 1
+    return ms
+
+
+# ---------------------------------------------------------------- المقاييس (مستقلة عن فحوص التطبيق)
+
+def body_lines(summary):
+    return [l.strip() for l in summary.splitlines() if l.strip() and not l.strip().startswith("#")]
+
+
+def placed(summary):
+    """[(h1, h2, line)] لكل سطر محتوى في الملخص."""
+    out, h1, h2 = [], None, None
+    for raw in summary.splitlines():
+        l = raw.strip()
+        if l.startswith("## "):
+            h2 = l[3:]
+        elif l.startswith("# "):
+            h1, h2 = l[2:], None
+        elif l:
+            out.append((h1, h2, l))
+    return out
+
+
+def summary_metrics(P, marks, summary, all_heads):
+    notes = "\n".join(m["text"] for m in marks)
+    # المسموح: التظليل، وعناوين الصفحات، ورؤوس الجداول المأخوذة من الصفحة
+    heads_tab = " ".join(ls[0] for t, ls in C.blocks(body_lines(summary)) if t and len(ls) >= 2)
+    src = set(C.content(notes + " " + all_heads + " " + heads_tab))
+    body = "\n".join(body_lines(summary)).replace("**", "")
+    ow = C.content(body)
+    invented = sorted({w for w in ow if w not in src})
+    nw = set(C.content(notes))
+    cover = sum(1 for w in nw if w in set(ow)) / max(1, len(nw))
+    nn = C.NUM.findall(notes)
+    on = set(C.NUM.findall(body))
+    nums = sum(1 for n in nn if n in on) / max(1, len(nn))
+    neg = (C.neg_count(body), C.neg_count(notes))
+    frags = sum(1 for l in body_lines(summary) if re.match(r"^- [a-z]", l) and not re.match(r"^- [a-z][\w-]*\s*[:=]", l))
+    tables = sum(1 for t, ls in C.blocks(body_lines(summary)) if t and len(ls) >= 2)
+    # سطر في غير قسمه: أقرب تظليل إليه (بالكلمات) عنوانه الحقيقي مختلف عن مكانه في الملخص
+    truth = [(PL.title_for(P, m, 60), set(C.content(m["text"]))) for m in marks]
+    mis = 0
+    for h1, h2, l in placed(summary):
+        cw = set(C.content(l))
+        if len(cw) < 2:
             continue
-        out.append(line)
-    out.append("")
-result = "\n".join(out).strip()
+        best = max(truth, key=lambda t: len(cw & t[1]))
+        if len(cw & best[1]) < 2:
+            continue
+        if {x for x in best[0] if x} != {x for x in (h1, h2) if x}:
+            mis += 1
+    return {"lines": len(body_lines(summary)), "invented": len(invented), "invented_words": invented[:12],
+            "coverage": cover, "numbers": nums, "neg": neg, "fragments": frags, "tables": tables, "misplaced": mis}
 
-# ---------------------------------------------------------------- الخريطة الذهنية بالنقاط المهمة (مثل MindMapAi)
 
-MMK = open("app/src/main/java/com/mynotes/app/MindMap.kt", encoding="utf-8").read()
-MM_SYSTEM = re.search(r'const val SYSTEM = """(.*?)"""', MMK, re.S).group(1)
-EXPLAIN = re.compile(r"(?i)(شرح|توضيح|explain|explanation)")
-secs, h1, h2, buf = [], None, None, []
-def mm_flush():
-    if buf and not any(EXPLAIN.search(h or "") for h in (h1, h2)):
-        secs.append((h1, h2, "\n".join(buf)))
-    buf.clear()
-for x in result.splitlines():
-    x = x.strip()
-    if x.startswith("## "):
-        mm_flush(); h2 = x[3:]
-    elif x.startswith("# "):
-        mm_flush(); h1 = x[2:]; h2 = None
-    elif x:
-        buf.append(x)
-mm_flush()
-mm, last1, mmt = [], object(), 0
-for a, b, body in secs:
-    if a != last1:
-        mm.append("  ● " + (a or "")); last1 = a
-    if b:
-        mm.append("    ├─ " + b)
-    if len([l for l in body.splitlines() if l.strip()]) <= 2:
-        pts, how = [l.lstrip("- ")[:50] for l in body.splitlines()], "code"
-    else:
-        o, dt = gen(MM_SYSTEM, "SECTION: " + " › ".join(x for x in (a, b) if x) + "\n" + body)
-        mmt += dt
-        pts = [l.strip()[2:].strip() for l in clean(o).splitlines() if l.strip().startswith(("- ", "• "))]
-        pts = [q for q in pts if 3 <= len(q) <= 60 and not suspicious(q, body + " " + (a or "") + " " + (b or ""))[0]][:5]
-        how = f"ai {dt:.0f}s"
-    for q in pts:
-        mm.append(f"        · {q}   [{how}]")
-log.append(f"- mind map AI time {mmt:.0f}s")
-table_log = []
+def mm_metrics(tree):
+    pts = [(q, body) for _, _, body, ps, _ in tree for q in ps]
+    if not pts:
+        return {"points": 0}
+    words = [len(q.split()) for q, _ in pts]
+    long_ = sum(1 for w in words if w > 7)
+    trunc = 0
+    ungrounded = 0
+    for q, body in pts:
+        toks = set(re.findall(r"[^\W_]+", body.lower()))
+        if q.endswith("…"):
+            last = re.findall(r"[^\W_]+", q.lower())
+            if last and last[-1] not in toks:
+                trunc += 1
+        cw = set(C.content(q))
+        if cw and not any(cw <= set(C.content(l)) for l in body.splitlines() if l.strip()):
+            ungrounded += 1
+    dup = len(pts) - len({q.lower() for q, _ in pts})
+    return {"points": len(pts), "avg_words": sum(words) / len(words), "long": long_, "cut_mid_word": trunc,
+            "not_from_one_line": ungrounded, "dup": dup}
 
-with open("results.md", "w", encoding="utf-8") as f:
-    f.write(f"# Structured summary eval v3 (tables in summary + self-review + AI mind map) — Gemma 4 E2B, {len(marks)} highlights, model time {total:.0f}s\n\n")
-    f.write("## Detected headings\n\n")
-    for p, hs in DETECTED.items():
-        f.write(f"- p{p}: " + " ; ".join(f"L{h[3]} {h[2][:40]}" for h in hs) + "\n")
-    f.write(f"\n## Result\n\n```\n{result}\n```\n\n## Log\n\n" + "\n".join(log) + "\n")
-    f.write("\n## Mind map tree\n\n```\nAntibiotics\n" + "\n".join(mm) + "\n```\n")
-print(open("results.md", encoding="utf-8").read())
+
+def card_metrics(cards, notes):
+    src = set(C.content(notes))
+    nums = C.numbers(notes)
+    if not cards:
+        return {"cards": 0}
+    ung = sum(1 for _, a in cards if not C.grounded(a, src, nums))
+    qn = sum(1 for q, _ in cards if any(n not in nums for n in C.NUM.findall(q)))
+    yn = sum(1 for q, _ in cards if C.YESNO.match(q.strip()))
+    inq = sum(1 for q, a in cards if set(C.content(a)) and set(C.content(a)) <= set(C.content(q)))
+    dups = sum(1 for i in range(len(cards)) for j in range(i) if C.jaccard(cards[i][0], cards[j][0]) >= 0.6)
+    aw = [len(a.split()) for _, a in cards]
+    return {"cards": len(cards), "answer_not_in_notes": ung, "new_number_in_q": qn, "yes_no": yn, "answer_in_q": inq,
+            "near_dup_pairs": dups, "avg_answer_words": sum(aw) / len(aw), "long_answers": sum(1 for x in aw if x > 25)}
+
+
+# ---------------------------------------------------------------- التشغيل
+
+def docs():
+    P = antibiotics_pages()
+    yield "antibiotics (fixed highlights)", P, fixed_marks(P)
+    rng = random.Random(SEED)
+    P2 = antibiotics_pages()
+    yield "antibiotics (random highlights)", P2, random_marks_pages(P2, [3, 4, 5, 9, 10, 29], rng)
+    for path in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "*.txt"))):
+        d = layout.Doc(path)
+        P3 = PL.Pages(d.rows)
+        rng = random.Random(SEED + sum(map(ord, os.path.basename(path))))
+        yield os.path.basename(path)[:-4] + " (random highlights)", P3, random_marks_doc(d, P3, rng)
+
+
+def run():
+    report, metrics = [], []
+    for name, P, marks in docs():
+        marks = sorted(marks, key=lambda m: (m["page"], m["top"]))
+        heads = " ".join(h[2] for p in P.p for h in PL.page_headings(P, p))
+        notes = "\n".join(m["text"] for m in marks)
+        row = {"doc": name, "marks": len(marks)}
+        for legacy in (True, False):
+            tag = "before" if legacy else "after"
+            ps, done, summary, log, stats = PL.summarize(P, marks, gen, legacy)
+            tree = PL.mind_map(summary, gen, legacy, stats)
+            cs = PL.cards(ps, done, gen, legacy, stats, PL.budget_of(marks))
+            # مصدر البطاقات المسموح: التظليل + عناوين الصفحات + رؤوس الجداول من الصفحة
+            heads_tab = " ".join(ls[0] for t, ls in C.blocks(body_lines(summary)) if t and len(ls) >= 2)
+            row[tag] = {"summary": summary_metrics(P, marks, summary, heads), "mm": mm_metrics(tree),
+                        "cards": card_metrics(cs, notes + " " + heads + " " + heads_tab),
+                        "t_summary": stats["t_summary"], "t_mm": stats["t_mm"], "t_cards": stats["t_cards"],
+                        "ai_parts": stats["ai_parts"], "fallbacks": stats["fallbacks"], "reviews": stats["reviews"],
+                        "code_tables": stats["tables"], "mm_fixed": stats["mm_fixed"], "cards_rejected": stats["cards_rejected"]}
+            report.append((name, tag, marks, summary, log, tree, cs))
+            print(f"[{name}] {tag}: summary {stats['t_summary']:.0f}s, mind map {stats['t_mm']:.0f}s, cards {stats['t_cards']:.0f}s", flush=True)
+        metrics.append(row)
+    write(report, metrics)
+
+
+# ---------------------------------------------------------------- الكتابة
+
+def fmt_metrics(metrics):
+    out = [f"# AI eval v4 — Gemma 4 E2B (CPU), before = pro@8afc919 (VERSION 3), after = VERSION 4, seed {SEED}", ""]
+    tot = collections.defaultdict(float)
+    keys = [
+        ("summary time s", lambda r: r["t_summary"]), ("mind map time s", lambda r: r["t_mm"]), ("cards time s", lambda r: r["t_cards"]),
+        ("AI parts", lambda r: r["ai_parts"]), ("fallbacks", lambda r: r["fallbacks"]), ("self-reviews run", lambda r: r["reviews"]),
+        ("tables in summary", lambda r: r["summary"]["tables"]),
+        ("invented words", lambda r: r["summary"]["invented"]), ("coverage %", lambda r: 100 * r["summary"]["coverage"]),
+        ("numbers kept %", lambda r: 100 * r["summary"]["numbers"]),
+        ("negations lost", lambda r: max(0, r["summary"]["neg"][1] - r["summary"]["neg"][0])),
+        ("broken-sentence bullets", lambda r: r["summary"]["fragments"]), ("lines in wrong section", lambda r: r["summary"]["misplaced"]),
+        ("mm points", lambda r: r["mm"].get("points", 0)), ("mm avg words", lambda r: r["mm"].get("avg_words", 0)),
+        ("mm >7 words", lambda r: r["mm"].get("long", 0)), ("mm cut mid-word", lambda r: r["mm"].get("cut_mid_word", 0)),
+        ("mm not from one line", lambda r: r["mm"].get("not_from_one_line", 0)),
+        ("cards", lambda r: r["cards"].get("cards", 0)), ("cards answer not in notes", lambda r: r["cards"].get("answer_not_in_notes", 0)),
+        ("cards yes/no", lambda r: r["cards"].get("yes_no", 0)), ("cards answer in question", lambda r: r["cards"].get("answer_in_q", 0)),
+        ("cards near-duplicate pairs", lambda r: r["cards"].get("near_dup_pairs", 0)),
+        ("cards avg answer words", lambda r: r["cards"].get("avg_answer_words", 0)),
+    ]
+    for row in metrics:
+        out.append(f"## {row['doc']} — {row['marks']} highlights\n")
+        out.append("metric | before | after")
+        for k, f in keys:
+            b, a = f(row["before"]), f(row["after"])
+            if not k.startswith(("coverage", "numbers", "mm avg", "cards avg")):
+                tot[k + "|b"] += b
+                tot[k + "|a"] += a
+            out.append(f"{k} | {b:.0f} | {a:.0f}" if isinstance(b, int) or float(b).is_integer() and float(a).is_integer() else f"{k} | {b:.1f} | {a:.1f}")
+        iw = row["before"]["summary"]["invented_words"], row["after"]["summary"]["invented_words"]
+        out.append(f"\ninvented words — before: {', '.join(iw[0]) or '—'} · after: {', '.join(iw[1]) or '—'}\n")
+    out.append("## TOTAL (all documents)\n")
+    out.append("metric | before | after")
+    for k, _ in keys:
+        if k + "|b" in tot:
+            out.append(f"{k} | {tot[k + '|b']:.0f} | {tot[k + '|a']:.0f}")
+    return "\n".join(out) + "\n"
+
+
+def fmt_doc(name, tag, summary, log, tree, cs, with_log=True):
+    out = [f"## {name} — {tag}", "", "```", summary, "```"]
+    if with_log:
+        out += ["", "Log:", *log]
+    out += ["", "Mind map:", "```"]
+    last = object()
+    for h1, h2, _, pts, how in tree:
+        if h1 != last:
+            out.append("● " + (h1 or ""))
+            last = h1
+        if h2:
+            out.append("  ├─ " + h2)
+        out += [f"      · {q}   [{how}]" for q in pts]
+    out += ["```", "", "Cards:"]
+    out += [f"- Q: {q}\n  A: {a}" for q, a in cs]
+    return "\n".join(out) + "\n"
+
+
+def write(report, metrics):
+    m = fmt_metrics(metrics)
+    full = [m, "\n# Outputs\n"] + [fmt_doc(n, t, s, l, tr, cs) for n, t, _, s, l, tr, cs in report]
+    open("results.md", "w", encoding="utf-8").write("\n".join(full))
+    open("notice_metrics.md", "w", encoding="utf-8").write(m)
+    after = [r for r in report if r[1] == "after"]
+    open("notice_summary.md", "w", encoding="utf-8").write(
+        "\n".join(f"## {n}\n```\n{s}\n```\n" + "\n".join(l for l in lg if "fallback" in l or "review" in l) + "\n" for n, _, _, s, lg, _, _ in after))
+    open("notice_mm_cards.md", "w", encoding="utf-8").write(
+        "\n".join(fmt_doc(n, "after", "", [], tr, cs, with_log=False).split("```\n\n```\n", 1)[-1] for n, _, _, _, _, tr, cs in after))
+    print(open("results.md", encoding="utf-8").read())
+
+
+if __name__ == "__main__":
+    run()

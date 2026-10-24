@@ -58,14 +58,14 @@ import java.io.File
  * ترتيب الملخص بالذكاء الاصطناعي. النتيجة تُحفظ منفصلة لكل مستند، والملخص الأصلي لا يتغير أبدًا.
  */
 object AiOrganizer {
-    private const val SYSTEM = """You organize study notes for a pharmacy student.
+    private const val SYSTEM = """You organize study notes for a student (any subject).
 Reorganize the notes you receive into a clear, well-structured study summary.
 Strict rules:
-- Use ONLY information found in the notes. Never add facts, numbers, doses or explanations that are not in the notes.
+- Use ONLY information found in the notes. Never add facts, numbers or explanations that are not in the notes.
 - Do not drop any information from the notes.
-- Keep every note in its original language (Arabic stays Arabic, English stays English). Keep drug names and medical terms exactly as written.
+- Keep every note in its original language (Arabic stays Arabic, English stays English). Keep names and terms exactly as written.
 - Group related points under short headings. Merge repeated points.
-- When several items share the same attributes (for example drug, class, mechanism, side effects), present them as a table.
+- When several items share the same attributes (for example type, cause, effect, date, use), present them as a table.
 You may also receive SOURCE: the text of the document pages the notes come from. Use the source only as a reference:
 - to understand each note in its context and put it under the right heading of the document,
 - to complete a note whose words or sentence were cut, and to fix broken words,
@@ -344,12 +344,13 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
 
     private fun prefs() = AppController.appContext.getSharedPreferences("mynotes_ai", Context.MODE_PRIVATE)
 
-    private const val CARDS_SYSTEM = """You write study flashcards for a pharmacy student from highlighted notes.
-Strict rules:
-- Use ONLY information found in the notes. Never add facts, numbers or doses that are not in the notes.
-- One card per important fact: a clear question and a short answer.
-- Write each card in the language of its note. Keep drug names and medical terms exactly as written.
-- At most 8 cards. Skip trivial facts.
+    const val CARDS_SYSTEM = """You write exam flashcards from part of a student's study summary (any subject).
+Rules:
+- Use ONLY the summary. Every answer is copied from it: a short phrase or one short sentence (at most 12 words). Never add facts, numbers or names.
+- Ask what an exam would ask: definitions, causes and effects, mechanisms, steps, differences, numbers and dates, uses, exceptions, what is NOT done and why.
+- One fact per card. No yes/no questions. Do not put the answer inside the question. Never two cards about the same fact.
+- Write each card in the language of its point. Keep names and terms exactly as written.
+- Points between ** ** are important: cover them first. At most one card per two points, and at most 6 cards.
 Output format (plain text only, nothing else):
 Q: question
 A: answer
@@ -547,26 +548,38 @@ A: answer
                     }
                 }
                 val parts = AiStructure.parts(s, marks, budget)
+                // بطاقات المراجعة من الملخص نفسه (ما اجتاز الفحوص): النقاط تُرسل للنموذج دفعات لكل عنوان رئيسي،
+                // والجداول بطاقات بالكود لكل صف. كل بطاقة تُفحص (جواب من الملخص، بلا أرقام جديدة) ويُحذف المكرر بالمعنى.
                 val cardBuf = StringBuilder()
+                val cardTables = ArrayList<Pair<String, String>>()
                 suspend fun flushCards(force: Boolean) {
-                    if (!autoCards || cardBuf.isBlank() || (!force && cardBuf.length < budget / 2)) return
-                    // ذاكرة البطاقات: نفس الملاحظات = نفس البطاقات (إعادة الترتيب بعد حذف تظليل لا تعيد كتابتها)
-                    val ck = "cards:" + AiStructure.hash("$model|$cardBuf")
-                    val cached = memo[ck]
-                    try {
-                        if (cached != null) {
-                            cards.addAll(cached.lines().mapNotNull { l -> l.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } })
-                        } else {
-                            stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
-                            val made = parseCards(Ai.generate(CARDS_SYSTEM, "Notes:\n\n$cardBuf"))
-                            memo[ck] = made.joinToString("\n") { (q, a) -> q.replace('\t', ' ').replace('\n', ' ') + "\t" + a.replace('\t', ' ').replace('\n', ' ') }
-                            cards.addAll(made)
+                    if (!autoCards) return
+                    if (cardBuf.isNotBlank() && (force || cardBuf.length >= budget / 2)) {
+                        // ذاكرة البطاقات: نفس النقاط = نفس البطاقات (إعادة الترتيب بعد حذف تظليل لا تعيد كتابتها)
+                        val src = cardBuf.toString()
+                        val ck = "cards2:" + AiStructure.hash("$model|$src")
+                        val cached = memo[ck]
+                        try {
+                            if (cached != null) {
+                                cards.addAll(cached.lines().mapNotNull { l -> l.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } })
+                            } else {
+                                stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
+                                val made = AiStructure.dedupeCards(
+                                    parseCards(Ai.generate(CARDS_SYSTEM, "SUMMARY:\n\n$src")).filter { (q, a) -> AiStructure.cardOk(q, a, src) }
+                                )
+                                memo[ck] = made.joinToString("\n") { (q, a) -> q.replace('\t', ' ').replace('\n', ' ') + "\t" + a.replace('\t', ' ').replace('\n', ' ') }
+                                cards.addAll(made)
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (t: Throwable) {
                         }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (t: Throwable) {
+                        cardBuf.clear()
                     }
-                    cardBuf.clear()
+                    if (force || cardBuf.isEmpty()) {
+                        cards.addAll(cardTables)
+                        cardTables.clear()
+                    }
                 }
                 parts.forEachIndexed { i, p ->
                     stepFraction = i / parts.size.toFloat()
@@ -581,8 +594,8 @@ A: answer
                                 p,
                                 Ai.generate(AiStructure.SYSTEM, AiStructure.prompt(p)) { x -> partial = shown(Triple(p.title, p.sub, clean(x))) }
                             )
-                            // مراجعة ذاتية: النموذج يراجع ما كتبه مقابل التظليل؛ التصحيح يُقبل فقط إن اجتاز الفحوص
-                            val fin = if (selfReview && draft != AiStructure.fallback(p.notes)) {
+                            // مراجعة ذاتية: فقط إن بقي في المسودة ما يحتاجها (تنسيق أو نقطة طويلة)؛ التصحيح يُقبل فقط إن اجتاز الفحوص
+                            val fin = if (selfReview && draft != AiStructure.fallback(p.notes) && AiStructure.needsReview(draft)) {
                                 stepText = L("مراجعة ما كُتب: ${p.sub ?: p.title ?: "…"}", "Reviewing: ${p.sub ?: p.title ?: "…"}")
                                 try {
                                     AiStructure.reviewed(p, Ai.generate(AiStructure.REVIEW_SYSTEM, AiStructure.reviewPrompt(p, draft))) ?: draft
@@ -600,11 +613,23 @@ A: answer
                     partial = shown()
                     // البطاقات لكل عنوان رئيسي (حدود ثابتة فتنفع ذاكرة البطاقات بعد أي تعديل)
                     if (i > 0 && parts[i - 1].title != p.title) flushCards(true)
-                    if (cardBuf.isNotEmpty()) cardBuf.append("\n")
-                    cardBuf.append(p.notes)
+                    val topic = p.sub ?: p.title
+                    if (p.table != null) {
+                        cardTables.addAll(AiStructure.tableCards(p.table, p.headed, topic))
+                    } else {
+                        val pts = body.lines().filter { it.isNotBlank() }
+                        if (pts.isNotEmpty()) {
+                            if (cardBuf.isNotEmpty()) cardBuf.append("\n\n")
+                            if (topic != null) cardBuf.append("## ").append(topic).append('\n')
+                            cardBuf.append(pts.joinToString("\n"))
+                        }
+                    }
                     flushCards(false)
                 }
                 flushCards(true)
+                val finalCards = AiStructure.dedupeCards(cards)
+                cards.clear()
+                cards.addAll(finalCards)
                 withContext(Dispatchers.IO) { saveMemo(docId, memo) }
                 save(docId, shown())
                 setProcessed(docId, if (append) processed(docId) + snapshot else snapshot)
@@ -638,10 +663,10 @@ A: answer
         }
     }
 
-    private const val TABLE_SYSTEM = """You turn the points of ONE section of a pharmacy study summary into ONE comparison table.
+    private const val TABLE_SYSTEM = """You turn the points of ONE section of a study summary (any subject) into ONE comparison table.
 Rules:
-- Choose 2 to 5 columns from the attributes the points share (for example: Drug | Route | Use | Side effect).
-- One row per item. Use ONLY the words, numbers and drug names in the points. Keep every number, every drug name and every negation (not, no, لا).
+- Choose 2 to 5 columns from the attributes the points share (for example: Item | Type | Use | Note).
+- One row per item. Use ONLY the words, numbers and names in the points. Keep every number, every name and every negation (not, no, لا).
 - Keep the language of the points. Empty cell: "—".
 - Output only the table: one row per line, cells separated by " | ", first row is the header. No introduction.
 
@@ -724,12 +749,12 @@ Pen V | Acid-stable | Oral | Only for mild infections"""
         }
     }
 
-    private const val EDIT_SYSTEM = """You edit a pharmacy student's study summary following their instruction.
+    private const val EDIT_SYSTEM = """You edit a student's study summary (any subject) following their instruction.
 Rules:
 - Apply the instruction to the summary and return the whole edited summary.
 - Keep the same format: "# " headings, "## " subheadings, "- " bullets, tables with " | " between cells (first row header).
-- Keep drug names and medical terms exactly as written. Keep each part in its language unless the instruction asks to translate.
-- Do not add facts, numbers or doses that are not in the summary unless the instruction explicitly asks you to add or explain something.
+- Keep names and terms exactly as written. Keep each part in its language unless the instruction asks to translate.
+- Do not add facts or numbers that are not in the summary unless the instruction explicitly asks you to add or explain something.
 Output only the edited summary, no introduction or closing remarks."""
 
     /** تعديل الملخص المرتّب بتعليمات المستخدم (مثل: اختصر، اجعله جدولًا، ترجم العناوين). */
@@ -775,9 +800,9 @@ Output only the edited summary, no introduction or closing remarks."""
     // ---------- شرح نص محدد ----------
 
     fun explainSystem(): String = if (I18n.english)
-        "You are a helpful pharmacy tutor. Explain the given text simply and briefly (max 8 short lines). Keep medical terms. Do not invent doses."
+        "You are a helpful tutor for any subject. Explain the given text simply and briefly (max 8 short lines). Keep technical terms. Do not invent numbers or facts."
     else
-        "You are a helpful pharmacy tutor. Explain the given text simply and briefly in Arabic (max 8 short lines). Keep English drug names and medical terms as they are. Do not invent doses."
+        "You are a helpful tutor for any subject. Explain the given text simply and briefly in Arabic (max 8 short lines). Keep English names and technical terms as they are. Do not invent numbers or facts."
 }
 
 /** يعرض الملخص المرتّب: عناوين، نقاط، فقرات، وجداول. */
@@ -945,7 +970,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                     Text(L("✦ عدّل الملخص بالذكاء", "✦ Edit the summary with AI"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
                     OutlinedTextField(
                         value = instr, onValueChange = { instr = it },
-                        placeholder = { Text(L("مثال: اختصره إلى نقاط، اجعل الأدوية في جدول، أضف عنوانًا لكل مجموعة", "e.g. shorten into bullets, put the drugs in a table, add a heading per group"), fontSize = 12.sp) },
+                        placeholder = { Text(L("مثال: اختصره إلى نقاط، اجعل المقارنة في جدول، أضف عنوانًا لكل مجموعة", "e.g. shorten into bullets, put the comparison in a table, add a heading per group"), fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -94,7 +94,33 @@ object MindMap {
         val dot = Regex("[.!؟?](\\s|$)").find(t)
         if (dot != null && dot.range.first >= 12) t = t.substring(0, dot.range.first)
         t = t.trim().trimEnd(',', '،', ':', '.')
-        return if (t.length <= max) t else t.take(max - 1).trimEnd() + "…"
+        return cut(t, max)
+    }
+
+    private val TRAIL = setOf("a", "an", "the", "of", "to", "and", "or", "is", "are", "was", "be", "in", "on", "at", "for", "with", "by",
+        "from", "as", "that", "which", "في", "من", "على", "إلى", "الى", "عن", "و", "أو", "ثم", "أن", "التي", "الذي", "هو", "هي", "مع")
+
+    /** عبارة قصيرة: حتى maxWords كلمات، تنتهي بكلمة لها معنى (لا «of/the/في»)، والنفي لا يُحذف. */
+    fun brief(t0: String, maxWords: Int = 7): String {
+        val ws = t0.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        // الرموز (→ = %) لا تُعدّ كلمات
+        fun real(w: String) = w.any { it.isLetterOrDigit() }
+        if (ws.count { real(it) } <= maxWords) return t0.trim()
+        var k = 0
+        var n = 0
+        while (k < ws.size && n < maxWords) { if (real(ws[k])) n++; k++ }
+        while (k > 2 && (!real(ws[k - 1]) || ws[k - 1].lowercase().trim(',', '،', ':', ';', '—', '-', '(') in TRAIL)) k--
+        return ws.take(k).joinToString(" ").trimEnd(',', '،', ':', ';', '—', '-', '(', '→', '=', ' ') + "…"
+    }
+
+    /** يقص عند حدود الكلمات (لا داخل كلمة). */
+    fun cut(t: String, max: Int): String {
+        if (t.length <= max) return t
+        val head = t.take(max - 1)
+        val sp = head.lastIndexOf(' ')
+        var ws = (if (sp >= max / 2) head.substring(0, sp) else head).split(' ')
+        while (ws.size > 2 && ws.last().lowercase() in TRAIL) ws = ws.dropLast(1)
+        return ws.joinToString(" ").trimEnd(' ', ',', '،', ':', ';', '—', '-', '(') + "…"
     }
 
     /** أهمية النقطة: المظلل مرتين، الأرقام والجرعات، الأدوية المختارة، النفي والتحذير، والآثار الجانبية. */
@@ -102,7 +128,8 @@ object MindMap {
         var s = 0
         if (line.contains("**")) s += 6
         if (Regex("\\d").containsMatchIn(line)) s += 2
-        if (Regex("(?i)\\b(DOC|drug of choice|first[- ]line|contraindicat|toxic|side effect|adverse|mechanism|MOA|not|never|avoid|only|most)\\b|لا |ممنوع|سام|أعراض|آلية|الأفضل|فقط").containsMatchIn(line)) s += 2
+        // مؤشرات عامة لأي مادة: تعريف، سبب/نتيجة، قاعدة واستثناء، نفي وتحذير، الأهم والأول (ومؤشرات طبية شائعة)
+        if (Regex("(?i)\\b(defined? as|refers? to|is called|means|cause[sd]?|result|lead[s]? to|rule|except|must|always|never|not|avoid|only|most|main|key|first|types?|steps?|DOC|drug of choice|first[- ]line|contraindicat|toxic|side effect|adverse|mechanism)\\b|لا |ليس|ممنوع|يجب|دائمًا|فقط|إلا|أهم|أول|أنواع|أسباب|نتيجة|يؤدي|تعريف|يُعرّف|آلية|الأفضل").containsMatchIn(line)) s += 2
         if (line.length < 70) s += 1
         return s
     }
@@ -329,17 +356,19 @@ object MindMap {
 }
 
 /**
- * النقاط المهمة للخريطة يختارها الذكاء: لكل قسم من 3 إلى 5 عبارات قصيرة جدًا من كلمات القسم نفسه،
- * تُفحص ضد الاختلاق، وتُحفظ (فتح الخريطة مرة ثانية فوري). إن تعذر النموذج تُختار بالكود.
+ * النقاط المهمة للخريطة: لكل قسم من 3 إلى 5 عبارات قصيرة جدًا. صفوف الجداول والأقسام القصيرة بالكود (دقيقة وفورية)،
+ * والنقاط الأطول يختارها الذكاء مع رقم السطر الذي أُخذت منه، وكل عبارة تُفحص مقابل سطرها نفسه (كلماته وأرقامه ونفيه)؛
+ * ما لا يجتاز يُستبدل بعبارة بالكود من السطر نفسه. تُحفظ (فتح الخريطة مرة ثانية فوري).
  */
 object MindMapAi {
-    private const val SYSTEM = """You pick the most important exam points of ONE section of a pharmacy study summary for a mind map.
+    const val SYSTEM = """You pick the most important exam points of ONE section of a study summary (any subject) for a mind map.
+The section is given as numbered LINES.
 Rules:
-- Output 3 to 5 lines, each starting with "- ".
-- Each line is a very short key phrase of 2 to 7 words, not a sentence. No explanations, no "because".
-- Use only words, numbers and drug names that appear in the section. Keep negations (not, no, لا).
-- Prefer: drug of choice, doses and numbers, main uses, key side effects and toxicity, contraindications, mechanism.
-- Keep the language of the section.
+- Output 3 to 5 lines, each written as "- N: key phrase", where N is the number of the line the phrase comes from.
+- A key phrase is 2 to 7 words copied from that line: you may leave words out, but never add or change words. Not a sentence, no explanations.
+- Keep the numbers and negations (not, no, لا, ليس) of that line.
+- Prefer: definitions, main causes and effects, key numbers and dates, rules and exceptions, uses, warnings.
+- One phrase per line number. Keep the language of the line.
 Output only the lines."""
 
     class Sec(val h1: String?, val h2: String?, val body: String)
@@ -364,6 +393,8 @@ Output only the lines."""
                 l.startsWith("## ") -> { flush(); h2 = l.removePrefix("## ").trim() }
                 l.startsWith("# ") -> { flush(); h1 = l.removePrefix("# ").trim(); h2 = null }
                 l.isNotEmpty() -> buf.append(l).append('\n')
+                // سطر فارغ يفصل جدولين متتاليين
+                buf.isNotEmpty() -> buf.append('\n')
             }
         }
         flush()
@@ -379,11 +410,69 @@ Output only the lines."""
         HashMap()
     }
 
+    private val NUM = Regex("\\d+(?:[.,]\\d+)?")
+    private val NEG = Regex("(?i)\\b(not|no|never|without|except|cannot)\\b|(?<![\\p{L}])[وف]?(لا|ليس|ليست|غير|لن|لم|بدون|دون)(?![\\p{L}])")
+
+    /** نقاط صفوف الجداول بالكود: «البند: أهم خلية» (حتى 5 صفوف، الأهم أولًا بترتيبها). */
+    fun tablePoints(rows: List<String>): List<String> {
+        val out = ArrayList<Pair<String, Int>>()
+        var i = 0
+        while (i < rows.size) {
+            if (!rows[i].contains(" | ")) { i++; continue }
+            var j = i
+            val n = rows[i].split(" | ").size
+            while (j < rows.size && rows[j].contains(" | ") && rows[j].split(" | ").size == n) j++
+            // أول صف في كل جدول في الملخص هو رأسه
+            for (r in (if (j - i >= 2) i + 1 else i) until j) {
+                val c = rows[r].replace("**", "").split(" | ").map { it.trim() }
+                val first = c.firstOrNull { it.isNotEmpty() && it != "—" } ?: continue
+                val val1 = c.drop(1).firstOrNull { it.isNotEmpty() && it != "—" && it != "-" }
+                // البند (حتى 4 كلمات) وأهم خليته باختصار، والعبارة كلها حتى 7 كلمات
+                val head = MindMap.brief(MindMap.cut(first, 28), 4)
+                val label = if (val1 == null) head else MindMap.brief(head + ": " + MindMap.keyPhrase(val1, 80), 7)
+                out.add(label to MindMap.score(rows[r]))
+            }
+            i = maxOf(j, i + 1)
+        }
+        return out.withIndex().sortedByDescending { it.value.second }.take(5).sortedBy { it.index }.map { it.value.first }
+    }
+
+    /** عبارة بالكود من سطر نقطة. */
+    private fun linePoint(l: String): String = MindMap.brief(MindMap.keyPhrase(l.removePrefix("- ").removePrefix("• "), 60), 7)
+
     /** نقاط بالكود (احتياط): الأعلى درجة، كعبارات مفتاحية. */
-    private fun codePoints(sec: Sec): List<String> = sec.body.lines().filter { it.isNotBlank() }
-        .map { l -> if (l.contains(" | ")) l.split(" | ").take(2).joinToString(": ") { it.trim() } else l }
-        .withIndex().sortedByDescending { MindMap.score(it.value) }.take(4).sortedBy { it.index }
-        .map { MindMap.keyPhrase(it.value, 50) }.filter { it.length >= 3 }
+    private fun codePoints(lines: List<String>, n: Int = 4): List<String> = lines
+        .withIndex().sortedByDescending { MindMap.score(it.value) }.take(n).sortedBy { it.index }
+        .map { linePoint(it.value) }.filter { it.length >= 3 }
+
+    /** العبارة من سطرها: 2..8 كلمات، كل كلماتها المهمة وأرقامها من ذلك السطر، ونفي السطر محفوظ. */
+    fun phraseOk(phrase: String, line: String): Boolean {
+        val n = phrase.split(Regex("\\s+")).count { it.isNotBlank() }
+        if (n !in 2..8 || phrase.length > 60) return false
+        val nums = NUM.findAll(line).map { it.value }.toSet()
+        if (NUM.findAll(phrase).any { it.value !in nums }) return false
+        val src = AiStructure.content(line).toSet()
+        val cw = AiStructure.content(phrase)
+        if (cw.isEmpty() || cw.count { it !in src } > (if (cw.size >= 5) 1 else 0)) return false
+        return !(NEG.containsMatchIn(line) && !NEG.containsMatchIn(phrase))
+    }
+
+    /** يقرأ «- N: عبارة» ويفحص كل عبارة مقابل سطرها؛ الفاشلة تُستبدل بعبارة بالكود من السطر نفسه. */
+    fun parsePoints(raw: String, lines: List<String>): List<String> {
+        val re = Regex("^[-•*]?\\s*\\(?(\\d{1,2})\\)?\\s*[:.)\\-–]\\s*(.+)$")
+        val used = HashSet<Int>()
+        val out = ArrayList<String>()
+        for (l0 in AiOrganizer.clean(raw).lines()) {
+            val m = re.find(l0.trim()) ?: continue
+            val k = m.groupValues[1].toInt() - 1
+            if (k !in lines.indices || !used.add(k)) continue
+            val ph = m.groupValues[2].trim().trimEnd('.', '،', ',')
+            val src = lines[k]
+            out.add(if (phraseOk(ph, src)) ph else linePoint(src))
+            if (out.size == 5) break
+        }
+        return out.filter { it.length >= 3 }.distinctBy { it.lowercase() }
+    }
 
     /** يبني الخريطة بالنقاط المهمة. onlyCached = بلا نموذج (ما حُفظ سابقًا، وإلا بالكود). */
     suspend fun build(docId: String, title: String, summary: String, onlyCached: Boolean): MindMap.Node {
@@ -393,31 +482,35 @@ Output only the lines."""
         val points = ArrayList<List<String>>()
         var changed = false
         secs.forEachIndexed { i, sec ->
-            val key = AiStructure.hash("mm1|$model|${sec.h1}|${sec.h2}|${sec.body}")
+            // الأسطر الفارغة تفصل الجداول (أول صف في كل جدول رأسه)
+            val all = sec.body.lines().map { it.trim() }
+            val text = all.filter { it.isNotEmpty() && !it.contains(" | ") }
+            val tablePts = tablePoints(all)
+            val key = AiStructure.hash("mm2|$model|${sec.h1}|${sec.h2}|${sec.body}")
             val hit = cache[key]
-            val pts: List<String> = when {
+            val textPts: List<String> = when {
+                text.isEmpty() -> emptyList()
                 hit != null -> hit.lines().filter { it.isNotBlank() }
-                onlyCached || !Ai.ready || sec.body.lines().count { it.isNotBlank() } <= 2 -> codePoints(sec)
+                // قسم قصير (3 نقاط أو أقل): بالكود دون نموذج
+                text.size <= 3 -> text.map { linePoint(it) }.filter { it.length >= 3 }
+                onlyCached || !Ai.ready -> codePoints(text)
                 else -> {
                     step = L("اختيار النقاط المهمة ${i + 1} من ${secs.size}…", "Picking key points ${i + 1} of ${secs.size}…")
+                    val numbered = text.mapIndexed { k, l -> "${k + 1}. " + l.removePrefix("- ") }.joinToString("\n")
                     val got = try {
-                        AiOrganizer.clean(Ai.generate(SYSTEM, "SECTION: " + listOfNotNull(sec.h1, sec.h2).joinToString(" › ") + "\n" + sec.body))
-                            .lines().map { it.trim() }.filter { it.startsWith("- ") || it.startsWith("• ") }
-                            .map { MindMap.keyPhrase(it.removePrefix("- ").removePrefix("• "), 60) }
-                            .filter { it.length in 3..60 && !AiStructure.suspicious(it, sec.body + " " + (sec.h1 ?: "") + " " + (sec.h2 ?: "")) }
-                            .distinct().take(5)
+                        parsePoints(Ai.generate(SYSTEM, "SECTION: " + listOfNotNull(sec.h1, sec.h2).joinToString(" › ") + "\nLINES:\n" + numbered), text)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (t: Throwable) {
                         emptyList()
                     }
-                    val fin = got.ifEmpty { codePoints(sec) }
+                    val fin = if (got.size >= 2) got else codePoints(text)
                     cache[key] = fin.joinToString("\n")
                     changed = true
                     fin
                 }
             }
-            points.add(pts)
+            points.add((textPts.take(5) + tablePts).distinctBy { it.lowercase() })
         }
         if (changed) withContext(Dispatchers.IO) { try { file(docId).writeText(org.json.JSONObject(cache as Map<*, *>).toString()) } catch (t: Throwable) {} }
         step = ""

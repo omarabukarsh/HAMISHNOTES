@@ -497,23 +497,23 @@ private fun OutlineList(s: DocSession, current: Int, onGo: (Int) -> Unit) {
                                     DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; editIndex = k })
                                     if (it.level < 3) DropdownMenuItem(text = { Text(L("عنوان فرعي (إزاحة للداخل)", "Make subheading (indent)")) }, onClick = {
                                         menu = false
-                                        s.setOutline(list.toMutableList().also { l -> l[k] = it.copy(level = it.level + 1) })
+                                        s.saveOutline(list.toMutableList().also { l -> l[k] = it.copy(level = it.level + 1) })
                                     })
                                     if (it.level > 0) DropdownMenuItem(text = { Text(L("عنوان رئيسي (إزاحة للخارج)", "Promote (outdent)")) }, onClick = {
                                         menu = false
-                                        s.setOutline(list.toMutableList().also { l -> l[k] = it.copy(level = it.level - 1) })
+                                        s.saveOutline(list.toMutableList().also { l -> l[k] = it.copy(level = it.level - 1) })
                                     })
                                     if (k > 0) DropdownMenuItem(text = { Text(L("تحريك لأعلى", "Move up")) }, onClick = {
                                         menu = false
-                                        s.setOutline(list.toMutableList().also { l -> l.add(k - 1, l.removeAt(k)) })
+                                        s.saveOutline(list.toMutableList().also { l -> l.add(k - 1, l.removeAt(k)) })
                                     })
                                     if (k < list.size - 1) DropdownMenuItem(text = { Text(L("تحريك لأسفل", "Move down")) }, onClick = {
                                         menu = false
-                                        s.setOutline(list.toMutableList().also { l -> l.add(k + 1, l.removeAt(k)) })
+                                        s.saveOutline(list.toMutableList().also { l -> l.add(k + 1, l.removeAt(k)) })
                                     })
                                     DropdownMenuItem(text = { Text(L("حذف", "Delete"), color = Palette.Danger) }, onClick = {
                                         menu = false
-                                        s.setOutline(list.filterIndexed { i, _ -> i != k })
+                                        s.saveOutline(list.filterIndexed { i, _ -> i != k })
                                     })
                                 }
                             }
@@ -539,7 +539,7 @@ private fun OutlineList(s: DocSession, current: Int, onGo: (Int) -> Unit) {
     if (ei != null && ei < list.size) {
         OutlineTitleDialog(L("إعادة تسمية العنوان", "Rename heading"), list[ei].title, onDismiss = { editIndex = null }) { t ->
             editIndex = null
-            s.setOutline(list.toMutableList().also { l -> l[ei] = l[ei].copy(title = t) })
+            s.saveOutline(list.toMutableList().also { l -> l[ei] = l[ei].copy(title = t) })
         }
     }
     if (adding) {

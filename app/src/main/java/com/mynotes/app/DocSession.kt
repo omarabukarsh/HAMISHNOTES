@@ -278,7 +278,7 @@ class DocSession(entry: DocEntry) {
         return outlineCustom ?: outline.map { OutlineEntry(it.title, it.level, pageOfMain(it.pageIndex)) }
     }
 
-    fun setOutline(list: List<OutlineEntry>) {
+    fun saveOutline(list: List<OutlineEntry>) {
         outlineCustom = list
         val a = org.json.JSONArray()
         list.forEach { a.put(org.json.JSONObject().put("t", it.title).put("l", it.level).put("p", it.page)) }
@@ -290,7 +290,7 @@ class DocSession(entry: DocEntry) {
         val list = outlineEntries().toMutableList()
         val at = list.indexOfFirst { it.page > page }.let { if (it < 0) list.size else it }
         list.add(at, OutlineEntry(title, 0, page))
-        setOutline(list)
+        saveOutline(list)
     }
 
     fun resetOutline() {

@@ -198,29 +198,25 @@ fun PenAdvancedSection(tool: Tool) {
     val c = AppController
     Divider()
     StrokeStyleSection(
-        style = PenPrefs.lineStyle, onStyle = { PenPrefs.setLineStyle(it) },
+        style = PenPrefs.lineStyle, onStyle = { PenPrefs.changeLineStyle(it) },
         size = c.sizeFor(tool), onSize = { c.setSize(it) },
         widthOf = { Sizes.width(tool, it) },
         onReset = { PenPrefs.resetPen(); c.setSize(2) }
     )
     Divider()
     if (tool == Tool.FOUNTAIN || tool == Tool.BRUSH) {
-        PercentSlider(L("حدة الطرف", "Tip sharpness"), PenPrefs.sharpness) { PenPrefs.setSharpness(it) }
+        PercentSlider(L("حدة الطرف", "Tip sharpness"), PenPrefs.sharpness) { PenPrefs.changeSharpness(it) }
     }
-    PercentSlider(L("حساسية الضغط", "Pressure sensitivity"), PenPrefs.pressure) { PenPrefs.setPressure(it) }
-    PercentSlider(L("تثبيت الخط", "Stroke stabilization"), PenPrefs.stabilize, steps = 0) { PenPrefs.setStabilize(it) }
-    Divider()
-    PanelSwitch(L("ارسم وأبقِ القلم ثابتًا لتحويل الرسم إلى شكل", "Draw and hold to make a shape"), PenPrefs.drawAndHold) {
-        PenPrefs.setDrawAndHold(it)
-    }
+    PercentSlider(L("حساسية الضغط", "Pressure sensitivity"), PenPrefs.pressure) { PenPrefs.changePressure(it) }
+    PercentSlider(L("تثبيت الخط", "Stroke stabilization"), PenPrefs.stabilize, steps = 0) { PenPrefs.changeStabilize(it) }
 }
 
 /** إعدادات الهايلايتر: تثبيت الخط والرسم المستقيم. */
 @Composable
 fun HighlighterAdvancedSection() {
     Divider()
-    PercentSlider(L("تثبيت الخط", "Stroke stabilization"), PenPrefs.hlStabilize, steps = 0) { PenPrefs.setHlStabilize(it) }
-    PanelSwitch(L("الرسم بخط مستقيم", "Draw in a straight line"), PenPrefs.hlStraight) { PenPrefs.setHlStraight(it) }
+    PercentSlider(L("تثبيت الخط", "Stroke stabilization"), PenPrefs.hlStabilize, steps = 0) { PenPrefs.changeHlStabilize(it) }
+    PanelSwitch(L("الرسم بخط مستقيم", "Draw in a straight line"), PenPrefs.hlStraight) { PenPrefs.changeHlStraight(it) }
 }
 
 // ---------------------------------------------------------------- الممحاة
@@ -232,17 +228,17 @@ fun EraserAdvancedSection() {
     var confirm by remember { mutableStateOf(false) }
     Divider()
     PanelLabel(L("فلتر الممحاة", "Eraser filter"))
-    PanelSwitch(L("القلم", "Pen"), PenPrefs.erasePen, R.drawable.ph_pen) { PenPrefs.setErasePen(it) }
-    PanelSwitch(L("قلم الرصاص", "Pencil"), PenPrefs.erasePencil, R.drawable.ph_pencil) { PenPrefs.setErasePencil(it) }
-    PanelSwitch(L("الهايلايتر", "Highlighter"), PenPrefs.eraseHighlighter, R.drawable.ph_highlighter) { PenPrefs.setEraseHighlighter(it) }
-    PanelSwitch(L("الأشكال", "Shapes"), PenPrefs.eraseShapes, R.drawable.ph_shapes) { PenPrefs.setEraseShapes(it) }
+    PanelSwitch(L("القلم", "Pen"), PenPrefs.erasePen, R.drawable.ph_pen) { PenPrefs.changeErasePen(it) }
+    PanelSwitch(L("قلم الرصاص", "Pencil"), PenPrefs.erasePencil, R.drawable.ph_pencil) { PenPrefs.changeErasePencil(it) }
+    PanelSwitch(L("الهايلايتر", "Highlighter"), PenPrefs.eraseHighlighter, R.drawable.ph_highlighter) { PenPrefs.changeEraseHighlighter(it) }
+    PanelSwitch(L("الأشكال", "Shapes"), PenPrefs.eraseShapes, R.drawable.ph_shapes) { PenPrefs.changeEraseShapes(it) }
     Text(
         L("الممحاة تتجاهل ما رسمته أي أداة مُطفأة هنا.", "The eraser ignores marks from any tool that’s turned off."),
         fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
     )
     Divider()
     PanelSwitch(L("الرجوع إلى القلم تلقائيًا بعد المسح", "Auto-deselect (back to pen after erasing)"), PenPrefs.autoDeselect) {
-        PenPrefs.setAutoDeselect(it)
+        PenPrefs.changeAutoDeselect(it)
     }
     TextButton(onClick = { confirm = true }) {
         Text(L("مسح الصفحة", "Clear page"), color = Palette.Danger, fontWeight = FontWeight.Bold)
@@ -274,21 +270,21 @@ fun LassoMenuContent(onOff: () -> Unit) {
         Spacer(Modifier.height(10.dp))
         PanelLabel(L("نوع التحديد", "Lasso type"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OptionCard(L("حر", "Freehand"), !PenPrefs.lassoRect, Modifier.weight(1f), { PenPrefs.setLassoRect(false) }) {
+            OptionCard(L("حر", "Freehand"), !PenPrefs.lassoRect, Modifier.weight(1f), { PenPrefs.changeLassoRect(false) }) {
                 PhIcon(R.drawable.ph_lasso, if (!PenPrefs.lassoRect) Color.White else Palette.TextPrimary)
             }
-            OptionCard(L("مستطيل", "Rectangular"), PenPrefs.lassoRect, Modifier.weight(1f), { PenPrefs.setLassoRect(true) }) {
+            OptionCard(L("مستطيل", "Rectangular"), PenPrefs.lassoRect, Modifier.weight(1f), { PenPrefs.changeLassoRect(true) }) {
                 PhIcon(R.drawable.ph_select_rect, if (PenPrefs.lassoRect) Color.White else Palette.TextPrimary)
             }
         }
         Spacer(Modifier.height(12.dp))
         PanelLabel(L("يدخل في التحديد", "Included in selection"))
-        PanelSwitch(L("الكتابة اليدوية", "Handwriting"), PenPrefs.lassoInk) { PenPrefs.setLassoInk(it) }
-        PanelSwitch(L("الهايلايتر", "Highlighter"), PenPrefs.lassoHighlight) { PenPrefs.setLassoHighlight(it) }
-        PanelSwitch(L("الأشكال والأسهم", "Shapes and arrows"), PenPrefs.lassoShapes) { PenPrefs.setLassoShapes(it) }
-        PanelSwitch(L("الصور", "Images"), PenPrefs.lassoImages) { PenPrefs.setLassoImages(it) }
-        PanelSwitch(L("مربعات النص", "Text boxes"), PenPrefs.lassoTexts) { PenPrefs.setLassoTexts(it) }
-        PanelSwitch(L("الملاحظات اللاصقة", "Sticky notes"), PenPrefs.lassoStickies) { PenPrefs.setLassoStickies(it) }
+        PanelSwitch(L("الكتابة اليدوية", "Handwriting"), PenPrefs.lassoInk) { PenPrefs.changeLassoInk(it) }
+        PanelSwitch(L("الهايلايتر", "Highlighter"), PenPrefs.lassoHighlight) { PenPrefs.changeLassoHighlight(it) }
+        PanelSwitch(L("الأشكال والأسهم", "Shapes and arrows"), PenPrefs.lassoShapes) { PenPrefs.changeLassoShapes(it) }
+        PanelSwitch(L("الصور", "Images"), PenPrefs.lassoImages) { PenPrefs.changeLassoImages(it) }
+        PanelSwitch(L("مربعات النص", "Text boxes"), PenPrefs.lassoTexts) { PenPrefs.changeLassoTexts(it) }
+        PanelSwitch(L("الملاحظات اللاصقة", "Sticky notes"), PenPrefs.lassoStickies) { PenPrefs.changeLassoStickies(it) }
         Spacer(Modifier.height(6.dp))
         TextButton(onClick = onOff) { Text(L("إيقاف التحديد", "Turn off lasso"), color = Palette.Navy, fontWeight = FontWeight.Bold) }
     }
@@ -322,13 +318,14 @@ fun ShapeBar() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // التعرّف على الأشكال المرسومة بالقلم
-                TBtn(selected = c.shapeSnap, onClick = { c.toggleShapeSnap() }) {
-                    PhIcon(R.drawable.ph_shape_detect, tintFor(c.shapeSnap))
+                // «ارسم وأبقِ»: التعرّف على الشكل المرسوم بالقلم عند إبقائه ثابتًا
+                TBtn(selected = PenPrefs.drawAndHold, onClick = { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }) {
+                    PhIcon(R.drawable.ph_shape_detect, tintFor(PenPrefs.drawAndHold))
                 }
                 ToolbarSep()
                 ShapeKind.values().forEach { k ->
                     val sel = PenPrefs.shapeKind == k
-                    TBtn(selected = sel, onClick = { PenPrefs.setShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
+                    TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
                 }
                 ToolbarSep()
                 Box {
@@ -355,7 +352,7 @@ fun ShapeBar() {
                                 Box(
                                     Modifier.size(32.dp).clip(CircleShape).background(col)
                                         .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
-                                        .clickable { PenPrefs.setShapeColor(col.toArgb()); colorMenu = false }
+                                        .clickable { PenPrefs.changeShapeColor(col.toArgb()); colorMenu = false }
                                 )
                             }
                             Box(
@@ -375,7 +372,7 @@ fun ShapeBar() {
     if (picker) {
         ColorPickerDialog(
             initial = Color(PenPrefs.shapeColor),
-            onPick = { col -> c.addCustomColor(col); PenPrefs.setShapeColor(col.toArgb()); picker = false },
+            onPick = { col -> c.addCustomColor(col); PenPrefs.changeShapeColor(col.toArgb()); picker = false },
             onDismiss = { picker = false }
         )
     }
@@ -386,25 +383,25 @@ fun ShapeBar() {
 private fun ShapeStrokePanel() {
     Column(Modifier.width(320.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
         StrokeStyleSection(
-            style = PenPrefs.shapeStyle, onStyle = { PenPrefs.setShapeStyle(it) },
-            size = PenPrefs.shapeSize, onSize = { PenPrefs.setShapeSize(it) },
+            style = PenPrefs.shapeStyle, onStyle = { PenPrefs.changeShapeStyle(it) },
+            size = PenPrefs.shapeSize, onSize = { PenPrefs.changeShapeSize(it) },
             widthOf = { Sizes.width(Tool.BALLPOINT, it) },
             onReset = { PenPrefs.resetShape() }
         )
         Divider()
-        PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.setShapeRounded(it) }
+        PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
         Spacer(Modifier.height(8.dp))
         PanelLabel(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ArrowHead.values().forEach { h ->
-                    ArrowOption(h, start = true, selected = PenPrefs.arrowStart == h) { PenPrefs.setArrowStart(h) }
+                    ArrowOption(h, start = true, selected = PenPrefs.arrowStart == h) { PenPrefs.changeArrowStart(h) }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ArrowOption(ArrowHead.NONE, start = false, selected = PenPrefs.arrowEnd == ArrowHead.NONE) { PenPrefs.setArrowEnd(ArrowHead.NONE) }
-                ArrowOption(ArrowHead.OPEN, start = false, selected = PenPrefs.arrowEnd == ArrowHead.OPEN) { PenPrefs.setArrowEnd(ArrowHead.OPEN) }
-                ArrowOption(ArrowHead.CLOSED, start = false, selected = PenPrefs.arrowEnd == ArrowHead.CLOSED) { PenPrefs.setArrowEnd(ArrowHead.CLOSED) }
+                ArrowOption(ArrowHead.NONE, start = false, selected = PenPrefs.arrowEnd == ArrowHead.NONE) { PenPrefs.changeArrowEnd(ArrowHead.NONE) }
+                ArrowOption(ArrowHead.OPEN, start = false, selected = PenPrefs.arrowEnd == ArrowHead.OPEN) { PenPrefs.changeArrowEnd(ArrowHead.OPEN) }
+                ArrowOption(ArrowHead.CLOSED, start = false, selected = PenPrefs.arrowEnd == ArrowHead.CLOSED) { PenPrefs.changeArrowEnd(ArrowHead.CLOSED) }
             }
         }
     }

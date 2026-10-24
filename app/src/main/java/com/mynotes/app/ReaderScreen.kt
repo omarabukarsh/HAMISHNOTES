@@ -827,7 +827,7 @@ private fun PenBar() {
                 }
                 if (t.isPen()) {
                     ToolbarSep()
-                    BarToggle(L("أشكال", "Shapes"), c.shapeSnap) { c.toggleShapeSnap() }
+                    BarToggle(L("أشكال", "Shapes"), PenPrefs.drawAndHold) { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }
                 }
                 ToolbarSep()
                 Box {
@@ -1031,16 +1031,16 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(L("تحويل الرسم إلى أشكال", "Turn drawings into shapes"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                     Text(
-                        L("الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة تلقائيًا", "Lines, arrows, rectangles, triangles and circles are tidied automatically"),
+                        L("ارسم الشكل ثم أبقِ القلم ضاغطًا دون حركة لحظة، فيتحول إلى خط أو سهم أو مستطيل أو مثلث أو دائرة مرتبة", "Draw, then keep the pen pressed without moving for a moment, and it becomes a neat line, arrow, rectangle, triangle or circle"),
                         fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
                     )
                 }
                 Spacer(Modifier.width(10.dp))
                 Switch(
-                    checked = c.shapeSnap,
-                    onCheckedChange = { c.toggleShapeSnap() },
+                    checked = PenPrefs.drawAndHold,
+                    onCheckedChange = { PenPrefs.changeDrawAndHold(it) },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = Palette.Navy,
@@ -2482,7 +2482,8 @@ private fun PageView(
                                     } else {
                                         // الأقلام: رسم يشبه شكلًا واضحًا يتحول إلى شكل مرتب
                                         val raw = livePts.toList()
-                                        val shaped = if (live.tool.isPen() && (AppController.shapeSnap || (PenPrefs.drawAndHold && held))) {
+                                        // الشكل المثالي فقط عند إبقاء القلم ثابتًا لحظة بعد الرسم
+                                        val shaped = if (live.tool.isPen() && PenPrefs.drawAndHold && held) {
                                             ShapeRecognizer.recognize(raw)
                                         } else null
                                         val pts = shaped ?: PenPrefs.taper(raw, live.tool)

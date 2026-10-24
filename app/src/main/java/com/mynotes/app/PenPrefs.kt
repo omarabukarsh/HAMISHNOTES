@@ -104,17 +104,17 @@ object PenPrefs {
         e.apply()
     }
 
-    fun setLineStyle(v: Int) { lineStyle = v; put("line_style", v) }
-    fun setSharpness(v: Float) { sharpness = v; put("sharpness", v) }
-    fun setPressure(v: Float) { pressure = v; put("pressure", v) }
-    fun setStabilize(v: Float) { stabilize = v; put("stabilize", v) }
-    fun setDrawAndHold(v: Boolean) { drawAndHold = v; put("draw_hold", v) }
+    fun changeLineStyle(v: Int) { lineStyle = v; put("line_style", v) }
+    fun changeSharpness(v: Float) { sharpness = v; put("sharpness", v) }
+    fun changePressure(v: Float) { pressure = v; put("pressure", v) }
+    fun changeStabilize(v: Float) { stabilize = v; put("stabilize", v) }
+    fun changeDrawAndHold(v: Boolean) { drawAndHold = v; put("draw_hold", v) }
     fun resetPen() {
-        setLineStyle(0); setSharpness(0.25f); setPressure(0.5f); setStabilize(0f)
+        changeLineStyle(0); changeSharpness(0.25f); changePressure(0.5f); changeStabilize(0f)
     }
 
-    fun setHlStabilize(v: Float) { hlStabilize = v; put("hl_stabilize", v) }
-    fun setHlStraight(v: Boolean) { hlStraight = v; put("hl_straight", v) }
+    fun changeHlStabilize(v: Float) { hlStabilize = v; put("hl_stabilize", v) }
+    fun changeHlStraight(v: Boolean) { hlStraight = v; put("hl_straight", v) }
 
     /** التثبيت حسب الأداة. */
     fun stabilizeFor(t: Tool): Float = if (t == Tool.HIGHLIGHTER) hlStabilize else stabilize
@@ -145,29 +145,29 @@ object PenPrefs {
         put("slots_" + t.name, l.joinToString(","))
     }
 
-    fun setErasePen(v: Boolean) { erasePen = v; put("er_pen", v) }
-    fun setErasePencil(v: Boolean) { erasePencil = v; put("er_pencil", v) }
-    fun setEraseHighlighter(v: Boolean) { eraseHighlighter = v; put("er_hl", v) }
-    fun setEraseShapes(v: Boolean) { eraseShapes = v; put("er_shapes", v) }
-    fun setAutoDeselect(v: Boolean) { autoDeselect = v; put("auto_deselect", v) }
+    fun changeErasePen(v: Boolean) { erasePen = v; put("er_pen", v) }
+    fun changeErasePencil(v: Boolean) { erasePencil = v; put("er_pencil", v) }
+    fun changeEraseHighlighter(v: Boolean) { eraseHighlighter = v; put("er_hl", v) }
+    fun changeEraseShapes(v: Boolean) { eraseShapes = v; put("er_shapes", v) }
+    fun changeAutoDeselect(v: Boolean) { autoDeselect = v; put("auto_deselect", v) }
 
-    fun setLassoRect(v: Boolean) { lassoRect = v; put("lasso_rect", v) }
-    fun setLassoInk(v: Boolean) { lassoInk = v; put("ls_ink", v) }
-    fun setLassoHighlight(v: Boolean) { lassoHighlight = v; put("ls_hl", v) }
-    fun setLassoShapes(v: Boolean) { lassoShapes = v; put("ls_shapes", v) }
-    fun setLassoImages(v: Boolean) { lassoImages = v; put("ls_img", v) }
-    fun setLassoTexts(v: Boolean) { lassoTexts = v; put("ls_txt", v) }
-    fun setLassoStickies(v: Boolean) { lassoStickies = v; put("ls_sticky", v) }
+    fun changeLassoRect(v: Boolean) { lassoRect = v; put("lasso_rect", v) }
+    fun changeLassoInk(v: Boolean) { lassoInk = v; put("ls_ink", v) }
+    fun changeLassoHighlight(v: Boolean) { lassoHighlight = v; put("ls_hl", v) }
+    fun changeLassoShapes(v: Boolean) { lassoShapes = v; put("ls_shapes", v) }
+    fun changeLassoImages(v: Boolean) { lassoImages = v; put("ls_img", v) }
+    fun changeLassoTexts(v: Boolean) { lassoTexts = v; put("ls_txt", v) }
+    fun changeLassoStickies(v: Boolean) { lassoStickies = v; put("ls_sticky", v) }
 
-    fun setShapeKind(v: ShapeKind) { shapeKind = v; put("shape_kind", v.name) }
-    fun setShapeStyle(v: Int) { shapeStyle = v; put("shape_style", v) }
-    fun setShapeSize(v: Int) { shapeSize = v; put("shape_size", v) }
-    fun setShapeRounded(v: Boolean) { shapeRounded = v; put("shape_round", v) }
-    fun setArrowStart(v: ArrowHead) { arrowStart = v; put("arrow_s", v.name) }
-    fun setArrowEnd(v: ArrowHead) { arrowEnd = v; put("arrow_e", v.name) }
-    fun setShapeColor(v: Int) { shapeColor = v; put("shape_color", v) }
+    fun changeShapeKind(v: ShapeKind) { shapeKind = v; put("shape_kind", v.name) }
+    fun changeShapeStyle(v: Int) { shapeStyle = v; put("shape_style", v) }
+    fun changeShapeSize(v: Int) { shapeSize = v; put("shape_size", v) }
+    fun changeShapeRounded(v: Boolean) { shapeRounded = v; put("shape_round", v) }
+    fun changeArrowStart(v: ArrowHead) { arrowStart = v; put("arrow_s", v.name) }
+    fun changeArrowEnd(v: ArrowHead) { arrowEnd = v; put("arrow_e", v.name) }
+    fun changeShapeColor(v: Int) { shapeColor = v; put("shape_color", v) }
     fun resetShape() {
-        setShapeStyle(0); setShapeSize(2); setShapeRounded(true); setArrowStart(ArrowHead.NONE); setArrowEnd(ArrowHead.NONE)
+        changeShapeStyle(0); changeShapeSize(2); changeShapeRounded(true); changeArrowStart(ArrowHead.NONE); changeArrowEnd(ArrowHead.NONE)
     }
 
     /** هل تمسح الممحاة هذا الخط حسب «فلتر الممحاة». */

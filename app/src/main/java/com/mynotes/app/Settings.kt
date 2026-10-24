@@ -272,8 +272,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     }
                     item {
-                        SettingSwitch(L("تحويل الرسم إلى أشكال", "Turn drawings into shapes"), L("الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة", "Lines, arrows, rectangles, triangles and circles are tidied"), c.shapeSnap) {
-                            c.toggleShapeSnap()
+                        SettingSwitch(L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"), L("ارسم ثم أبقِ القلم ضاغطًا دون حركة لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"), PenPrefs.drawAndHold) {
+                            PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold)
                         }
                     }
 

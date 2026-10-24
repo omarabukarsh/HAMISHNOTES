@@ -208,12 +208,13 @@ fun LibraryScreen() {
     }
 
     if (showNewNote) {
-        NewNoteDialog(
-            onCreate = { n, t, col ->
+        TemplatePickerDialog(
+            mode = PickerMode.NEW_NOTE,
+            onDismiss = { showNewNote = false },
+            onConfirm = { choice, n, _ ->
                 showNewNote = false
-                c.createNote(n, t, col)
-            },
-            onDismiss = { showNewNote = false }
+                c.createNote(n, choice)
+            }
         )
     }
 
@@ -1221,57 +1222,6 @@ private fun NoResults(text: String) {
 }
 
 // ---------------------------------------------------------------- تنسيق
-
-/** إنشاء ملاحظة فارغة بالكامل داخل المكتبة: الاسم، التخطيط، ولون الورقة. */
-@Composable
-private fun NewNoteDialog(onCreate: (String, String, Int) -> Unit, onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf(L("ملاحظة جديدة", "New note")) }
-    var template by remember { mutableStateOf("lined") }
-    var paper by remember { mutableStateOf(Templates.paperColors[1].first) }
-    var picker by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(L("ملاحظة جديدة", "New note")) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    label = { Text(L("الاسم", "Name")) }
-                )
-                Text(L("التخطيط", "Layout"), fontSize = 13.sp, color = Palette.TextSecondary)
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Templates.options.forEach { (k, label) ->
-                        ChoiceChip(label, template == k) { template = k }
-                    }
-                }
-                Text(L("لون الورقة", "Paper color"), fontSize = 13.sp, color = Palette.TextSecondary)
-                PaperColorRow(paper, { paper = it }, { picker = true })
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onCreate(name, template, paper) }) { Text(L("إنشاء", "Create")) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
-        }
-    )
-    if (picker) {
-        ColorPickerDialog(
-            initial = Color(paper),
-            onPick = {
-                paper = it.toArgb()
-                picker = false
-            },
-            onDismiss = { picker = false }
-        )
-    }
-}
 
 private fun formatSize(b: Long): String =
     if (b >= 1024L * 1024L) String.format(Locale.US, "%.1f MB", b / 1048576.0)

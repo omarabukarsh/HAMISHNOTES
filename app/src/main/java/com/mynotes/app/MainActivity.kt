@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -199,18 +200,20 @@ fun MyNotesApp() {
 @Composable
 private fun TabBar() {
     val c = AppController
-    // شريط كحلي مثل كعب المجلد؛ التبويب النشط بلون الصفحة تحته فيبدو متصلًا بها
-    val activeBg = if (c.activeId == null) Palette.Background else Palette.Desk
+    // التبويب النشط بلون ما تحته تمامًا فيبدو متصلًا به: المكتبة بلون شريطها الجانبي، والمستند بلون مكتب القراءة.
+    // الشريط أغمق، والتبويبات الأخرى بلون ثالث واضح فيظهر التباين.
+    val libraryActive = c.activeId == null
+    val activeBg = if (libraryActive) Palette.Spine else Palette.Desk
     Row(
-        Modifier.fillMaxWidth().background(Palette.Ink)
+        Modifier.fillMaxWidth().background(Palette.TabRail)
             .horizontalScroll(rememberScrollState())
-            .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = if (ThemeState.light) 8.dp else 0.dp),
-        horizontalArrangement = Arrangement.spacedBy(if (ThemeState.light) 8.dp else 4.dp),
+            .padding(start = 10.dp, end = 10.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         TabItem(
             title = L("المكتبة", "Library"),
-            active = c.activeId == null,
+            active = libraryActive,
             home = true,
             activeBg = activeBg,
             onClick = { c.activate(null) },
@@ -241,22 +244,17 @@ private fun TabItem(
     onClick: () -> Unit,
     onClose: (() -> Unit)?
 ) {
-    // الكحلي: ألسنة ملفات متصلة بالصفحة. الفاتح: حبوب بيضاء والنشط بإطار ذهبي
-    val light = ThemeState.light
-    val shape = if (light) RoundedCornerShape(50) else RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+    val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+    // لون النص حسب خلفية التبويب (داكنة أو فاتحة)
+    val bg = if (active) activeBg else Palette.TabIdle
+    val darkBg = bg.luminance() < 0.4f
+    val fg = if (darkBg) Color(0xFFEDE6D4) else Palette.Navy
+    val fgMuted = if (darkBg) Color(0xFFB4BFD0) else Palette.TextSecondary
     Column(Modifier.width(IntrinsicSize.Max)) {
         Row(
-            Modifier.height(38.dp)
+            Modifier.height(if (active) 40.dp else 36.dp)
                 .clip(shape)
-                .background(
-                    when {
-                        light && active -> Color.White
-                        light -> Color.White.copy(alpha = 0.55f)
-                        active -> activeBg
-                        else -> Color.Transparent
-                    }
-                )
-                .border(if (light && active) 1.5.dp else 0.dp, if (light && active) Palette.Gold else Color.Transparent, shape)
+                .background(bg)
                 .clickable(onClick = onClick)
                 .padding(start = 14.dp, end = if (onClose == null) 16.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -264,7 +262,7 @@ private fun TabItem(
             if (home) {
                 PhIcon(
                     if (active) R.drawable.ph_books_fill else R.drawable.ph_books,
-                    if (active) Palette.Navy else Palette.OnInkMuted, 18.dp
+                    if (active) Palette.Gold else fgMuted, 18.dp
                 )
                 Spacer(Modifier.width(7.dp))
             } else if (active) {
@@ -276,7 +274,7 @@ private fun TabItem(
                 title,
                 fontSize = 14.sp,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (active) Palette.Navy else Palette.OnInk.copy(alpha = 0.72f),
+                color = if (active) fg else fgMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 180.dp)
@@ -287,10 +285,7 @@ private fun TabItem(
                     onClick = onClose,
                     modifier = Modifier.size(30.dp).clip(CircleShape)
                 ) {
-                    PhIcon(
-                        R.drawable.ph_close,
-                        if (active) Palette.TextSecondary else Palette.OnInkMuted, 15.dp, L("إغلاق التبويب", "Close tab")
-                    )
+                    PhIcon(R.drawable.ph_close, fgMuted, 15.dp, L("إغلاق التبويب", "Close tab"))
                 }
             }
         }

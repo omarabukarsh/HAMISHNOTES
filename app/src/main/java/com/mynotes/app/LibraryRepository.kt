@@ -793,15 +793,15 @@ class LibraryRepository(context: Context) {
     }
 
     /** ينشئ ملاحظة جديدة: ملف PDF من صفحة A4 واحدة بالقالب المختار. خارج الخيط الرئيسي. */
-    fun createNote(name: String, template: String, color: Int): DocEntry {
+    fun createNote(name: String, template: String, color: Int, pw: Int = 595, ph: Int = 842): DocEntry {
         val id = UUID.randomUUID().toString()
         val fileName = "$id.pdf"
         val dest = File(docsDir, fileName)
         val pdf = PdfDocument()
         try {
-            val info = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+            val info = PdfDocument.PageInfo.Builder(pw, ph, 1).create()
             val page = pdf.startPage(info)
-            Templates.draw(page.canvas, 595f, 842f, template, color)
+            Templates.draw(page.canvas, pw.toFloat(), ph.toFloat(), template, color)
             pdf.finishPage(page)
             dest.outputStream().use { out -> pdf.writeTo(out) }
         } catch (t: Throwable) {

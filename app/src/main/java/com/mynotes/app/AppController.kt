@@ -600,7 +600,11 @@ object AppController {
     fun toolVisible(id: String): Boolean = id !in hiddenTools
 
     /** الأدوات المخفية في الشريط الافتراضي (تظهر بقية الأدوات). */
-    val DEFAULT_HIDDEN_TOOLS = listOf("zoomwin", "ocr", "zoom", "night")
+    // الشريط الافتراضي: الأدوات الأساسية فقط (تحديد، أقلام، ممحاة، نص، صورة، ملاحظة، ليزر، تسجيل، بحث، ذكاء، إضافة صفحة، حفظ، تراجع)،
+    // وبقية الأدوات تُضاف من «تخصيص شريط الأدوات»
+    val DEFAULT_HIDDEN_TOOLS = listOf(
+        "zoomwin", "ocr", "zoom", "night", "nav", "bookmark", "timer", "link", "split", "fit", "focus", "readtimer"
+    )
 
     fun resetToolbar() {
         hiddenTools.clear()
@@ -720,6 +724,10 @@ object AppController {
         }
         hiddenTools.clear()
         // أول تشغيل: الشريط الافتراضي، ثم يضيف المستخدم ما يريد من الإعدادات
+        // ترقية مرة واحدة إلى الشريط الافتراضي الجديد (MyNotes Pro)
+        if (prefs.getInt("toolbar_v", 1) < 2) {
+            prefs.edit().putString("hidden_tools", DEFAULT_HIDDEN_TOOLS.joinToString(",")).putInt("toolbar_v", 2).apply()
+        }
         val savedHidden = prefs.getString("hidden_tools", null)
         (savedHidden?.split(",")?.filter { it.isNotBlank() } ?: DEFAULT_HIDDEN_TOOLS).forEach { hiddenTools.add(it) }
         summaryByColor = prefs.getBoolean("sum_by_color", false)
@@ -745,6 +753,8 @@ object AppController {
             LaserMode.DOT
         }
         summaryTidy = prefs.getBoolean("sum_tidy", true)
+        resumeLast = prefs.getBoolean("resume_last", true)
+        openAsTabs = prefs.getBoolean("open_as_tabs", true)
 
         scope.launch {
             val list = withContext(Dispatchers.IO) { repo.loadIndex() }
@@ -755,7 +765,8 @@ object AppController {
             // دمج بالجمع: لا يضيع وقت سُجّل قبل انتهاء التحميل
             withContext(Dispatchers.IO) { repo.loadStats() }.forEach { (k, v) -> stats[k] = (stats[k] ?: 0L) + v }
             statsLoaded = true
-            val ids = (prefs.getString("open", "") ?: "").split(",").filter { it.isNotBlank() }
+            // «المتابعة من حيث توقفت»: إن أُطفئ يبدأ التطبيق من المكتبة
+            val ids = if (!resumeLast) emptyList() else (prefs.getString("open", "") ?: "").split(",").filter { it.isNotBlank() }
             val active = prefs.getString("active", null)
             ids.forEach { id ->
                 // المستندات المقفلة لا تُفتح تلقائيًا بعد إعادة تشغيل التطبيق
@@ -779,6 +790,8 @@ object AppController {
             return
         }
         val entry = library.firstOrNull { it.id == id } ?: return
+        // «فتح المستندات في تبويبات» مطفأ: المستند الجديد يحل محل المفتوح
+        if (!openAsTabs) tabs.map { it.id }.forEach { closeTab(it) }
         openSession(entry, activate = true)
         updateEntry(id) { it.copy(lastOpened = System.currentTimeMillis()) }
         saveLibrary()
@@ -822,6 +835,14 @@ object AppController {
     fun closeSplit() {
         splitId = null
     }
+
+    /** إعدادات المستندات (MyNotes Pro). */
+    var resumeLast by mutableStateOf(true)
+        private set
+    var openAsTabs by mutableStateOf(true)
+        private set
+    fun toggleResumeLast() { resumeLast = !resumeLast; prefs.edit().putBoolean("resume_last", resumeLast).apply() }
+    fun toggleOpenAsTabs() { openAsTabs = !openAsTabs; prefs.edit().putBoolean("open_as_tabs", openAsTabs).apply() }
 
     fun activate(id: String?) {
         if (id != null && tabs.none { it.id == id }) return
@@ -1177,10 +1198,11 @@ object AppController {
 
     // ---------- الصفحات والملاحظات ----------
 
-    fun createNote(name: String, template: String, color: Int) {
+    fun createNote(name: String, choice: PaperChoice) {
         scope.launch {
             try {
-                val e = withContext(Dispatchers.IO) { repo.createNote(name, template, color) }
+                val (pw, ph) = choice.points()
+                val e = withContext(Dispatchers.IO) { repo.createNote(name, choice.kind, choice.color, pw, ph) }
                 library.add(0, e)
                 saveLibrary()
                 openDocument(e.id)
@@ -1196,10 +1218,10 @@ object AppController {
     }
 
     /** يضيف صفحة فارغة كاملة بعد الصفحة رقم after (من 0). */
-    fun addBlankPage(s: DocSession, after: Int, template: String, color: Int) {
+    fun addBlankPage(s: DocSession, after: Int, template: String, color: Int, pageRatio: Float? = null) {
         val doc = s.pdf ?: return
         val base = after.coerceIn(0, maxOf(0, doc.count - 1))
-        val ratio = doc.ratio(base)
+        val ratio = pageRatio ?: doc.ratio(base)
         s.insertPages(after, listOf(PageRef(Templates.src(template, color), 0, ratio)))
         scope.launch { s.listState.scrollToItem((after + 1).coerceAtLeast(0)) }
         messages.tryEmit(L("أُضيفت صفحة جديدة (${doc.count} صفحة الآن)", "New page added (${doc.count} pages now)"))

@@ -42,10 +42,22 @@ def is_bold(page, l, t, text):
     return bool(best and best[1])
 
 
+def arabic_fix(w):
+    """مثل ArabicFix.word في التطبيق: «ال» المستقلة ← «لا»، و«األ» ← «الأ»."""
+    core = w.strip("()[]«».,،:؛;!؟?\"'")
+    fixed = {"ال": "لا", "وال": "ولا", "فال": "فلا"}.get(core)
+    if fixed:
+        w = w.replace(core, fixed)
+    if re.search(r"[\u0600-\u06FF]", w):
+        for a, b in (("األ", "الأ"), ("اإل", "الإ"), ("اآل", "الآ")):
+            w = w.replace(a, b)
+    return w
+
+
 pages = collections.defaultdict(lambda: collections.OrderedDict())
 for p, ln, l, t, r, b, txt in rows:
     p, l, t, r, b = int(p), float(l), float(t), float(r), float(b)
-    pages[p].setdefault(int(ln), []).append((l, t, r, b, txt, is_bold(p, l, t, txt)))
+    pages[p].setdefault(int(ln), []).append((l, t, r, b, arabic_fix(txt), is_bold(p, l, t, txt)))
 
 
 def med(v):
@@ -381,7 +393,7 @@ for head in ["# Penicillin V (Phenoxymethylpenicillin)", "# 1.4 Penicillins — 
     tt = "\n".join(tb)
     bad, bn, unk = suspicious(tt, "\n".join(pts) + " " + head)
     why = dropped(tt, "\n".join(pts))
-    ok = len(tb) >= 3 and not bad and not why
+    ok = (len(tb) >= 3 or (len(tb) == 2 and len(tb[0].split(" | ")) >= 3)) and not bad and not why
     table_log.append(f"### {head} — {dt:.0f}s — {'ACCEPTED' if ok else 'REJECTED (' + (why or ('added ' + str(bn + unk[:4]) if bad else 'too short')) + ')'}\n```\n{tt}\n```")
 
 # ---------------------------------------------------------------- الخريطة الذهنية (بنية الشجرة كما يبنيها MindMap.parse)

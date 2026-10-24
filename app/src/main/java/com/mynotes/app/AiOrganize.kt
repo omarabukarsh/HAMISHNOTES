@@ -649,7 +649,9 @@ Pen V | Acid-stable | Oral | Only for mild infections"""
                 val res = clean(Ai.generate(TABLE_SYSTEM, "SECTION: ${heading.trimStart('#', ' ')}\nPOINTS:\n$notes") { partial = clean(it) })
                 val table = res.lines().map { it.trim() }.filter { it.contains(" | ") }
                 val tableText = table.joinToString("\n")
-                val ok = table.size >= 3 && !AiStructure.suspicious(tableText, notes + " " + heading) && !AiStructure.dropped(tableText, notes)
+                // جدول مقارنة: صفّان على الأقل، أو صف واحد مع 3 أعمدة أو أكثر (جدول خصائص لدواء واحد)
+                val enough = table.size >= 3 || (table.size == 2 && table[0].split(" | ").size >= 3)
+                val ok = enough && !AiStructure.suspicious(tableText, notes + " " + heading) && !AiStructure.dropped(tableText, notes)
                 if (!ok) {
                     AppController.messages.tryEmit(
                         L("لم يكن الجدول دقيقًا (أسقط أو أضاف معلومة)، فبقي القسم كما هو. جرّب قسمًا آخر أو Claude/ChatGPT.",

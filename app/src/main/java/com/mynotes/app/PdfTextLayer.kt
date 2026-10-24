@@ -149,7 +149,7 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
                 b = maxOf(b, base + h * 0.22f)
             }
             if (r <= l || b <= t) return
-            out.add(OcrWord(word, l / pageW, t / pageW, r / pageW, b / pageW, line, isBold(ps)))
+            out.add(OcrWord(ArabicFix.word(word), l / pageW, t / pageW, r / pageW, b / pageW, line, isBold(ps)))
         }
 
         /** الكلمة عريضة إن كان خط أغلب حروفها عريضًا (من اسم الخط أو وزنه). */

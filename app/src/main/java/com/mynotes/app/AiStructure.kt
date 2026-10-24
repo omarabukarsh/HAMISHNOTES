@@ -170,7 +170,7 @@ OUTPUT:
 
     /** نص التظليل كأسطر بسيطة (بدون "# "). */
     private fun markLines(m: TextMark): List<String> =
-        m.text.replace("\r", "").split('\n').map { it.trim().removePrefix("# ").trim() }.filter { it.isNotEmpty() }
+        ArabicFix.text(m.text).replace("\r", "").split('\n').map { it.trim().removePrefix("# ").trim() }.filter { it.isNotEmpty() }
 
     /** يقسم التظليلات إلى أجزاء حسب عناوين المحاضرة، والجداول تُبنى بالكود. */
     fun parts(s: DocSession, marks: List<TextMark>, budget: Int): List<Part> {

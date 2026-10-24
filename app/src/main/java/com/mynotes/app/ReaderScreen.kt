@@ -1665,7 +1665,7 @@ private fun SelectionBar(s: DocSession) {
                 val text = s.selectionText()
                 if (text.isNotEmpty()) {
                     explainCtx = AiDocReader.context(s.id, sel.page, if (Ai.isCloud) 12000 else 1800)
-                    explainText = TextTidy.clean(text)
+                    explainText = ArabicFix.text(TextTidy.clean(text))
                 }
             }) { Text(L("✦ اشرح", "✦ Explain"), color = Palette.GoldDeep) }
             TextButton(onClick = {

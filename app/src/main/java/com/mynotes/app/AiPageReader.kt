@@ -172,51 +172,74 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         }
     }
 
+    /**
+     * قراءة صفحة وحفظ النتيجة (القلب المشترك بين زر «قراءة الصفحة» والقراءة التلقائية قبل الترتيب).
+     * useImage = false: من النص المقروء فقط (أسرع)، وتُستعمل الصورة فقط إن لم يُقرأ نص من الصفحة.
+     * يعيد النص المنظّم، أو null إن لم يكن في الصفحة نص.
+     */
+    suspend fun read(
+        s: DocSession,
+        page: Int,
+        useImage: Boolean = true,
+        onStep: (String) -> Unit = {},
+        onPartial: (String) -> Unit = {}
+    ): String? {
+        val docId = s.id
+        val done = StringBuilder()
+        try {
+            onStep(L("جارٍ قراءة الصفحة ${page + 1}…", "Reading page ${page + 1}…"))
+            val words = s.ocrPage(page)?.words ?: emptyList()
+            val text = layoutText(words)
+            val img = if (Ai.canSee && (useImage || text.isBlank())) pageImage(s, page) else null
+            if (text.isBlank() && img == null) return null
+            val arabic = isArabic(text)
+            val parts = if (img != null) listOf(text.take(Ai.budget(if (arabic) 1500 else 2600)))
+            else split(text, Ai.budget(if (arabic) 2000 else 3600))
+            parts.forEachIndexed { i, part ->
+                onStep(
+                    if (parts.size == 1) L("جارٍ تنظيم الصفحة ${page + 1}…", "Structuring page ${page + 1}…")
+                    else L("جارٍ تنظيم الصفحة ${page + 1} (الجزء ${i + 1} من ${parts.size})…", "Structuring page ${page + 1} (part ${i + 1} of ${parts.size})…")
+                )
+                val prompt = when {
+                    img != null && part.isBlank() -> "Read the attached page image."
+                    img != null -> "The page image is attached. OCR text of the page (hints, may be incomplete or wrong):\n\n$part"
+                    else -> "OCR text of the page:\n\n$part"
+                }
+                val res = Ai.generate(SYSTEM, prompt, if (i == 0) img else null) { p ->
+                    onPartial((done.toString() + "\n\n" + AiOrganizer.clean(p)).trim())
+                }
+                if (done.isNotEmpty()) done.append("\n\n")
+                done.append(AiOrganizer.clean(res))
+                onPartial(done.toString())
+            }
+            save(docId, page, done.toString())
+            return done.toString()
+        } catch (e: CancellationException) {
+            if (done.isNotEmpty()) save(docId, page, done.toString())
+            throw e
+        }
+    }
+
     fun start(s: DocSession, page: Int) {
         if (job?.isActive == true || AiOrganizer.runningDoc != null) return
         if (!Ai.ready) {
             AppController.messages.tryEmit(L("نزّل نموذج الذكاء الاصطناعي أولًا من الإعدادات", "Download the AI model first from Settings"))
             return
         }
-        val docId = s.id
-        runningKey = key(docId, page)
+        runningKey = key(s.id, page)
         partial = ""
         job = AppController.scope.launch {
-            val done = StringBuilder()
             try {
-                stepText = L("جارٍ قراءة الصفحة ${page + 1}…", "Reading page ${page + 1}…")
-                val words = s.ocrPage(page)?.words ?: emptyList()
-                val img = if (Ai.canSee) pageImage(s, page) else null
-                val text = layoutText(words)
-                if (text.isBlank() && img == null) {
+                val r = read(s, page, useImage = true, onStep = { stepText = it }, onPartial = { partial = it })
+                if (r == null) {
                     AppController.messages.tryEmit(
                         L("لم يُقرأ نص في هذه الصفحة. للصفحات العربية الممسوحة اختر نموذج Gemma 4 من الإعدادات.",
                             "No text was read on this page. For scanned Arabic pages choose the Gemma 4 model in Settings.")
                     )
-                    return@launch
+                } else {
+                    AppController.messages.tryEmit(L("اكتملت قراءة الصفحة ${page + 1}. راجعها قبل الاعتماد عليها", "Page ${page + 1} read. Review it before relying on it"))
                 }
-                val arabic = isArabic(text)
-                val parts = if (img != null) listOf(text.take(Ai.budget(if (arabic) 1500 else 2600)))
-                else split(text, Ai.budget(if (arabic) 2000 else 3600))
-                parts.forEachIndexed { i, part ->
-                    stepText = if (parts.size == 1) L("جارٍ تنظيم الصفحة ${page + 1}…", "Structuring page ${page + 1}…")
-                    else L("جارٍ تنظيم الصفحة ${page + 1} (الجزء ${i + 1} من ${parts.size})…", "Structuring page ${page + 1} (part ${i + 1} of ${parts.size})…")
-                    val prompt = when {
-                        img != null && part.isBlank() -> "Read the attached page image."
-                        img != null -> "The page image is attached. OCR text of the page (hints, may be incomplete or wrong):\n\n$part"
-                        else -> "OCR text of the page:\n\n$part"
-                    }
-                    val res = Ai.generate(SYSTEM, prompt, if (i == 0) img else null) { p ->
-                        partial = (done.toString() + "\n\n" + AiOrganizer.clean(p)).trim()
-                    }
-                    if (done.isNotEmpty()) done.append("\n\n")
-                    done.append(AiOrganizer.clean(res))
-                    partial = done.toString()
-                }
-                save(docId, page, done.toString())
-                AppController.messages.tryEmit(L("اكتملت قراءة الصفحة ${page + 1}. راجعها قبل الاعتماد عليها", "Page ${page + 1} read. Review it before relying on it"))
             } catch (e: CancellationException) {
-                if (done.isNotEmpty()) save(docId, page, done.toString())
             } catch (t: Throwable) {
                 AppController.messages.tryEmit(
                     Ai.errorText(t, L("تعذر تشغيل النموذج. جرّب نموذجًا آخر من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",

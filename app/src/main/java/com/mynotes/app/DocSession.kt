@@ -863,7 +863,7 @@ class DocSession(entry: DocEntry) {
         val doc = pdf ?: return null
         val strokes = annotations[page] ?: emptyList()
         // الإصدار يشمل مصدر القراءة (طبقة النص)، فتُعاد قراءة الصفحات المحفوظة بالطريقة القديمة مرة واحدة
-        val ver = OcrEngine.versionOf(strokes) * 31 + 2
+        val ver = OcrEngine.versionOf(strokes) * 31 + 3
         val existing = ocr[page]
         if (existing != null && existing.version == ver) return existing
 

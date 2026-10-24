@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -162,6 +163,19 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
      * يحوّل الملخص المرتّب بالذكاء الاصطناعي إلى أجزاء ملخص (عناوين، فقرات، جداول)
      * بنفس قواعد عرضه في الدرج، ليُحفظ PDF بنفس شكل ملفات الملخص الأخرى.
      */
+    /** يفصل **المهم** عن النص: (النص بدون النجوم، الأجزاء المهمة). */
+    fun boldParts(s: String): Pair<String, List<String>> {
+        if (!s.contains("**")) return Pair(s, emptyList())
+        val em = ArrayList<String>()
+        val sb = StringBuilder()
+        val parts = s.split("**")
+        parts.forEachIndexed { k, part ->
+            if (k % 2 == 1 && k < parts.lastIndex) em.add(part)
+            sb.append(part)
+        }
+        return Pair(sb.toString(), em.filter { it.isNotBlank() })
+    }
+
     fun toBlocks(text: String): List<SBlock> {
         val out = ArrayList<SBlock>()
         val lines = text.lines()
@@ -176,14 +190,14 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
                     val start = i
                     val rows = ArrayList<List<String>>()
                     while (i < lines.size && lines[i].contains(" | ")) {
-                        rows.add(lines[i].trim().split(" | ").map { it.trim() })
+                        rows.add(lines[i].trim().replace("**", "").split(" | ").map { it.trim() })
                         i++
                     }
                     i--
                     out.add(STable(rows, emptyList(), "ai$start", header = true))
                 }
-                l.startsWith("- ") -> out.add(SPara("•  " + l.removePrefix("- ").trim(), emptyList(), emptyList(), "ai$i"))
-                else -> out.add(SPara(l, emptyList(), emptyList(), "ai$i"))
+                l.startsWith("- ") -> { val (tx, em) = boldParts("•  " + l.removePrefix("- ").trim()); out.add(SPara(tx, em, emptyList(), "ai$i")) }
+                else -> { val (tx, em) = boldParts(l); out.add(SPara(tx, em, emptyList(), "ai$i")) }
             }
             i++
         }
@@ -313,6 +327,11 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         private set
     fun toggleAutoContinue(on: Boolean) { autoContinue = on; prefs().edit().putBoolean("auto_continue", on).apply() }
 
+    /** قراءة صفحات التظليل بالذكاء تلقائيًا قبل الترتيب (عناوين أدق، أبطأ في أول مرة). */
+    var autoReadPages by mutableStateOf(prefs().getBoolean("auto_read_pages", true))
+        private set
+    fun toggleAutoReadPages(on: Boolean) { autoReadPages = on; prefs().edit().putBoolean("auto_read_pages", on).apply() }
+
     /** بطاقات مراجعة تلقائية بالذكاء الاصطناعي من النصوص المظللة. */
     var autoCards by mutableStateOf(prefs().getBoolean("auto_cards", true))
         private set
@@ -362,6 +381,38 @@ A: answer
     private fun normHead(h: String) = h.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 
     /** يدمج ملخص التمييزات الجديدة في الملخص القائم: تحت نفس العنوان إن وُجد، وإلا في آخره. */
+    /**
+     * يضيف محتوى قسم إلى قسم موجود: ما تحت عنوان فرعي «## » موجود يُضاف في آخر ذلك العنوان الفرعي،
+     * والعنوان الفرعي الجديد وما بلا عنوان فرعي يُضاف في آخر القسم.
+     */
+    private fun mergeSubs(target: MutableList<String>, addition: List<String>) {
+        // أجزاء الإضافة: (عنوان فرعي أو null، أسطره)
+        val chunks = ArrayList<Pair<String?, MutableList<String>>>()
+        chunks.add(null to ArrayList())
+        for (l in addition) if (l.trim().startsWith("## ")) chunks.add(l.trim() to ArrayList()) else chunks.last().second.add(l)
+        for ((sub, lines) in chunks) {
+            val content = lines.joinToString("\n").trim()
+            while (target.isNotEmpty() && target.last().isBlank()) target.removeAt(target.lastIndex)
+            if (sub == null) {
+                if (content.isNotEmpty()) target.add(content)
+                continue
+            }
+            val at = target.indexOfFirst { it.trim().startsWith("## ") && normHead(it.trim().removePrefix("## ")) == normHead(sub.removePrefix("## ")) }
+            if (at < 0) {
+                target.add("")
+                target.add(sub)
+                if (content.isNotEmpty()) target.add(content)
+            } else if (content.isNotEmpty()) {
+                // نهاية العنوان الفرعي: قبل العنوان الفرعي التالي أو آخر القسم
+                var end = target.size
+                for (k in at + 1 until target.size) if (target[k].trim().startsWith("## ")) { end = k; break }
+                while (end > at + 1 && target[end - 1].isBlank()) end--
+                target.add(end, content)
+            }
+        }
+        target.add("")
+    }
+
     fun merge(existing: String, addition: String): String {
         fun sections(text: String): MutableList<Pair<String?, MutableList<String>>> {
             val out = ArrayList<Pair<String?, MutableList<String>>>()
@@ -380,9 +431,7 @@ A: answer
             }
             val match = base.firstOrNull { it.first != null && normHead(it.first!!.removePrefix("# ")) == normHead(h.removePrefix("# ")) }
             if (match != null) {
-                while (match.second.isNotEmpty() && match.second.last().isBlank()) match.second.removeAt(match.second.lastIndex)
-                if (content.isNotEmpty()) match.second.add(content)
-                match.second.add("")
+                mergeSubs(match.second, body)
             } else {
                 base.add(h to mutableListOf<String>().apply { if (content.isNotEmpty()) add(content); add("") })
             }
@@ -406,6 +455,29 @@ A: answer
         organize(s, notesOf(news), append = true, marks = news, quiet = quiet)
     }
 
+    // ---------- ذاكرة الأجزاء المرتّبة (لإعادة الترتيب السريعة) ----------
+
+    private fun memoFile(docId: String) = File(File(AppController.appContext.filesDir, "ai/memo").also { it.mkdirs() }, "$docId.json")
+
+    private fun loadMemo(docId: String): MutableMap<String, String> = try {
+        val f = memoFile(docId)
+        if (!f.exists()) HashMap() else {
+            val o = org.json.JSONObject(f.readText())
+            o.keys().asSequence().associateWith { o.getString(it) }.toMutableMap()
+        }
+    } catch (t: Throwable) {
+        HashMap()
+    }
+
+    private fun saveMemo(docId: String, m: Map<String, String>) {
+        try {
+            // حد أعلى حتى لا يكبر الملف بلا نهاية
+            val keep = if (m.size > 600) m.entries.toList().takeLast(600).associate { it.toPair() } else m
+            memoFile(docId).writeText(org.json.JSONObject(keep).toString())
+        } catch (t: Throwable) {
+        }
+    }
+
     private fun organize(s: DocSession, notes: String, append: Boolean, marks: List<TextMark>, quiet: Boolean = false) {
         if (job?.isActive == true || AiPageReader.runningKey != null) return
         if (!Ai.ready || marks.isEmpty() || notes.isBlank()) return
@@ -420,9 +492,12 @@ A: answer
         partial = ""
         stepFraction = 0f
         job = AppController.scope.launch {
-            val done = ArrayList<Pair<String?, String>>()
+            val done = ArrayList<Triple<String?, String?, String>>()
             val cards = ArrayList<Pair<String, String>>()
-            fun shown(extra: Pair<String?, String>? = null): String {
+            // ذاكرة الأجزاء: ما لم يتغير لا يُعاد إرساله للنموذج
+            val memo = withContext(Dispatchers.IO) { loadMemo(docId) }
+            val model = if (Ai.isCloud) CloudAi.label + ":" + (if (CloudAi.provider == CloudAi.Provider.CLAUDE) CloudAi.claudeModel else CloudAi.openaiModel) else Ai.selected.id
+            fun shown(extra: Triple<String?, String?, String>? = null): String {
                 val cur = AiStructure.assemble(if (extra == null) done else done + extra)
                 return if (append) merge(before, cur) else cur
             }
@@ -430,6 +505,23 @@ A: answer
                 // الصفحات التي فيها تمييزات تُقرأ إن لم تكن مقروءة: منها تُؤخذ عناوين المحاضرة ورؤوس الجداول
                 stepText = L("جارٍ قراءة صفحات المستند…", "Reading the document pages…")
                 marks.map { it.page }.distinct().forEach { p -> if (s.ocr[p] == null) s.ocrPage(p) }
+                // «قراءة الصفحة بالذكاء» تلقائيًا لكل صفحة فيها تظليل ولم تُقرأ بعد: عناوينها تُستعمل في الهيكل.
+                // من النص المقروء فقط (أسرع)؛ الصورة فقط للصفحات التي لا نص فيها. كل صفحة تُقرأ مرة واحدة وتُحفظ.
+                if (autoReadPages) {
+                    val todo = marks.map { it.page }.distinct().sorted().filter { AiPageReader.result(docId, it) == null }
+                    todo.forEachIndexed { k, pg ->
+                        stepFraction = k / (todo.size + 1f)
+                        try {
+                            AiPageReader.read(s, pg, useImage = false, onStep = {
+                                stepText = L("قراءة صفحات التظليل قبل الكتابة (${k + 1} من ${todo.size})", "Reading highlighted pages first (${k + 1} of ${todo.size})")
+                            })
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (t: Throwable) {
+                            // صفحة تعذرت قراءتها: يكمل الترتيب بعناوين شكل الأسطر
+                        }
+                    }
+                }
                 val parts = AiStructure.parts(s, marks, budget)
                 val cardBuf = StringBuilder()
                 suspend fun flushCards(force: Boolean) {
@@ -447,19 +539,24 @@ A: answer
                     stepFraction = i / parts.size.toFloat()
                     stepText = when {
                         append -> L("جارٍ إكمال الملخص بالتظليل الجديد…", "Adding new highlights to the summary…")
-                        else -> L("جارٍ الترتيب: ${p.title ?: "…"} (${i + 1} من ${parts.size})", "Organizing: ${p.title ?: "…"} (${i + 1} of ${parts.size})")
+                        else -> L("جارٍ الترتيب: ${p.sub ?: p.title ?: "…"} (${i + 1} من ${parts.size})", "Organizing: ${p.sub ?: p.title ?: "…"} (${i + 1} of ${parts.size})")
                     }
-                    val body = p.table ?: AiStructure.body(
-                        p,
-                        Ai.generate(AiStructure.SYSTEM, AiStructure.prompt(p)) { x -> partial = shown(Pair(p.title, clean(x))) }
+                    val key = AiStructure.cacheKey(p, model)
+                    val body = AiStructure.emphasize(
+                        p.table ?: memo[key] ?: if (AiStructure.trivial(p)) AiStructure.fallback(p.notes) else AiStructure.body(
+                            p,
+                            Ai.generate(AiStructure.SYSTEM, AiStructure.prompt(p)) { x -> partial = shown(Triple(p.title, p.sub, clean(x))) }
+                        ).also { memo[key] = it },
+                        p.emphasis
                     )
-                    done.add(Pair(p.title, body))
+                    done.add(Triple(p.title, p.sub, body))
                     partial = shown()
                     if (cardBuf.isNotEmpty()) cardBuf.append("\n")
                     cardBuf.append(p.notes)
                     flushCards(false)
                 }
                 flushCards(true)
+                withContext(Dispatchers.IO) { saveMemo(docId, memo) }
                 save(docId, shown())
                 setProcessed(docId, if (append) processed(docId) + snapshot else snapshot)
                 if (autoCards) s.putAiCards(cards, replace = !append)
@@ -474,6 +571,7 @@ A: answer
                 )
             } catch (e: CancellationException) {
                 // ترتيب كامل لم يكتمل: يُحفظ ما كُتب، ولا يُعرف ما رُتّب فيُطفأ الإكمال حتى يُعاد الترتيب
+                withContext(NonCancellable + Dispatchers.IO) { saveMemo(docId, memo) }
                 if (!append && done.isNotEmpty()) {
                     save(docId, shown())
                     setProcessed(docId, emptyMap())
@@ -548,6 +646,12 @@ Output only the edited summary, no introduction or closing remarks."""
 }
 
 /** يعرض الملخص المرتّب: عناوين، نقاط، فقرات، وجداول. */
+/** **المهم** بخط عريض وتظليل ذهبي فاتح، كما في الملخص العادي. */
+fun richText(s: String): androidx.compose.ui.text.AnnotatedString {
+    val (plain, em) = AiOrganizer.boldParts(s)
+    return emphasized(plain, em)
+}
+
 @Composable
 fun AiSummaryText(text: String) {
     val lines = text.lines()
@@ -569,7 +673,7 @@ fun AiSummaryText(text: String) {
                     // جدول: الأسطر المتتالية التي فيها " | "
                     val rows = ArrayList<List<String>>()
                     while (i < lines.size && lines[i].contains(" | ")) {
-                        rows.add(lines[i].split(" | ").map { it.trim() })
+                        rows.add(lines[i].replace("**", "").split(" | ").map { it.trim() })
                         i++
                     }
                     i--
@@ -577,9 +681,9 @@ fun AiSummaryText(text: String) {
                 }
                 l.startsWith("- ") -> Row {
                     Text("•  ", fontSize = 14.sp, color = Palette.GoldDeep)
-                    Text(l.removePrefix("- "), fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextPrimary)
+                    Text(richText(l.removePrefix("- ")), fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextPrimary)
                 }
-                else -> Text(l, fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextPrimary)
+                else -> Text(richText(l), fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextPrimary)
             }
             i++
         }
@@ -713,6 +817,10 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                     L("إكمال تلقائي بعد التظليل الجديد", "Continue automatically after new highlights"),
                     AiOrganizer.autoContinue
                 ) { AiOrganizer.toggleAutoContinue(!AiOrganizer.autoContinue) }
+                AiToggle(
+                    L("قراءة صفحات التظليل بالذكاء تلقائيًا قبل الكتابة (عناوين أدق، أبطأ أول مرة)", "Read highlighted pages with AI before writing (better headings, slower the first time)"),
+                    AiOrganizer.autoReadPages
+                ) { AiOrganizer.toggleAutoReadPages(!AiOrganizer.autoReadPages) }
                 AiToggle(
                     L("بطاقات مراجعة تلقائية بالذكاء الاصطناعي (تظهر في «بطاقات»)", "Automatic AI review cards (shown in “Cards”)"),
                     AiOrganizer.autoCards

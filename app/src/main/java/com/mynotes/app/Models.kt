@@ -164,7 +164,9 @@ data class OcrWord(
     val t: Float,
     val r: Float,
     val b: Float,
-    val line: Int
+    val line: Int,
+    /** خط عريض في ملف PDF (لاكتشاف العناوين الفرعية في ترتيب الملخص). */
+    val bold: Boolean = false
 )
 
 data class OcrPage(val words: List<OcrWord>, val version: Int)

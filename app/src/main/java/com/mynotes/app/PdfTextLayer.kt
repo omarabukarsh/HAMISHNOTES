@@ -149,7 +149,23 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
                 b = maxOf(b, base + h * 0.22f)
             }
             if (r <= l || b <= t) return
-            out.add(OcrWord(word, l / pageW, t / pageW, r / pageW, b / pageW, line))
+            out.add(OcrWord(word, l / pageW, t / pageW, r / pageW, b / pageW, line, isBold(ps)))
+        }
+
+        /** الكلمة عريضة إن كان خط أغلب حروفها عريضًا (من اسم الخط أو وزنه). */
+        private fun isBold(ps: List<TextPosition>): Boolean {
+            var bold = 0
+            for (p in ps) {
+                val f = try { p.font } catch (t: Throwable) { null } ?: continue
+                val name = (try { f.name } catch (t: Throwable) { null } ?: "").lowercase()
+                val d = try { f.fontDescriptor } catch (t: Throwable) { null }
+                val weight = try { d?.fontWeight ?: 0f } catch (t: Throwable) { 0f }
+                val force = try { d?.isForceBold == true } catch (t: Throwable) { false }
+                if (force || weight >= 600f || name.contains("bold") || name.contains("black") ||
+                    name.contains("heavy") || name.contains("semibold") || name.contains("demi")
+                ) bold++
+            }
+            return bold * 2 > ps.size
         }
 
         override fun writeLineSeparator() {

@@ -911,6 +911,7 @@ class LibraryRepository(context: Context) {
                         .put(w.r.toDouble())
                         .put(w.b.toDouble())
                         .put(w.line)
+                        .put(if (w.bold) 1 else 0)
                 )
             }
             atomicWrite(
@@ -939,7 +940,8 @@ class LibraryRepository(context: Context) {
                             a.getDouble(2).toFloat(),
                             a.getDouble(3).toFloat(),
                             a.getDouble(4).toFloat(),
-                            a.getInt(5)
+                            a.getInt(5),
+                            a.optInt(6, 0) == 1
                         )
                     )
                 }

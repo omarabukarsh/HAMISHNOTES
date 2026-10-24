@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install litert-lm huggingface_hub
+        run: pip install litert-lm huggingface_hub pdfplumber
       - name: Download model
         run: |
           python -c "from huggingface_hub import hf_hub_download; p=hf_hub_download('litert-community/gemma-4-E2B-it-litert-lm','gemma-4-E2B-it.litertlm',local_dir='.'); print(p)"

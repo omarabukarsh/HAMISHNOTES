@@ -214,9 +214,6 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             ChoiceChip("English", I18n.english) { c.setEnglish(true) }
                         }
                     }
-                    item { SectionTitle(L("تعرّف على الأدوات", "Get to know the tools")) }
-                    item { ToolTour(pager) }
-
                     item { SectionTitle(L("القلم والأصابع", "Pen and fingers")) }
                     item {
                         SettingSwitch(
@@ -290,10 +287,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             }
         }
     }
-    if (toolbarOpen) ToolbarCustomizeDialog(
-        onInfo = { id -> toolbarOpen = false; showTour(id) },
-        onDismiss = { toolbarOpen = false }
-    )
+    if (toolbarOpen) ToolbarCustomizeDialog(onDismiss = { toolbarOpen = false })
     if (templateOpen) TemplatePickerDialog(
         mode = PickerMode.DEFAULT,
         onDismiss = { templateOpen = false },
@@ -339,8 +333,20 @@ private fun PenKeyLearnRow() {
 
 /** نافذة «تخصيص شريط الأدوات»: الشكل، الأدوات الأساسية، والأدوات التي تُضاف أو تُخفى. */
 @Composable
-private fun ToolbarCustomizeDialog(onInfo: (String) -> Unit, onDismiss: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
     val c = AppController
+    // «تعرّف على الأدوات» هنا، وزر المعلومات بجانب كل أداة يعرض شرحها في الأعلى
+    val listState = rememberLazyListState()
+    val pager = rememberPagerState(pageCount = { ToolCatalog.tour.size })
+    val scope = rememberCoroutineScope()
+    fun onInfo(id: String) {
+        val i = ToolCatalog.tour.indexOfFirst { it.id == id }
+        if (i >= 0) scope.launch {
+            listState.animateScrollToItem(0)
+            pager.animateScrollToPage(i)
+        }
+    }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             Modifier.fillMaxWidth(0.9f).widthIn(max = 720.dp).fillMaxHeight(0.88f),
@@ -359,10 +365,13 @@ private fun ToolbarCustomizeDialog(onInfo: (String) -> Unit, onDismiss: () -> Un
                     IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 22.dp, L("إغلاق", "Close")) }
                 }
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    item { SectionTitle(L("تعرّف على الأدوات", "Get to know the tools")) }
+                    item { ToolTour(pager) }
                     item { SectionTitle(L("شكل شريط الأدوات", "Toolbar style")) }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

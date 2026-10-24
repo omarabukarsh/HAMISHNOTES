@@ -262,6 +262,24 @@ def suspicious(out, allowed):
     return bool(bad_nums) or len(unknown) > max(3, len(words) // 4), bad_nums, unknown
 
 
+def well_formed(s):
+    run, n = 0, -1
+    for l in [x.strip() for x in s.splitlines()] + [""]:
+        if not l:
+            if run == 1: return False
+            run, n = 0, -1; continue
+        if "|" in l:
+            if l.startswith(("- ", "|")) or l.endswith("|"): return False
+            c = [x.strip() for x in l.split("|")]
+            if len(c) < 2 or any(not x for x in c) or (run and len(c) != n): return False
+            n, run = len(c), run + 1
+        else:
+            if run == 1: return False
+            run, n = 0, -1
+            if not l.startswith(("- ", "**")): return False
+    return True
+
+
 def fallback(notes):
     return "\n".join(l if " | " in l else "- " + l.strip() for l in notes.splitlines() if l.strip())
 
@@ -356,7 +374,9 @@ for (title, sub), ms in groups:
                                       for l in r.splitlines() if norm(l.lstrip("#- ")) not in heads).strip()
                         b2, _, u2 = suspicious(r, notes + " " + (title or "") + " " + (sub or ""))
                         w2 = dropped(r, notes)
-                        if r and not b2 and not w2:
+                        if r and not b2 and not w2 and not well_formed(r):
+                            log.append(f"  review {dt2:.1f}s → correction rejected (bad format)")
+                        elif r and not b2 and not w2:
                             log.append(f"  review {dt2:.1f}s → CORRECTED")
                             body = r
                         else:

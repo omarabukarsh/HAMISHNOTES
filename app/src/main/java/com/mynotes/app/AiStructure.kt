@@ -326,7 +326,33 @@ Otherwise answer only the corrected section in the same format: no title, no exp
     fun reviewed(p: Part, raw: String): String? {
         val r = AiOrganizer.clean(raw).trim()
         if (r.isEmpty() || Regex("^(?i)ok\\b").containsMatchIn(r) || r == "حسنًا") return null
-        return checked(p, r)
+        return checked(p, r)?.takeIf { wellFormed(it) }
+    }
+
+    /**
+     * تصحيح المراجعة يُقبل فقط إن كان منسقًا سليمًا: كل سطر نقطة «- » بلا «|»، أو صف جدول
+     * ضمن جدول من صفين فأكثر بعدد خلايا ثابت (2 فأكثر) ولا خلية فارغة. غير ذلك تبقى المسودة.
+     */
+    fun wellFormed(s: String): Boolean {
+        val lines = s.lines().map { it.trim() }
+        var run = 0
+        var cellsN = -1
+        fun endRun(): Boolean = run == 0 || run >= 2
+        for (l in lines) {
+            if (l.isEmpty()) { if (!endRun()) return false; run = 0; cellsN = -1; continue }
+            if (l.contains("|")) {
+                if (l.startsWith("- ") || l.startsWith("|") || l.endsWith("|")) return false
+                val c = l.split("|").map { it.trim() }
+                if (c.size < 2 || c.any { it.isEmpty() }) return false
+                if (run > 0 && c.size != cellsN) return false
+                cellsN = c.size; run++
+            } else {
+                if (!endRun()) return false
+                run = 0; cellsN = -1
+                if (!l.startsWith("- ") && !l.startsWith("**")) return false
+            }
+        }
+        return endRun()
     }
 
     /** ناتج النموذج لجزء: ينظَّف، ويُحذف تكرار العنوان، ويُفحص ضد الاختلاق. */

@@ -150,8 +150,8 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                         if (tab == 2 && shown.isEmpty()) {
                             EmptyPanel(
                                 R.drawable.ph_bookmark,
-                                L("نظرة عامة على المستندات الكبيرة", "Keep an overview in large documents"),
-                                L("الصفحات التي تضع عليها علامة تظهر هنا.", "Pages you bookmark in this document appear here.")
+                                L("لا توجد علامات بعد", "No bookmarks yet"),
+                                L("ضع علامة على صفحة من زاوية صورتها أو من قائمة الصفحة لتجدها هنا بسرعة.", "Mark a page from its thumbnail corner or the page menu to find it here quickly.")
                             )
                         } else {
                             LazyVerticalGrid(
@@ -464,7 +464,7 @@ private fun OutlineList(s: DocSession, current: Int, onGo: (Int) -> Unit) {
             if (list.isEmpty()) {
                 EmptyPanel(
                     R.drawable.ph_list,
-                    L("الفهرس: خريطة لمستندك", "Outline: a map of your document"),
+                    L("لا توجد عناوين بعد", "No headings yet"),
                     L("أضف عناوين لتنظيم مستندك والتنقل فيه بسرعة.", "Add headings to organize your document and move through it quickly.")
                 )
             } else {

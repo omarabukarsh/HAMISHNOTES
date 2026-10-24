@@ -233,7 +233,7 @@ fun EraserAdvancedSection() {
     PanelSwitch(L("الهايلايتر", "Highlighter"), PenPrefs.eraseHighlighter, R.drawable.ph_highlighter) { PenPrefs.changeEraseHighlighter(it) }
     PanelSwitch(L("الأشكال", "Shapes"), PenPrefs.eraseShapes, R.drawable.ph_shapes) { PenPrefs.changeEraseShapes(it) }
     Text(
-        L("الممحاة تتجاهل ما رسمته أي أداة مُطفأة هنا.", "The eraser ignores marks from any tool that’s turned off."),
+        L("أطفئ أداة هنا لتحمي ما رسمته بها من المسح.", "Turn a tool off here to protect what you drew with it from erasing."),
         fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
     )
     Divider()

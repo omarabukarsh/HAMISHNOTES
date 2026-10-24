@@ -1299,10 +1299,10 @@ private fun CloudAiSettings() {
     Text(L("مصدر الذكاء الاصطناعي", "AI source"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ChoiceChip(L("على الجهاز (مجاني، دون إنترنت)", "On device (free, offline)"), CloudAi.provider == CloudAi.Provider.LOCAL) {
-            CloudAi.setProvider(CloudAi.Provider.LOCAL); result = null
+            CloudAi.updateProvider(CloudAi.Provider.LOCAL); result = null
         }
-        ChoiceChip("Claude", CloudAi.provider == CloudAi.Provider.CLAUDE) { CloudAi.setProvider(CloudAi.Provider.CLAUDE); result = null }
-        ChoiceChip("ChatGPT", CloudAi.provider == CloudAi.Provider.OPENAI) { CloudAi.setProvider(CloudAi.Provider.OPENAI); result = null }
+        ChoiceChip("Claude", CloudAi.provider == CloudAi.Provider.CLAUDE) { CloudAi.updateProvider(CloudAi.Provider.CLAUDE); result = null }
+        ChoiceChip("ChatGPT", CloudAi.provider == CloudAi.Provider.OPENAI) { CloudAi.updateProvider(CloudAi.Provider.OPENAI); result = null }
     }
     if (CloudAi.provider != CloudAi.Provider.LOCAL) {
         val claude = CloudAi.provider == CloudAi.Provider.CLAUDE
@@ -1317,7 +1317,7 @@ private fun CloudAiSettings() {
         var shown by remember { mutableStateOf(false) }
         androidx.compose.material3.OutlinedTextField(
             value = key,
-            onValueChange = { key = it.trim(); if (claude) CloudAi.setClaudeKey(key) else CloudAi.setOpenaiKey(key); result = null },
+            onValueChange = { key = it.trim(); if (claude) CloudAi.updateClaudeKey(key) else CloudAi.updateOpenaiKey(key); result = null },
             singleLine = true,
             label = { Text(if (claude) L("مفتاح Anthropic API", "Anthropic API key") else L("مفتاح OpenAI API", "OpenAI API key")) },
             visualTransformation = if (shown) androidx.compose.ui.text.input.VisualTransformation.None
@@ -1333,13 +1333,13 @@ private fun CloudAiSettings() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             (if (claude) CloudAi.claudeModels else CloudAi.openaiModels).forEach { m ->
                 val sel = m == (if (claude) CloudAi.claudeModel else CloudAi.openaiModel)
-                ChoiceChip(m, sel) { if (claude) CloudAi.setClaudeModel(m) else CloudAi.setOpenaiModel(m); result = null }
+                ChoiceChip(m, sel) { if (claude) CloudAi.updateClaudeModel(m) else CloudAi.updateOpenaiModel(m); result = null }
             }
         }
         var custom by remember(CloudAi.provider) { mutableStateOf(if (claude) CloudAi.claudeModel else CloudAi.openaiModel) }
         androidx.compose.material3.OutlinedTextField(
             value = custom,
-            onValueChange = { custom = it; if (it.isNotBlank()) { if (claude) CloudAi.setClaudeModel(it) else CloudAi.setOpenaiModel(it) } },
+            onValueChange = { custom = it; if (it.isNotBlank()) { if (claude) CloudAi.updateClaudeModel(it) else CloudAi.updateOpenaiModel(it) } },
             singleLine = true,
             label = { Text(L("أو اكتب اسم نموذج آخر", "or type another model name")) },
             modifier = Modifier.fillMaxWidth()

@@ -50,11 +50,11 @@ object CloudAi {
         openaiModel = p.getString("openai_model", openaiModels[0]) ?: openaiModels[0]
     }
 
-    fun setProvider(v: Provider) { provider = v; prefs().edit().putString("provider", v.name).apply() }
-    fun setClaudeKey(v: String) { claudeKey = v.trim(); prefs().edit().putString("claude_key", claudeKey).apply() }
-    fun setOpenaiKey(v: String) { openaiKey = v.trim(); prefs().edit().putString("openai_key", openaiKey).apply() }
-    fun setClaudeModel(v: String) { claudeModel = v.trim(); prefs().edit().putString("claude_model", claudeModel).apply() }
-    fun setOpenaiModel(v: String) { openaiModel = v.trim(); prefs().edit().putString("openai_model", openaiModel).apply() }
+    fun updateProvider(v: Provider) { provider = v; prefs().edit().putString("provider", v.name).apply() }
+    fun updateClaudeKey(v: String) { claudeKey = v.trim(); prefs().edit().putString("claude_key", claudeKey).apply() }
+    fun updateOpenaiKey(v: String) { openaiKey = v.trim(); prefs().edit().putString("openai_key", openaiKey).apply() }
+    fun updateClaudeModel(v: String) { claudeModel = v.trim(); prefs().edit().putString("claude_model", claudeModel).apply() }
+    fun updateOpenaiModel(v: String) { openaiModel = v.trim(); prefs().edit().putString("openai_model", openaiModel).apply() }
 
     /** الذكاء عبر الإنترنت مختار ومفتاحه موجود. */
     val active: Boolean

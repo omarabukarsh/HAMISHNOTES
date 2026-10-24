@@ -217,6 +217,13 @@ private fun ReaderContent(s: DocSession) {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {
+              // حجم أشرطة الأدوات (من الإعدادات): كثافة مكبّرة/مصغّرة لهذه الأشرطة فقط
+              val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+              androidx.compose.runtime.CompositionLocalProvider(
+                  androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                      baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
+                  )
+              ) {
                 ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
                 // شريط الأقلام الثاني (نمط «شريط الأقلام»)
                 AnimatedVisibility(
@@ -237,6 +244,7 @@ private fun ReaderContent(s: DocSession) {
                     enter = fadeIn(tween(160)) + expandVertically(tween(200)),
                     exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
                 ) { StickyBar() }
+              }
                 if (s.searchOpen) ReaderSearchBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
             }
@@ -430,7 +438,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
 
         // زر درج الملخصات في الزاوية المقابلة، مع عدد التمييزات
         val markCount = s.marks.values.sumOf { it.size }
-        Box(Modifier.align(Alignment.CenterEnd)) {
+        if (UiPrefs.summariesOn) Box(Modifier.align(Alignment.CenterEnd)) {
             Box(
                 Modifier.size(46.dp)
                     .shadow(5.dp, CircleShape)
@@ -833,19 +841,9 @@ private fun PenBar() {
                 ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("لون مخصص", "Custom color")) }
                 ToolbarSep()
                 SizeSlots(t)
-                if (t == Tool.HIGHLIGHTER) {
-                    ToolbarSep()
-                    BarToggle(L("التقاط النص", "Text snap"), c.highlightSnap) { c.toggleHighlightSnap() }
-                    Spacer(Modifier.width(6.dp))
-                    BarToggle(L("في الملخص", "In summary"), c.highlightToSummary) { c.toggleHighlightToSummary() }
-                }
-                if (t.isPen()) {
-                    ToolbarSep()
-                    BarToggle(L("أشكال", "Shapes"), PenPrefs.drawAndHold) { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }
-                }
                 ToolbarSep()
+                // إعدادات الأداة تُفتح بنقرة ثانية على القلم المختار (القائمة تظهر هنا)
                 Box {
-                    TBtn(onClick = { more = true }) { PhIcon(R.drawable.ph_more, Palette.TextSecondary) }
                     DropdownMenu(
                         expanded = more,
                         onDismissRequest = { more = false },
@@ -938,52 +936,46 @@ private fun ToolSlot(
 private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
     val c = AppController
     val t = c.tool
-    Column(Modifier.width(312.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+    Column(Modifier.width(264.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PhIcon(toolIcon(t, true), Palette.Navy, 22.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(toolName(t), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            PhIcon(toolIcon(t, true), Palette.Navy, 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(toolName(t), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
         if (t.isPen()) {
-            PanelLabel(L("نوع القلم", "Pen type"))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(Tool.FOUNTAIN, Tool.BALLPOINT, Tool.BRUSH, Tool.PENCIL).forEach { pt ->
                     val sel = pt == t
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     Column(
                         Modifier.weight(1f).clip(shape)
                             .background(if (sel) Palette.Navy else Palette.Background)
                             .clickable { c.selectTool(pt) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        PhIcon(toolIcon(pt, sel), if (sel) Color.White else Palette.TextPrimary, 22.dp)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            toolName(pt), fontSize = 12.sp,
-                            color = if (sel) Color.White else Palette.TextPrimary
-                        )
+                        PhIcon(toolIcon(pt, sel), if (sel) Color.White else Palette.TextPrimary, 18.dp)
+                        Text(toolName(pt), fontSize = 10.sp, maxLines = 1, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
         if (t != Tool.ERASER) {
             ColorMenuContent(onCustom = onCustomColor, onDone = {})
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
         }
 
-        PanelLabel(if (t == Tool.ERASER) L("حجم الممحاة", "Eraser size") else L("الحجم", "Size"))
-        SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.fillMaxWidth())
-        Spacer(Modifier.height(8.dp))
-        ToolPreview(t)
+        if (!t.isPen()) {
+            PanelLabel(if (t == Tool.ERASER) L("حجم الممحاة", "Eraser size") else L("الحجم", "Size"))
+            SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.fillMaxWidth().height(28.dp))
+        }
 
         if (t == Tool.HIGHLIGHTER) {
-            // تصنيف اللون الحالي (يظهر في الملخص عند التصفية أو التجميع حسب اللون)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             val cur = c.colorFor(t)
             var label by remember(cur) { mutableStateOf(c.labelOf(cur)) }
             OutlinedTextField(
@@ -993,142 +985,65 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                     c.setLabel(cur, it)
                 },
                 singleLine = true,
-                label = { Text(L("تصنيف هذا اللون", "Label for this color")) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                label = { Text(L("تصنيف هذا اللون", "Label for this color"), fontSize = 12.sp) },
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(L("التقاط النص", "Text snap"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                    Text(
-                        L("يلتصق التمييز بالكلمات ويوضع خلفها، ويُضاف النص إلى الملخصات", "The highlight sticks to words, sits behind them, and the text is added to summaries"),
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = c.highlightSnap,
-                    onCheckedChange = { c.toggleHighlightSnap() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Palette.Navy,
-                        checkedBorderColor = Palette.Navy
-                    )
-                )
+            CompactSwitch(L("التقاط النص", "Text snap"), c.highlightSnap) { c.toggleHighlightSnap() }
+            if (UiPrefs.summariesOn) {
+                CompactSwitch(L("إضافة إلى الملخص", "Add to summary"), c.highlightToSummary) { c.toggleHighlightToSummary() }
             }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(L("إضافة إلى الملخص", "Add to summary"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                    Text(
-                        L("أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات", "Turn off to highlight on the page only, without adding text to summaries"),
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = c.highlightToSummary,
-                    onCheckedChange = { c.toggleHighlightToSummary() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Palette.Navy,
-                        checkedBorderColor = Palette.Navy
-                    )
-                )
-            }
+            HighlighterAdvancedSection()
         }
         if (t.isPen()) {
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                    Text(
-                        L("ارسم الشكل ثم أبقِ القلم ضاغطًا دون حركة لحظة، فيتحول إلى خط أو سهم أو مستطيل أو مثلث أو دائرة مرتبة", "Draw, then keep the pen pressed without moving for a moment, and it becomes a neat line, arrow, rectangle, triangle or circle"),
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = PenPrefs.drawAndHold,
-                    onCheckedChange = { PenPrefs.changeDrawAndHold(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Palette.Navy,
-                        checkedBorderColor = Palette.Navy
-                    )
-                )
+            CompactSwitch(L("ارسم وأبقِ لتحويل الرسم إلى شكل", "Draw and hold to make a shape"), PenPrefs.drawAndHold) {
+                PenPrefs.changeDrawAndHold(it)
             }
             PenAdvancedSection(t)
         }
-        if (t == Tool.HIGHLIGHTER) HighlighterAdvancedSection()
         if (t == Tool.LASER) {
-            Spacer(Modifier.height(12.dp))
-            PanelLabel(L("نمط الليزر", "Laser style"))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(
                     LaserMode.DOT to L("نقطة", "Dot"),
                     LaserMode.LINE to L("خط مستمر", "Trail")
                 ).forEach { (m, label) ->
                     val sel = c.laserMode == m
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     Column(
                         Modifier.weight(1f).clip(shape)
                             .background(if (sel) Palette.Navy else Palette.Background)
                             .clickable { c.updateLaserMode(m) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         LaserModeSample(m, if (sel) Color.White else c.colorFor(Tool.LASER))
-                        Spacer(Modifier.height(4.dp))
-                        Text(label, fontSize = 12.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                        Text(label, fontSize = 11.sp, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (c.laserMode == LaserMode.DOT) L("نقطة متوهجة تتبع القلم، مع أثر قصير يختفي فورًا.", "A glowing dot follows the pen with a short trail that fades instantly.")
-                else L("اضغط بالقلم وارسم: يبقى الخط متوهجًا ثانية ونصف ثم يختفي. بدون لمس تظهر النقطة فقط.", "Press and draw: the line glows for a second and a half, then fades. Without touching, only the dot shows."),
-                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-            )
         }
         if (t == Tool.ERASER) {
-            Spacer(Modifier.height(12.dp))
-            PanelLabel(L("نمط الممحاة", "Eraser mode"))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(
                     EraserMode.STROKE to L("الخط كاملًا", "Whole stroke"),
                     EraserMode.AREA to L("الجزء الملموس", "Touched part")
                 ).forEach { (m, label) ->
                     val sel = c.eraserMode == m
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     Column(
                         Modifier.weight(1f).clip(shape)
                             .background(if (sel) Palette.Navy else Palette.Background)
                             .clickable { c.updateEraserMode(m) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         EraserModeSample(m, if (sel) Color.White else Palette.Navy)
-                        Spacer(Modifier.height(4.dp))
-                        Text(label, fontSize = 12.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                        Text(label, fontSize = 11.sp, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (c.eraserMode == EraserMode.STROKE) L("لمسة واحدة تمسح الخط الذي كُتب دون رفع القلم كاملًا.", "One touch erases the entire stroke drawn without lifting the pen.")
-                else L("يمسح ما تمر عليه الممحاة فقط، ويبقى باقي الخط.", "Erases only what the eraser passes over; the rest of the stroke stays."),
-                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                L("تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.", "Erases handwriting and snapped highlights. The pen’s side button also works as an eraser."),
-                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-            )
             EraserAdvancedSection()
         }
     }
@@ -1611,7 +1526,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             PagesDrawer(s, pdf)
         }
         AnimatedVisibility(
-            visible = s.summaryOpen,
+            visible = s.summaryOpen && UiPrefs.summariesOn,
             modifier = Modifier.align(Alignment.CenterEnd),
             enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
             exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(180))

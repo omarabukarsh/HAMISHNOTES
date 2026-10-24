@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -48,19 +49,24 @@ import androidx.compose.ui.unit.sp
 
 // ---------------------------------------------------------------- عناصر مشتركة
 
+/** مفتاح صغير في لوحات الأدوات. */
+@Composable
+fun CompactSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) = PanelSwitch(label, checked, null, onChange)
+
 @Composable
 private fun PanelSwitch(label: String, checked: Boolean, icon: Int? = null, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().height(36.dp).clickable { onChange(!checked) },
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            PhIcon(icon, Palette.TextPrimary, 20.dp)
-            Spacer(Modifier.width(12.dp))
+            PhIcon(icon, Palette.TextPrimary, 16.dp)
+            Spacer(Modifier.width(8.dp))
         }
-        Text(label, fontSize = 15.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 13.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f), maxLines = 2)
         Switch(
             checked = checked, onCheckedChange = onChange,
+            modifier = Modifier.scale(0.72f),
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White, checkedTrackColor = Palette.Navy, checkedBorderColor = Palette.Navy
             )
@@ -76,15 +82,16 @@ private fun PercentSlider(label: String, value: Float, steps: Int = 3, onChange:
     }
     Slider(
         value = value, onValueChange = onChange, steps = steps,
+        modifier = Modifier.height(26.dp),
         colors = SliderDefaults.colors(thumbColor = Palette.Navy, activeTrackColor = Palette.Navy)
     )
 }
 
 @Composable
 private fun Divider() {
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(6.dp))
     Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(6.dp))
 }
 
 /** خيار في صف (بطاقة صغيرة فيها رسم وعنوان). */
@@ -93,12 +100,12 @@ private fun OptionCard(label: String, selected: Boolean, modifier: Modifier, onC
     val shape = RoundedCornerShape(12.dp)
     Column(
         modifier.clip(shape).background(if (selected) Palette.Navy else Palette.Background)
-            .clickable(onClick = onClick).padding(vertical = 10.dp),
+            .clickable(onClick = onClick).padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         art()
         Spacer(Modifier.height(4.dp))
-        Text(label, fontSize = 12.sp, color = if (selected) Color.White else Palette.TextPrimary, maxLines = 1)
+        Text(label, fontSize = 11.sp, color = if (selected) Color.White else Palette.TextPrimary, maxLines = 1)
     }
 }
 
@@ -120,14 +127,13 @@ fun LineStyleSample(style: Int, col: Color, width: Float = 3f) {
 @Composable
 fun StrokeStyleSection(style: Int, onStyle: (Int) -> Unit, size: Int, onSize: (Int) -> Unit, widthOf: (Int) -> Float, onReset: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(L("إعدادات الخط", "Stroke settings"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+        Text(L("نمط الخط", "Line style"), fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f))
         Text(PenPrefs.mm(widthOf(size)), fontSize = 12.sp, color = Palette.TextSecondary)
         Box(Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onReset), contentAlignment = Alignment.Center) {
             PhIcon(R.drawable.ph_undo, Palette.TextSecondary, 18.dp, L("استعادة", "Reset"))
         }
     }
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
             LineStyle.SOLID to L("متصل", "Solid"),
             LineStyle.DASHED to L("متقطع", "Dashed"),
@@ -138,9 +144,9 @@ fun StrokeStyleSection(style: Int, onStyle: (Int) -> Unit, size: Int, onSize: (I
             }
         }
     }
-    Spacer(Modifier.height(10.dp))
-    PanelLabel(L("سماكة القلم", "Pen thickness"))
-    SizeBar(size, onSize, Modifier.fillMaxWidth())
+    Spacer(Modifier.height(6.dp))
+    PanelLabel(L("السماكة", "Thickness"))
+    SizeBar(size, onSize, Modifier.fillMaxWidth().height(28.dp))
 }
 
 // ---------------------------------------------------------------- الأحجام الثلاثة
@@ -234,7 +240,7 @@ fun EraserAdvancedSection() {
     PanelSwitch(L("الأشكال", "Shapes"), PenPrefs.eraseShapes, R.drawable.ph_shapes) { PenPrefs.changeEraseShapes(it) }
     Text(
         L("أطفئ أداة هنا لتحمي ما رسمته بها من المسح.", "Turn a tool off here to protect what you drew with it from erasing."),
-        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+        fontSize = 11.sp, lineHeight = 15.sp, color = Palette.TextSecondary
     )
     Divider()
     PanelSwitch(L("الرجوع إلى القلم تلقائيًا بعد المسح", "Auto-deselect (back to pen after erasing)"), PenPrefs.autoDeselect) {
@@ -265,9 +271,9 @@ fun EraserAdvancedSection() {
 /** نوع التحديد (حر/مستطيل) وما يدخل فيه. */
 @Composable
 fun LassoMenuContent(onOff: () -> Unit) {
-    Column(Modifier.width(300.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Text(L("التحديد", "Lasso selection"), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-        Spacer(Modifier.height(10.dp))
+    Column(Modifier.width(260.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Text(L("التحديد", "Lasso selection"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+        Spacer(Modifier.height(6.dp))
         PanelLabel(L("نوع التحديد", "Lasso type"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OptionCard(L("حر", "Freehand"), !PenPrefs.lassoRect, Modifier.weight(1f), { PenPrefs.changeLassoRect(false) }) {
@@ -381,7 +387,7 @@ fun ShapeBar() {
 /** إعدادات خط الأشكال: النمط، السماكة، الزوايا المستديرة، رؤوس الأسهم. */
 @Composable
 private fun ShapeStrokePanel() {
-    Column(Modifier.width(320.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+    Column(Modifier.width(270.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         StrokeStyleSection(
             style = PenPrefs.shapeStyle, onStyle = { PenPrefs.changeShapeStyle(it) },
             size = PenPrefs.shapeSize, onSize = { PenPrefs.changeShapeSize(it) },

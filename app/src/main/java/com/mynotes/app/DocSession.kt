@@ -957,7 +957,7 @@ class DocSession(entry: DocEntry) {
     private fun addMark(page: Int, words: List<OcrWord>, idx: List<Int>, color: Color) {
         val res = MarkMerge.add(
             marks[page] ?: emptyList(), page, words, idx, color, System.currentTimeMillis(),
-            inSummary = AppController.highlightToSummary
+            inSummary = AppController.highlightToSummary && UiPrefs.summariesOn
         ) { UUID.randomUUID().toString() } ?: return
         // قد يكتمل هذا بعد قراءة الصفحة في الخلفية أثناء حركة أخرى للمستخدم؛ لا نكسر لقطتها
         val nested = snapshot != null
@@ -1012,7 +1012,7 @@ class DocSession(entry: DocEntry) {
         addMark(sel.page, words, (a..b).toList(), color)
         selection = null
         AppController.messages.tryEmit(
-            if (AppController.highlightToSummary) L("أُضيف النص إلى الملخصات", "Text added to summaries") else L("مُيّز النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries")
+            if (AppController.highlightToSummary && UiPrefs.summariesOn) L("أُضيف النص إلى الملخصات", "Text added to summaries") else L("مُيّز النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries")
         )
     }
 

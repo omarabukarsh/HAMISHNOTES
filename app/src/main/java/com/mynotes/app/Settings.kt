@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -144,6 +145,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var toolbarOpen by remember { mutableStateOf(false) }
     var templateOpen by remember { mutableStateOf(false) }
     var templateVer by remember { mutableStateOf(0) }
+    var licensesOpen by remember { mutableStateOf(false) }
+    var privacyOpen by remember { mutableStateOf(false) }
     fun showTour(id: String) {
         val i = ToolCatalog.tour.indexOfFirst { it.id == id }
         if (i >= 0) scope.launch {
@@ -255,6 +258,13 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 
                     item { SectionTitle(L("التمييز والملخص", "Highlights and summary")) }
                     item {
+                        SettingSwitch(
+                            L("تفعيل الملخصات", "Enable summaries"),
+                            L("أوقفه لإخفاء زر الملخصات وعدم إضافة التمييز إلى الملخص", "Turn off to hide the summaries button and stop adding highlights to the summary"),
+                            UiPrefs.summariesOn
+                        ) { UiPrefs.changeSummariesOn(!UiPrefs.summariesOn) }
+                    }
+                    item {
                         SettingSwitch(L("التقاط النص", "Text snap"), L("يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", "The highlighter snaps to words and adds their text to the summary"), c.highlightSnap) {
                             c.toggleHighlightSnap()
                         }
@@ -284,11 +294,37 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             ChoiceChip(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT) { c.setTheme(AppTheme.LIGHT) }
                         }
                     }
+                    item { Text(L("حجم شريط الأدوات", "Toolbar size"), fontSize = 14.sp, color = Palette.TextSecondary) }
+                    item {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            listOf(0.85f to L("صغير", "Small"), 1f to L("عادي", "Normal"), 1.15f to L("كبير", "Large"), 1.3f to L("أكبر", "Larger")).forEach { (v, label) ->
+                                ChoiceChip(label, kotlin.math.abs(UiPrefs.toolbarScale - v) < 0.01f) { UiPrefs.changeToolbarScale(v) }
+                            }
+                        }
+                    }
+                    item { Text(L("حجم الكتابة في التطبيق", "App text size"), fontSize = 14.sp, color = Palette.TextSecondary) }
+                    item {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            listOf(0.9f to L("صغير", "Small"), 1f to L("عادي", "Normal"), 1.15f to L("كبير", "Large"), 1.3f to L("أكبر", "Larger")).forEach { (v, label) ->
+                                ChoiceChip(label, kotlin.math.abs(UiPrefs.textScale - v) < 0.01f) { UiPrefs.changeTextScale(v) }
+                            }
+                        }
+                    }
+
+                    item { SectionTitle(L("حول التطبيق", "About")) }
+                    item {
+                        NavRow(L("تراخيص المكتبات المفتوحة", "Open-source licenses"), L("المكوّنات المستخدمة في التطبيق وتراخيصها", "Components used in the app and their licenses"), R.drawable.ph_list) { licensesOpen = true }
+                    }
+                    item {
+                        NavRow(L("سياسة الخصوصية", "Privacy policy"), L("ما يحفظه التطبيق وأين", "What the app stores and where"), R.drawable.ph_lock) { privacyOpen = true }
+                    }
                 }
             }
         }
     }
     if (toolbarOpen) ToolbarCustomizeDialog(onDismiss = { toolbarOpen = false })
+    if (licensesOpen) LicensesDialog { licensesOpen = false }
+    if (privacyOpen) PrivacyDialog { privacyOpen = false }
     if (templateOpen) TemplatePickerDialog(
         mode = PickerMode.DEFAULT,
         onDismiss = { templateOpen = false },

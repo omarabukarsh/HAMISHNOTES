@@ -222,11 +222,18 @@ object AppController {
     var lastWriting by mutableStateOf(Tool.FOUNTAIN)
         private set
 
+    /** ملاحظة لاصقة منسوخة أو مقصوصة (للّصق). */
+    var noteClipboard by mutableStateOf<StickyNote?>(null)
+    /** النقرة التالية في وضع الملاحظات تلصق الملاحظة المنسوخة. */
+    var notePastePending by mutableStateOf(false)
+
     /** أداة التحديد الحر (لاسو) فعّالة بدل أداة الكتابة. */
     var lassoActive by mutableStateOf(false)
 
     fun selectTool(t: Tool) {
         lassoActive = false
+        PenPrefs.shapeActive = false
+        PenPrefs.noteInkPen(t)
         tool = t
         if (t.isPen()) lastPen = t
         if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t
@@ -677,6 +684,8 @@ object AppController {
         Ai.init(app)
         repo = LibraryRepository(app)
         AudioNotes.init(app)
+        PenPrefs.init(app)
+        UiPrefs.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {

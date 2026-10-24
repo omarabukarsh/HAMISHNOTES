@@ -63,7 +63,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         setContent {
             val light = ThemeState.light
             SideEffect { applySystemBars(light) }
-            MyNotesTheme { MyNotesApp() }
+            // حجم الكتابة في التطبيق (من الإعدادات)
+            val d = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, d.fontScale * UiPrefs.textScale)
+            ) {
+                MyNotesTheme { MyNotesApp() }
+            }
         }
     }
 

@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -32,6 +33,27 @@ internal fun buildPath(pts: List<Pt>, w: Float, extra: Pt?): Path {
     return path
 }
 
+/** مسار بخطوط مستقيمة (للأشكال: زوايا حادة). */
+internal fun polyPath(pts: List<Pt>, w: Float): Path {
+    val path = Path()
+    if (pts.isEmpty()) return path
+    path.moveTo(pts[0].x * w, pts[0].y * w)
+    if (pts.size == 1) path.lineTo(pts[0].x * w + 0.01f, pts[0].y * w)
+    for (i in 1 until pts.size) path.lineTo(pts[i].x * w, pts[i].y * w)
+    return path
+}
+
+/** نمط التقطيع لعرض خط بالبكسل. */
+internal fun dashEffect(style: Int, strokePx: Float): PathEffect? = when (style) {
+    LineStyle.DASHED -> PathEffect.dashPathEffect(floatArrayOf(strokePx * 3.2f + 6f, strokePx * 2.6f + 5f))
+    LineStyle.DOTTED -> PathEffect.dashPathEffect(floatArrayOf(0.1f, strokePx * 2.2f + 3f))
+    else -> null
+}
+
+/** يرسم خطًا محفوظًا بكل خصائصه (النمط والشكل). */
+internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.width) =
+    drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
+
 /** يرسم خطًا واحدًا حسب نوع القلم. */
 internal fun DrawScope.drawInk(
     pts: List<Pt>,
@@ -39,17 +61,37 @@ internal fun DrawScope.drawInk(
     width: Float,
     tool: Tool,
     extra: Pt? = null,
-    scaleW: Float = size.width
+    scaleW: Float = size.width,
+    style: Int = LineStyle.SOLID,
+    sharp: Boolean = false
 ) {
     val n = pts.size + (if (extra != null) 1 else 0)
     if (n == 0) return
     val w = scaleW
+    // خط متقطع/منقّط أو شكل: مسار بعرض ثابت
+    if (style != LineStyle.SOLID || sharp) {
+        val alpha = when (tool) {
+            Tool.HIGHLIGHTER -> 0.35f
+            Tool.PENCIL -> 0.78f
+            else -> 1f
+        }
+        val px = width * w * (if (tool == Tool.PENCIL) 0.85f else 1f)
+        val path = if (sharp) polyPath(if (extra != null) pts + extra else pts, w) else buildPath(pts, w, extra)
+        drawPath(
+            path, color.copy(alpha = color.alpha * alpha),
+            style = Stroke(width = px, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = dashEffect(style, px))
+        )
+        return
+    }
     when (tool) {
-        Tool.FOUNTAIN -> {
+        Tool.FOUNTAIN, Tool.BRUSH -> {
             fun pt(i: Int): Pt = if (i < pts.size) pts[i] else extra!!
+            // الفرشاة أكثر تأثرًا بالضغط من قلم الحبر
+            val base = if (tool == Tool.BRUSH) 0.15f else 0.4f
+            val gain = if (tool == Tool.BRUSH) 1.5f else 1f
             if (n == 1) {
                 val a = pt(0)
-                drawCircle(color, width * w / 2f, Offset(a.x * w, a.y * w))
+                drawCircle(color, width * w * (base + gain * a.p) / 2f, Offset(a.x * w, a.y * w))
                 return
             }
             for (j in 1 until n) {
@@ -59,7 +101,7 @@ internal fun DrawScope.drawInk(
                     color,
                     Offset(a.x * w, a.y * w),
                     Offset(c.x * w, c.y * w),
-                    strokeWidth = width * w * (0.4f + c.p),
+                    strokeWidth = width * w * (base + gain * c.p),
                     cap = StrokeCap.Round
                 )
             }

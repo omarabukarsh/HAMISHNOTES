@@ -140,7 +140,12 @@ fun TranslateDialog(text: String, onDismiss: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 when {
                     error != null -> Text(error!!, fontSize = 14.sp, color = Palette.TextPrimary)
-                    result != null -> Text(result!!, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = Palette.Navy)
+                    result != null -> Column {
+                        Text(result!!, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = Palette.Navy)
+                        Spacer(Modifier.height(8.dp))
+                        // نسبة الترجمة إلى Google (شرط استخدام ML Kit للترجمة)
+                        Text(L("مترجم بواسطة Google", "Translated by Google"), fontSize = 11.sp, color = Palette.TextSecondary)
+                    }
                     else -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))

@@ -43,7 +43,8 @@ object Exporter {
         val images: Map<Int, List<ImageItem>>,
         val marks: Map<Int, List<TextMark>>,
         val texts: Map<Int, List<TextBox>>,
-        val docId: String
+        val docId: String,
+        val notes: Map<Int, List<StickyNote>> = emptyMap()
     )
 
     fun snapshotOf(s: DocSession): Snapshot? {
@@ -52,7 +53,7 @@ object Exporter {
         val texts = s.texts.mapValues { (_, l) ->
             l.map { if (it.sticky) it.copy(w = 0.3f, x = it.x.coerceAtMost(0.68f)) else it }
         }
-        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id)
+        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id, s.notes)
     }
 
     /** يعيد عدد الصفحات المصدَّرة. */
@@ -69,6 +70,14 @@ object Exporter {
                     drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
                     drawTexts(c, snap.texts[i] ?: emptyList(), w)
                     (snap.ink[i] ?: emptyList()).forEach { drawInk(c, it, w) }
+                    // الملاحظات اللاصقة فوق الصفحة
+                    (snap.notes[i] ?: emptyList()).forEach { n ->
+                        val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+                        val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+                        c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
+                        n.pageInk().forEach { drawInk(c, it, w) }
+                        n.textBox()?.let { drawTexts(c, listOf(it), w) }
+                    }
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
                     val page = out.startPage(PdfDocument.PageInfo.Builder(PDF_W, ph, i + 1).create())
@@ -174,13 +183,23 @@ object Exporter {
 
         val marks = snap.marks[i] ?: emptyList()
         val images = snap.images[i] ?: emptyList()
-        val ink = snap.ink[i] ?: emptyList()
-        val texts = snap.texts[i] ?: emptyList()
-        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty()) return
+        val pageNotes = snap.notes[i] ?: emptyList()
+        val ink = (snap.ink[i] ?: emptyList()) + pageNotes.flatMap { it.pageInk() }
+        val texts = (snap.texts[i] ?: emptyList()) + pageNotes.mapNotNull { it.textBox() }
+        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty()) return
 
         com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
             doc, page, com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND, true, true
         ).use { cs ->
+            // الملاحظات اللاصقة: مربعات ملوّنة (خطوطها تُرسم مع الكتابة)
+            for (n in pageNotes) {
+                val col = androidx.compose.ui.graphics.Color(n.color)
+                val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+                val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+                cs.setNonStrokingColor(col.red, col.green, col.blue)
+                cs.addRect(px(n.x), py(n.y + nh), nw * w, nh * w)
+                cs.fill()
+            }
             // التمييز الملتقط: مستطيلات بمزج «ضرب» خلف النص
             if (marks.isNotEmpty()) {
                 val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
@@ -261,10 +280,12 @@ object Exporter {
                     else -> 1f
                 }
                 val pts = s.pts
-                if (s.tool == Tool.FOUNTAIN && pts.size > 1) {
+                if (s.style == LineStyle.DASHED) cs.setLineDashPattern(floatArrayOf(base * 3.2f + 3f, base * 2.6f + 2.5f), 0f)
+                else if (s.style == LineStyle.DOTTED) cs.setLineDashPattern(floatArrayOf(0.05f, base * 2.2f + 1.5f), 0f)
+                if ((s.tool == Tool.FOUNTAIN || s.tool == Tool.BRUSH) && pts.size > 1 && s.style == LineStyle.SOLID && !s.shape) {
                     // قلم الحبر: سماكة تتغير مع الضغط، فكل مقطع بخطه
                     for (j in 1 until pts.size) {
-                        cs.setLineWidth(s.width * w * (0.4f + pts[j].p))
+                        cs.setLineWidth(s.width * w * (if (s.tool == Tool.BRUSH) 0.15f + 1.5f * pts[j].p else 0.4f + pts[j].p))
                         cs.moveTo(px(pts[j - 1].x), py(pts[j - 1].y))
                         cs.lineTo(px(pts[j].x), py(pts[j].y))
                         cs.stroke()
@@ -345,9 +366,12 @@ object Exporter {
         p.style = Paint.Style.STROKE
         p.strokeJoin = Paint.Join.ROUND
         p.strokeCap = Paint.Cap.ROUND
-        when (s.tool) {
-            Tool.FOUNTAIN -> {
+        val styled = s.style != LineStyle.SOLID || s.shape
+        when (if (styled && (s.tool == Tool.FOUNTAIN || s.tool == Tool.BRUSH)) Tool.BALLPOINT else s.tool) {
+            Tool.FOUNTAIN, Tool.BRUSH -> {
                 p.color = s.color.toArgb()
+                val base = if (s.tool == Tool.BRUSH) 0.15f else 0.4f
+                val gain = if (s.tool == Tool.BRUSH) 1.5f else 1f
                 if (pts.size == 1) {
                     p.style = Paint.Style.FILL
                     c.drawCircle(pts[0].x * w, pts[0].y * w, s.width * w / 2f, p)
@@ -356,7 +380,7 @@ object Exporter {
                 for (j in 1 until pts.size) {
                     val a = pts[j - 1]
                     val b = pts[j]
-                    p.strokeWidth = s.width * w * (0.4f + b.p)
+                    p.strokeWidth = s.width * w * (base + gain * b.p)
                     c.drawLine(a.x * w, a.y * w, b.x * w, b.y * w, p)
                 }
                 return
@@ -375,7 +399,14 @@ object Exporter {
                 p.strokeWidth = s.width * w
             }
         }
-        c.drawPath(smoothPath(pts, w), p)
+        if (s.style == LineStyle.DASHED) p.pathEffect = android.graphics.DashPathEffect(floatArrayOf(p.strokeWidth * 3.2f + 6f, p.strokeWidth * 2.6f + 5f), 0f)
+        else if (s.style == LineStyle.DOTTED) p.pathEffect = android.graphics.DashPathEffect(floatArrayOf(0.1f, p.strokeWidth * 2.2f + 3f), 0f)
+        if (s.shape) {
+            val path = Path()
+            path.moveTo(pts[0].x * w, pts[0].y * w)
+            for (i in 1 until pts.size) path.lineTo(pts[i].x * w, pts[i].y * w)
+            c.drawPath(path, p)
+        } else c.drawPath(smoothPath(pts, w), p)
     }
 
     /** نفس تنعيم buildPath في InkRender لكن لـ android.graphics. */

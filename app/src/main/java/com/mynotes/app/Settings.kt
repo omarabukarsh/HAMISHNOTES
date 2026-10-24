@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -102,7 +103,8 @@ object ToolCatalog {
         ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("جلسة دراسة ثم راحة بالمدة التي تختارها في الإعدادات. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "A study session then a break, with durations you choose in Settings. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
         ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
         ToolInfo("lasso", L("التحديد الحر", "Lasso"), L("أحِط بالقلم حول كتابتك لتحديدها، ثم اسحبها أو كبّرها بالمقبض أو غيّر لونها أو انسخها أو حوّلها إلى نص مكتوب أو احذفها.", "Loop around your writing to select it, then drag it, resize with the handle, recolor, duplicate, convert to typed text or delete."), R.drawable.ph_lasso, Demo.LASSO),
-        ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("ملاحظة مطوية في زاوية الصفحة لا تغطي النص؛ انقرها لتقرأها، واسحبها لتحريكها.", "A folded note on the page that doesn’t cover the text; tap to read it, drag to move it."), R.drawable.ph_note, Demo.STICKY),
+        ToolInfo("shapetool", L("أداة الأشكال", "Shapes tool"), L("ارسم مستطيلًا أو دائرة أو مثلثًا أو معينًا أو خطًا أو سهمًا أو موصلًا بالسحب، مع نمط الخط وسماكته ورؤوس الأسهم.", "Drag to draw rectangles, circles, triangles, diamonds, lines, arrows or connectors, with line style, thickness and arrowheads."), R.drawable.ph_shapes, Demo.SHAPES),
+        ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("اختر لونًا وانقر على الصفحة لتضع ملاحظة تكتب عليها بالقلم؛ اسحبها لتحريكها، ومن زاويتها لتكبيرها، واطوها لتصبح مربعًا صغيرًا.", "Pick a color and tap the page to place a note you write on with the pen; drag to move, drag its corner to resize, and collapse it to a small square."), R.drawable.ph_note, Demo.STICKY),
         ToolInfo("link", L("رابط إلى صفحة", "Page link"), L("ضع على الصفحة رابطًا إلى صفحة أخرى أو مستند آخر (مثل «جدول المضادات ص 12»)؛ انقر عليه مرتين لتنتقل، ويظهر زر للرجوع.", "Place a link to another page or document (e.g. “antibiotics table p. 12”); tap it twice to jump, with a Back button."), R.drawable.ph_link, Demo.NAV),
         ToolInfo("record", L("تسجيل المحاضرة", "Lecture recording"), L("سجّل الصوت أثناء الكتابة؛ كل خط يُربط بلحظته، فتحدد الكتابة لاحقًا وتسمع ما قيل وقتها.", "Record audio while writing; every stroke is linked to its moment, so you can lasso writing later and hear what was said."), R.drawable.ph_mic, Demo.NAV),
         ToolInfo("split", L("مستندان جنبًا إلى جنب", "Split view"), L("اعرض مستندًا آخر بجانب الحالي (مثل الكتاب والملخص) واسحب الفاصل لتغيير العرض.", "Show another document next to this one (e.g. book and notes) and drag the divider to resize."), R.drawable.ph_split, Demo.NAV),
@@ -144,6 +146,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var toolbarOpen by remember { mutableStateOf(false) }
     var templateOpen by remember { mutableStateOf(false) }
     var templateVer by remember { mutableStateOf(0) }
+    var licensesOpen by remember { mutableStateOf(false) }
+    var privacyOpen by remember { mutableStateOf(false) }
+    var termsOpen by remember { mutableStateOf(false) }
     fun showTour(id: String) {
         val i = ToolCatalog.tour.indexOfFirst { it.id == id }
         if (i >= 0) scope.launch {
@@ -258,6 +263,13 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 
                     item { SectionTitle(L("التمييز والملخص", "Highlights and summary")) }
                     item {
+                        SettingSwitch(
+                            L("تفعيل الملخصات", "Enable summaries"),
+                            L("أوقفه لإخفاء زر الملخصات وعدم إضافة التمييز إلى الملخص", "Turn off to hide the summaries button and stop adding highlights to the summary"),
+                            UiPrefs.summariesOn
+                        ) { UiPrefs.changeSummariesOn(!UiPrefs.summariesOn) }
+                    }
+                    item {
                         SettingSwitch(L("التقاط النص", "Text snap"), L("يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", "The highlighter snaps to words and adds their text to the summary"), c.highlightSnap) {
                             c.toggleHighlightSnap()
                         }
@@ -275,8 +287,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     }
                     item {
-                        SettingSwitch(L("تحويل الرسم إلى أشكال", "Turn drawings into shapes"), L("الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة", "Lines, arrows, rectangles, triangles and circles are tidied"), c.shapeSnap) {
-                            c.toggleShapeSnap()
+                        SettingSwitch(L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"), L("ارسم ثم أبقِ القلم ضاغطًا دون حركة لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"), PenPrefs.drawAndHold) {
+                            PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold)
                         }
                     }
 
@@ -287,11 +299,41 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             ChoiceChip(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT) { c.setTheme(AppTheme.LIGHT) }
                         }
                     }
+                    item { Text(L("حجم شريط الأدوات", "Toolbar size"), fontSize = 14.sp, color = Palette.TextSecondary) }
+                    item {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            listOf(0.85f to L("صغير", "Small"), 1f to L("عادي", "Normal"), 1.15f to L("كبير", "Large"), 1.3f to L("أكبر", "Larger")).forEach { (v, label) ->
+                                ChoiceChip(label, kotlin.math.abs(UiPrefs.toolbarScale - v) < 0.01f) { UiPrefs.changeToolbarScale(v) }
+                            }
+                        }
+                    }
+                    item { Text(L("حجم الكتابة في التطبيق", "App text size"), fontSize = 14.sp, color = Palette.TextSecondary) }
+                    item {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            listOf(0.9f to L("صغير", "Small"), 1f to L("عادي", "Normal"), 1.15f to L("كبير", "Large"), 1.3f to L("أكبر", "Larger")).forEach { (v, label) ->
+                                ChoiceChip(label, kotlin.math.abs(UiPrefs.textScale - v) < 0.01f) { UiPrefs.changeTextScale(v) }
+                            }
+                        }
+                    }
+
+                    item { SectionTitle(L("حول التطبيق", "About")) }
+                    item {
+                        NavRow(L("تراخيص المكتبات المفتوحة", "Open-source licenses"), L("المكوّنات المستخدمة في التطبيق وتراخيصها", "Components used in the app and their licenses"), R.drawable.ph_list) { licensesOpen = true }
+                    }
+                    item {
+                        NavRow(L("سياسة الخصوصية", "Privacy policy"), L("ما يحفظه التطبيق وأين", "What the app stores and where"), R.drawable.ph_lock) { privacyOpen = true }
+                    }
+                    item {
+                        NavRow(L("شروط الاستخدام", "Terms of use"), L("حدود المسؤولية واستخدام الملفات", "Liability and use of your files"), R.drawable.ph_note) { termsOpen = true }
+                    }
                 }
             }
         }
     }
     if (toolbarOpen) ToolbarCustomizeDialog(onDismiss = { toolbarOpen = false })
+    if (licensesOpen) LicensesDialog { licensesOpen = false }
+    if (privacyOpen) PrivacyDialog { privacyOpen = false }
+    if (termsOpen) TermsDialog { termsOpen = false }
     if (templateOpen) TemplatePickerDialog(
         mode = PickerMode.DEFAULT,
         onDismiss = { templateOpen = false },

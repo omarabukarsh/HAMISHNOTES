@@ -233,14 +233,34 @@ private fun ReaderContent(s: DocSession) {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {
+              // حجم أشرطة الأدوات (من الإعدادات): كثافة مكبّرة/مصغّرة لهذه الأشرطة فقط
+              val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+              androidx.compose.runtime.CompositionLocalProvider(
+                  androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                      baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
+                  )
+              ) {
                 ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
                 // شريط الأقلام الثاني (نمط «شريط الأقلام»)
                 AnimatedVisibility(
-                    visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive &&
+                    visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive &&
                         (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
                     enter = fadeIn(tween(160)) + expandVertically(tween(200)),
                     exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
                 ) { PenBar() }
+                // شريط الأشكال
+                AnimatedVisibility(
+                    visible = PenPrefs.shapeActive && !c.lassoActive,
+                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                ) { ShapeBar() }
+                // شريط الملاحظات اللاصقة
+                AnimatedVisibility(
+                    visible = PenPrefs.stickyActive,
+                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                ) { StickyBar() }
+              }
                 if (s.searchOpen) ReaderSearchBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
             }
@@ -358,10 +378,10 @@ private fun TextBoxDialog(
 
 // ---------------------------------------------------------------- شريط الأدوات
 
-private fun tintFor(selected: Boolean): Color = if (selected) Palette.Navy else Palette.TextSecondary
+internal fun tintFor(selected: Boolean): Color = if (selected) Palette.Navy else Palette.TextSecondary
 
 @Composable
-private fun TBtn(
+internal fun TBtn(
     selected: Boolean = false,
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -386,7 +406,7 @@ private fun TBtn(
 }
 
 @Composable
-private fun ToolbarSep() {
+internal fun ToolbarSep() {
     Box(
         Modifier.padding(horizontal = 6.dp).width(1.dp).height(26.dp).background(Palette.Divider)
     )
@@ -434,7 +454,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
 
         // زر درج الملخصات في الزاوية المقابلة، مع عدد التمييزات
         val markCount = s.marks.values.sumOf { it.size }
-        Box(Modifier.align(Alignment.CenterEnd)) {
+        if (UiPrefs.summariesOn) Box(Modifier.align(Alignment.CenterEnd)) {
             Box(
                 Modifier.size(46.dp)
                     .shadow(5.dp, CircleShape)
@@ -509,11 +529,11 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 // الأدوات الأساسية
                 if (c.toolbarStyle == ToolbarStyle.PEN_BAR) {
                     // زر قلم واحد: يفتح شريط الأقلام والهايلايتر
-                    val writing = (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER) && !c.lassoActive
+                    val writing = (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER) && !c.lassoActive && !PenPrefs.shapeActive
                     val shown = if (writing) c.tool else c.lastWriting
                     TBtn(selected = writing, onClick = {
                         if (!writing) {
-                            c.selectTool(c.lastWriting)
+                            c.selectTool(if (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER) c.tool else c.lastWriting)
                             c.penBarOpen = true
                         } else {
                             c.penBarOpen = !c.penBarOpen
@@ -523,7 +543,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 } else {
                     // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
-                    val penSelected = c.tool.isPen() && !c.lassoActive
+                    val penSelected = c.tool.isPen() && !c.lassoActive && !PenPrefs.shapeActive
                     val shownPen = if (c.tool.isPen()) c.tool else c.lastPen
                     ToolSlot(
                         tool = shownPen, selected = penSelected, open = settingsFor == "pen",
@@ -558,10 +578,35 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 )
                 // التحديد الحر (لاسو)
                 if (v("lasso")) {
-                    TBtn(selected = c.lassoActive, onClick = {
-                        c.lassoActive = !c.lassoActive
-                        if (c.lassoActive) c.messages.tryEmit(L("أحِط بالقلم حول الكتابة لتحديدها", "Draw a loop around your writing to select it"))
-                    }) { PhIcon(R.drawable.ph_lasso, tintFor(c.lassoActive)) }
+                    var lassoMenu by remember { mutableStateOf(false) }
+                    Box {
+                        // نقرة تفعّل التحديد، ونقرة ثانية تفتح إعداداته
+                        TBtn(selected = c.lassoActive, onClick = {
+                            if (c.lassoActive) {
+                                lassoMenu = true
+                            } else {
+                                c.lassoActive = true
+                                PenPrefs.shapeActive = false
+                                c.messages.tryEmit(L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
+                            }
+                        }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, tintFor(c.lassoActive)) }
+                        DropdownMenu(
+                            expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
+                            shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                        ) { LassoMenuContent(onOff = { lassoMenu = false; c.lassoActive = false }) }
+                    }
+                }
+                // الأشكال
+                if (v("shapetool")) {
+                    TBtn(selected = PenPrefs.shapeActive && !c.lassoActive, onClick = {
+                        if (PenPrefs.shapeActive && !c.lassoActive) {
+                            PenPrefs.shapeActive = false
+                        } else {
+                            c.lassoActive = false
+                            if (!(c.tool.isPen() || c.tool == Tool.HIGHLIGHTER)) c.selectTool(c.lastPen)
+                            PenPrefs.shapeActive = true
+                        }
+                    }) { PhIcon(R.drawable.ph_shapes, tintFor(PenPrefs.shapeActive && !c.lassoActive)) }
                 }
 
                 // صورة / نص / إضافة صفحة / قراءة النص / بحث / حفظ
@@ -573,9 +618,17 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
                 if (v("text")) TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
                 if (v("sticky")) {
-                    TBtn(onClick = { s.textDialog = TextDialogReq(null, cur, sticky = true) }) {
-                        PhIcon(R.drawable.ph_note, Palette.TextSecondary)
-                    }
+                    // أداة الملاحظات اللاصقة: شريط ألوان، ثم نقرة على الصفحة تضع الملاحظة
+                    TBtn(selected = PenPrefs.stickyActive, onClick = {
+                        if (PenPrefs.stickyActive) {
+                            PenPrefs.stickyActive = false
+                        } else {
+                            c.lassoActive = false
+                            PenPrefs.shapeActive = false
+                            PenPrefs.stickyActive = true
+                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة لوضع الملاحظة", "Pick a color, then tap the page to place the note"))
+                        }
+                    }) { PhIcon(R.drawable.ph_note, tintFor(PenPrefs.stickyActive)) }
                 }
                 if (v("link")) {
                     TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
@@ -764,10 +817,24 @@ private fun PenBar() {
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf(Tool.BALLPOINT, Tool.FOUNTAIN, Tool.PENCIL, Tool.HIGHLIGHTER).forEach { pt ->
+                // قلم واحد (حبر/جاف/فرشاة يُبدَّل بينها من إعداداته)، ثم الرصاص والهايلايتر.
+                // نقرة ثانية على الأداة المختارة تفتح إعداداتها تحتها مباشرة.
+                val inkPen = if (t in InkPens) t else PenPrefs.inkPen
+                listOf(inkPen, Tool.PENCIL, Tool.HIGHLIGHTER).forEach { pt ->
                     val sel = pt == t
-                    TBtn(selected = sel, onClick = { c.selectTool(pt) }) {
-                        ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
+                    Box {
+                        TBtn(selected = sel, onClick = { if (sel) more = true else c.selectTool(pt) }) {
+                            ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
+                        }
+                        DropdownMenu(
+                            expanded = more && sel,
+                            onDismissRequest = { more = false },
+                            shape = RoundedCornerShape(18.dp),
+                            containerColor = Color.White,
+                            shadowElevation = 12.dp
+                        ) {
+                            ToolSettingsPanel(onCustomColor = { more = false; picker = true })
+                        }
                     }
                 }
                 ToolbarSep()
@@ -810,30 +877,8 @@ private fun PenBar() {
                     contentAlignment = Alignment.Center
                 ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("لون مخصص", "Custom color")) }
                 ToolbarSep()
-                SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.width(120.dp).padding(vertical = 4.dp))
-                if (t == Tool.HIGHLIGHTER) {
-                    ToolbarSep()
-                    BarToggle(L("التقاط النص", "Text snap"), c.highlightSnap) { c.toggleHighlightSnap() }
-                    Spacer(Modifier.width(6.dp))
-                    BarToggle(L("في الملخص", "In summary"), c.highlightToSummary) { c.toggleHighlightToSummary() }
-                }
-                if (t.isPen()) {
-                    ToolbarSep()
-                    BarToggle(L("أشكال", "Shapes"), c.shapeSnap) { c.toggleShapeSnap() }
-                }
+                SizeSlots(t)
                 ToolbarSep()
-                Box {
-                    TBtn(onClick = { more = true }) { PhIcon(R.drawable.ph_more, Palette.TextSecondary) }
-                    DropdownMenu(
-                        expanded = more,
-                        onDismissRequest = { more = false },
-                        shape = RoundedCornerShape(18.dp),
-                        containerColor = Color.White,
-                        shadowElevation = 12.dp
-                    ) {
-                        ToolSettingsPanel(onCustomColor = { more = false; picker = true })
-                    }
-                }
                 TBtn(onClick = { c.penBarOpen = false }) {
                     PhIcon(R.drawable.ph_caret_up, Palette.TextSecondary, 20.dp, L("إخفاء شريط الأقلام", "Hide pen bar"))
                 }
@@ -870,6 +915,17 @@ private fun BarToggle(label: String, on: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** أنواع القلم التي تُبدَّل من تبويب واحد (الرصاص منفصل). */
+val InkPens = listOf(Tool.FOUNTAIN, Tool.BALLPOINT, Tool.BRUSH)
+
+/** اسم قصير لتبويب نوع القلم. */
+private fun penShortName(t: Tool): String = when (t) {
+    Tool.FOUNTAIN -> L("حبر", "Fountain")
+    Tool.BALLPOINT -> L("جاف", "Ballpoint")
+    Tool.BRUSH -> L("فرشاة", "Brush")
+    else -> toolName(t)
+}
+
 private fun toolName(t: Tool): String = when (t) {
     Tool.BALLPOINT -> L("قلم جاف", "Ballpoint")
     Tool.FOUNTAIN -> L("قلم حبر", "Fountain pen")
@@ -877,6 +933,7 @@ private fun toolName(t: Tool): String = when (t) {
     Tool.HIGHLIGHTER -> L("هايلايتر", "Highlighter")
     Tool.ERASER -> L("ممحاة", "Eraser")
     Tool.LASER -> L("مؤشر ليزر", "Laser pointer")
+    Tool.BRUSH -> L("قلم فرشاة", "Brush pen")
 }
 
 /** زر أداة في الشريط، ولوحة إعداداتها تنسدل تحته. */
@@ -915,52 +972,48 @@ private fun ToolSlot(
 private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
     val c = AppController
     val t = c.tool
-    Column(Modifier.width(312.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+    Column(Modifier.width(264.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PhIcon(toolIcon(t, true), Palette.Navy, 22.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(toolName(t), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            PhIcon(toolIcon(t, true), Palette.Navy, 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(toolName(t), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        if (t.isPen()) {
-            PanelLabel(L("نوع القلم", "Pen type"))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(Tool.BALLPOINT, Tool.FOUNTAIN, Tool.PENCIL).forEach { pt ->
+        // شريط الأقلام: الرصاص زر مستقل؛ الشريط الكلاسيكي: الرصاص ضمن الأنواع
+        val penTypes = if (c.toolbarStyle == ToolbarStyle.PEN_BAR) InkPens else InkPens + Tool.PENCIL
+        if (t in penTypes) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                penTypes.forEach { pt ->
                     val sel = pt == t
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     Column(
                         Modifier.weight(1f).clip(shape)
                             .background(if (sel) Palette.Navy else Palette.Background)
                             .clickable { c.selectTool(pt) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        PhIcon(toolIcon(pt, sel), if (sel) Color.White else Palette.TextPrimary, 22.dp)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            toolName(pt), fontSize = 12.sp,
-                            color = if (sel) Color.White else Palette.TextPrimary
-                        )
+                        PhIcon(toolIcon(pt, sel), if (sel) Color.White else Palette.TextPrimary, 18.dp)
+                        Text(penShortName(pt), fontSize = 11.sp, maxLines = 1, softWrap = false, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
         if (t != Tool.ERASER) {
             ColorMenuContent(onCustom = onCustomColor, onDone = {})
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
         }
 
-        PanelLabel(if (t == Tool.ERASER) L("حجم الممحاة", "Eraser size") else L("الحجم", "Size"))
-        SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.fillMaxWidth())
-        Spacer(Modifier.height(8.dp))
-        ToolPreview(t)
+        if (!t.isPen()) {
+            PanelLabel(if (t == Tool.ERASER) L("حجم الممحاة", "Eraser size") else L("الحجم", "Size"))
+            SizeBar(c.sizeFor(t), { c.setSize(it) }, Modifier.fillMaxWidth().height(28.dp))
+        }
 
         if (t == Tool.HIGHLIGHTER) {
-            // تصنيف اللون الحالي (يظهر في الملخص عند التصفية أو التجميع حسب اللون)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             val cur = c.colorFor(t)
             var label by remember(cur) { mutableStateOf(c.labelOf(cur)) }
             OutlinedTextField(
@@ -970,140 +1023,66 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                     c.setLabel(cur, it)
                 },
                 singleLine = true,
-                label = { Text(L("تصنيف هذا اللون", "Label for this color")) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                label = { Text(L("تصنيف هذا اللون", "Label for this color"), fontSize = 12.sp) },
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(L("التقاط النص", "Text snap"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                    Text(
-                        L("يلتصق التمييز بالكلمات ويوضع خلفها، ويُضاف النص إلى الملخصات", "The highlight sticks to words, sits behind them, and the text is added to summaries"),
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = c.highlightSnap,
-                    onCheckedChange = { c.toggleHighlightSnap() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Palette.Navy,
-                        checkedBorderColor = Palette.Navy
-                    )
-                )
+            CompactSwitch(L("التقاط النص", "Text snap"), c.highlightSnap) { c.toggleHighlightSnap() }
+            if (UiPrefs.summariesOn) {
+                CompactSwitch(L("إضافة إلى الملخص", "Add to summary"), c.highlightToSummary) { c.toggleHighlightToSummary() }
             }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(L("إضافة إلى الملخص", "Add to summary"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                    Text(
-                        L("أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات", "Turn off to highlight on the page only, without adding text to summaries"),
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = c.highlightToSummary,
-                    onCheckedChange = { c.toggleHighlightToSummary() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Palette.Navy,
-                        checkedBorderColor = Palette.Navy
-                    )
-                )
-            }
+            HighlighterAdvancedSection()
         }
         if (t.isPen()) {
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(L("تحويل الرسم إلى أشكال", "Turn drawings into shapes"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                    Text(
-                        L("الخط والسهم والمستطيل والمثلث والدائرة تُرسم مرتبة تلقائيًا", "Lines, arrows, rectangles, triangles and circles are tidied automatically"),
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = c.shapeSnap,
-                    onCheckedChange = { c.toggleShapeSnap() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Palette.Navy,
-                        checkedBorderColor = Palette.Navy
-                    )
-                )
+            CompactSwitch(L("ارسم وأبقِ لتحويل الرسم إلى شكل", "Draw and hold to make a shape"), PenPrefs.drawAndHold) {
+                PenPrefs.changeDrawAndHold(it)
             }
+            PenAdvancedSection(t)
         }
         if (t == Tool.LASER) {
-            Spacer(Modifier.height(12.dp))
-            PanelLabel(L("نمط الليزر", "Laser style"))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(
                     LaserMode.DOT to L("نقطة", "Dot"),
                     LaserMode.LINE to L("خط مستمر", "Trail")
                 ).forEach { (m, label) ->
                     val sel = c.laserMode == m
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     Column(
                         Modifier.weight(1f).clip(shape)
                             .background(if (sel) Palette.Navy else Palette.Background)
                             .clickable { c.updateLaserMode(m) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         LaserModeSample(m, if (sel) Color.White else c.colorFor(Tool.LASER))
-                        Spacer(Modifier.height(4.dp))
-                        Text(label, fontSize = 12.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                        Text(label, fontSize = 11.sp, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (c.laserMode == LaserMode.DOT) L("نقطة متوهجة تتبع القلم، مع أثر قصير يختفي فورًا.", "A glowing dot follows the pen with a short trail that fades instantly.")
-                else L("اضغط بالقلم وارسم: يبقى الخط متوهجًا ثانية ونصف ثم يختفي. بدون لمس تظهر النقطة فقط.", "Press and draw: the line glows for a second and a half, then fades. Without touching, only the dot shows."),
-                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-            )
         }
         if (t == Tool.ERASER) {
-            Spacer(Modifier.height(12.dp))
-            PanelLabel(L("نمط الممحاة", "Eraser mode"))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(
                     EraserMode.STROKE to L("الخط كاملًا", "Whole stroke"),
                     EraserMode.AREA to L("الجزء الملموس", "Touched part")
                 ).forEach { (m, label) ->
                     val sel = c.eraserMode == m
-                    val shape = RoundedCornerShape(12.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     Column(
                         Modifier.weight(1f).clip(shape)
                             .background(if (sel) Palette.Navy else Palette.Background)
                             .clickable { c.updateEraserMode(m) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         EraserModeSample(m, if (sel) Color.White else Palette.Navy)
-                        Spacer(Modifier.height(4.dp))
-                        Text(label, fontSize = 12.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                        Text(label, fontSize = 11.sp, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (c.eraserMode == EraserMode.STROKE) L("لمسة واحدة تمسح الخط الذي كُتب دون رفع القلم كاملًا.", "One touch erases the entire stroke drawn without lifting the pen.")
-                else L("يمسح ما تمر عليه الممحاة فقط، ويبقى باقي الخط.", "Erases only what the eraser passes over; the rest of the stroke stays."),
-                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                L("تمسح الكتابة اليدوية والتمييز الملتقط. زر القلم الجانبي يعمل كممحاة أيضًا.", "Erases handwriting and snapped highlights. The pen’s side button also works as an eraser."),
-                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
-            )
+            EraserAdvancedSection()
         }
     }
 }
@@ -1148,7 +1127,7 @@ private fun LaserModeSample(m: LaserMode, col: Color) {
 }
 
 @Composable
-private fun PanelLabel(text: String) {
+internal fun PanelLabel(text: String) {
     Text(text, fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(bottom = 6.dp))
 }
 
@@ -1585,7 +1564,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             PagesDrawer(s, pdf)
         }
         AnimatedVisibility(
-            visible = s.summaryOpen,
+            visible = s.summaryOpen && UiPrefs.summariesOn,
             modifier = Modifier.align(Alignment.CenterEnd),
             enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
             exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(180))
@@ -1631,6 +1610,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             if (s.lassoSel != null) LassoBar(s)
             if (s.selectedImageId != null) ImageBar(s)
             if (s.selectedTextId != null) TextBoxBar(s)
+            if (s.selectedNoteId != null) NoteBar(s)
         }
     }
 }
@@ -1824,6 +1804,8 @@ private class LiveInk {
     var predX: Float = 0f
     var predY: Float = 0f
     var predP: Float = 0.5f
+    var style: Int = LineStyle.SOLID
+    var sharp: Boolean = false
 }
 
 /** ink = نقطة من «الخط المستمر» (القلم ملامس للشاشة في نمط الخط). */
@@ -1836,7 +1818,7 @@ private class LaserState {
     var present: Boolean = false
 }
 
-private fun pressureOf(c: PointerInputChange): Float = if (c.pressure > 0f) c.pressure else 0.5f
+private fun pressureOf(c: PointerInputChange): Float = PenPrefs.applyPressure(if (c.pressure > 0f) c.pressure else 0.5f)
 
 private fun nearestWord(words: List<OcrWord>, x: Float, y: Float, maxDist: Float): Int {
     var best = -1
@@ -2180,6 +2162,8 @@ private fun PageView(
 
         // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
         InkLayer(strokes, night, Modifier.fillMaxSize())
+        // الملاحظات اللاصقة فوق الكتابة
+        NotesLayer(session, index, night)
 
         // الخط الحي + الليزر + استقبال القلم والإصبع (طبقة مستقلة: تحديثها لا يعيد رسم الصفحة)
         Canvas(
@@ -2279,12 +2263,20 @@ private fun PageView(
                                         val e = awaitPointerEvent()
                                         val ch = e.changes.firstOrNull { it.id == id } ?: break
                                         if (!ch.pressed) break
-                                        livePts.add(Pt(ch.position.x / w, ch.position.y / w, 0.5f))
+                                        val np = Pt(ch.position.x / w, ch.position.y / w, 0.5f)
+                                        // التحديد المستطيل: نقطة البداية والنقطة الحالية فقط
+                                        if (PenPrefs.lassoRect) {
+                                            if (livePts.size > 1) livePts[1] = np else livePts.add(np)
+                                        } else livePts.add(np)
                                         ch.consume()
                                         tick++
                                     }
                                 } finally {
-                                    val poly = livePts.toList()
+                                    val poly = if (PenPrefs.lassoRect && livePts.size >= 2) {
+                                        val a = livePts[0]
+                                        val b = livePts[1]
+                                        listOf(Pt(a.x, a.y, 0.5f), Pt(b.x, a.y, 0.5f), Pt(b.x, b.y, 0.5f), Pt(a.x, b.y, 0.5f))
+                                    } else livePts.toList()
                                     livePts.clear()
                                     lassoDrawing[0] = false
                                     tick++
@@ -2302,7 +2294,70 @@ private fun PageView(
                             live.color = colorNow
                             live.width = widthNow
                             live.hasPred = false
+                            live.style = if (toolNow.isPen()) PenPrefs.lineStyle else LineStyle.SOLID
+                            live.sharp = false
                             val eraseR = eraserNow
+
+                            // أداة الملاحظات: نقرة القلم تضع ملاحظة
+                            if (PenPrefs.stickyActive && down.type != PointerType.Eraser) {
+                                down.consume()
+                                placeSticky(session, index, down.position.x / w, down.position.y / w, 1f / ratio)
+                                while (true) {
+                                    val e = awaitPointerEvent()
+                                    val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                    ch.consume()
+                                    if (!ch.pressed) break
+                                }
+                                continue
+                            }
+                            // الكتابة داخل ملاحظة لاصقة تنتمي إليها (تتحرك معها)
+                            val noteTarget = if (PenPrefs.shapeActive) null
+                            else session.noteAt(index, down.position.x / w, down.position.y / w)?.id
+
+                            // أداة الأشكال: سحب من نقطة إلى نقطة يرسم الشكل المختار
+                            if (PenPrefs.shapeActive && down.type != PointerType.Eraser &&
+                                !ev.buttons.isSecondaryPressed && !ev.buttons.isTertiaryPressed
+                            ) {
+                                down.consume()
+                                val kind = PenPrefs.shapeKind
+                                val sw = Sizes.width(Tool.BALLPOINT, PenPrefs.shapeSize)
+                                live.tool = Tool.BALLPOINT
+                                live.color = Color(PenPrefs.shapeColor)
+                                live.width = sw
+                                live.style = PenPrefs.shapeStyle
+                                live.sharp = true
+                                val a = Pt(down.position.x / w, down.position.y / w, 0.5f)
+                                var bEnd = a
+                                if (session.selection != null) session.selection = null
+                                livePts.clear()
+                                try {
+                                    while (true) {
+                                        val e = awaitPointerEvent()
+                                        val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                        if (!ch.pressed) { ch.consume(); break }
+                                        bEnd = Pt(ch.position.x / w, ch.position.y / w, 0.5f)
+                                        val parts = ShapeBuilder.build(kind, a, bEnd, PenPrefs.shapeRounded, ArrowHead.NONE, ArrowHead.NONE, sw)
+                                        livePts.clear()
+                                        livePts.addAll(parts.first())
+                                        tick++
+                                        ch.consume()
+                                    }
+                                } finally {
+                                    livePts.clear()
+                                    live.sharp = false
+                                    tick++
+                                    if (hypot(bEnd.x - a.x, bEnd.y - a.y) > 0.004f) {
+                                        val parts = ShapeBuilder.build(kind, a, bEnd, PenPrefs.shapeRounded, PenPrefs.arrowStart, PenPrefs.arrowEnd, sw)
+                                        session.beginEdit()
+                                        val now = System.currentTimeMillis()
+                                        parts.forEach { pts ->
+                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true))
+                                        }
+                                        session.endEdit()
+                                    }
+                                }
+                                continue
+                            }
 
                             AppController.lastInkAt = System.currentTimeMillis()
                             if (session.selection != null) session.selection = null
@@ -2318,6 +2373,23 @@ private fun PageView(
                                 tick++
                             }
                             down.consume()
+                            // تثبيت الخط: كل نقطة تقترب من موضع القلم بنسبة (أقل = أنعم)
+                            val follow = 1f - PenPrefs.stabilizeFor(toolNow) * 0.85f
+                            var sx = down.position.x / w
+                            var sy = down.position.y / w
+                            var lastMoveAt = System.currentTimeMillis()
+                            var lastMoveX = down.position.x
+                            var lastMoveY = down.position.y
+                            fun addLive(px: Float, py: Float, pp: Float) {
+                                sx += (px / w - sx) * follow
+                                sy += (py / w - sy) * follow
+                                livePts.add(Pt(sx, sy, pp))
+                                if (hypot(px - lastMoveX, py - lastMoveY) > 6f) {
+                                    lastMoveAt = System.currentTimeMillis()
+                                    lastMoveX = px
+                                    lastMoveY = py
+                                }
+                            }
 
                             // آخر عيّنتين (للتنبؤ بموضع القلم وتقليل التأخر الظاهر)
                             var tA = down.uptimeMillis
@@ -2327,9 +2399,26 @@ private fun PageView(
                             var xB = xA
                             var yB = yA
 
+                            // «ارسم وأبقِ»: بعد ثباته لحظة يتحول الرسم إلى شكل وهو ما زال على الشاشة
+                            var snappedLive: List<Pt>? = null
+                            fun trySnapLive() {
+                                if (snappedLive != null || erasing || !live.tool.isPen() || !PenPrefs.drawAndHold) return
+                                if (System.currentTimeMillis() - lastMoveAt < 450L || livePts.size < 3) return
+                                val shape = ShapeRecognizer.recognize(livePts.toList()) ?: return
+                                snappedLive = shape
+                                livePts.clear()
+                                livePts.addAll(shape)
+                                live.hasPred = false
+                                live.sharp = true
+                                tick++
+                            }
                             try {
                                 while (true) {
-                                    val e = awaitPointerEvent()
+                                    val e = withTimeoutOrNull(480L) { awaitPointerEvent() }
+                                    if (e == null) {
+                                        trySnapLive()
+                                        continue
+                                    }
                                     val ch = e.changes.firstOrNull { it.id == id } ?: break
                                     if (!ch.pressed) {
                                         ch.consume()
@@ -2337,6 +2426,11 @@ private fun PageView(
                                     }
                                     AppController.lastInkAt = System.currentTimeMillis()
                                     val pr = pressureOf(ch)
+                                    if (snappedLive != null) {
+                                        // بعد التحول إلى شكل: لا تُضاف نقاط حتى رفع القلم
+                                        ch.consume()
+                                        continue
+                                    }
                                     if (erasing) {
                                         for (h in ch.historical) {
                                             session.eraseAt(index, Offset(h.position.x / w, h.position.y / w), eraseR)
@@ -2346,7 +2440,7 @@ private fun PageView(
                                         tick++
                                     } else {
                                         for (h in ch.historical) {
-                                            livePts.add(Pt(h.position.x / w, h.position.y / w, pr))
+                                            addLive(h.position.x, h.position.y, pr)
                                             tA = tB
                                             xA = xB
                                             yA = yB
@@ -2354,7 +2448,7 @@ private fun PageView(
                                             xB = h.position.x
                                             yB = h.position.y
                                         }
-                                        livePts.add(Pt(ch.position.x / w, ch.position.y / w, pr))
+                                        addLive(ch.position.x, ch.position.y, pr)
                                         tA = tB
                                         xA = xB
                                         yA = yB
@@ -2378,27 +2472,40 @@ private fun PageView(
                                             live.hasPred = true
                                         }
                                         tick++
+                                        trySnapLive()
                                     }
                                     ch.consume()
                                 }
                             } finally {
                                 live.hasPred = false
+                                live.sharp = false
                                 // بعد رفع القلم تختفي الحدود (وتعود مع التحويم إن دعمه الجهاز)
                                 if (erasing) {
                                     eraserCursor[0] = null
                                     tick++
                                 }
+                                // «إلغاء التحديد تلقائيًا»: بعد المسح بالممحاة يعود آخر قلم
+                                val backToPen = erasing && toolNow == Tool.ERASER && PenPrefs.autoDeselect
+                                // «ارسم وأبقِ»: القلم بقي ثابتًا لحظة قبل الرفع
+                                val held = System.currentTimeMillis() - lastMoveAt >= 450L
                                 var snapPts: List<Pt>? = null
                                 if (!erasing && livePts.isNotEmpty()) {
-                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap) {
-                                        snapPts = livePts.toList()
+                                    val hlStraight = live.tool == Tool.HIGHLIGHTER && PenPrefs.hlStraight
+                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap && noteTarget == null) {
+                                        snapPts = if (hlStraight) PenPrefs.straighten(livePts.toList()) else livePts.toList()
+                                    } else if (hlStraight) {
+                                        val ink = Ink(PenPrefs.straighten(livePts.toList()), live.color, live.width, live.tool, System.currentTimeMillis())
+                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
                                     } else {
                                         // الأقلام: رسم يشبه شكلًا واضحًا يتحول إلى شكل مرتب
                                         val raw = livePts.toList()
-                                        val pts = if (live.tool.isPen() && AppController.shapeSnap) {
-                                            ShapeRecognizer.recognize(raw) ?: raw
-                                        } else raw
-                                        session.addInk(index, Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis()))
+                                        // الشكل المثالي فقط عند إبقاء القلم ثابتًا لحظة بعد الرسم
+                                        val shaped = snappedLive ?: if (live.tool.isPen() && PenPrefs.drawAndHold && held) {
+                                            ShapeRecognizer.recognize(raw)
+                                        } else null
+                                        val pts = shaped ?: PenPrefs.taper(raw, live.tool)
+                                        val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
+                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
                                     }
                                 }
                                 livePts.clear()
@@ -2406,6 +2513,7 @@ private fun PageView(
                                 session.endEdit()
                                 // الهايلايتر الملتقط: يتحول الخط إلى تمييز خلف كلمات السطر ويُضاف إلى الملخصات
                                 if (snapPts != null) session.snapHighlight(index, snapPts, live.color, live.width)
+                                if (backToPen) AppController.selectTool(AppController.lastWriting)
                             }
                         }
                     }
@@ -2422,6 +2530,14 @@ private fun PageView(
 
                         // تحريك التحديد الحر بالإصبع أيضًا
                         if (session.lassoSel?.page == index && dragLasso(session, index, down, w)) return@awaitEachGesture
+
+                        // الملاحظات اللاصقة: وضع، تحديد، تحريك، تكبير
+                        if (PenPrefs.stickyActive) {
+                            down.consume()
+                            placeSticky(session, index, nx, ny, 1f / ratio)
+                            return@awaitEachGesture
+                        }
+                        if (dragNote(session, index, down, w)) return@awaitEachGesture
 
                         // سحب/تغيير عرض مربع النص المحدد
                         val selTextId = session.selectedTextId
@@ -2613,7 +2729,12 @@ private fun PageView(
                 // حلقة التحديد الحر: خط متقطع
                 if (livePts.size > 1) {
                     val pth = androidx.compose.ui.graphics.Path()
-                    livePts.forEachIndexed { i, p ->
+                    val shown = if (PenPrefs.lassoRect && livePts.size >= 2) {
+                        val a = livePts[0]
+                        val b = livePts[1]
+                        listOf(a, Pt(b.x, a.y, 0.5f), b, Pt(a.x, b.y, 0.5f), a)
+                    } else livePts
+                    shown.forEachIndexed { i, p ->
                         if (i == 0) pth.moveTo(p.x * size.width, p.y * size.width) else pth.lineTo(p.x * size.width, p.y * size.width)
                     }
                     drawPath(
@@ -2622,7 +2743,7 @@ private fun PageView(
                     )
                 }
             } else {
-                drawInk(livePts, if (night) nightOf(live.color) else live.color, live.width, live.tool, extra)
+                drawInk(livePts, if (night) nightOf(live.color) else live.color, live.width, live.tool, if (live.sharp) null else extra, style = live.style, sharp = live.sharp)
             }
 
             // التحديد الحر: إطار متقطع حول الخطوط المحددة ومقبض للتكبير
@@ -2880,4 +3001,70 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
                 }
         )
     }
+}
+
+
+/** يضع ملاحظة لاصقة (أو الملاحظة المنسوخة) عند النقطة، ثم يُطفئ وضع الإضافة. */
+private fun placeSticky(session: DocSession, page: Int, nx: Float, ny: Float, pageH: Float) {
+    val clip = AppController.noteClipboard
+    val fresh = newStickyAt(page, nx, ny, pageH)
+    val n = if (AppController.notePastePending && clip != null) {
+        clip.copy(id = fresh.id, page = page, x = (nx - clip.w / 2f).coerceIn(0f, 1f - clip.w), y = (ny - clip.h / 2f).coerceAtLeast(0f), collapsed = false)
+    } else fresh
+    AppController.notePastePending = false
+    session.addNote(n)
+    PenPrefs.stickyActive = false
+}
+
+/**
+ * لمسة الإصبع على ملاحظة: نقرة تحددها (أو تفتح المطوية)، والسحب يحركها،
+ * والسحب من زاوية الملاحظة المحددة يغيّر حجمها. يعيد true إن تعاملت مع اللمسة.
+ */
+private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dragNote(
+    session: DocSession, page: Int, down: PointerInputChange, w: Float
+): Boolean {
+    val nx = down.position.x / w
+    val ny = down.position.y / w
+    val sel = session.note(session.selectedNoteId)?.takeIf { it.page == page && !it.collapsed }
+    val corner = 0.035f
+    val resize = sel != null && hypot(nx - (sel.x + sel.w), ny - (sel.y + sel.h)) < corner
+    val target = if (resize) sel else session.noteAt(page, nx, ny, includeCollapsed = true)
+    if (target == null) {
+        session.noteTextEditId = null
+        if (session.selectedNoteId != null) session.selectedNoteId = null
+        return false
+    }
+    down.consume()
+    session.beginEdit()
+    var last = down.position
+    var moved = false
+    try {
+        while (true) {
+            val e = awaitPointerEvent()
+            val ch = e.changes.firstOrNull { it.id == down.id } ?: break
+            if (!ch.pressed) break
+            if (!moved && (ch.position - down.position).getDistance() < viewConfiguration.touchSlop) continue
+            moved = true
+            val dx = (ch.position.x - last.x) / w
+            val dy = (ch.position.y - last.y) / w
+            last = ch.position
+            if (resize) {
+                session.updateNote(target.id) { it.copy(w = (it.w + dx).coerceIn(0.08f, 0.9f), h = (it.h + dy).coerceIn(0.08f, 1.2f)) }
+            } else {
+                session.updateNote(target.id) { it.copy(x = (it.x + dx).coerceIn(-0.05f, 0.98f), y = (it.y + dy).coerceAtLeast(0f)) }
+            }
+            ch.consume()
+        }
+    } finally {
+        session.endEdit()
+    }
+    if (!moved) {
+        if (target.collapsed) session.editNote(target.id) { it.copy(collapsed = false) }
+        // نقرة على الملاحظة المحددة تفتح كتابة النص بلوحة المفاتيح
+        else if (session.selectedNoteId == target.id) session.noteTextEditId = target.id
+        session.selectedNoteId = target.id
+    } else {
+        session.selectedNoteId = target.id
+    }
+    return true
 }

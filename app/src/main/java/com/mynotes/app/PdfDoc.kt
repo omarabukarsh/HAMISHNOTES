@@ -124,8 +124,20 @@ class PdfDoc private constructor(private val id: String) {
         }
     }
 
-    private fun draw(ref: PageRef, widthPx: Int): Bitmap? {
+    /**
+     * عرض آمن للصورة: صفحة طويلة جدًا (مثل خريطة ذهنية بصفحة واحدة) تتجاوز حد أندرويد لرسم الصور
+     * (نحو 100 ميغابايت) فيُغلق التطبيق. نصغّر العرض حتى لا تتجاوز الصورة 12 مليون بكسل؛ تُمدّ على الصفحة كالعادة.
+     */
+    private fun safeWidth(widthPx: Int, heightPerWidth: Float): Int {
+        val maxPixels = 12_000_000.0
+        val px = widthPx.toDouble() * widthPx * heightPerWidth
+        return if (px <= maxPixels) widthPx
+        else kotlin.math.sqrt(maxPixels / heightPerWidth).toInt().coerceIn(64, widthPx)
+    }
+
+    private fun draw(ref: PageRef, requestedW: Int): Bitmap? {
         if (ref.src.startsWith("blank:")) {
+            val widthPx = safeWidth(requestedW, 1f / ref.ratio.coerceAtLeast(0.01f))
             val h = (widthPx / ref.ratio).toInt().coerceAtLeast(1)
             val b = Bitmap.createBitmap(widthPx, h, Bitmap.Config.ARGB_8888)
             val style = Templates.parse(ref.src)
@@ -136,6 +148,7 @@ class PdfDoc private constructor(private val id: String) {
         if (ref.index < 0 || ref.index >= src.renderer.pageCount) return null
         val page = src.renderer.openPage(ref.index)
         try {
+            val widthPx = safeWidth(requestedW, page.height.toFloat() / page.width.coerceAtLeast(1))
             val h = (widthPx * page.height.toFloat() / page.width).toInt().coerceAtLeast(1)
             val b = Bitmap.createBitmap(widthPx, h, Bitmap.Config.ARGB_8888)
             b.eraseColor(android.graphics.Color.WHITE)

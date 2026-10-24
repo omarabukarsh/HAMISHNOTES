@@ -170,53 +170,86 @@ object MindMap {
     }
 
     /** حفظ الخريطة كملف PDF بصفحة واحدة بحجمها. */
+    /**
+     * حفظ الخريطة كملف PDF: صفحات أفقية بعرض الخريطة، تُقطع بين العقد لا في منتصفها
+     * (صفحة واحدة طويلة جدًا تُثقل القراءة وقد تُغلق التطبيق عند فتحها).
+     */
     fun exportPdf(context: Context, root: Node, collapsed: Set<String>, uri: Uri) {
         val placed = layout(root, collapsed)
-        val scale = 1.4f
-        val w = ((placed.maxOf { it.x + it.w } + 30f) * scale).toInt()
-        val h = ((placed.maxOf { it.y + it.h } + 30f) * scale).toInt()
+        val contentW = placed.maxOf { it.x + it.w } + 30f
+        val contentH = placed.maxOf { it.y + it.h } + 30f
+        // صفحات A4 أفقية (842 × 595 نقطة): الخريطة تُصغَّر لتناسب عرض الصفحة، والملف رسوم متجهة صغيرة الحجم
+        val pageWpt = 842
+        val pageHpt = 595
+        val scale = (pageWpt / contentW).coerceIn(0.45f, 1f)
+        val pageH = pageHpt / scale
+        // نقاط القطع: أكبر موضع لا تعبره أي عقدة، في النصف الثاني من الصفحة
+        val breaks = ArrayList<Float>()
+        var start = 0f
+        while (start + pageH < contentH) {
+            val limit = start + pageH
+            val cands = placed.map { it.y + it.h + 6f }.filter { c ->
+                c > start + pageH * 0.5f && c <= limit && placed.none { it.y < c && it.y + it.h > c }
+            }
+            val cut = cands.maxOrNull() ?: limit
+            breaks.add(cut)
+            start = cut
+        }
+        val ranges = ArrayList<Pair<Float, Float>>()
+        var from = 0f
+        for (b in breaks) { ranges.add(from to b); from = b }
+        ranges.add(from to contentH)
+
         val doc = PdfDocument()
         try {
-            val page = doc.startPage(PdfDocument.PageInfo.Builder(w, h, 1).create())
-            val c = page.canvas
-            c.drawColor(Palette.Ivory.toArgb())
-            c.scale(scale, scale)
-            val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.6f }
-            for (p in placed) {
-                val par = p.parent ?: continue
-                line.color = colorOf(p.node).copy(alpha = 0.6f).toArgb()
-                val path = android.graphics.Path()
-                val sx = par.x + par.w
-                val sy = par.y + par.h / 2f
-                val ex = p.x
-                val ey = p.y + p.h / 2f
-                path.moveTo(sx, sy)
-                path.cubicTo(sx + 28f, sy, ex - 28f, ey, ex, ey)
-                c.drawPath(path, line)
+            ranges.forEachIndexed { k, (y0, y1) ->
+                val page = doc.startPage(PdfDocument.PageInfo.Builder(pageWpt, pageHpt, k + 1).create())
+                val c = page.canvas
+                c.drawColor(Palette.Ivory.toArgb())
+                c.scale(scale, scale)
+                c.translate(0f, -y0)
+                c.clipRect(0f, y0, contentW, y1)
+                drawMap(context, c, placed)
+                doc.finishPage(page)
             }
-            val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-            val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = 11.5f
-                typeface = context.resources.getFont(R.font.almarai_regular)
-            }
-            for (p in placed) {
-                val col = colorOf(p.node)
-                val strong = p.node.level <= 2
-                fill.color = if (strong) col.toArgb() else col.copy(alpha = 0.10f).toArgb()
-                c.drawRoundRect(RectF(p.x, p.y, p.x + p.w, p.y + p.h), 10f, 10f, fill)
-                tp.color = if (strong) android.graphics.Color.WHITE else Palette.TextPrimary.toArgb()
-                tp.isFakeBoldText = strong
-                val sl = StaticLayout.Builder.obtain(p.node.label, 0, p.node.label.length, tp, (p.w - 16f).toInt())
-                    .setAlignment(Layout.Alignment.ALIGN_NORMAL).setMaxLines(4).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
-                c.save()
-                c.translate(p.x + 8f, p.y + (p.h - sl.height) / 2f)
-                sl.draw(c)
-                c.restore()
-            }
-            doc.finishPage(page)
             context.contentResolver.openOutputStream(uri, "wt")?.use { doc.writeTo(it) }
         } finally {
             doc.close()
+        }
+    }
+
+    private fun drawMap(context: Context, c: android.graphics.Canvas, placed: List<Placed>) {
+        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.6f }
+        for (p in placed) {
+            val par = p.parent ?: continue
+            line.color = colorOf(p.node).copy(alpha = 0.6f).toArgb()
+            val path = android.graphics.Path()
+            val sx = par.x + par.w
+            val sy = par.y + par.h / 2f
+            val ex = p.x
+            val ey = p.y + p.h / 2f
+            path.moveTo(sx, sy)
+            path.cubicTo(sx + 28f, sy, ex - 28f, ey, ex, ey)
+            c.drawPath(path, line)
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 11.5f
+            typeface = context.resources.getFont(R.font.almarai_regular)
+        }
+        for (p in placed) {
+            val col = colorOf(p.node)
+            val strong = p.node.level <= 2
+            fill.color = if (strong) col.toArgb() else col.copy(alpha = 0.10f).toArgb()
+            c.drawRoundRect(RectF(p.x, p.y, p.x + p.w, p.y + p.h), 10f, 10f, fill)
+            tp.color = if (strong) android.graphics.Color.WHITE else Palette.TextPrimary.toArgb()
+            tp.isFakeBoldText = strong
+            val sl = StaticLayout.Builder.obtain(p.node.label, 0, p.node.label.length, tp, (p.w - 16f).toInt().coerceAtLeast(10))
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setMaxLines(4).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+            c.save()
+            c.translate(p.x + 8f, p.y + (p.h - sl.height) / 2f)
+            sl.draw(c)
+            c.restore()
         }
     }
 }

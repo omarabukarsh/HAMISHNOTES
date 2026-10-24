@@ -40,6 +40,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -58,84 +63,262 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** عرض درج الصفحات (dp): ثابت، ويُزاح المستند بجانبه على الشاشات العريضة. */
+const val PAGES_PANEL_W = 300
+
 /**
- * درج الصفحات: عمود واحد بصور كبيرة، أو ثلاثة أعمدة. اسحب حافة الدرج لتغيير العرض
- * فيتبدّل الوضع تلقائيًا عند تجاوز عرض معيّن.
+ * درج الصفحات الجانبي: رأس فيه زر التحديد، وأربعة تبويبات (الصفحات، الفهرس، العلامات، التسجيلات)،
+ * وقائمة خيارات؛ ثم شبكة صور الصفحات برقم الصفحة وزر «⋯» وعلامة في الزاوية، وبطاقة «إضافة صفحة».
  */
 @Composable
 fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
-    val density = LocalDensity.current
+    val c = AppController
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
-    val cols = if (s.drawerWidth >= 330f) 3 else 1
     val cur = s.listState.firstVisibleItemIndex
+    var tab by remember { mutableStateOf(0) } // 0 الصفحات، 1 الفهرس، 2 العلامات، 3 التسجيلات
+    var cols by remember { mutableStateOf(2) }
+    var selecting by remember { mutableStateOf(false) }
+    val picked = remember { mutableStateListOf<Int>() }
+    var moreMenu by remember { mutableStateOf(false) }
+    var addPage by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val n = pdf.count
+    fun go(p: Int) = scope.launch { s.listState.scrollToItem(p) }
 
-    Row(modifier.fillMaxHeight().width(s.drawerWidth.dp)) {
-        Surface(
-            Modifier.weight(1f).fillMaxHeight(),
-            color = Palette.DrawerBg,
-            shadowElevation = 14.dp
-        ) {
-            Column(Modifier.fillMaxSize()) {
-                // تبديل بين كل الصفحات، والصفحات المعلَّمة، وفهرس الملف
-                var tab by remember { mutableStateOf(0) } // 0 الكل، 1 العلامات، 2 الفهرس
-                val hasOutline = s.outline.isNotEmpty()
-                if (s.bookmarks.isNotEmpty() || hasOutline || tab != 0) {
-                    Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                            .padding(start = 10.dp, end = 10.dp, top = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        ChoiceChip(L("الكل", "All"), tab == 0) { tab = 0 }
-                        if (s.bookmarks.isNotEmpty() || tab == 1) {
-                            ChoiceChip(L("العلامات ${s.bookmarks.size}", "Bookmarks ${s.bookmarks.size}"), tab == 1) { tab = 1 }
-                        }
-                        if (hasOutline) ChoiceChip(L("الفهرس", "Contents"), tab == 2) { tab = 2 }
+    Surface(
+        modifier.fillMaxHeight().width(PAGES_PANEL_W.dp),
+        color = Palette.DrawerBg,
+        shadowElevation = 10.dp
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            // ---- الرأس ----
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(38.dp).clip(CircleShape)
+                        .background(if (selecting) Palette.NavySoft else Color.Transparent)
+                        .clickable(enabled = tab == 0) {
+                            selecting = !selecting
+                            picked.clear()
+                        },
+                    contentAlignment = Alignment.Center
+                ) { PhIcon(R.drawable.ph_check_circle, if (selecting) Palette.Navy else Palette.TextSecondary) }
+                Spacer(Modifier.weight(1f))
+                Row(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(Palette.TextSecondary.copy(alpha = 0.12f)).padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    listOf(R.drawable.ph_grid, R.drawable.ph_list, R.drawable.ph_bookmark, R.drawable.ph_waveform).forEachIndexed { k, icon ->
+                        val on = tab == k
+                        Box(
+                            Modifier.size(width = 46.dp, height = 34.dp).clip(RoundedCornerShape(9.dp))
+                                .background(if (on) Color.White else Color.Transparent)
+                                .clickable {
+                                    tab = k
+                                    if (k != 0) { selecting = false; picked.clear() }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) { PhIcon(icon, if (on) Palette.Navy else Palette.TextSecondary, 20.dp) }
                     }
                 }
-                if (tab == 2 && hasOutline) {
-                    OutlineList(s) { p -> scope.launch { s.listState.scrollToItem(p) } }
-                } else {
-                    val shown = if (tab == 1) s.bookmarks.filter { it < pdf.count }.sorted() else (0 until pdf.count).toList()
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(cols),
-                        state = gridState,
-                        contentPadding = PaddingValues(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(shown.size, key = { shown[it] }) { k ->
-                            val i = shown[k]
-                            PageThumb(s, pdf, i, i == cur) {
-                                scope.launch { s.listState.scrollToItem(i) }
+                Spacer(Modifier.weight(1f))
+                Box {
+                    Box(
+                        Modifier.size(38.dp).clip(CircleShape).clickable { moreMenu = true },
+                        contentAlignment = Alignment.Center
+                    ) { PhIcon(R.drawable.ph_more, Palette.TextSecondary) }
+                    DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                        DropdownMenuItem(text = { Text(L("صور كبيرة (عمود واحد)", "Large thumbnails (1 column)")) }, onClick = { cols = 1; moreMenu = false })
+                        DropdownMenuItem(text = { Text(L("صور متوسطة (عمودان)", "Medium thumbnails (2 columns)")) }, onClick = { cols = 2; moreMenu = false })
+                        DropdownMenuItem(text = { Text(L("صور صغيرة (3 أعمدة)", "Small thumbnails (3 columns)")) }, onClick = { cols = 3; moreMenu = false })
+                        DropdownMenuItem(text = { Text(L("إضافة صفحة في النهاية", "Add page at the end")) }, onClick = { moreMenu = false; addPage = true })
+                        DropdownMenuItem(text = { Text(L("إغلاق الشريط", "Close sidebar")) }, onClick = { moreMenu = false; s.drawerOpen = false })
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (tab) {
+                    1 -> if (s.outline.isEmpty()) {
+                        EmptyPanel(
+                            R.drawable.ph_list,
+                            L("الفهرس: خريطة لمستندك", "Outline: a map of your document"),
+                            L("يظهر هنا فهرس الملف إن كان فيه عناوين، والنقر على عنوان ينقلك إلى صفحته.", "The file's table of contents appears here when it has headings; tap a heading to jump to its page.")
+                        )
+                    } else OutlineList(s) { p -> go(p) }
+                    3 -> RecordingsList(s)
+                    else -> {
+                        val shown = if (tab == 2) s.bookmarks.filter { it < n }.sorted() else (0 until n).toList()
+                        if (tab == 2 && shown.isEmpty()) {
+                            EmptyPanel(
+                                R.drawable.ph_bookmark,
+                                L("نظرة عامة على المستندات الكبيرة", "Keep an overview in large documents"),
+                                L("الصفحات التي تضع عليها علامة تظهر هنا.", "Pages you bookmark in this document appear here.")
+                            )
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(cols),
+                                state = gridState,
+                                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 80.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(shown.size, key = { shown[it] }) { k ->
+                                    val i = shown[k]
+                                    PageThumb(
+                                        s, pdf, i, i == cur,
+                                        selecting = selecting, picked = i in picked
+                                    ) {
+                                        if (selecting) {
+                                            if (i in picked) picked.remove(i) else picked.add(i)
+                                        } else go(i)
+                                    }
+                                }
+                                if (tab == 0 && !selecting) {
+                                    item(key = "add") {
+                                        Box(
+                                            Modifier.fillMaxWidth().aspectRatio(pdf.ratio(n - 1).coerceIn(0.5f, 1.6f))
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(Palette.TextSecondary.copy(alpha = 0.10f))
+                                                .border(1.dp, Palette.Divider, RoundedCornerShape(10.dp))
+                                                .clickable { addPage = true },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                PhIcon(R.drawable.ph_plus, Palette.TextPrimary, 26.dp)
+                                                Spacer(Modifier.height(6.dp))
+                                                Text(L("إضافة صفحة", "Add page"), fontSize = 14.sp, color = Palette.TextPrimary)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                // شريط التحديد المتعدد
+                if (selecting) {
+                    Row(
+                        Modifier.align(Alignment.BottomCenter).padding(12.dp)
+                            .shadow(6.dp, RoundedCornerShape(16.dp))
+                            .background(Color.White, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            L("${picked.size} محددة", "${picked.size} selected"),
+                            fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                        TextButton(enabled = picked.isNotEmpty(), onClick = {
+                            val allMarked = picked.all { it in s.bookmarks }
+                            picked.toList().forEach { p -> if ((p in s.bookmarks) == allMarked) s.toggleBookmark(p) }
+                        }) { PhIcon(R.drawable.ph_bookmark, Palette.Navy, 20.dp) }
+                        TextButton(enabled = picked.isNotEmpty() && picked.size < n, onClick = { confirmDelete = true }) {
+                            PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp)
+                        }
+                        TextButton(onClick = { selecting = false; picked.clear() }) { Text(L("تم", "Done")) }
+                    }
+                }
             }
         }
-        // مقبض السحب لتغيير العرض
-        Box(
-            Modifier.width(22.dp).fillMaxHeight().pointerInput(Unit) {
-                detectHorizontalDragGestures { change, dx ->
-                    change.consume()
-                    s.drawerWidth = (s.drawerWidth + dx / density.density).coerceIn(120f, 560f)
-                }
+    }
+
+    if (addPage) {
+        TemplatePickerDialog(
+            mode = PickerMode.ADD_PAGE,
+            onDismiss = { addPage = false },
+            onConfirm = { choice, _, _ ->
+                addPage = false
+                c.addBlankPage(s, n - 1, choice.kind, choice.color, choice.ratio())
+                scope.launch { gridState.animateScrollToItem(n) }
+            }
+        )
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(L("حذف ${picked.size} صفحة؟", "Delete ${picked.size} pages?")) },
+            text = { Text(L("ستُحذف الصفحات المحددة وكل ما كتبته عليها.", "The selected pages and everything written on them will be deleted.")) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    val drop = picked.toSet()
+                    s.rearrangePages((0 until n).filter { it !in drop })
+                    picked.clear()
+                    selecting = false
+                }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
+        )
+    }
+}
+
+@Composable
+private fun EmptyPanel(icon: Int, title: String, body: String) {
+    Column(
+        Modifier.fillMaxSize().padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            Modifier.size(96.dp).clip(RoundedCornerShape(24.dp)).background(Palette.NavySoft),
             contentAlignment = Alignment.Center
-        ) {
-            Box(
-                Modifier.width(5.dp).height(56.dp).clip(RoundedCornerShape(3.dp))
-                    .background(Palette.TextSecondary.copy(alpha = 0.55f))
-            )
+        ) { PhIcon(icon, Palette.Navy, 44.dp) }
+        Spacer(Modifier.height(18.dp))
+        Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(6.dp))
+        Text(body, fontSize = 14.sp, lineHeight = 20.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center)
+    }
+}
+
+/** تبويب التسجيلات: تسجيلات المحاضرة في هذا المستند. */
+@Composable
+private fun RecordingsList(s: DocSession) {
+    val recs = AudioNotes.list(s.id).sortedByDescending { it.start }
+    if (recs.isEmpty()) {
+        EmptyPanel(
+            R.drawable.ph_waveform,
+            L("تسجيلات المحاضرة", "Lecture recordings"),
+            L("سجّل من زر الميكروفون في الشريط؛ كل ما تكتبه أثناء التسجيل يُربط بلحظته.", "Record with the microphone button in the toolbar; everything you write is linked to its moment.")
+        )
+        return
+    }
+    val fmt = remember { java.text.SimpleDateFormat("d/M  HH:mm", java.util.Locale.getDefault()) }
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+        items(recs.size) { k ->
+            val r = recs[k]
+            val playing = AudioNotes.playing?.id == r.id
+            Row(
+                Modifier.fillMaxWidth().clickable { if (playing) AudioNotes.stopPlayback() else AudioNotes.play(r, 0L) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PhIcon(if (playing) R.drawable.ph_stop else R.drawable.ph_play, Palette.Navy, 20.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(fmt.format(java.util.Date(r.start)), fontSize = 14.sp, color = Palette.TextPrimary)
+                    Text(mmss(r.durationMs), fontSize = 12.sp, color = Palette.TextSecondary)
+                }
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).clickable { AudioNotes.delete(r) },
+                    contentAlignment = Alignment.Center
+                ) { PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 18.dp) }
+            }
         }
     }
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onClick: () -> Unit) {
+private fun PageThumb(
+    s: DocSession, pdf: PdfDoc, i: Int, current: Boolean,
+    selecting: Boolean = false, picked: Boolean = false, onClick: () -> Unit
+) {
     val ref = pdf.pages.getOrNull(i)
     val ratio = pdf.ratio(i)
     val bmp by produceState<Bitmap?>(pdf.cached(ref, 360), ref) {
@@ -148,18 +331,25 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
         }
     }
     val strokes = s.annotations[i] ?: emptyList()
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(8.dp)
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    val marked = i in s.bookmarks
+    Column {
         Box(
             Modifier.fillMaxWidth().aspectRatio(ratio)
-                .shadow(3.dp, shape)
+                .shadow(2.dp, shape)
+                .clip(shape)
                 .background(Color.White)
-                .then(if (current) Modifier.border(2.dp, Palette.Gold, shape) else Modifier)
-                .combinedClickable(onClick = onClick, onLongClick = { menu = true })
+                .then(
+                    when {
+                        selecting && picked -> Modifier.border(3.dp, Palette.Navy, shape)
+                        !selecting && current -> Modifier.border(3.dp, Color(0xFF3B82F6), shape)
+                        else -> Modifier.border(1.dp, Palette.Divider, shape)
+                    }
+                )
+                .combinedClickable(onClick = onClick, onLongClick = { if (!selecting) menu = true })
         ) {
-            PageMenu(s, pdf, i, menu, { menu = false }, { confirmDelete = true })
             val b = bmp
             if (b != null) {
                 val img = remember(b) { b.asImageBitmap() }
@@ -178,15 +368,43 @@ private fun PageThumb(s: DocSession, pdf: PdfDoc, i: Int, current: Boolean, onCl
                 }
                 strokes.forEach { drawInk(it.pts, it.color, it.width, it.tool) }
             }
+            // علامة الصفحة في الزاوية: تُضاف أو تُزال بالنقر
+            Box(
+                Modifier.align(Alignment.TopEnd).size(32.dp).clickable(enabled = !selecting) { s.toggleBookmark(i) },
+                contentAlignment = Alignment.Center
+            ) {
+                PhIcon(
+                    if (marked) R.drawable.ph_bookmark_fill else R.drawable.ph_bookmark,
+                    if (marked) Palette.Gold else Palette.TextSecondary.copy(alpha = 0.55f), 18.dp
+                )
+            }
+            if (selecting) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(6.dp).size(24.dp).clip(CircleShape)
+                        .background(if (picked) Palette.Navy else Color.White)
+                        .border(1.5.dp, if (picked) Palette.Navy else Palette.TextSecondary, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { if (picked) PhIcon(R.drawable.ph_check, Color.White, 15.dp) }
+            }
         }
-        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (i in s.bookmarks) PhIcon(R.drawable.ph_bookmark_fill, Palette.Gold, 13.dp)
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${i + 1}",
-                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 2.dp),
+                fontSize = 13.sp,
                 fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-                color = if (current) Palette.GoldDeep else Palette.TextSecondary
+                color = if (current) Palette.Navy else Palette.TextSecondary
             )
+            Spacer(Modifier.weight(1f))
+            if (!selecting) {
+                Box {
+                    Box(
+                        Modifier.size(width = 36.dp, height = 28.dp).clip(RoundedCornerShape(8.dp)).clickable { menu = true },
+                        contentAlignment = Alignment.Center
+                    ) { PhIcon(R.drawable.ph_more, Palette.TextSecondary, 18.dp) }
+                    PageMenu(s, pdf, i, menu, { menu = false }, { confirmDelete = true })
+                }
+            }
         }
     }
     if (confirmDelete) {

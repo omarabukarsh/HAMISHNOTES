@@ -1509,8 +1509,13 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             s.listState.animateScrollToItem(h.page, off)
         }
 
+        // على الشاشات العريضة يُزاح المستند بجانب درج الصفحات بدل أن يغطيه
+        val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 720
+        val sidePad by androidx.compose.animation.core.animateDpAsState(
+            if (s.drawerOpen && wide) PAGES_PANEL_W.dp else 0.dp, tween(240), label = "sidePad"
+        )
         Box(
-            Modifier.fillMaxSize().multiFingerTap(
+            Modifier.fillMaxSize().padding(start = sidePad).multiFingerTap(
                 onTwo = { if (AppController.fingerUndo && s.undoStack.isNotEmpty()) s.undo() },
                 onThree = { if (AppController.fingerUndo && s.redoStack.isNotEmpty()) s.redo() }
             ).zoomAndPan(

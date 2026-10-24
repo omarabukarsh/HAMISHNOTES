@@ -177,8 +177,9 @@ fun TemplatePickerDialog(
                     Box(Modifier.width(1.dp).fillMaxHeight().background(Palette.Divider))
                     // الخيارات والأقسام
                     Column(Modifier.weight(1f).fillMaxHeight()) {
+                        // بلا تمرير أفقي هنا: صف الألوان نفسه يتمرر داخل عرض محدد (تمريران متداخلان يسببان إغلاق التطبيق)
                         Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                            Modifier.fillMaxWidth()
                                 .padding(horizontal = 18.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -212,7 +213,9 @@ fun TemplatePickerDialog(
                                 }
                             }
                             // لون الورقة
-                            PaperColorRow(choice.color, { choice = choice.copy(color = it) }, { picker = true })
+                            Box(Modifier.weight(1f)) {
+                                PaperColorRow(choice.color, { choice = choice.copy(color = it) }, { picker = true })
+                            }
                         }
                         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
                         Column(

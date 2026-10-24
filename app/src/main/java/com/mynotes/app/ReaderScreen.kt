@@ -454,8 +454,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
             contentAlignment = Alignment.Center
         ) { PagesGlyph(tintFor(s.drawerOpen)) }
 
-        // زر درج الملخصات في الزاوية المقابلة، مع عدد التمييزات
-        val markCount = s.marks.values.sumOf { it.size }
+        // زر درج الملخصات في الزاوية المقابلة (بلا رقم، طلب المستخدم)
         if (UiPrefs.summariesOn) Box(Modifier.align(Alignment.CenterEnd)) {
             Box(
                 Modifier.size(46.dp)
@@ -465,18 +464,6 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     .clickable { s.summaryOpen = !s.summaryOpen; if (s.summaryOpen) s.pageMenuOpen = false },
                 contentAlignment = Alignment.Center
             ) { SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold) }
-            if (markCount > 0) {
-                Box(
-                    Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape)
-                        .background(Palette.GoldDeep),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (markCount > 99) "99" else "$markCount",
-                        fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold
-                    )
-                }
-            }
         }
 
         // شريط الأدوات في المنتصف

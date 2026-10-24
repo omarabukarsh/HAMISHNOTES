@@ -543,7 +543,7 @@ class LibraryRepository(context: Context) {
                                 w = o.getDouble("w").toFloat(), h = o.getDouble("h").toFloat(),
                                 color = o.getInt("c"), style = o.optInt("st", 0),
                                 collapsed = o.optBoolean("cl", false), author = o.optString("a", ""),
-                                ink = inks
+                                ink = inks, text = o.optString("tx", "")
                             )
                         )
                     } catch (e: Throwable) {
@@ -669,7 +669,7 @@ class LibraryRepository(context: Context) {
                                         JSONObject().put("id", n.id).put("page", n.page)
                                             .put("x", n.x.toDouble()).put("y", n.y.toDouble())
                                             .put("w", n.w.toDouble()).put("h", n.h.toDouble())
-                                            .put("c", n.color).put("st", n.style).put("cl", n.collapsed).put("a", n.author)
+                                            .put("c", n.color).put("st", n.style).put("cl", n.collapsed).put("a", n.author).put("tx", n.text)
                                             .put("ink", JSONArray().apply {
                                                 n.ink.forEach { s ->
                                                     val flat = JSONArray()

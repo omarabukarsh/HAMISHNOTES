@@ -76,6 +76,7 @@ object Exporter {
                         val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
                         c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
                         n.pageInk().forEach { drawInk(c, it, w) }
+                        n.textBox()?.let { drawTexts(c, listOf(it), w) }
                     }
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
@@ -184,7 +185,7 @@ object Exporter {
         val images = snap.images[i] ?: emptyList()
         val pageNotes = snap.notes[i] ?: emptyList()
         val ink = (snap.ink[i] ?: emptyList()) + pageNotes.flatMap { it.pageInk() }
-        val texts = snap.texts[i] ?: emptyList()
+        val texts = (snap.texts[i] ?: emptyList()) + pageNotes.mapNotNull { it.textBox() }
         if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty()) return
 
         com.tom_roush.pdfbox.pdmodel.PDPageContentStream(

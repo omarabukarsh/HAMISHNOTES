@@ -3015,6 +3015,8 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dra
     }
     if (!moved) {
         if (target.collapsed) session.editNote(target.id) { it.copy(collapsed = false) }
+        // نقرة على الملاحظة المحددة تفتح كتابة النص بلوحة المفاتيح
+        else if (session.selectedNoteId == target.id) session.noteTextEditId = target.id
         session.selectedNoteId = target.id
     } else {
         session.selectedNoteId = target.id

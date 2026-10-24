@@ -33,8 +33,18 @@ data class StickyNote(
     val style: Int = 0,
     val collapsed: Boolean = false,
     val author: String = "",
-    val ink: List<Ink> = emptyList()
+    val ink: List<Ink> = emptyList(),
+    /** نص مكتوب بلوحة المفاتيح. */
+    val text: String = ""
 )
+
+/** حجم خط نص الملاحظة (نسبة لعرض الصفحة). */
+fun StickyNote.textSize(): Float = (w * 0.075f).coerceIn(0.008f, 0.03f)
+
+/** نص الملاحظة كمربع نص (للتصدير). */
+fun StickyNote.textBox(): TextBox? =
+    if (collapsed || text.isBlank()) null
+    else TextBox("note-" + id, page, x + w * 0.06f, y + w * 0.06f, w * 0.88f, text, androidx.compose.ui.graphics.Color(0xFF1F2933), textSize())
 
 /** خطوط الملاحظة بإحداثيات الصفحة. */
 fun StickyNote.pageInk(): List<Ink> =

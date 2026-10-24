@@ -148,6 +148,8 @@ class DocSession(entry: DocEntry) {
     /** الملاحظات اللاصقة والمحددة منها. */
     var notes by mutableStateOf<Map<Int, List<StickyNote>>>(emptyMap())
     var selectedNoteId by mutableStateOf<String?>(null)
+    /** ملاحظة يُكتب نصها الآن بلوحة المفاتيح. */
+    var noteTextEditId by mutableStateOf<String?>(null)
 
     var textDialog by mutableStateOf<TextDialogReq?>(null)
 

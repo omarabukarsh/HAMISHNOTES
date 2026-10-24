@@ -109,6 +109,15 @@ fun NotesLayer(s: DocSession, page: Int, night: Boolean) {
                         }
                         n.ink.forEach { st -> drawStroke(st, if (night) nightOf(st.color) else st.color, scaleW = size.width) }
                     }
+                    if (n.text.isNotBlank()) {
+                        val fs = with(density) { (n.textSize() * W).toSp() }
+                        Text(
+                            n.text, fontSize = fs, lineHeight = fs * 1.3f,
+                            color = if (night) Color(0xFFEDEDED) else Color(0xFF1F2933),
+                            overflow = TextOverflow.Clip,
+                            modifier = Modifier.padding(start = with(density) { (n.w * W * 0.06f).toDp() }, end = with(density) { (n.w * W * 0.06f).toDp() }, top = with(density) { (n.w * W * 0.06f).toDp() })
+                        )
+                    }
                     if (n.author.isNotBlank()) {
                         Text(
                             n.author, fontSize = 7.sp, color = Color.Black.copy(alpha = 0.55f), maxLines = 1,
@@ -250,6 +259,10 @@ fun NoteBar(s: DocSession) {
                     }
                 }
             }
+            // كتابة نص بلوحة المفاتيح
+            TBtn(onClick = { s.noteTextEditId = id }) {
+                PhIcon(R.drawable.ph_text, Palette.TextSecondary, 20.dp, L("كتابة نص", "Type text"))
+            }
             // طيّ الملاحظة إلى مربع صغير
             TBtn(onClick = { s.editNote(id) { it.copy(collapsed = !it.collapsed) } }) {
                 PhIcon(if (n.collapsed) R.drawable.ph_zoom_in else R.drawable.ph_zoom_out, Palette.TextSecondary, 20.dp, L("طيّ/فتح", "Collapse/expand"))
@@ -276,6 +289,27 @@ fun NoteBar(s: DocSession) {
             }
             TextButton(onClick = { s.selectedNoteId = null }) { Text(L("تم", "Done")) }
         }
+    }
+    if (s.noteTextEditId == id) {
+        var txt by remember(id) { mutableStateOf(n.text) }
+        AlertDialog(
+            onDismissRequest = { s.noteTextEditId = null },
+            title = { Text(L("نص الملاحظة", "Note text")) },
+            text = {
+                OutlinedTextField(
+                    value = txt, onValueChange = { txt = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+                    placeholder = { Text(L("اكتب هنا…", "Type here…")) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    s.editNote(id) { it.copy(text = txt.trimEnd()) }
+                    s.noteTextEditId = null
+                }) { Text(L("حفظ", "Save")) }
+            },
+            dismissButton = { TextButton(onClick = { s.noteTextEditId = null }) { Text(L("إلغاء", "Cancel")) } }
+        )
     }
     if (authorDialog) {
         var name by remember { mutableStateOf(PenPrefs.author) }

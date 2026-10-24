@@ -147,6 +147,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var templateVer by remember { mutableStateOf(0) }
     var licensesOpen by remember { mutableStateOf(false) }
     var privacyOpen by remember { mutableStateOf(false) }
+    var termsOpen by remember { mutableStateOf(false) }
     fun showTour(id: String) {
         val i = ToolCatalog.tour.indexOfFirst { it.id == id }
         if (i >= 0) scope.launch {
@@ -318,6 +319,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     item {
                         NavRow(L("سياسة الخصوصية", "Privacy policy"), L("ما يحفظه التطبيق وأين", "What the app stores and where"), R.drawable.ph_lock) { privacyOpen = true }
                     }
+                    item {
+                        NavRow(L("شروط الاستخدام", "Terms of use"), L("حدود المسؤولية واستخدام الملفات", "Liability and use of your files"), R.drawable.ph_note) { termsOpen = true }
+                    }
                 }
             }
         }
@@ -325,6 +329,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     if (toolbarOpen) ToolbarCustomizeDialog(onDismiss = { toolbarOpen = false })
     if (licensesOpen) LicensesDialog { licensesOpen = false }
     if (privacyOpen) PrivacyDialog { privacyOpen = false }
+    if (termsOpen) TermsDialog { termsOpen = false }
     if (templateOpen) TemplatePickerDialog(
         mode = PickerMode.DEFAULT,
         onDismiss = { templateOpen = false },

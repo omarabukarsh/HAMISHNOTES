@@ -18,7 +18,7 @@
         </intent>
     </queries>
     <application
-        android:label="MyNotes"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true"
         android:theme="@style/Theme.MyNotes">
@@ -84,7 +84,7 @@
         <receiver
             android:name=".StudyWidget"
             android:exported="false"
-            android:label="MyNotes">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

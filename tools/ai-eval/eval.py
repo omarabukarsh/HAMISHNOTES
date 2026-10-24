@@ -222,6 +222,22 @@ def norm(s):
     return re.sub(r"[^\w]+", " ", s.lower()).strip()
 
 
+NEG = re.compile(r"(?i)\b(not|no|never|without|except|avoid|contraindicated)\b|(?<![^\W\d_])[وف]?(لا|ليس|ليست|غير|لن|لم|بدون|دون|يُمنع|ممنوع)(?![^\W\d_])")
+
+
+def dropped(out, notes):
+    nums = set(re.findall(r"\d+(?:[.,]\d+)?", out))
+    if any(n not in nums for n in re.findall(r"\d+(?:[.,]\d+)?", notes)):
+        return "number"
+    ow = set(w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{4,}", out))
+    terms = set(w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{4,}", notes)) - COMMON
+    if len(terms) >= 4 and sum(1 for w in terms if w not in ow) * 4 > len(terms):
+        return "terms"
+    if len(NEG.findall(out)) < len(NEG.findall(notes)):
+        return "negation"
+    return ""
+
+
 def suspicious(out, allowed):
     nums = set(re.findall(r"\d+(?:[.,]\d+)?", out))
     ok_nums = set(re.findall(r"\d+(?:[.,]\d+)?", allowed))
@@ -307,6 +323,10 @@ for (title, sub), ms in groups:
                 body = "\n".join(("- " + l.lstrip("# ") if l.lstrip().startswith("#") else l)
                                  for l in body.splitlines() if norm(l.lstrip("#- ")) not in heads).strip()
                 bad, bn, unk = suspicious(body, notes + " " + (title or "") + " " + (sub or ""))
+                why = dropped(body, notes)
+                if why:
+                    log.append(f"  dropped check → fallback ({why})")
+                    bad = True
                 log.append(f"- [{title} › {sub}] model {dt:.1f}s, fallback={bad}, new numbers={bn}, unknown={unk[:6]}")
                 if bad or not body:
                     body = fallback(notes)
@@ -338,10 +358,52 @@ for (title, sub), bodies in sections.items():
     out.append("")
 result = "\n".join(out).strip()
 
+# ---------------------------------------------------------------- جدول مقارنة لقسم (مثل AiOrganizer.tableFromSection)
+
+KT = open("app/src/main/java/com/mynotes/app/AiOrganize.kt", encoding="utf-8").read()
+TABLE_SYSTEM = re.search(r'TABLE_SYSTEM = """(.*?)"""', KT, re.S).group(1)
+table_log = []
+for head in ["# Penicillin V (Phenoxymethylpenicillin)", "# 1.4 Penicillins — Pharmacokinetics", "# 2.1 Introduction"]:
+    ls = result.splitlines()
+    if head not in ls:
+        table_log.append(f"### {head}\n(not found)")
+        continue
+    i = ls.index(head)
+    j = i + 1
+    while j < len(ls) and not ls[j].strip().startswith("#"):
+        j += 1
+    pts = [x.strip().removeprefix("- ").replace("**", "") for x in ls[i + 1:j] if x.strip() and " | " not in x]
+    if len(pts) < 2:
+        table_log.append(f"### {head}\n(fewer than 2 points)")
+        continue
+    o, dt = gen(TABLE_SYSTEM, "SECTION: " + head.lstrip("# ") + "\nPOINTS:\n" + "\n".join(pts))
+    tb = [x.strip() for x in clean(o).splitlines() if " | " in x]
+    tt = "\n".join(tb)
+    bad, bn, unk = suspicious(tt, "\n".join(pts) + " " + head)
+    why = dropped(tt, "\n".join(pts))
+    ok = len(tb) >= 3 and not bad and not why
+    table_log.append(f"### {head} — {dt:.0f}s — {'ACCEPTED' if ok else 'REJECTED (' + (why or ('added ' + str(bn + unk[:4]) if bad else 'too short')) + ')'}\n```\n{tt}\n```")
+
+# ---------------------------------------------------------------- الخريطة الذهنية (بنية الشجرة كما يبنيها MindMap.parse)
+
+mm = []
+for x in result.splitlines():
+    x = x.strip()
+    if x.startswith("## "):
+        mm.append("    ├─ " + x[3:])
+    elif x.startswith("# "):
+        mm.append("  ● " + x[2:])
+    elif x.startswith("- "):
+        mm.append("        · " + x[2:][:70])
+    elif " | " in x:
+        mm.append("        ▦ " + x.split(" | ")[0][:50])
+
 with open("results.md", "w", encoding="utf-8") as f:
     f.write(f"# Structured summary eval v2 — Gemma 4 E2B, {len(marks)} highlights, model time {total:.0f}s\n\n")
     f.write("## Detected headings\n\n")
     for p, hs in DETECTED.items():
         f.write(f"- p{p}: " + " ; ".join(f"L{h[3]} {h[2][:40]}" for h in hs) + "\n")
     f.write(f"\n## Result\n\n```\n{result}\n```\n\n## Log\n\n" + "\n".join(log) + "\n")
+    f.write("\n## Comparison tables\n\n" + "\n\n".join(table_log) + "\n")
+    f.write("\n## Mind map tree\n\n```\nAntibiotics\n" + "\n".join(mm) + "\n```\n")
 print(open("results.md", encoding="utf-8").read())

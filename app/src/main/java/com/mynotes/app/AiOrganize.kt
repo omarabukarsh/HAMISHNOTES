@@ -395,8 +395,8 @@ A: answer
         // ذاكرة النموذج 4096 رمزًا: العربية تأخذ رموزًا أكثر، فأجزاء أصغر.
         // جزء من الذاكرة لنص صفحات المستند (المصدر)، فالملاحظات في كل جزء أقل قليلًا.
         val arabic = notes.count { it in '؀'..'ۿ' } > notes.length / 4
-        val parts = chunks(notes, if (arabic) 1300 else 2400)
-        val sourceBudget = if (arabic) 1300 else 2400
+        val parts = chunks(notes, Ai.budget(if (arabic) 1300 else 2400))
+        val sourceBudget = Ai.budget(if (arabic) 1300 else 2400)
         if (parts.isEmpty()) return
         // ما رُتّب: نص كل تمييز كما هو الآن (للتمييز الذي أضيف إليه نص: نصه الكامل)
         val snapshot = s.allMarks().filter { m -> marks.any { it.id == m.id } }.associate { it.id to it.text }
@@ -468,9 +468,53 @@ A: answer
                 }
             } catch (t: Throwable) {
                 if (!quiet) AppController.messages.tryEmit(
-                    L("تعذر تشغيل النموذج. جرّب النموذج «الخفيف» من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
-                        "Could not run the model. Try the “Light” model in Settings, or close other apps to free memory.")
+                    Ai.errorText(t, L("تعذر تشغيل النموذج. جرّب النموذج «الخفيف» من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
+                        "Could not run the model. Try the “Light” model in Settings, or close other apps to free memory."))
                 )
+            } finally {
+                runningDoc = null
+                stepText = ""
+                partial = ""
+            }
+        }
+    }
+
+    private const val EDIT_SYSTEM = """You edit a pharmacy student's study summary following their instruction.
+Rules:
+- Apply the instruction to the summary and return the whole edited summary.
+- Keep the same format: "# " headings, "## " subheadings, "- " bullets, tables with " | " between cells (first row header).
+- Keep drug names and medical terms exactly as written. Keep each part in its language unless the instruction asks to translate.
+- Do not add facts, numbers or doses that are not in the summary unless the instruction explicitly asks you to add or explain something.
+Output only the edited summary, no introduction or closing remarks."""
+
+    /** تعديل الملخص المرتّب بتعليمات المستخدم (مثل: اختصر، اجعله جدولًا، ترجم العناوين). */
+    fun editWithInstruction(s: DocSession, instruction: String) {
+        if (job?.isActive == true || AiPageReader.runningKey != null || !Ai.ready) return
+        val docId = s.id
+        val before = result(docId) ?: return
+        if (instruction.isBlank()) return
+        if (before.length > Ai.budget(5000)) {
+            AppController.messages.tryEmit(
+                L("الملخص أطول من قدرة النموذج الذي على الجهاز. استخدم Claude أو ChatGPT من الإعدادات، أو عدّله يدويًا.",
+                    "The summary is longer than the on-device model can handle. Use Claude or ChatGPT from Settings, or edit it manually.")
+            )
+            return
+        }
+        runningDoc = docId
+        partial = ""
+        stepFraction = 0f
+        stepText = L("جارٍ تعديل الملخص…", "Editing the summary…")
+        job = AppController.scope.launch {
+            try {
+                val res = Ai.generate(EDIT_SYSTEM, "SUMMARY:\n\n$before\n\nINSTRUCTION: $instruction") { p -> partial = clean(p) }
+                val out = clean(res)
+                if (out.isNotBlank()) {
+                    save(docId, out)
+                    AppController.messages.tryEmit(L("عُدّل الملخص. راجعه قبل الاعتماد عليه", "Summary edited. Review it before relying on it"))
+                }
+            } catch (e: CancellationException) {
+            } catch (t: Throwable) {
+                AppController.messages.tryEmit(Ai.errorText(t, L("تعذر تشغيل النموذج", "Could not run the model")))
             } finally {
                 runningDoc = null
                 stepText = ""
@@ -588,8 +632,9 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
         Spacer(Modifier.height(12.dp))
         // تنبيه دائم: اقتراح يُراجع
         Text(
-            L("ترتيب مقترح من نموذج يعمل داخل جهازك دون إنترنت. ملخصك الأصلي لا يتغير. راجع المعلومات قبل الاعتماد عليها.",
-                "Suggested by a model running on your device, offline. Your original summary is unchanged. Review the information before relying on it."),
+            (if (Ai.isCloud) L("ترتيب مقترح من ${CloudAi.label} عبر الإنترنت بمفتاحك. ", "Suggested by ${CloudAi.label} online with your key. ")
+            else L("ترتيب مقترح من نموذج يعمل داخل جهازك دون إنترنت. ", "Suggested by a model running on your device, offline. ")) +
+                L("ملخصك الأصلي لا يتغير. راجع المعلومات قبل الاعتماد عليها.", "Your original summary is unchanged. Review the information before relying on it."),
             fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
         )
         Spacer(Modifier.height(10.dp))
@@ -660,6 +705,26 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                     L("بطاقات مراجعة تلقائية بالذكاء الاصطناعي (تظهر في «بطاقات»)", "Automatic AI review cards (shown in “Cards”)"),
                     AiOrganizer.autoCards
                 ) { AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards) }
+                // ✦ تعديل الملخص بتعليمات (يعمل مع النموذج المحلي، وأفضل مع Claude أو ChatGPT)
+                if (saved != null) {
+                    var instr by remember { mutableStateOf("") }
+                    Spacer(Modifier.height(8.dp))
+                    Text(L("✦ عدّل الملخص بالذكاء", "✦ Edit the summary with AI"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+                    OutlinedTextField(
+                        value = instr, onValueChange = { instr = it },
+                        placeholder = { Text(L("مثال: اختصره إلى نقاط، اجعل الأدوية في جدول، أضف عنوانًا لكل مجموعة", "e.g. shorten into bullets, put the drugs in a table, add a heading per group"), fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            enabled = instr.isNotBlank() && !busyElsewhere && AiPageReader.runningKey == null,
+                            onClick = { AiOrganizer.editWithInstruction(s, instr.trim()); instr = "" },
+                            colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
+                        ) { Text(L("تطبيق التعديل", "Apply edit")) }
+                        Spacer(Modifier.width(8.dp))
+                        Text(L("يعمل بـ: ", "Using: ") + (if (Ai.isCloud) CloudAi.label else Ai.selected.title()), fontSize = 12.sp, color = Palette.TextSecondary)
+                    }
+                }
                 if (busyElsewhere) {
                     Text(L("يعمل الذكاء الاصطناعي على مستند آخر الآن", "AI is working on another document now"), fontSize = 12.sp, color = Palette.TextSecondary)
                 }
@@ -723,7 +788,7 @@ fun AiExplainDialog(text: String, onDismiss: () -> Unit) {
                 done = true
             } catch (e: CancellationException) {
             } catch (t: Throwable) {
-                error = L("تعذر تشغيل النموذج", "Could not run the model")
+                error = Ai.errorText(t, L("تعذر تشغيل النموذج", "Could not run the model"))
             }
         }
         onDispose { j.cancel() }

@@ -196,8 +196,8 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
                     return@launch
                 }
                 val arabic = isArabic(text)
-                val parts = if (img != null) listOf(text.take(if (arabic) 1500 else 2600))
-                else split(text, if (arabic) 2000 else 3600)
+                val parts = if (img != null) listOf(text.take(Ai.budget(if (arabic) 1500 else 2600)))
+                else split(text, Ai.budget(if (arabic) 2000 else 3600))
                 parts.forEachIndexed { i, part ->
                     stepText = if (parts.size == 1) L("جارٍ تنظيم الصفحة ${page + 1}…", "Structuring page ${page + 1}…")
                     else L("جارٍ تنظيم الصفحة ${page + 1} (الجزء ${i + 1} من ${parts.size})…", "Structuring page ${page + 1} (part ${i + 1} of ${parts.size})…")
@@ -219,8 +219,8 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
                 if (done.isNotEmpty()) save(docId, page, done.toString())
             } catch (t: Throwable) {
                 AppController.messages.tryEmit(
-                    L("تعذر تشغيل النموذج. جرّب نموذجًا آخر من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
-                        "Could not run the model. Try another model in Settings, or close other apps to free memory.")
+                    Ai.errorText(t, L("تعذر تشغيل النموذج. جرّب نموذجًا آخر من الإعدادات، أو أغلق تطبيقات أخرى لتحرير الذاكرة.",
+                        "Could not run the model. Try another model in Settings, or close other apps to free memory."))
                 )
             } finally {
                 runningKey = null

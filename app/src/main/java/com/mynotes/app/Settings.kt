@@ -182,7 +182,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    item { SectionTitle(L("الذكاء الاصطناعي (على جهازك، دون إنترنت)", "AI (on your device, offline)")) }
+                    item { SectionTitle(L("الذكاء الاصطناعي (على جهازك، أو Claude / ChatGPT)", "AI (on your device, or Claude / ChatGPT)")) }
                     item { AiSettings() }
 
                     item { SectionTitle(L("إعدادات المستندات", "Document settings")) }
@@ -1289,6 +1289,85 @@ private fun DrawScope.demoNight(t: Float) {
 
 // ---------------------------------------------------------------- MyNotes Pro: إعدادات الذكاء الاصطناعي
 
+/** مصدر الذكاء الاصطناعي: على الجهاز، أو Claude / ChatGPT بمفتاح API من حساب المستخدم. */
+@Composable
+private fun CloudAiSettings() {
+    CloudAi.load()
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    Text(L("مصدر الذكاء الاصطناعي", "AI source"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChoiceChip(L("على الجهاز (مجاني، دون إنترنت)", "On device (free, offline)"), CloudAi.provider == CloudAi.Provider.LOCAL) {
+            CloudAi.setProvider(CloudAi.Provider.LOCAL); result = null
+        }
+        ChoiceChip("Claude", CloudAi.provider == CloudAi.Provider.CLAUDE) { CloudAi.setProvider(CloudAi.Provider.CLAUDE); result = null }
+        ChoiceChip("ChatGPT", CloudAi.provider == CloudAi.Provider.OPENAI) { CloudAi.setProvider(CloudAi.Provider.OPENAI); result = null }
+    }
+    if (CloudAi.provider != CloudAi.Provider.LOCAL) {
+        val claude = CloudAi.provider == CloudAi.Provider.CLAUDE
+        Text(
+            if (claude) L("أنشئ مفتاحًا من console.anthropic.com ← API Keys. اشتراك claude.ai لا يعمل هنا؛ المفتاح يُدفع حسب الاستخدام من رصيد حساب API.",
+                "Create a key at console.anthropic.com → API Keys. A claude.ai subscription doesn’t work here; the key is billed per use from your API account credit.")
+            else L("أنشئ مفتاحًا من platform.openai.com ← API keys. اشتراك ChatGPT Plus لا يعمل هنا؛ المفتاح يُدفع حسب الاستخدام من رصيد حساب API.",
+                "Create a key at platform.openai.com → API keys. A ChatGPT Plus subscription doesn’t work here; the key is billed per use from your API account credit."),
+            fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+        )
+        var key by remember(CloudAi.provider) { mutableStateOf(if (claude) CloudAi.claudeKey else CloudAi.openaiKey) }
+        var shown by remember { mutableStateOf(false) }
+        androidx.compose.material3.OutlinedTextField(
+            value = key,
+            onValueChange = { key = it.trim(); if (claude) CloudAi.setClaudeKey(key) else CloudAi.setOpenaiKey(key); result = null },
+            singleLine = true,
+            label = { Text(if (claude) L("مفتاح Anthropic API", "Anthropic API key") else L("مفتاح OpenAI API", "OpenAI API key")) },
+            visualTransformation = if (shown) androidx.compose.ui.text.input.VisualTransformation.None
+                else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            trailingIcon = {
+                androidx.compose.material3.TextButton(onClick = { shown = !shown }) {
+                    Text(if (shown) L("إخفاء", "Hide") else L("إظهار", "Show"), fontSize = 12.sp)
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(L("النموذج", "Model"), fontSize = 13.sp, color = Palette.TextSecondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (if (claude) CloudAi.claudeModels else CloudAi.openaiModels).forEach { m ->
+                val sel = m == (if (claude) CloudAi.claudeModel else CloudAi.openaiModel)
+                ChoiceChip(m, sel) { if (claude) CloudAi.setClaudeModel(m) else CloudAi.setOpenaiModel(m); result = null }
+            }
+        }
+        var custom by remember(CloudAi.provider) { mutableStateOf(if (claude) CloudAi.claudeModel else CloudAi.openaiModel) }
+        androidx.compose.material3.OutlinedTextField(
+            value = custom,
+            onValueChange = { custom = it; if (it.isNotBlank()) { if (claude) CloudAi.setClaudeModel(it) else CloudAi.setOpenaiModel(it) } },
+            singleLine = true,
+            label = { Text(L("أو اكتب اسم نموذج آخر", "or type another model name")) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Button(
+                enabled = key.isNotBlank() && !testing,
+                onClick = {
+                    testing = true
+                    result = null
+                    scope.launch {
+                        result = CloudAi.test()
+                        testing = false
+                    }
+                },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Palette.Navy)
+            ) { Text(if (testing) L("جارٍ الاختبار…", "Testing…") else L("اختبار الاتصال", "Test connection")) }
+            Spacer(Modifier.width(10.dp))
+            result?.let { Text(it, fontSize = 13.sp, color = if (it.contains("✓")) Palette.GoldDeep else Palette.Danger, modifier = Modifier.weight(1f)) }
+        }
+        Text(
+            L("عند استخدامه يُرسل النص المطلوب (وصورة الصفحة عند «قراءة الصفحة») إلى ${if (claude) "Anthropic" else "OpenAI"} عبر الإنترنت. المفتاح يُحفظ داخل التطبيق على جهازك فقط. إن لم يكن هناك مفتاح يعمل النموذج الذي على الجهاز.",
+                "When used, the requested text (and the page image for “Read page”) is sent to ${if (claude) "Anthropic" else "OpenAI"} over the internet. The key is stored inside the app on your device only. Without a key, the on-device model is used."),
+            fontSize = 11.sp, lineHeight = 16.sp, color = Palette.TextSecondary
+        )
+    }
+}
+
 @Composable
 private fun AiSettings() {
     val c = AppController
@@ -1300,6 +1379,8 @@ private fun AiSettings() {
         Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        CloudAiSettings()
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         Text(
             L("نموذج لغوي مجاني يعمل داخل الجهاز: يرتّب الملخصات ويشرح النصوص. نزّله مرة واحدة (يحتاج إنترنت للتنزيل فقط)، ثم يعمل دون إنترنت.",
                 "A free language model running inside the device: organizes summaries and explains text. Download it once (internet needed only for the download); then it works offline."),

@@ -112,10 +112,22 @@ object Ai {
     }
 
     val selected: Model get() = models.firstOrNull { it.id == selectedId } ?: models[0]
-    val ready: Boolean get() = installed(selected)
+    /** الذكاء عبر الإنترنت (Claude أو ChatGPT بمفتاح المستخدم) مختار ومفتاحه موجود. */
+    val isCloud: Boolean get() = CloudAi.active
+    val ready: Boolean get() = isCloud || installed(selected)
 
-    /** النموذج المختار يقرأ صورة الصفحة نفسها (Gemma 4)، وإلا يُستعمل النص المقروء فقط. */
-    val canSee: Boolean get() = ready && selected.vision && !visionFailed
+    /** يقرأ صورة الصفحة نفسها: Claude وChatGPT دائمًا، وعلى الجهاز Gemma 4 فقط. */
+    val canSee: Boolean get() = isCloud || (installed(selected) && selected.vision && !visionFailed)
+
+    /** رسالة خطأ واضحة: من Claude/ChatGPT كما هي، وإلا رسالة النموذج المحلي. */
+    fun errorText(t: Throwable, local: String): String = when {
+        t is CloudAi.ApiError -> CloudAi.label + ": " + (t.message ?: "")
+        isCloud -> CloudAi.label + ": " + L("تعذر الاتصال، تأكد من الإنترنت", "could not connect, check the internet")
+        else -> local
+    }
+
+    /** حجم النص في الطلب الواحد: النماذج عبر الإنترنت تقبل أكثر بكثير من نموذج الجهاز. */
+    fun budget(local: Int): Int = if (isCloud) local * 8 else local
     private var visionFailed = false
     private var engineVision = false
 
@@ -324,6 +336,7 @@ object Ai {
         image: ByteArray? = null,
         onPartial: (String) -> Unit = {}
     ): String {
+        if (isCloud) return CloudAi.generate(system, prompt, image) { onPartial(cleanThinking(it)) }.let { cleanThinking(it) }
         if (!ready) throw IllegalStateException("model not installed")
         idleJob?.cancel()
         val eng = ensureEngine()

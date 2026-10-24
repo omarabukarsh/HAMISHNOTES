@@ -21,6 +21,9 @@ jobs:
           python -c "from huggingface_hub import hf_hub_download; p=hf_hub_download('litert-community/gemma-4-E2B-it-litert-lm','gemma-4-E2B-it.litertlm',local_dir='.'); print(p)"
       - name: Run
         run: python tools/ai-eval/eval.py gemma-4-E2B-it.litertlm
+      - name: Publish results
+        if: always()
+        run: python tools/ai-eval/notice.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

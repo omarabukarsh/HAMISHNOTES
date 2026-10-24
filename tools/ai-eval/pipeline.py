@@ -755,10 +755,16 @@ def cards(ps, done, gen, legacy, stats, budget):
                 o, dt = gen(OLD["CARDS_SYSTEM"], "Notes:\n\n" + text)
                 made = parse_cards(o, legacy=True)
             else:
-                o, dt = gen(NEW["CARDS_SYSTEM"], "SUMMARY:\n\n" + text)
-                raw = parse_cards(o)
+                o, dt = gen(NEW["CARDS_SYSTEM"], C.cards_prompt(text))
+                raw = [(C.arabic_question(q, a), a) for q, a in parse_cards(o)]
                 ok = [c for c in raw if C.card_ok(c[0], c[1], text)]
                 stats["cards_rejected"] += len(raw) - len(ok)
+                for q, a in raw:
+                    why = C.card_why(q, a, text)
+                    if why:
+                        stats.setdefault("rejected_log", []).append(f"  card rejected ({why}): Q: {q[:80]} | A: {a[:80]}")
+                if not raw:
+                    stats.setdefault("rejected_log", []).append("  cards: model output not parsed: " + o[:200].replace("\n", " / "))
                 made = C.dedupe_cards(ok)
             stats["t_cards"] += dt
             out.extend(made)

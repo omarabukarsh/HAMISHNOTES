@@ -388,6 +388,43 @@ def card_ok(q, a, source):
     return not YESNO.match(q)
 
 
+WHAT_IS = re.compile(r"(?i)^what\s+(is|are)\s+(?:the\s+)?(.+?)\s*[?؟]?$")
+
+
+def arabic_question(q, a):
+    if not is_arabic(a):
+        return q
+    m = WHAT_IS.match(q.strip())
+    if not m:
+        return q
+    return ("ما هي " if m.group(1).lower() == "are" else "ما هو ") + m.group(2).strip() + "؟"
+
+
+def cards_prompt(src):
+    return ("اكتب الأسئلة والأجوبة بالعربية لأن الملخص عربي (المصطلحات الإنجليزية تبقى كما هي).\n\n" if is_arabic(src) else "") + "SUMMARY:\n\n" + src
+
+
+def card_why(q, a, source):
+    """سبب رفض البطاقة (للتجربة فقط)."""
+    q, a = q.strip(), a.strip()
+    if not (6 <= len(q) <= 220) or not a or len(a) > 180 or len(a.split()) > 25:
+        return "length"
+    src, nums = set(content(source)), numbers(source)
+    if not grounded(a, src, nums):
+        return "answer not grounded: " + ",".join(w for w in content(a) if w not in src)[:60]
+    qw = content(q)
+    if sum(1 for w in qw if w not in src) > max(1, len(qw) // 3) or any(n not in nums for n in NUM.findall(q)):
+        return "question words: " + ",".join(w for w in qw if w not in src)[:60]
+    aw = set(content(a))
+    if aw and aw <= set(qw):
+        return "answer in question"
+    if neg_count(a) > 0 and neg_count(source) == 0:
+        return "negation"
+    if is_arabic(a) and EN_QUESTION.match(q):
+        return "english question"
+    return "yes/no" if YESNO.match(q) else ""
+
+
 def jaccard(a, b):
     a, b = set(content(a)), set(content(b))
     if not a or not b:

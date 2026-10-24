@@ -192,7 +192,8 @@ def random_marks_doc(doc, P, rng):
             if rng.random() < 0.6:
                 n = rng.randint(1, 3)
                 add(ids[i:i + n])
-                i += n + rng.randint(0, 1)
+                # تظليلان متلاصقان يدمجهما التطبيق في تظليل واحد (MarkMerge): نترك سطرًا بينهما
+                i += n + rng.randint(1, 2)
             else:
                 i += 1
     return ms
@@ -323,7 +324,7 @@ def run():
                         "t_summary": stats["t_summary"], "t_mm": stats["t_mm"], "t_cards": stats["t_cards"],
                         "ai_parts": stats["ai_parts"], "fallbacks": stats["fallbacks"], "reviews": stats["reviews"],
                         "code_tables": stats["tables"], "mm_fixed": stats["mm_fixed"], "cards_rejected": stats["cards_rejected"]}
-            report.append((name, tag, marks, summary, log, tree, cs))
+            report.append((name, tag, marks, summary, log + stats.get("rejected_log", []), tree, cs))
             print(f"[{name}] {tag}: summary {stats['t_summary']:.0f}s, mind map {stats['t_mm']:.0f}s, cards {stats['t_cards']:.0f}s", flush=True)
         metrics.append(row)
     write(report, metrics)

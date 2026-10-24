@@ -578,7 +578,9 @@ A: بسرعة ثابتة"""
                             } else {
                                 stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
                                 val made = AiStructure.dedupeCards(
-                                    parseCards(Ai.generate(CARDS_SYSTEM, "SUMMARY:\n\n$src")).filter { (q, a) -> AiStructure.cardOk(q, a, src) }
+                                    parseCards(Ai.generate(CARDS_SYSTEM, AiStructure.cardsPrompt(src)))
+                                        .map { (q, a) -> AiStructure.arabicQuestion(q, a) to a }
+                                        .filter { (q, a) -> AiStructure.cardOk(q, a, src) }
                                 )
                                 memo[ck] = made.joinToString("\n") { (q, a) -> q.replace('\t', ' ').replace('\n', ' ') + "\t" + a.replace('\t', ' ').replace('\n', ' ') }
                                 cards.addAll(made)

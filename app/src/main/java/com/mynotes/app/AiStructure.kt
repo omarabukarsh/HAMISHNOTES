@@ -694,6 +694,19 @@ Otherwise answer only the corrected section in the same format: no title, no exp
         return !YESNO.containsMatchIn(q)
     }
 
+    private val WHAT_IS = Regex("(?i)^what\\s+(is|are)\\s+(?:the\\s+)?(.+?)\\s*[?؟]?$")
+
+    /** سؤال تعريف إنجليزي لجواب عربي («What is الغلط?») ← «ما هو الغلط؟»؛ غير ذلك كما هو. */
+    fun arabicQuestion(q: String, a: String): String {
+        if (!isArabic(a)) return q
+        val m = WHAT_IS.find(q.trim()) ?: return q
+        return (if (m.groupValues[1].lowercase() == "are") "ما هي " else "ما هو ") + m.groupValues[2].trim() + "؟"
+    }
+
+    /** طلب البطاقات: الملخص، ولغة الأسئلة صريحة للعربية (النموذج الصغير يميل إلى أسئلة إنجليزية). */
+    fun cardsPrompt(src: String): String =
+        (if (isArabic(src)) "اكتب الأسئلة والأجوبة بالعربية لأن الملخص عربي (المصطلحات الإنجليزية تبقى كما هي).\n\n" else "") + "SUMMARY:\n\n" + src
+
     /** تشابه نصين بالكلمات المهمة (0..1). */
     fun similar(a: String, b: String): Float {
         val x = content(a).toSet()

@@ -180,20 +180,7 @@ fun SummaryDrawer(
                     ChoiceChip(L("تجميع حسب اللون", "Group by color"), byColor) { c.toggleSummaryByColor() }
                 }
             }
-            if (!edits.isEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        L("فيه تعديلات يدوية على الترتيب التلقائي", "Has manual edits to the automatic layout"),
-                        fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = { s.resetSummaryEdits() }) {
-                        Text(L("استعادة التلقائي", "Restore automatic"), fontSize = 12.sp, color = Palette.GoldDeep)
-                    }
-                }
-            }
+            // شريط «فيه تعديلات يدوية… استعادة التلقائي» أُزيل بطلب المستخدم؛ الاستعادة لكل جزء من قائمته («كما اكتشفه البرنامج»)
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Gold.copy(alpha = 0.45f)))
             if (selecting) {
                 Column(Modifier.fillMaxWidth().background(Palette.NavySoft).padding(horizontal = 14.dp, vertical = 8.dp)) {

@@ -563,6 +563,17 @@ OUTPUT:
                 i = j
                 continue
             }
+            // «- X:» تليه نقاط فرعية مزاحة: تُجمع في سطر واحد «- X: أ؛ ب» فتبقى كل نقطة مع بندها
+            if (l.startsWith("- ") && l.endsWith(":") && !l.contains("|")) {
+                var j = i + 1
+                val subs = ArrayList<String>()
+                while (j < ls.size && ls[j].startsWith(" ") && ls[j].trim().startsWith("- ")) { subs.add(ls[j].trim().removePrefix("- ").trim().trimEnd('.', ';')); j++ }
+                if (subs.size in 1..6 && subs.all { it.length <= 80 && !it.contains("|") }) {
+                    out.add(l + " " + subs.joinToString("; "))
+                    i = j
+                    continue
+                }
+            }
             when {
                 l.isEmpty() -> out.add("")
                 l.startsWith("- ") -> out.addAll(splitLong(if (l.contains("|")) "- " + cellsOf(l.substring(2)).joinToString("; ") else l))
@@ -662,7 +673,8 @@ Otherwise answer only the corrected section in the same format: no title, no exp
             if (subLine != null) out.add(subLine)
             for (line in bodies.joinToString("\n\n").lines()) {
                 val k = norm(line.replace("**", ""))
-                if (line.isNotBlank() && !line.contains(" | ") && k.isNotEmpty() && !seen.add(k)) continue
+                // سطر قصير («- Not stable») يتكرر لبنود مختلفة فلا يُحذف؛ التكرار يُحذف للأسطر الكاملة فقط
+                if (line.isNotBlank() && !line.contains(" | ") && k.split(" ").size >= 4 && !seen.add(k)) continue
                 if (line.isBlank() && (out.isEmpty() || out.last().isBlank())) continue
                 out.add(line)
             }

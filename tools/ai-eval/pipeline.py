@@ -458,7 +458,7 @@ def assemble(done, legacy):
             out.append(sub_line)
         for line in "\n\n".join(bodies).splitlines():
             k = norm(line.replace("**", ""))
-            if line.strip() and " | " not in line and k:
+            if line.strip() and " | " not in line and k and (legacy or len(k.split()) >= 4):
                 if k in seen:
                     continue
                 seen.add(k)

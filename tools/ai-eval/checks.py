@@ -221,6 +221,15 @@ def tidy(body):
                 out.extend(run)
             i = j
             continue
+        if l.startswith("- ") and l.endswith(":") and "|" not in l:
+            j, subs = i + 1, []
+            while j < len(ls) and ls[j].startswith(" ") and ls[j].strip().startswith("- "):
+                subs.append(ls[j].strip()[2:].strip().rstrip(".;"))
+                j += 1
+            if 1 <= len(subs) <= 6 and all(len(x) <= 80 and "|" not in x for x in subs):
+                out.append(l + " " + "; ".join(subs))
+                i = j
+                continue
         if not l:
             out.append("")
         elif l.startswith("- "):

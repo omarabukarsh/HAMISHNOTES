@@ -23,6 +23,21 @@ jobs:
         run: ./gradlew --no-daemon assembleDebug
       - name: Unit tests (golden cases from antibiotics.pdf)
         run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Print test details (expected vs produced)
+        if: always()
+        shell: bash
+        run: |
+          cat app/build/reports/golden/jvm-golden.txt 2>/dev/null || echo "no golden report"
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do
+            python3 - "$f" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          for tc in ET.parse(sys.argv[1]).getroot().iter("testcase"):
+              for fl in list(tc.findall("failure")) + list(tc.findall("error")):
+                  print("=== FAIL", tc.get("classname"), tc.get("name"))
+                  print((fl.get("message") or "")[:3000])
+                  print("\n".join((fl.text or "").splitlines()[:6]))
+          PY
+          done
       - name: Lint (report only)
         if: always()
         continue-on-error: true

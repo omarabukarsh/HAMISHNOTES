@@ -1,0 +1,28 @@
+name: AI summary eval
+# تجربة ترتيب الملخص على نموذج Gemma 4 E2B نفسه (MyNotes Pro). تعمل فقط عند تعديل tools/ai-eval
+on:
+  push:
+    branches: [pro]
+    paths: ["tools/ai-eval/**"]
+  workflow_dispatch:
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install litert-lm huggingface_hub
+      - name: Download model
+        run: |
+          python -c "from huggingface_hub import hf_hub_download; p=hf_hub_download('litert-community/gemma-4-E2B-it-litert-lm','gemma-4-E2B-it.litertlm',local_dir='.'); print(p)"
+      - name: Run
+        run: python tools/ai-eval/eval.py gemma-4-E2B-it.litertlm
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-eval
+          path: results.md

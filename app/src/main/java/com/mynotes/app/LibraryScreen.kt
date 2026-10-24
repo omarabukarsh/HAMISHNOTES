@@ -112,6 +112,11 @@ fun LibraryScreen() {
     var deleteTarget by remember { mutableStateOf<DocEntry?>(null) }
     var moveTarget by remember { mutableStateOf<DocEntry?>(null) }
     var showNewNote by remember { mutableStateOf(false) }
+    // تحديد أكثر من مستند (MyNotes Pro)
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+    var moveMany by remember { mutableStateOf(false) }
+    var deleteMany by remember { mutableStateOf(false) }
 
     val query = c.libraryQuery.trim()
     val folder = c.libraryFolder
@@ -134,7 +139,27 @@ fun LibraryScreen() {
         Row(Modifier.fillMaxSize()) {
             if (wide) Spine()
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                LibraryHeader(wide, docs.size, startImport) { showNewNote = true }
+                if (selecting) {
+                    SelectionBar(
+                        count = selected.size,
+                        allSelected = docs.isNotEmpty() && docs.all { it.id in selected },
+                        onSelectAll = {
+                            if (docs.all { it.id in selected }) selected.clear()
+                            else docs.forEach { if (it.id !in selected) selected.add(it.id) }
+                        },
+                        onFavorite = {
+                            val list = c.library.filter { it.id in selected }
+                            val allFav = list.all { it.favorite }
+                            list.filter { it.favorite == allFav }.forEach { c.toggleFavorite(it.id) }
+                        },
+                        onDuplicate = { c.library.filter { it.id in selected }.forEach { c.duplicate(it) }; selected.clear(); selecting = false },
+                        onMove = { moveMany = true },
+                        onDelete = { deleteMany = true },
+                        onDone = { selected.clear(); selecting = false }
+                    )
+                } else {
+                    LibraryHeader(wide, docs.size, startImport, onSelect = { selecting = true }) { showNewNote = true }
+                }
                 if (!wide) FilterRow()
                 c.libraryFolder?.let { f -> ExamPlanCard(f) }
                 if (c.importing) {
@@ -167,6 +192,12 @@ fun LibraryScreen() {
                             items(docs, key = { it.id }) { e ->
                                 DocCard(
                                     entry = e,
+                                    selecting = selecting,
+                                    selected = e.id in selected,
+                                    onToggleSelect = {
+                                        if (!selecting) selecting = true
+                                        if (e.id in selected) selected.remove(e.id) else selected.add(e.id)
+                                    },
                                     onOpen = { c.openDocument(e.id) },
                                     onFavorite = { c.toggleFavorite(e.id) },
                                     onRename = { renameTarget = e },
@@ -218,9 +249,32 @@ fun LibraryScreen() {
         )
     }
 
+    if (moveMany) {
+        val list = c.library.filter { it.id in selected }
+        if (list.isEmpty()) moveMany = false
+        else MoveToFolderDialog(list, onDismiss = { moveMany = false; selected.clear(); selecting = false })
+    }
+    if (deleteMany) {
+        val list = c.library.filter { it.id in selected }
+        AlertDialog(
+            onDismissRequest = { deleteMany = false },
+            title = { Text(L("حذف ${list.size} مستندات؟", "Delete ${list.size} documents?")) },
+            text = { Text(L("ستُحذف المستندات المحددة وكل الكتابة عليها نهائيًا، ولا يمكن التراجع.", "The selected documents and everything written on them will be deleted permanently. This cannot be undone.")) },
+            confirmButton = {
+                TextButton(onClick = {
+                    list.forEach { c.delete(it) }
+                    deleteMany = false
+                    selected.clear()
+                    selecting = false
+                }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
+            },
+            dismissButton = { TextButton(onClick = { deleteMany = false }) { Text(L("إلغاء", "Cancel")) } }
+        )
+    }
+
     val mt = moveTarget
     if (mt != null) {
-        MoveToFolderDialog(mt, onDismiss = { moveTarget = null })
+        MoveToFolderDialog(listOf(mt), onDismiss = { moveTarget = null })
     }
 
     val dt = deleteTarget
@@ -673,21 +727,29 @@ private fun NameDialog(title: String, initial: String, onSave: (String) -> Unit,
 
 /** نقل مستند إلى مادة موجودة أو جديدة، أو إزالته من مادته. */
 @Composable
-private fun MoveToFolderDialog(entry: DocEntry, onDismiss: () -> Unit) {
+private fun MoveToFolderDialog(entries: List<DocEntry>, onDismiss: () -> Unit) {
     val c = AppController
     var newName by remember { mutableStateOf("") }
+    val one = entries.singleOrNull()
+    val cur = if (entries.map { it.folder }.distinct().size == 1) entries.first().folder else null
+    fun move(f: String) = entries.forEach { c.moveToFolder(it.id, f) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(L("نقل «${entry.name}» إلى مادة", "Move “${entry.name}” to a subject")) },
+        title = {
+            Text(
+                if (one != null) L("نقل «${one.name}» إلى مادة", "Move “${one.name}” to a subject")
+                else L("نقل ${entries.size} مستندات إلى مادة", "Move ${entries.size} documents to a subject")
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ChoiceChip(L("بدون مادة", "No subject"), entry.folder.isEmpty()) { c.moveToFolder(entry.id, ""); onDismiss() }
+                    ChoiceChip(L("بدون مادة", "No subject"), cur == "") { move(""); onDismiss() }
                     c.folders.toList().forEach { f ->
-                        ChoiceChip(f, entry.folder == f) { c.moveToFolder(entry.id, f); onDismiss() }
+                        ChoiceChip(f, cur == f) { move(f); onDismiss() }
                     }
                 }
                 OutlinedTextField(
@@ -697,7 +759,7 @@ private fun MoveToFolderDialog(entry: DocEntry, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(enabled = newName.isNotBlank(), onClick = { c.moveToFolder(entry.id, newName.trim()); onDismiss() }) {
+            TextButton(enabled = newName.isNotBlank(), onClick = { move(newName.trim()); onDismiss() }) {
                 Text(L("نقل", "Move"))
             }
         },
@@ -794,7 +856,7 @@ private fun FilterRow() {
 }
 
 @Composable
-private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNewNote: () -> Unit) {
+private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onSelect: () -> Unit, onNewNote: () -> Unit) {
     val c = AppController
     if (wide) {
         // سطران: العنوان والأزرار، ثم البحث والترتيب؛ حتى لا يُضغط العنوان أو الأزرار في أي اتجاه للشاشة
@@ -815,6 +877,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                     Text(docsCount(shown), fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1)
                 }
                 PomodoroControl(showStartLabel = false)
+                SelectButton(onSelect)
                 NewNoteButton(onNewNote)
                 ImportButton(onImport)
             }
@@ -862,6 +925,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
             ) {
                 ImportButton(onImport)
                 NewNoteButton(onNewNote)
+                SelectButton(onSelect)
                 if (c.libraryFilter != LibraryFilter.RECENT) {
                     SortMenu(c.librarySort) { c.librarySort = it }
                 }
@@ -874,6 +938,76 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onNew
                 TextSearchButton()
             }
         }
+    }
+}
+
+/** زر «تحديد»: يبدأ تحديد أكثر من مستند. */
+@Composable
+private fun SelectButton(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        Modifier.height(44.dp).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+            .clickable(onClick = onClick).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PhIcon(R.drawable.ph_check, Palette.Navy, 18.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(L("تحديد", "Select"), fontSize = 14.sp, color = Palette.Navy, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** شريط وضع التحديد: العدد والإجراءات على المستندات المحددة. */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    allSelected: Boolean,
+    onSelectAll: () -> Unit,
+    onFavorite: () -> Unit,
+    onDuplicate: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit,
+    onDone: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)
+            .clip(RoundedCornerShape(18.dp)).background(Palette.Navy)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            if (count == 0) L("اختر المستندات", "Choose documents") else L("$count محدد", "$count selected"),
+            fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White,
+            modifier = Modifier.padding(end = 10.dp)
+        )
+        BarAction(if (allSelected) L("إلغاء تحديد الكل", "Deselect all") else L("تحديد الكل", "Select all"), true, onSelectAll)
+        BarAction(L("المفضلة", "Favorite"), count > 0, onFavorite)
+        BarAction(L("نقل إلى مادة", "Move to subject"), count > 0, onMove)
+        BarAction(L("نسخ", "Duplicate"), count > 0, onDuplicate)
+        BarAction(L("حذف", "Delete"), count > 0, onDelete, danger = true)
+        BarAction(L("تم", "Done"), true, onDone, gold = true)
+    }
+}
+
+@Composable
+private fun BarAction(label: String, enabled: Boolean, onClick: () -> Unit, danger: Boolean = false, gold: Boolean = false) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier.clip(shape)
+            .background(if (gold) Palette.Gold else Color.White.copy(alpha = if (enabled) 0.12f else 0.05f))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            color = when {
+                gold -> Palette.Navy
+                !enabled -> Color.White.copy(alpha = 0.4f)
+                danger -> Color(0xFFFF8A80)
+                else -> Color.White
+            }
+        )
     }
 }
 
@@ -1039,8 +1173,12 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
 
 /** المستند ككتاب على الرف: غلاف بظل ورقي، وأوراق خلفه إن كان متعدد الصفحات. */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun DocCard(
     entry: DocEntry,
+    selecting: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
     onOpen: () -> Unit,
     onFavorite: () -> Unit,
     onRename: () -> Unit,
@@ -1050,7 +1188,12 @@ private fun DocCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     val sheet = RoundedCornerShape(3.dp)
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpen)) {
+    // في وضع التحديد: النقر يحدد، والضغط المطول يبدأ التحديد
+    Column(
+        Modifier.clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Palette.GoldSoft else Color.Transparent)
+            .combinedClickable(onClick = { if (selecting) onToggleSelect() else onOpen() }, onLongClick = onToggleSelect)
+    ) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.74f).padding(end = 6.dp, top = 6.dp)) {
             if (entry.pageCount > 1) {
                 // ورقتان خلف الغلاف توحيان بسماكة المستند
@@ -1067,6 +1210,14 @@ private fun DocCard(
                 Modifier.matchParentSize().shadow(4.dp, sheet).background(Color.White)
             ) {
                 Thumbnail(entry)
+                if (selecting) {
+                    Box(
+                        Modifier.align(Alignment.TopStart).padding(6.dp).size(26.dp).clip(CircleShape)
+                            .background(if (selected) Palette.Navy else Color.White.copy(alpha = 0.9f))
+                            .border(2.dp, if (selected) Palette.Gold else Palette.Divider, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) { if (selected) PhIcon(R.drawable.ph_check, Color.White, 15.dp) }
+                }
                 if (entry.favorite) {
                     Box(
                         Modifier.align(Alignment.TopEnd).padding(6.dp).size(26.dp)

@@ -669,7 +669,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
                 }
                 // الإعدادات: ظاهرة دائمًا
-                TBtn(onClick = { c.settingsOpen = true }) { PhIcon(R.drawable.ph_sliders, Palette.TextPrimary) }
+                // زر الإعدادات أُزيل من الشريط: الإعدادات من درج «⋯» ← «كل الإعدادات وتخصيص الأدوات»
                 // خيارات الصفحة (درج على اليمين)
                 TBtn(selected = s.pageMenuOpen, onClick = {
                     s.pageMenuOpen = !s.pageMenuOpen

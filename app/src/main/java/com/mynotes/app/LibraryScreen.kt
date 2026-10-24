@@ -332,28 +332,6 @@ private fun pagesCount(n: Int): String = when {
 
 // ---------------------------------------------------------------- الكعب (الشريط الجانبي)
 
-/** شعار مختوم: حرف M ذهبي داخل حلقة ذهبية رفيعة. */
-@Composable
-private fun Monogram(size: Int, onDark: Boolean) {
-    Box(
-        Modifier.size(size.dp).clip(CircleShape)
-            .background(
-                when {
-                    ThemeState.light -> Palette.Navy
-                    onDark -> Palette.InkRaised
-                    else -> Palette.Ink
-                }
-            )
-            .border(1.5.dp, Palette.Gold, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            "M", color = Palette.Gold, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-            fontSize = (size * 0.5f).sp, modifier = Modifier.offset(y = (size * 0.03f).dp)
-        )
-    }
-}
-
 @Composable
 private fun Spine() {
     val c = AppController
@@ -364,8 +342,6 @@ private fun Spine() {
             .padding(horizontal = 16.dp, vertical = 22.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Monogram(44, onDark = true)
-            Spacer(Modifier.width(12.dp))
             Column {
                 Text(
                     "MyNotes", color = Palette.OnInk, fontFamily = Fonts.Display,
@@ -898,8 +874,6 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onSel
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Monogram(36, onDark = false)
-                Spacer(Modifier.width(10.dp))
                 Text(
                     "MyNotes", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)

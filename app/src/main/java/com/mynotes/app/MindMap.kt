@@ -77,7 +77,7 @@ object MindMap {
     }
 
     /** أقسام الشرح والملاحظات لا تدخل الخريطة: الخريطة نقاط فقط. */
-    private val EXPLAIN = Regex("(?i)^(شرح|توضيح|ملاحظ|explanation|explain|lecture notes|notes?\\b|figure|شكل)")
+    val EXPLAIN = Regex("(?i)^(شرح|توضيح|ملاحظ|explanation|explain|lecture notes|notes?\\b|figure|شكل)")
 
     /**
      * النقطة كعبارة مفتاحية قصيرة بلا شرح: يُحذف ما بين الأقواس، ويُقطع عند التعليل («لأن»، because، —)،
@@ -98,7 +98,7 @@ object MindMap {
     }
 
     /** أهمية النقطة: المظلل مرتين، الأرقام والجرعات، الأدوية المختارة، النفي والتحذير، والآثار الجانبية. */
-    private fun score(line: String): Int {
+    fun score(line: String): Int {
         var s = 0
         if (line.contains("**")) s += 6
         if (Regex("\\d").containsMatchIn(line)) s += 2
@@ -186,6 +186,8 @@ object MindMap {
         root.children.forEachIndexed { i, n -> paint(n, i) }
         return root
     }
+
+    fun paintBranch(n: Node, b: Int) = paint(n, b)
 
     private fun paint(n: Node, b: Int) {
         n.branch = b
@@ -326,12 +328,127 @@ object MindMap {
     }
 }
 
+/**
+ * النقاط المهمة للخريطة يختارها الذكاء: لكل قسم من 3 إلى 5 عبارات قصيرة جدًا من كلمات القسم نفسه،
+ * تُفحص ضد الاختلاق، وتُحفظ (فتح الخريطة مرة ثانية فوري). إن تعذر النموذج تُختار بالكود.
+ */
+object MindMapAi {
+    private const val SYSTEM = """You pick the most important exam points of ONE section of a pharmacy study summary for a mind map.
+Rules:
+- Output 3 to 5 lines, each starting with "- ".
+- Each line is a very short key phrase of 2 to 7 words, not a sentence. No explanations, no "because".
+- Use only words, numbers and drug names that appear in the section. Keep negations (not, no, لا).
+- Prefer: drug of choice, doses and numbers, main uses, key side effects and toxicity, contraindications, mechanism.
+- Keep the language of the section.
+Output only the lines."""
+
+    class Sec(val h1: String?, val h2: String?, val body: String)
+
+    var step by mutableStateOf("")
+        private set
+
+    /** أقسام الملخص (عنوان، عنوان فرعي، نصه)، دون أقسام الشرح. */
+    fun sections(text: String): List<Sec> {
+        val out = ArrayList<Sec>()
+        var h1: String? = null
+        var h2: String? = null
+        val buf = StringBuilder()
+        fun flush() {
+            val skip = listOfNotNull(h1, h2).any { MindMap.EXPLAIN.containsMatchIn(it) }
+            if (buf.isNotBlank() && !skip) out.add(Sec(h1, h2, buf.toString().trim()))
+            buf.clear()
+        }
+        for (raw in text.lines()) {
+            val l = raw.trim()
+            when {
+                l.startsWith("## ") -> { flush(); h2 = l.removePrefix("## ").trim() }
+                l.startsWith("# ") -> { flush(); h1 = l.removePrefix("# ").trim(); h2 = null }
+                l.isNotEmpty() -> buf.append(l).append('\n')
+            }
+        }
+        flush()
+        return out
+    }
+
+    private fun file(docId: String) = java.io.File(java.io.File(AppController.appContext.filesDir, "ai/mindmap").also { it.mkdirs() }, "$docId.json")
+
+    private fun load(docId: String): MutableMap<String, String> = try {
+        val f = file(docId)
+        if (!f.exists()) HashMap() else org.json.JSONObject(f.readText()).let { o -> o.keys().asSequence().associateWith { o.getString(it) }.toMutableMap() }
+    } catch (t: Throwable) {
+        HashMap()
+    }
+
+    /** نقاط بالكود (احتياط): الأعلى درجة، كعبارات مفتاحية. */
+    private fun codePoints(sec: Sec): List<String> = sec.body.lines().filter { it.isNotBlank() }
+        .map { l -> if (l.contains(" | ")) l.split(" | ").take(2).joinToString(": ") { it.trim() } else l }
+        .withIndex().sortedByDescending { MindMap.score(it.value) }.take(4).sortedBy { it.index }
+        .map { MindMap.keyPhrase(it.value, 50) }.filter { it.length >= 3 }
+
+    /** يبني الخريطة بالنقاط المهمة. onlyCached = بلا نموذج (ما حُفظ سابقًا، وإلا بالكود). */
+    suspend fun build(docId: String, title: String, summary: String, onlyCached: Boolean): MindMap.Node {
+        val secs = sections(summary)
+        val cache = withContext(Dispatchers.IO) { load(docId) }
+        val model = if (Ai.isCloud) CloudAi.label else Ai.selected.id
+        val points = ArrayList<List<String>>()
+        var changed = false
+        secs.forEachIndexed { i, sec ->
+            val key = AiStructure.hash("mm1|$model|${sec.h1}|${sec.h2}|${sec.body}")
+            val hit = cache[key]
+            val pts: List<String> = when {
+                hit != null -> hit.lines().filter { it.isNotBlank() }
+                onlyCached || !Ai.ready || sec.body.lines().count { it.isNotBlank() } <= 2 -> codePoints(sec)
+                else -> {
+                    step = L("اختيار النقاط المهمة ${i + 1} من ${secs.size}…", "Picking key points ${i + 1} of ${secs.size}…")
+                    val got = try {
+                        AiOrganizer.clean(Ai.generate(SYSTEM, "SECTION: " + listOfNotNull(sec.h1, sec.h2).joinToString(" › ") + "\n" + sec.body))
+                            .lines().map { it.trim() }.filter { it.startsWith("- ") || it.startsWith("• ") }
+                            .map { MindMap.keyPhrase(it.removePrefix("- ").removePrefix("• "), 60) }
+                            .filter { it.length in 3..60 && !AiStructure.suspicious(it, sec.body + " " + (sec.h1 ?: "") + " " + (sec.h2 ?: "")) }
+                            .distinct().take(5)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        emptyList()
+                    }
+                    val fin = got.ifEmpty { codePoints(sec) }
+                    cache[key] = fin.joinToString("\n")
+                    changed = true
+                    fin
+                }
+            }
+            points.add(pts)
+        }
+        if (changed) withContext(Dispatchers.IO) { try { file(docId).writeText(org.json.JSONObject(cache as Map<*, *>).toString()) } catch (t: Throwable) {} }
+        step = ""
+        // الشجرة: عنوان ← عنوان فرعي ← نقاط
+        val root = MindMap.Node(MindMap.shortLabel(title, 60), 0)
+        val h1Nodes = LinkedHashMap<String?, MindMap.Node>()
+        secs.forEachIndexed { i, sec ->
+            val pts = points[i]
+            if (pts.isEmpty()) return@forEachIndexed
+            val b1 = if (sec.h1 == null) root else h1Nodes.getOrPut(sec.h1) { MindMap.Node(MindMap.shortLabel(sec.h1, 60), 1).also { root.children.add(it) } }
+            val par = if (sec.h2 == null) b1 else MindMap.Node(MindMap.shortLabel(sec.h2, 60), 2).also { b1.children.add(it) }
+            pts.forEach { par.children.add(MindMap.Node(it, 3)) }
+        }
+        root.children.forEachIndexed { k, n -> MindMap.paintBranch(n, k) }
+        return root
+    }
+}
+
 /** نافذة الخريطة الذهنية: تكبير وتصغير، طيّ الفروع بالنقر، وحفظ PDF. */
 @Composable
-fun MindMapDialog(title: String, summary: String, onDismiss: () -> Unit) {
+fun MindMapDialog(docId: String, title: String, summary: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var important by remember { mutableStateOf(true) }
-    val root = remember(summary, important) { MindMap.parse(title, summary, important) }
+    // «المهم فقط»: يختارها الذكاء (المحفوظ يظهر فورًا، والجديد يُكمل في الخلفية)
+    var aiRoot by remember(summary) { mutableStateOf<MindMap.Node?>(null) }
+    androidx.compose.runtime.LaunchedEffect(summary) {
+        aiRoot = MindMapAi.build(docId, title, summary, onlyCached = true)
+        aiRoot = MindMapAi.build(docId, title, summary, onlyCached = false)
+    }
+    val root = if (important) (aiRoot ?: remember(summary) { MindMap.parse(title, summary, true) })
+        else remember(summary) { MindMap.parse(title, summary, false) }
     val collapsed = remember(summary) { mutableStateListOf<String>() }
     var zoom by remember { mutableStateOf(1f) }
     val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -372,6 +489,9 @@ fun MindMapDialog(title: String, summary: String, onDismiss: () -> Unit) {
                     TextButton(onClick = { collapsed.clear() }) { Text(L("فتح الكل", "Expand")) }
                     TextButton(onClick = { saver.launch(L("خريطة ذهنية - $title.pdf", "Mind map - $title.pdf")) }) { Text("PDF") }
                     TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) }
+                }
+                if (important && MindMapAi.step.isNotEmpty()) {
+                    Text("✦ " + MindMapAi.step, fontSize = 12.sp, color = Palette.GoldDeep, modifier = Modifier.padding(horizontal = 18.dp))
                 }
                 Text(
                     L("انقر على فرع لطيّه أو فتحه. «المهم فقط»: أهم النقاط كعبارات قصيرة دون الشرح، من ملخصك نفسه دون إضافات.",

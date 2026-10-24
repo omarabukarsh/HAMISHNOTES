@@ -222,7 +222,9 @@ def clean(raw):
 
 
 SYSTEM = open("app/src/main/java/com/mynotes/app/AiStructure.kt", encoding="utf-8").read()
-SYSTEM = re.search(r'const val SYSTEM = """(.*?)"""', SYSTEM, re.S).group(1)
+_ST = SYSTEM
+SYSTEM = re.search(r'const val SYSTEM = """(.*?)"""', _ST, re.S).group(1)
+REVIEW_SYSTEM = re.search(r'const val REVIEW_SYSTEM = """(.*?)"""', _ST, re.S).group(1)
 
 COMMON = set("""drug drugs class route spectrum mechanism action uses use side effect effects adverse notes note example examples
 generation dose doses indication indications contraindication feature features type group name comparison summary important
@@ -342,6 +344,23 @@ for (title, sub), ms in groups:
                 log.append(f"- [{title} › {sub}] model {dt:.1f}s, fallback={bad}, new numbers={bn}, unknown={unk[:6]}")
                 if bad or not body:
                     body = fallback(notes)
+                else:
+                    # مراجعة ذاتية (مثل REVIEW_SYSTEM في AiStructure)
+                    o2, dt2 = gen(REVIEW_SYSTEM, "SECTION: " + " › ".join(x for x in (title, sub) if x) + "\nNOTES:\n" + notes + "\n\nDRAFT:\n" + body)
+                    total += dt2
+                    r = clean(o2).strip()
+                    if not r or re.match(r"(?i)^ok\b", r):
+                        log.append(f"  review {dt2:.1f}s → OK")
+                    else:
+                        r = "\n".join(("- " + l.lstrip("# ") if l.lstrip().startswith("#") else l)
+                                      for l in r.splitlines() if norm(l.lstrip("#- ")) not in heads).strip()
+                        b2, _, u2 = suspicious(r, notes + " " + (title or "") + " " + (sub or ""))
+                        w2 = dropped(r, notes)
+                        if r and not b2 and not w2:
+                            log.append(f"  review {dt2:.1f}s → CORRECTED")
+                            body = r
+                        else:
+                            log.append(f"  review {dt2:.1f}s → correction rejected ({w2 or u2[:4]})")
         done.append((title, sub, emphasize(body, emph)))
 
 # ---------------------------------------------------------------- التجميع (مثل AiStructure.assemble)
@@ -370,52 +389,49 @@ for (title, sub), bodies in sections.items():
     out.append("")
 result = "\n".join(out).strip()
 
-# ---------------------------------------------------------------- جدول مقارنة لقسم (مثل AiOrganizer.tableFromSection)
+# ---------------------------------------------------------------- الخريطة الذهنية بالنقاط المهمة (مثل MindMapAi)
 
-KT = open("app/src/main/java/com/mynotes/app/AiOrganize.kt", encoding="utf-8").read()
-TABLE_SYSTEM = re.search(r'TABLE_SYSTEM = """(.*?)"""', KT, re.S).group(1)
-table_log = []
-for head in ["# Penicillin V (Phenoxymethylpenicillin)", "# 1.4 Penicillins — Pharmacokinetics", "# 2.1 Introduction"]:
-    ls = result.splitlines()
-    if head not in ls:
-        table_log.append(f"### {head}\n(not found)")
-        continue
-    i = ls.index(head)
-    j = i + 1
-    while j < len(ls) and not ls[j].strip().startswith("#"):
-        j += 1
-    pts = [x.strip().removeprefix("- ").replace("**", "") for x in ls[i + 1:j] if x.strip() and " | " not in x]
-    if len(pts) < 2:
-        table_log.append(f"### {head}\n(fewer than 2 points)")
-        continue
-    o, dt = gen(TABLE_SYSTEM, "SECTION: " + head.lstrip("# ") + "\nPOINTS:\n" + "\n".join(pts))
-    tb = [x.strip() for x in clean(o).splitlines() if " | " in x]
-    tt = "\n".join(tb)
-    bad, bn, unk = suspicious(tt, "\n".join(pts) + " " + head)
-    why = dropped(tt, "\n".join(pts))
-    ok = (len(tb) >= 3 or (len(tb) == 2 and len(tb[0].split(" | ")) >= 3)) and not bad and not why
-    table_log.append(f"### {head} — {dt:.0f}s — {'ACCEPTED' if ok else 'REJECTED (' + (why or ('added ' + str(bn + unk[:4]) if bad else 'too short')) + ')'}\n```\n{tt}\n```")
-
-# ---------------------------------------------------------------- الخريطة الذهنية (بنية الشجرة كما يبنيها MindMap.parse)
-
-mm = []
+MMK = open("app/src/main/java/com/mynotes/app/MindMap.kt", encoding="utf-8").read()
+MM_SYSTEM = re.search(r'const val SYSTEM = """(.*?)"""', MMK, re.S).group(1)
+EXPLAIN = re.compile(r"(?i)(شرح|توضيح|explain|explanation)")
+secs, h1, h2, buf = [], None, None, []
+def mm_flush():
+    if buf and not any(EXPLAIN.search(h or "") for h in (h1, h2)):
+        secs.append((h1, h2, "\n".join(buf)))
+    buf.clear()
 for x in result.splitlines():
     x = x.strip()
     if x.startswith("## "):
-        mm.append("    ├─ " + x[3:])
+        mm_flush(); h2 = x[3:]
     elif x.startswith("# "):
-        mm.append("  ● " + x[2:])
-    elif x.startswith("- "):
-        mm.append("        · " + x[2:][:70])
-    elif " | " in x:
-        mm.append("        ▦ " + x.split(" | ")[0][:50])
+        mm_flush(); h1 = x[2:]; h2 = None
+    elif x:
+        buf.append(x)
+mm_flush()
+mm, last1, mmt = [], object(), 0
+for a, b, body in secs:
+    if a != last1:
+        mm.append("  ● " + (a or "")); last1 = a
+    if b:
+        mm.append("    ├─ " + b)
+    if len([l for l in body.splitlines() if l.strip()]) <= 2:
+        pts, how = [l.lstrip("- ")[:50] for l in body.splitlines()], "code"
+    else:
+        o, dt = gen(MM_SYSTEM, "SECTION: " + " › ".join(x for x in (a, b) if x) + "\n" + body)
+        mmt += dt
+        pts = [l.strip()[2:].strip() for l in clean(o).splitlines() if l.strip().startswith(("- ", "• "))]
+        pts = [q for q in pts if 3 <= len(q) <= 60 and not suspicious(q, body + " " + (a or "") + " " + (b or ""))[0]][:5]
+        how = f"ai {dt:.0f}s"
+    for q in pts:
+        mm.append(f"        · {q}   [{how}]")
+log.append(f"- mind map AI time {mmt:.0f}s")
+table_log = []
 
 with open("results.md", "w", encoding="utf-8") as f:
-    f.write(f"# Structured summary eval v2 — Gemma 4 E2B, {len(marks)} highlights, model time {total:.0f}s\n\n")
+    f.write(f"# Structured summary eval v3 (tables in summary + self-review + AI mind map) — Gemma 4 E2B, {len(marks)} highlights, model time {total:.0f}s\n\n")
     f.write("## Detected headings\n\n")
     for p, hs in DETECTED.items():
         f.write(f"- p{p}: " + " ; ".join(f"L{h[3]} {h[2][:40]}" for h in hs) + "\n")
     f.write(f"\n## Result\n\n```\n{result}\n```\n\n## Log\n\n" + "\n".join(log) + "\n")
-    f.write("\n## Comparison tables\n\n" + "\n\n".join(table_log) + "\n")
     f.write("\n## Mind map tree\n\n```\nAntibiotics\n" + "\n".join(mm) + "\n```\n")
 print(open("results.md", encoding="utf-8").read())

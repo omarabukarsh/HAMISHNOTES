@@ -219,15 +219,17 @@ private fun ReaderContent(s: DocSession) {
 
     // MyNotes Pro: بعد تظليل جديد يُكمل الذكاء الاصطناعي الملخص المرتّب (وبطاقات المراجعة) تلقائيًا،
     // بعد توقف قصير عن الكتابة حتى لا يبطئ القلم
+    // الكتابة تلقائية بالكامل (لا «أعد الترتيب»): أول ملخص يُكتب وحده، والتظليل الجديد يُضاف، وحذف تظليل
+    // يعيد الترتيب (سريع: الأجزاء التي لم تتغير تؤخذ من الذاكرة).
     LaunchedEffect(s.marks) {
         AiOrganizer.refreshPending(s)
-        if (!AiOrganizer.autoContinue || !Ai.ready || !AiOrganizer.canContinue(s.id)) return@LaunchedEffect
-        if (AiOrganizer.pendingMarks(s).isEmpty()) return@LaunchedEffect
+        if (!AiOrganizer.autoContinue || !Ai.ready || s.allMarks().isEmpty()) return@LaunchedEffect
+        val mode = AiOrganizer.autoMode(s) ?: return@LaunchedEffect
         delay(20_000)
         while (System.currentTimeMillis() - c.lastInkAt < 5_000 || AiOrganizer.runningDoc != null || AiPageReader.runningKey != null) {
             delay(3_000)
         }
-        AiOrganizer.continueSummary(s, quiet = true)
+        if (mode == "full") AiOrganizer.startAuto(s) else AiOrganizer.continueSummary(s, quiet = true)
     }
 
     Box(Modifier.fillMaxSize()) {

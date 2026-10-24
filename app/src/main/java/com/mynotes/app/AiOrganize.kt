@@ -332,6 +332,11 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         private set
     fun toggleAutoReadPages(on: Boolean) { autoReadPages = on; prefs().edit().putBoolean("auto_read_pages", on).apply() }
 
+    /** مراجعة ذاتية: بعد كتابة كل جزء يراجعه النموذج مقابل التظليل ويصححه (يُقبل التصحيح فقط إن اجتاز الفحوص). */
+    var selfReview by mutableStateOf(prefs().getBoolean("self_review", true))
+        private set
+    fun toggleSelfReview(on: Boolean) { selfReview = on; prefs().edit().putBoolean("self_review", on).apply() }
+
     /** بطاقات مراجعة تلقائية بالذكاء الاصطناعي من النصوص المظللة. */
     var autoCards by mutableStateOf(prefs().getBoolean("auto_cards", true))
         private set
@@ -444,6 +449,24 @@ A: answer
     /** ترتيب كامل للملخص (append = false) أو إكمال بالتمييزات الجديدة فقط (append = true). */
     fun start(s: DocSession, notes: String) = organize(s, notes, append = false, marks = s.allMarks())
 
+    /** ترتيب كامل تلقائي (أول مرة، أو بعد حذف تظليل)، بهدوء. */
+    fun startAuto(s: DocSession) {
+        val marks = s.allMarks()
+        if (marks.isEmpty()) return
+        organize(s, notesOf(marks), append = false, marks = marks, quiet = true)
+    }
+
+    /**
+     * ما يلزم تلقائيًا: "full" = لا ملخص بعد، أو ملخص قديم، أو حُذف تظليل منذ آخر ترتيب؛
+     * "continue" = تظليل جديد فقط؛ null = لا شيء.
+     */
+    fun autoMode(s: DocSession): String? {
+        if (!canContinue(s.id)) return "full"
+        val ids = s.allMarks().map { it.id }.toSet()
+        if (processed(s.id).keys.any { it !in ids }) return "full"
+        return if (pendingMarks(s).isNotEmpty()) "continue" else null
+    }
+
     /** يكمل الملخص المرتّب بما ظُلّل بعده. */
     fun continueSummary(s: DocSession, quiet: Boolean = false) {
         if (!canContinue(s.id)) return
@@ -496,7 +519,7 @@ A: answer
             val cards = ArrayList<Pair<String, String>>()
             // ذاكرة الأجزاء: ما لم يتغير لا يُعاد إرساله للنموذج
             val memo = withContext(Dispatchers.IO) { loadMemo(docId) }
-            val model = if (Ai.isCloud) CloudAi.label + ":" + (if (CloudAi.provider == CloudAi.Provider.CLAUDE) CloudAi.claudeModel else CloudAi.openaiModel) else Ai.selected.id
+            val model = (if (selfReview) "r|" else "") + if (Ai.isCloud) CloudAi.label + ":" + (if (CloudAi.provider == CloudAi.Provider.CLAUDE) CloudAi.claudeModel else CloudAi.openaiModel) else Ai.selected.id
             fun shown(extra: Triple<String?, String?, String>? = null): String {
                 val cur = AiStructure.assemble(if (extra == null) done else done + extra)
                 return if (append) merge(before, cur) else cur
@@ -527,9 +550,18 @@ A: answer
                 val cardBuf = StringBuilder()
                 suspend fun flushCards(force: Boolean) {
                     if (!autoCards || cardBuf.isBlank() || (!force && cardBuf.length < budget / 2)) return
-                    stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
+                    // ذاكرة البطاقات: نفس الملاحظات = نفس البطاقات (إعادة الترتيب بعد حذف تظليل لا تعيد كتابتها)
+                    val ck = "cards:" + AiStructure.hash("$model|$cardBuf")
+                    val cached = memo[ck]
                     try {
-                        cards.addAll(parseCards(Ai.generate(CARDS_SYSTEM, "Notes:\n\n$cardBuf")))
+                        if (cached != null) {
+                            cards.addAll(cached.lines().mapNotNull { l -> l.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } })
+                        } else {
+                            stepText = L("جارٍ إعداد بطاقات المراجعة…", "Making review cards…")
+                            val made = parseCards(Ai.generate(CARDS_SYSTEM, "Notes:\n\n$cardBuf"))
+                            memo[ck] = made.joinToString("\n") { (q, a) -> q.replace('\t', ' ').replace('\n', ' ') + "\t" + a.replace('\t', ' ').replace('\n', ' ') }
+                            cards.addAll(made)
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (t: Throwable) {
@@ -544,14 +576,30 @@ A: answer
                     }
                     val key = AiStructure.cacheKey(p, model)
                     val body = AiStructure.emphasize(
-                        p.table ?: memo[key] ?: if (AiStructure.trivial(p)) AiStructure.fallback(p.notes) else AiStructure.body(
-                            p,
-                            Ai.generate(AiStructure.SYSTEM, AiStructure.prompt(p)) { x -> partial = shown(Triple(p.title, p.sub, clean(x))) }
-                        ).also { memo[key] = it },
+                        p.table ?: memo[key] ?: if (AiStructure.trivial(p)) AiStructure.fallback(p.notes) else {
+                            val draft = AiStructure.body(
+                                p,
+                                Ai.generate(AiStructure.SYSTEM, AiStructure.prompt(p)) { x -> partial = shown(Triple(p.title, p.sub, clean(x))) }
+                            )
+                            // مراجعة ذاتية: النموذج يراجع ما كتبه مقابل التظليل؛ التصحيح يُقبل فقط إن اجتاز الفحوص
+                            val fin = if (selfReview && draft != AiStructure.fallback(p.notes)) {
+                                stepText = L("مراجعة ما كُتب: ${p.sub ?: p.title ?: "…"}", "Reviewing: ${p.sub ?: p.title ?: "…"}")
+                                try {
+                                    AiStructure.reviewed(p, Ai.generate(AiStructure.REVIEW_SYSTEM, AiStructure.reviewPrompt(p, draft))) ?: draft
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (t: Throwable) {
+                                    draft
+                                }
+                            } else draft
+                            fin.also { memo[key] = it }
+                        },
                         p.emphasis
                     )
                     done.add(Triple(p.title, p.sub, body))
                     partial = shown()
+                    // البطاقات لكل عنوان رئيسي (حدود ثابتة فتنفع ذاكرة البطاقات بعد أي تعديل)
+                    if (i > 0 && parts[i - 1].title != p.title) flushCards(true)
                     if (cardBuf.isNotEmpty()) cardBuf.append("\n")
                     cardBuf.append(p.notes)
                     flushCards(false)
@@ -813,6 +861,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
     var readPage by remember { mutableStateOf<Int?>(null) }
     var mindMap by remember { mutableStateOf(false) }
     var tablePick by remember { mutableStateOf(false) }
+    var aiSettings by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         // بطاقة «قراءة الصفحة بالذكاء» أُزيلت بطلب المستخدم: الصفحات تُقرأ تلقائيًا (في الخلفية وقبل الترتيب)
         // تنبيه دائم: اقتراح يُراجع
@@ -851,11 +900,15 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
             }
             else -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        enabled = notes.isNotBlank() && !busyElsewhere && AiPageReader.runningKey == null,
-                        onClick = { AiOrganizer.start(s, notes) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
-                    ) { Text(if (saved == null) L("رتّب الملخص", "Organize summary") else L("أعد الترتيب", "Organize again")) }
+                    // لا «أعد الترتيب» ولا «حذف»: الملخص يُكتب ويُحدَّث تلقائيًا. الزر يظهر فقط حين لا يوجد ملخص بعد
+                    // (أو ملخص قديم قبل المتابعة التلقائية) والكتابة التلقائية متوقفة.
+                    if (saved == null || !AiOrganizer.canContinue(s.id)) {
+                        Button(
+                            enabled = notes.isNotBlank() && !busyElsewhere && AiPageReader.runningKey == null,
+                            onClick = { AiOrganizer.start(s, notes) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
+                        ) { Text(L("رتّب الملخص", "Organize summary")) }
+                    }
                     if (saved != null) {
                         TextButton(onClick = {
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -863,8 +916,9 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                             c.messages.tryEmit(L("تم النسخ", "Copied"))
                         }) { Text(L("نسخ", "Copy")) }
                         TextButton(onClick = { editing = true }) { Text(L("تعديل", "Edit")) }
-                        TextButton(onClick = { AiOrganizer.save(s.id, "") }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
                     }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { aiSettings = true }) { Text(L("⚙ إعدادات", "⚙ Settings"), color = Palette.GoldDeep) }
                 }
                 // إكمال الملخص بما ظُلّل بعد آخر ترتيب
                 val pending = AiOrganizer.pendingCount[s.id] ?: 0
@@ -875,50 +929,14 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                         onClick = { AiOrganizer.continueSummary(s) },
                         colors = ButtonDefaults.buttonColors(containerColor = Palette.GoldDeep)
                     ) { Text(L("✦ أكمل الملخص ($pending تظليل جديد)", "✦ Continue summary ($pending new highlights)")) }
-                } else if (saved != null && !AiOrganizer.canContinue(s.id)) {
-                    Text(
-                        L("لتفعيل الإكمال بعد التظليل الجديد اضغط «أعد الترتيب» مرة واحدة.", "To continue after new highlights, tap “Organize again” once."),
-                        fontSize = 12.sp, color = Palette.TextSecondary
-                    )
                 }
-                Spacer(Modifier.height(6.dp))
-                AiToggle(
-                    L("إكمال تلقائي بعد التظليل الجديد", "Continue automatically after new highlights"),
-                    AiOrganizer.autoContinue
-                ) { AiOrganizer.toggleAutoContinue(!AiOrganizer.autoContinue) }
-                AiToggle(
-                    L("قراءة المستند كاملًا بالذكاء في الخلفية (مجاني على الجهاز، للملخص والشرح)", "Read the whole document with AI in the background (free, on device; for summaries and explanations)"),
-                    AiDocReader.enabled
-                ) { AiDocReader.toggle(!AiDocReader.enabled); if (AiDocReader.enabled) AiDocReader.enqueue(s.id) }
-                AiDocReader.progress[s.id]?.let { (r, n) ->
-                    Text(
-                        if (r >= n) L("قُرئ المستند كاملًا ✓ ($n صفحة)", "Whole document read ✓ ($n pages)")
-                        else L("قُرئت $r من $n صفحة" + if (AiDocReader.currentDoc == s.id) " — جارٍ القراءة…" else "", "$r of $n pages read" + if (AiDocReader.currentDoc == s.id) " — reading…" else ""),
-                        fontSize = 12.sp, color = Palette.TextSecondary
-                    )
-                }
-                AiToggle(
-                    L("قراءة صفحات التظليل بالذكاء تلقائيًا قبل الكتابة (عناوين أدق، أبطأ أول مرة)", "Read highlighted pages with AI before writing (better headings, slower the first time)"),
-                    AiOrganizer.autoReadPages
-                ) { AiOrganizer.toggleAutoReadPages(!AiOrganizer.autoReadPages) }
-                AiToggle(
-                    L("بطاقات مراجعة تلقائية بالذكاء الاصطناعي (تظهر في «بطاقات»)", "Automatic AI review cards (shown in “Cards”)"),
-                    AiOrganizer.autoCards
-                ) { AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards) }
-                // ✦ خريطة ذهنية وجدول مقارنة
+                // ✦ خريطة ذهنية (زر الجداول المنفصلة أُزيل: الجداول تُكتب داخل الملخص نفسه)
                 if (saved != null) {
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(
-                            onClick = { mindMap = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = Palette.GoldDeep)
-                        ) { Text(L("✦ خريطة ذهنية", "✦ Mind map")) }
-                        Button(
-                            enabled = !busyElsewhere && AiPageReader.runningKey == null && AiOrganizer.tableSections(saved).isNotEmpty(),
-                            onClick = { tablePick = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
-                        ) { Text(L("✦ جدول مقارنة", "✦ Comparison table")) }
-                    }
+                    Button(
+                        onClick = { mindMap = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Palette.GoldDeep)
+                    ) { Text(L("✦ خريطة ذهنية", "✦ Mind map")) }
                 }
                 // ✦ تعديل الملخص بتعليمات (يعمل مع النموذج المحلي، وأفضل مع Claude أو ChatGPT)
                 if (saved != null) {
@@ -957,7 +975,45 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
         }
     }
     readPage?.let { p -> AiPageDialog(s, p) { readPage = null } }
-    if (mindMap && saved != null) MindMapDialog(s.title, saved) { mindMap = false }
+    if (mindMap && saved != null) MindMapDialog(s.id, s.title, saved) { mindMap = false }
+    if (aiSettings) {
+        AlertDialog(
+            onDismissRequest = { aiSettings = false },
+            title = { Text(L("⚙ إعدادات الذكاء الاصطناعي", "⚙ AI settings")) },
+            text = {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                    AiToggle(
+                        L("كتابة الملخص وإكماله تلقائيًا بعد التظليل", "Write and continue the summary automatically after highlighting"),
+                        AiOrganizer.autoContinue
+                    ) { AiOrganizer.toggleAutoContinue(!AiOrganizer.autoContinue) }
+                    AiToggle(
+                        L("مراجعة ذاتية: الذكاء يراجع ما كتبه ويصححه", "Self-review: the AI checks and fixes what it wrote"),
+                        AiOrganizer.selfReview
+                    ) { AiOrganizer.toggleSelfReview(!AiOrganizer.selfReview) }
+                    AiToggle(
+                        L("قراءة المستند كاملًا بالذكاء في الخلفية (مجاني على الجهاز، للملخص والشرح)", "Read the whole document with AI in the background (free, on device; for summaries and explanations)"),
+                        AiDocReader.enabled
+                    ) { AiDocReader.toggle(!AiDocReader.enabled); if (AiDocReader.enabled) AiDocReader.enqueue(s.id) }
+                    AiDocReader.progress[s.id]?.let { (r, n) ->
+                        Text(
+                            if (r >= n) L("قُرئ المستند كاملًا ✓ ($n صفحة)", "Whole document read ✓ ($n pages)")
+                            else L("قُرئت $r من $n صفحة" + if (AiDocReader.currentDoc == s.id) " — جارٍ القراءة…" else "", "$r of $n pages read" + if (AiDocReader.currentDoc == s.id) " — reading…" else ""),
+                            fontSize = 12.sp, color = Palette.TextSecondary
+                        )
+                    }
+                    AiToggle(
+                        L("قراءة صفحات التظليل بالذكاء قبل الكتابة (عناوين أدق، أبطأ أول مرة)", "Read highlighted pages with AI before writing (better headings, slower the first time)"),
+                        AiOrganizer.autoReadPages
+                    ) { AiOrganizer.toggleAutoReadPages(!AiOrganizer.autoReadPages) }
+                    AiToggle(
+                        L("بطاقات مراجعة تلقائية (تظهر في «بطاقات»)", "Automatic review cards (shown in “Cards”)"),
+                        AiOrganizer.autoCards
+                    ) { AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { aiSettings = false }) { Text(L("تم", "Done")) } }
+        )
+    }
     if (tablePick && saved != null) {
         val secs = AiOrganizer.tableSections(saved)
         AlertDialog(

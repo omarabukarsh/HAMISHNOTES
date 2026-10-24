@@ -21,7 +21,7 @@ object AiStructure {
     }
 
     /** يتغير عند تغيير طريقة الترتيب فتُهمل النتائج المخزّنة القديمة. */
-    const val VERSION = 2
+    const val VERSION = 3
 
     const val SYSTEM = """You rewrite highlighted notes from ONE section of a pharmacy lecture into a clean part of a study summary.
 Rules:
@@ -29,8 +29,8 @@ Rules:
 - Keep every fact and keep the original meaning and wording; only split, shorten and order. Do not add explanations.
 - Merge repeated points. Keep drug names and medical terms exactly as written. Arabic stays Arabic.
 - Do NOT write the section title; it is added for you.
-- If several items share the same attributes, output a table: one row per line, cells separated by " | ", first row is a short header.
-- Otherwise output short bullets starting with "- ", one fact per bullet, in the same order as the notes.
+- When 2 or more items (drugs, doses, conditions, groups, stages) are described with the same kinds of details (dose, use, effect, route, side effect, mechanism), you MUST write them as a table: one row per line, cells separated by " | ", first row is a short header.
+- Everything else: short bullets starting with "- ", one fact per bullet, in the same order as the notes.
 - Plain text only: no LaTeX, no "$", no markdown symbols other than "- " and " | ". No introduction.
 
 Example
@@ -41,6 +41,17 @@ OUTPUT:
 Inhibitor | Combined with | Brand
 Clavulanic acid | Amoxicillin (co-amoxiclav) | Augmentin
 Sulbactam | Ampicillin | Unasyn
+
+Example
+NOTES:
+Low dose 75-150 mg: antiplatelet effect.
+Intermediate dose 325 mg - 1 g: analgesic and antipyretic.
+High dose 4-6 g: anti-inflammatory.
+OUTPUT:
+Dose | Amount | Effect
+Low | 75-150 mg | Antiplatelet
+Intermediate | 325 mg - 1 g | Analgesic, antipyretic
+High | 4-6 g | Anti-inflammatory
 
 Example
 NOTES:
@@ -240,6 +251,9 @@ OUTPUT:
     /** جزء صغير جدًا (سطر أو سطران قصيران) لا يحتاج النموذج: يُرتّب بالكود مباشرة. */
     fun trivial(p: Part): Boolean = p.table == null && p.notes.length <= 200 && p.notes.lines().count { it.isNotBlank() } <= 2
 
+    fun hash(raw: String): String =
+        java.security.MessageDigest.getInstance("SHA-1").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) }
+
     /** مفتاح ذاكرة الأجزاء: نفس الطريقة والنموذج والعنوان والملاحظات = نفس النتيجة. */
     fun cacheKey(p: Part, model: String): String {
         val raw = "$VERSION|$model|${p.title}|${p.sub}|${p.notes}|${p.emphasis.joinToString("¦")}"
@@ -296,16 +310,38 @@ OUTPUT:
     fun fallback(notes: String): String =
         notes.lines().filter { it.isNotBlank() }.joinToString("\n") { if (it.contains(" | ")) it else "- " + it.trim() }
 
+    const val REVIEW_SYSTEM = """You review a DRAFT section of a pharmacy study summary against the NOTES it was written from.
+Check that:
+- every fact of the notes is in the draft and nothing was added;
+- meaning, numbers, doses, drug names and negations (not, no, لا, ليس) are exactly kept;
+- items that share the same kinds of details are in a table (one row per line, cells separated by " | ", first row header);
+- everything else is short bullets starting with "- ".
+If the draft is correct and well organized, answer only: OK
+Otherwise answer only the corrected section in the same format: no title, no explanations, no introduction."""
+
+    fun reviewPrompt(p: Part, draft: String): String =
+        "SECTION: " + listOfNotNull(p.title, p.sub).joinToString(" › ") + "\nNOTES:\n" + p.notes + "\n\nDRAFT:\n" + draft
+
+    /** نتيجة المراجعة: «OK» = المسودة صحيحة (null)، وإلا التصحيح إن اجتاز الفحوص (وإلا null فتبقى المسودة). */
+    fun reviewed(p: Part, raw: String): String? {
+        val r = AiOrganizer.clean(raw).trim()
+        if (r.isEmpty() || Regex("^(?i)ok\\b").containsMatchIn(r) || r == "حسنًا") return null
+        return checked(p, r)
+    }
+
     /** ناتج النموذج لجزء: ينظَّف، ويُحذف تكرار العنوان، ويُفحص ضد الاختلاق. */
-    fun body(p: Part, raw: String): String {
+    fun body(p: Part, raw: String): String = checked(p, raw) ?: fallback(p.notes)
+
+    /** مثل body لكن يعيد null إن لم يجتز الفحوص. */
+    fun checked(p: Part, raw: String): String? {
         val cleaned = AiOrganizer.clean(raw).replace("**", "")
         val heads = listOfNotNull(p.title, p.sub).map { norm(it) }
         val noTitle = cleaned.lines().filter { l -> norm(l.trimStart('#', '-', ' ')) !in heads }
             .map { l -> if (l.trimStart().startsWith("#")) "- " + l.trimStart('#', ' ') else l }
             .joinToString("\n").trim()
-        if (noTitle.isBlank()) return fallback(p.notes)
+        if (noTitle.isBlank()) return null
         val bad = suspicious(noTitle, p.notes + " " + (p.title ?: "") + " " + (p.sub ?: "")) || dropped(noTitle, p.notes)
-        return if (bad) fallback(p.notes) else noTitle
+        return if (bad) null else noTitle
     }
 
     /** يجمع الأجزاء: عنوان لكل قسم، وعنوان فرعي عند الحاجة، وجداول مفصولة بسطر فارغ، ودون نقاط مكررة. */

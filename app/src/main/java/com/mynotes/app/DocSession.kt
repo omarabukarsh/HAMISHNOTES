@@ -205,13 +205,15 @@ class DocSession(entry: DocEntry) {
 
     /** MyNotes Pro: بطاقات مراجعة من الذكاء الاصطناعي (معرّفها يبدأ بـ ai:). replace = تُستبدل بطاقات الذكاء السابقة. */
     fun putAiCards(cards: List<Pair<String, String>>, replace: Boolean) {
+        // البطاقة التي بقي سؤالها كما هو تحتفظ بمعرّفها، فلا يضيع تقدّم مراجعتها عند إعادة الترتيب
+        val oldAi = customCards.filter { it.id.startsWith("ai:") }.associateBy { it.front.trim().lowercase() }
         val keep = if (replace) customCards.filter { !it.id.startsWith("ai:") } else customCards
         val seen = keep.map { it.front.trim().lowercase() }.toMutableSet()
         val add = cards.mapNotNull { (f, b) ->
             val ff = f.trim()
             val bb = b.trim()
             if (ff.isEmpty() || bb.isEmpty() || !seen.add(ff.lowercase())) null
-            else Card("ai:" + UUID.randomUUID().toString(), ff, bb)
+            else Card(oldAi[ff.lowercase()]?.id ?: ("ai:" + UUID.randomUUID().toString()), ff, bb)
         }
         if (!replace && add.isEmpty()) return
         customCards = keep + add

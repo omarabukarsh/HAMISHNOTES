@@ -136,6 +136,9 @@ class DocSession(entry: DocEntry) {
     // ---- درج الملخصات ----
     var summaryOpen by mutableStateOf(false)
 
+    /** درج خيارات الصفحة على اليمين. */
+    var pageMenuOpen by mutableStateOf(false)
+
     /** تعديلات المستخدم على الملخص (عنوان/نص، جداول، ترتيب) فوق الترتيب التلقائي. */
     var summaryEdits by mutableStateOf(SummaryEdits())
 
@@ -586,6 +589,25 @@ class DocSession(entry: DocEntry) {
         ocr.clear()
         ocr.putAll(shiftedOcr)
         afterPagesChanged()
+    }
+
+    /** يغيّر مصدر صفحة (مثل قالب صفحة فارغة)، وتبقى كتابتها كما هي. */
+    fun setPageSrc(page: Int, src: String) {
+        val doc = pdf ?: return
+        val old = doc.pages
+        if (page !in old.indices) return
+        doc.replacePages(old.mapIndexed { i, r -> if (i == page) r.copy(src = src) else r })
+        afterPagesChanged()
+    }
+
+    /** يمسح عناصر من صفحة: الكتابة اليدوية، التظليل، النصوص والملاحظات، الصور. يمكن التراجع عنه. */
+    fun clearPageItems(page: Int, ink: Boolean, highlights: Boolean, texts: Boolean, pics: Boolean) {
+        beginEdit()
+        if (ink) annotations = annotations - page
+        if (highlights) marks = marks - page
+        if (texts) this.texts = this.texts - page
+        if (pics) images = images - page
+        endEdit()
     }
 
     /** بعد تغيّر أرقام الصفحات: مسح التراجع والتحديد، والحفظ، وإعادة تشغيل القراءة. */

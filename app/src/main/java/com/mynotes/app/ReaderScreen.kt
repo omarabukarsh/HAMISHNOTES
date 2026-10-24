@@ -424,7 +424,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     .shadow(5.dp, CircleShape)
                     .background(if (s.summaryOpen) Palette.GoldSoft else Color.White, CircleShape)
                     .clip(CircleShape)
-                    .clickable { s.summaryOpen = !s.summaryOpen },
+                    .clickable { s.summaryOpen = !s.summaryOpen; if (s.summaryOpen) s.pageMenuOpen = false },
                 contentAlignment = Alignment.Center
             ) { SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold) }
             if (markCount > 0) {
@@ -670,6 +670,11 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
                 // الإعدادات: ظاهرة دائمًا
                 TBtn(onClick = { c.settingsOpen = true }) { PhIcon(R.drawable.ph_sliders, Palette.TextPrimary) }
+                // خيارات الصفحة (درج على اليمين)
+                TBtn(selected = s.pageMenuOpen, onClick = {
+                    s.pageMenuOpen = !s.pageMenuOpen
+                    if (s.pageMenuOpen) s.summaryOpen = false
+                }) { PhIcon(R.drawable.ph_more, tintFor(s.pageMenuOpen)) }
             }
         }
     }
@@ -697,18 +702,19 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     if (audioDialog) AudioDialog(s) { audioDialog = false }
     if (splitDialog) SplitPickerDialog(s) { splitDialog = false }
     if (addDialog) {
-        AddPagesDialog(
-            onBlank = { template, atEnd, color ->
-                addDialog = false
-                val after = if (atEnd) count - 1 else cur
-                c.addBlankPage(s, after, template, color)
-            },
+        TemplatePickerDialog(
+            mode = PickerMode.ADD_PAGE,
+            onDismiss = { addDialog = false },
             onPdf = { atEnd ->
                 addDialog = false
                 pdfAfter = if (atEnd) count - 1 else cur
                 pdfPicker.launch(arrayOf("application/pdf"))
             },
-            onDismiss = { addDialog = false }
+            onConfirm = { choice, _, atEnd ->
+                addDialog = false
+                val after = if (atEnd) count - 1 else cur
+                c.addBlankPage(s, after, choice.kind, choice.color, choice.ratio())
+            }
         )
     }
 }
@@ -1147,66 +1153,7 @@ private fun ToolPreview(t: Tool) {
 }
 
 @Composable
-private fun AddPagesDialog(
-    onBlank: (String, Boolean, Int) -> Unit,
-    onPdf: (Boolean) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var template by remember { mutableStateOf("lined") }
-    var atEnd by remember { mutableStateOf(false) }
-    var paper by remember { mutableStateOf(Templates.paperColors[1].first) }
-    var picker by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(L("إضافة صفحة", "Add page")) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(L("المكان", "Position"), fontSize = 13.sp, color = Palette.TextSecondary)
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ChoiceChip(L("بعد الصفحة الحالية", "After current page"), !atEnd) { atEnd = false }
-                    ChoiceChip(L("في نهاية الملف", "At the end"), atEnd) { atEnd = true }
-                }
-                Text(L("التخطيط", "Layout"), fontSize = 13.sp, color = Palette.TextSecondary)
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Templates.options.forEach { (k, label) ->
-                        ChoiceChip(label, template == k) { template = k }
-                    }
-                }
-                Text(L("لون الورقة", "Paper color"), fontSize = 13.sp, color = Palette.TextSecondary)
-                PaperColorRow(paper, { paper = it }, { picker = true })
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onBlank(template, atEnd, paper) }) { Text(L("إضافة صفحة", "Add page")) }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = { onPdf(atEnd) }) { Text(L("إضافة ملف PDF…", "Add PDF file…")) }
-                TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
-            }
-        }
-    )
-    if (picker) {
-        ColorPickerDialog(
-            initial = Color(paper),
-            onPick = {
-                paper = it.toArgb()
-                picker = false
-            },
-            onDismiss = { picker = false }
-        )
-    }
-}
-
-@Composable
-private fun PageJumpDialog(count: Int, current: Int, onGo: (Int) -> Unit, onDismiss: () -> Unit) {
+internal fun PageJumpDialog(count: Int, current: Int, onGo: (Int) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf((current + 1).toString()) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1619,6 +1566,15 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
                 onJump = { m -> s.jumpHook?.invoke(m) },
                 onExport = onExportSummary
             )
+        }
+        // MyNotes Pro: درج خيارات الصفحة على اليمين
+        AnimatedVisibility(
+            visible = s.pageMenuOpen,
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
+            exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(180))
+        ) {
+            PagePanel(s, pdf)
         }
 
         // شريط التمرير بالصفحات على الحافة

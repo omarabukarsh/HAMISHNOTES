@@ -140,6 +140,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     val listState = rememberLazyListState()
     val pager = rememberPagerState(pageCount = { ToolCatalog.tour.size })
     val scope = rememberCoroutineScope()
+    var toolbarOpen by remember { mutableStateOf(false) }
+    var templateOpen by remember { mutableStateOf(false) }
+    var templateVer by remember { mutableStateOf(0) }
     fun showTour(id: String) {
         val i = ToolCatalog.tour.indexOfFirst { it.id == id }
         if (i >= 0) scope.launch {
@@ -173,6 +176,37 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    item { SectionTitle(L("إعدادات المستندات", "Document settings")) }
+                    item {
+                        SettingSwitch(
+                            L("المتابعة من حيث توقفت", "Continue where you left off"),
+                            L("عند فتح التطبيق تُفتح المستندات التي كانت مفتوحة وآخر مستند استخدمته", "When the app starts, the documents you had open and the last one you used are reopened"),
+                            c.resumeLast
+                        ) { c.toggleResumeLast() }
+                    }
+                    item {
+                        SettingSwitch(
+                            L("فتح المستندات في تبويبات", "Open documents as tabs"),
+                            L("كل مستند تفتحه يظهر في تبويب جديد. أوقفه ليحل المستند الجديد محل المفتوح", "Each document opens in a new tab. Turn off to replace the open document"),
+                            c.openAsTabs
+                        ) { c.toggleOpenAsTabs() }
+                    }
+                    item {
+                        NavRow(
+                            L("تخصيص شريط الأدوات", "Toolbar customization"),
+                            L("شكل الشريط، والأدوات الظاهرة فيه، واستعادة الشريط الافتراضي", "Toolbar style, which tools it shows, and restoring the default toolbar"),
+                            R.drawable.ph_sliders
+                        ) { toolbarOpen = true }
+                    }
+                    item {
+                        val d = templateVer.let { Templates.defaultChoice() }
+                        NavRow(
+                            L("القالب الافتراضي للملاحظات", "Default notebook template"),
+                            Templates.labelOf(d.kind) + " · " + Templates.sizeOf(d.size).label + if (d.landscape) L(" · أفقي", " · landscape") else "",
+                            R.drawable.ph_pages
+                        ) { templateOpen = true }
+                    }
+
                     item { SectionTitle("اللغة / Language") }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -182,43 +216,6 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     }
                     item { SectionTitle(L("تعرّف على الأدوات", "Get to know the tools")) }
                     item { ToolTour(pager) }
-
-                    item { SectionTitle(L("شكل شريط الأدوات", "Toolbar style")) }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            StyleOption(
-                                Modifier.weight(1f), ToolbarStyle.PEN_BAR, L("شريط الأقلام", "Pen bar"),
-                                L("زر قلم واحد؛ الضغط عليه يفتح شريطًا ثانيًا فيه كل الأقلام والهايلايتر والألوان والحجم.", "One pen button; tapping it opens a second bar with all pens, the highlighter, colors and size.")
-                            )
-                            StyleOption(
-                                Modifier.weight(1f), ToolbarStyle.CLASSIC, L("الكلاسيكي", "Classic"),
-                                L("القلم والهايلايتر زرّان منفصلان؛ نقرة ثانية على الأداة تفتح إعداداتها.", "Pen and highlighter are separate buttons; tapping a tool again opens its settings.")
-                            )
-                        }
-                    }
-
-                    item { SectionTitle(L("الأدوات الأساسية (ظاهرة دائمًا)", "Essential tools (always shown)")) }
-                    ToolCatalog.essentials.forEach { t ->
-                        item(key = "e_" + t.id) {
-                            ToolRow(t, onInfo = { showTour(t.id) }) {
-                                Text(L("أساسية", "Essential"), fontSize = 12.sp, color = Palette.TextSecondary)
-                            }
-                        }
-                    }
-
-                    item { SectionTitle(L("أدوات اختيارية: أظهرها أو أخفها من الشريط", "Optional tools: show or hide them in the toolbar")) }
-                    item {
-                        androidx.compose.material3.TextButton(onClick = { c.resetToolbar() }) {
-                            Text(L("استعادة الشريط الافتراضي", "Restore default toolbar"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    ToolCatalog.optional.forEach { t ->
-                        item(key = "o_" + t.id) {
-                            ToolRow(t, onInfo = { showTour(t.id) }) {
-                                NavySwitch(c.toolVisible(t.id)) { c.setToolVisible(t.id, it) }
-                            }
-                        }
-                    }
 
                     item { SectionTitle(L("القلم والأصابع", "Pen and fingers")) }
                     item {
@@ -328,6 +325,103 @@ private fun PenKeyLearnRow() {
                 c.messages.tryEmit(L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
             }
         }
+    }
+    if (toolbarOpen) ToolbarCustomizeDialog(
+        onInfo = { id -> toolbarOpen = false; showTour(id) },
+        onDismiss = { toolbarOpen = false }
+    )
+    if (templateOpen) TemplatePickerDialog(
+        mode = PickerMode.DEFAULT,
+        onDismiss = { templateOpen = false },
+        onConfirm = { _, _, _ -> templateOpen = false; templateVer++ }
+    )
+}
+
+/** نافذة «تخصيص شريط الأدوات»: الشكل، الأدوات الأساسية، والأدوات التي تُضاف أو تُخفى. */
+@Composable
+private fun ToolbarCustomizeDialog(onInfo: (String) -> Unit, onDismiss: () -> Unit) {
+    val c = AppController
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(0.9f).widthIn(max = 720.dp).fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(24.dp),
+            color = Palette.Background
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 8.dp, top = 14.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        L("تخصيص شريط الأدوات", "Toolbar customization"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 22.dp, L("إغلاق", "Close")) }
+                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item { SectionTitle(L("شكل شريط الأدوات", "Toolbar style")) }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            StyleOption(
+                                Modifier.weight(1f), ToolbarStyle.PEN_BAR, L("شريط الأقلام", "Pen bar"),
+                                L("زر قلم واحد؛ الضغط عليه يفتح شريطًا ثانيًا فيه كل الأقلام والهايلايتر والألوان والحجم.", "One pen button; tapping it opens a second bar with all pens, the highlighter, colors and size.")
+                            )
+                            StyleOption(
+                                Modifier.weight(1f), ToolbarStyle.CLASSIC, L("الكلاسيكي", "Classic"),
+                                L("القلم والهايلايتر زرّان منفصلان؛ نقرة ثانية على الأداة تفتح إعداداتها.", "Pen and highlighter are separate buttons; tapping a tool again opens its settings.")
+                            )
+                        }
+                    }
+
+                    item { SectionTitle(L("الأدوات الأساسية (ظاهرة دائمًا)", "Essential tools (always shown)")) }
+                    ToolCatalog.essentials.forEach { t ->
+                        item(key = "e_" + t.id) {
+                            ToolRow(t, onInfo = { onInfo(t.id) }) {
+                                Text(L("أساسية", "Essential"), fontSize = 12.sp, color = Palette.TextSecondary)
+                            }
+                        }
+                    }
+
+                    item { SectionTitle(L("أدوات اختيارية: أظهرها أو أخفها من الشريط", "Optional tools: show or hide them in the toolbar")) }
+                    item {
+                        androidx.compose.material3.TextButton(onClick = { c.resetToolbar() }) {
+                            Text(L("استعادة الشريط الافتراضي", "Restore default toolbar"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    ToolCatalog.optional.forEach { t ->
+                        item(key = "o_" + t.id) {
+                            ToolRow(t, onInfo = { onInfo(t.id) }) {
+                                NavySwitch(c.toolVisible(t.id)) { c.setToolVisible(t.id, it) }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+}
+
+/** صف ينقل إلى صفحة إعدادات فرعية. */
+@Composable
+private fun NavRow(title: String, desc: String, icon: Int, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PhIcon(icon, Palette.Navy, 22.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            Text(desc, fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary)
+        }
+        Text("›", fontSize = 22.sp, color = Palette.TextSecondary)
     }
 }
 

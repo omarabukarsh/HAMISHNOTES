@@ -59,6 +59,10 @@ object Palette {
     val Desk: Color get() = if (ThemeState.light) Color(0xFFEBEEF2) else Color(0xFFDCE1E8)
     val ReaderBackground = Color(0xFFD9DEE5)
     val TabBar: Color get() = Ink
+    /** خلفية شريط التبويبات: أغمق من الشريط الجانبي للمكتبة كي يظهر التبويب النشط متصلًا بما تحته. */
+    val TabRail: Color get() = if (ThemeState.light) Color(0xFFD3DAE4) else Color(0xFF0A1424)
+    /** التبويبات غير النشطة: لون ثالث واضح بين الشريط والتبويب النشط. */
+    val TabIdle: Color get() = if (ThemeState.light) Color(0xFFB9C4D3) else Color(0xFF2A3F5F)
 
     // النص
     val TextPrimary = Color(0xFF1A2230)

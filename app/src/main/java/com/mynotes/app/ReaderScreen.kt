@@ -231,6 +231,12 @@ private fun ReaderContent(s: DocSession) {
                     enter = fadeIn(tween(160)) + expandVertically(tween(200)),
                     exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
                 ) { ShapeBar() }
+                // شريط الملاحظات اللاصقة
+                AnimatedVisibility(
+                    visible = PenPrefs.stickyActive,
+                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                ) { StickyBar() }
                 if (s.searchOpen) ReaderSearchBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
             }
@@ -588,9 +594,17 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
                 if (v("text")) TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
                 if (v("sticky")) {
-                    TBtn(onClick = { s.textDialog = TextDialogReq(null, cur, sticky = true) }) {
-                        PhIcon(R.drawable.ph_note, Palette.TextSecondary)
-                    }
+                    // أداة الملاحظات اللاصقة: شريط ألوان، ثم نقرة على الصفحة تضع الملاحظة
+                    TBtn(selected = PenPrefs.stickyActive, onClick = {
+                        if (PenPrefs.stickyActive) {
+                            PenPrefs.stickyActive = false
+                        } else {
+                            c.lassoActive = false
+                            PenPrefs.shapeActive = false
+                            PenPrefs.stickyActive = true
+                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة لوضع الملاحظة", "Pick a color, then tap the page to place the note"))
+                        }
+                    }) { PhIcon(R.drawable.ph_note, tintFor(PenPrefs.stickyActive)) }
                 }
                 if (v("link")) {
                     TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
@@ -1643,6 +1657,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             if (s.lassoSel != null) LassoBar(s)
             if (s.selectedImageId != null) ImageBar(s)
             if (s.selectedTextId != null) TextBoxBar(s)
+            if (s.selectedNoteId != null) NoteBar(s)
         }
     }
 }
@@ -2188,6 +2203,8 @@ private fun PageView(
 
         // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
         InkLayer(strokes, night, Modifier.fillMaxSize())
+        // الملاحظات اللاصقة فوق الكتابة
+        NotesLayer(session, index, night)
 
         // الخط الحي + الليزر + استقبال القلم والإصبع (طبقة مستقلة: تحديثها لا يعيد رسم الصفحة)
         Canvas(
@@ -2321,6 +2338,22 @@ private fun PageView(
                             live.style = if (toolNow.isPen()) PenPrefs.lineStyle else LineStyle.SOLID
                             live.sharp = false
                             val eraseR = eraserNow
+
+                            // أداة الملاحظات: نقرة القلم تضع ملاحظة
+                            if (PenPrefs.stickyActive && down.type != PointerType.Eraser) {
+                                down.consume()
+                                placeSticky(session, index, down.position.x / w, down.position.y / w, 1f / ratio)
+                                while (true) {
+                                    val e = awaitPointerEvent()
+                                    val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                    ch.consume()
+                                    if (!ch.pressed) break
+                                }
+                                continue
+                            }
+                            // الكتابة داخل ملاحظة لاصقة تنتمي إليها (تتحرك معها)
+                            val noteTarget = if (PenPrefs.shapeActive) null
+                            else session.noteAt(index, down.position.x / w, down.position.y / w)?.id
 
                             // أداة الأشكال: سحب من نقطة إلى نقطة يرسم الشكل المختار
                             if (PenPrefs.shapeActive && down.type != PointerType.Eraser &&
@@ -2499,10 +2532,11 @@ private fun PageView(
                                 var snapPts: List<Pt>? = null
                                 if (!erasing && livePts.isNotEmpty()) {
                                     val hlStraight = live.tool == Tool.HIGHLIGHTER && PenPrefs.hlStraight
-                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap) {
+                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap && noteTarget == null) {
                                         snapPts = if (hlStraight) PenPrefs.straighten(livePts.toList()) else livePts.toList()
                                     } else if (hlStraight) {
-                                        session.addInk(index, Ink(PenPrefs.straighten(livePts.toList()), live.color, live.width, live.tool, System.currentTimeMillis()))
+                                        val ink = Ink(PenPrefs.straighten(livePts.toList()), live.color, live.width, live.tool, System.currentTimeMillis())
+                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
                                     } else {
                                         // الأقلام: رسم يشبه شكلًا واضحًا يتحول إلى شكل مرتب
                                         val raw = livePts.toList()
@@ -2511,10 +2545,8 @@ private fun PageView(
                                             ShapeRecognizer.recognize(raw)
                                         } else null
                                         val pts = shaped ?: PenPrefs.taper(raw, live.tool)
-                                        session.addInk(
-                                            index,
-                                            Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
-                                        )
+                                        val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
+                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
                                     }
                                 }
                                 livePts.clear()
@@ -2539,6 +2571,14 @@ private fun PageView(
 
                         // تحريك التحديد الحر بالإصبع أيضًا
                         if (session.lassoSel?.page == index && dragLasso(session, index, down, w)) return@awaitEachGesture
+
+                        // الملاحظات اللاصقة: وضع، تحديد، تحريك، تكبير
+                        if (PenPrefs.stickyActive) {
+                            down.consume()
+                            placeSticky(session, index, nx, ny, 1f / ratio)
+                            return@awaitEachGesture
+                        }
+                        if (dragNote(session, index, down, w)) return@awaitEachGesture
 
                         // سحب/تغيير عرض مربع النص المحدد
                         val selTextId = session.selectedTextId
@@ -3002,4 +3042,67 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
                 }
         )
     }
+}
+
+
+/** يضع ملاحظة لاصقة (أو الملاحظة المنسوخة) عند النقطة، ثم يُطفئ وضع الإضافة. */
+private fun placeSticky(session: DocSession, page: Int, nx: Float, ny: Float, pageH: Float) {
+    val clip = AppController.noteClipboard
+    val fresh = newStickyAt(page, nx, ny, pageH)
+    val n = if (AppController.notePastePending && clip != null) {
+        clip.copy(id = fresh.id, page = page, x = (nx - clip.w / 2f).coerceIn(0f, 1f - clip.w), y = (ny - clip.h / 2f).coerceAtLeast(0f), collapsed = false)
+    } else fresh
+    AppController.notePastePending = false
+    session.addNote(n)
+    PenPrefs.stickyActive = false
+}
+
+/**
+ * لمسة الإصبع على ملاحظة: نقرة تحددها (أو تفتح المطوية)، والسحب يحركها،
+ * والسحب من زاوية الملاحظة المحددة يغيّر حجمها. يعيد true إن تعاملت مع اللمسة.
+ */
+private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dragNote(
+    session: DocSession, page: Int, down: PointerInputChange, w: Float
+): Boolean {
+    val nx = down.position.x / w
+    val ny = down.position.y / w
+    val sel = session.note(session.selectedNoteId)?.takeIf { it.page == page && !it.collapsed }
+    val corner = 0.035f
+    val resize = sel != null && hypot(nx - (sel.x + sel.w), ny - (sel.y + sel.h)) < corner
+    val target = if (resize) sel else session.noteAt(page, nx, ny, includeCollapsed = true)
+    if (target == null) {
+        if (session.selectedNoteId != null) session.selectedNoteId = null
+        return false
+    }
+    down.consume()
+    session.beginEdit()
+    var last = down.position
+    var moved = false
+    try {
+        while (true) {
+            val e = awaitPointerEvent()
+            val ch = e.changes.firstOrNull { it.id == down.id } ?: break
+            if (!ch.pressed) break
+            if (!moved && (ch.position - down.position).getDistance() < viewConfiguration.touchSlop) continue
+            moved = true
+            val dx = (ch.position.x - last.x) / w
+            val dy = (ch.position.y - last.y) / w
+            last = ch.position
+            if (resize) {
+                session.updateNote(target.id) { it.copy(w = (it.w + dx).coerceIn(0.08f, 0.9f), h = (it.h + dy).coerceIn(0.08f, 1.2f)) }
+            } else {
+                session.updateNote(target.id) { it.copy(x = (it.x + dx).coerceIn(-0.05f, 0.98f), y = (it.y + dy).coerceAtLeast(0f)) }
+            }
+            ch.consume()
+        }
+    } finally {
+        session.endEdit()
+    }
+    if (!moved) {
+        if (target.collapsed) session.editNote(target.id) { it.copy(collapsed = false) }
+        session.selectedNoteId = target.id
+    } else {
+        session.selectedNoteId = target.id
+    }
+    return true
 }

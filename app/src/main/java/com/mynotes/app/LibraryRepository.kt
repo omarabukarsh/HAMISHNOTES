@@ -33,7 +33,9 @@ class DocData(
     /** معرّفات البطاقات المميزة بنجمة (صعبة). */
     val starred: Set<String> = emptySet(),
     /** الصفحات المعلَّمة (أرقام من 0). */
-    val bookmarks: Set<Int> = emptySet()
+    val bookmarks: Set<Int> = emptySet(),
+    /** الملاحظات اللاصقة لكل صفحة. */
+    val notes: Map<Int, List<StickyNote>> = emptyMap()
 )
 
 /**
@@ -513,7 +515,43 @@ class LibraryRepository(context: Context) {
             } ?: emptyList()
             val starred = root.optJSONArray("starred")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
             val bookmarks = root.optJSONArray("bookmarks")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() } ?: emptySet()
-            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks)
+            val notes = HashMap<Int, List<StickyNote>>()
+            root.optJSONArray("notes")?.let { a ->
+                val all = ArrayList<StickyNote>()
+                for (i in 0 until a.length()) {
+                    try {
+                        val o = a.getJSONObject(i)
+                        val inks = ArrayList<Ink>()
+                        o.optJSONArray("ink")?.let { ia ->
+                            for (k in 0 until ia.length()) {
+                                val so = ia.getJSONObject(k)
+                                val flat = so.getJSONArray("p")
+                                val pts = ArrayList<Pt>(flat.length() / 3)
+                                var j = 0
+                                while (j + 2 < flat.length()) {
+                                    pts.add(Pt(flat.getDouble(j).toFloat(), flat.getDouble(j + 1).toFloat(), flat.getDouble(j + 2).toFloat()))
+                                    j += 3
+                                }
+                                val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
+                                inks.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false)))
+                            }
+                        }
+                        all.add(
+                            StickyNote(
+                                id = o.getString("id"), page = o.getInt("page"),
+                                x = o.getDouble("x").toFloat(), y = o.getDouble("y").toFloat(),
+                                w = o.getDouble("w").toFloat(), h = o.getDouble("h").toFloat(),
+                                color = o.getInt("c"), style = o.optInt("st", 0),
+                                collapsed = o.optBoolean("cl", false), author = o.optString("a", ""),
+                                ink = inks
+                            )
+                        )
+                    } catch (e: Throwable) {
+                    }
+                }
+                all.groupBy { it.page }.forEach { (p, l) -> notes[p] = l }
+            }
+            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes)
         } catch (e: Throwable) {
             try {
                 f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
@@ -624,6 +662,30 @@ class LibraryRepository(context: Context) {
                         })
                         .put("starred", JSONArray().apply { data.starred.forEach { put(it) } })
                         .put("bookmarks", JSONArray().apply { data.bookmarks.sorted().forEach { put(it) } })
+                        .put("notes", JSONArray().apply {
+                            data.notes.values.forEach { list ->
+                                list.forEach { n ->
+                                    put(
+                                        JSONObject().put("id", n.id).put("page", n.page)
+                                            .put("x", n.x.toDouble()).put("y", n.y.toDouble())
+                                            .put("w", n.w.toDouble()).put("h", n.h.toDouble())
+                                            .put("c", n.color).put("st", n.style).put("cl", n.collapsed).put("a", n.author)
+                                            .put("ink", JSONArray().apply {
+                                                n.ink.forEach { s ->
+                                                    val flat = JSONArray()
+                                                    s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+                                                    put(
+                                                        JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble())
+                                                            .put("k", s.tool.name).put("t", s.t)
+                                                            .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                                                            .put("p", flat)
+                                                    )
+                                                }
+                                            })
+                                    )
+                                }
+                            }
+                        })
                         .toString()
                 )
             } catch (e: Throwable) {

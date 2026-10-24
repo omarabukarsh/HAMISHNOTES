@@ -222,6 +222,11 @@ object AppController {
     var lastWriting by mutableStateOf(Tool.FOUNTAIN)
         private set
 
+    /** ملاحظة لاصقة منسوخة أو مقصوصة (للّصق). */
+    var noteClipboard by mutableStateOf<StickyNote?>(null)
+    /** النقرة التالية في وضع الملاحظات تلصق الملاحظة المنسوخة. */
+    var notePastePending by mutableStateOf(false)
+
     /** أداة التحديد الحر (لاسو) فعّالة بدل أداة الكتابة. */
     var lassoActive by mutableStateOf(false)
 

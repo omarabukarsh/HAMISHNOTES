@@ -62,8 +62,23 @@ object PenPrefs {
     var arrowEnd by mutableStateOf(ArrowHead.NONE); private set
     var shapeColor by mutableStateOf(0xFF000000.toInt()); private set
 
+    // ---- الملاحظات اللاصقة ----
+    /** وضع إضافة ملاحظة: النقرة التالية على الصفحة تضع ملاحظة. */
+    var stickyActive by mutableStateOf(false)
+    var stickyColor by mutableStateOf(0xFFF6B3B5.toInt()); private set
+    var stickyStyle by mutableStateOf(0); private set
+    /** الاسم الذي يظهر أسفل الملاحظات. */
+    var author by mutableStateOf(""); private set
+
+    fun changeStickyColor(v: Int) { stickyColor = v; put("sticky_color", v) }
+    fun changeStickyStyle(v: Int) { stickyStyle = v; put("sticky_style", v) }
+    fun changeAuthor(v: String) { author = v; put("author", v) }
+
     fun init(ctx: Context) {
         sp = ctx.getSharedPreferences("mynotes_pens", Context.MODE_PRIVATE)
+        stickyColor = sp.getInt("sticky_color", 0xFFF6B3B5.toInt())
+        stickyStyle = sp.getInt("sticky_style", 0)
+        author = sp.getString("author", "") ?: ""
         lineStyle = sp.getInt("line_style", 0)
         sharpness = sp.getFloat("sharpness", 0.25f)
         pressure = sp.getFloat("pressure", 0.5f)

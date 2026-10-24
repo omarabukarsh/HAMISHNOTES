@@ -107,13 +107,17 @@ class EditSnapshot(
     val images: Map<Int, List<ImageItem>>,
     val marks: Map<Int, List<TextMark>>,
     val texts: Map<Int, List<TextBox>>,
-    val edits: SummaryEdits
+    val edits: SummaryEdits,
+    val notes: Map<Int, List<StickyNote>> = emptyMap()
 )
 
 /**
  * حالة مستند مفتوح في تبويب. تبقى حية عند تبديل التبويبات وعند تدوير الشاشة،
  * والكتابة والصور وبنية الصفحات تُحفظ على القرص بعد كل تعديل.
  */
+/** حجم الملاحظة المطوية (نسبة لعرض الصفحة). */
+const val NOTE_COLLAPSED = 0.045f
+
 class DocSession(entry: DocEntry) {
     val id: String = entry.id
 
@@ -140,6 +144,10 @@ class DocSession(entry: DocEntry) {
     var marks by mutableStateOf<Map<Int, List<TextMark>>>(emptyMap())
     var texts by mutableStateOf<Map<Int, List<TextBox>>>(emptyMap())
     var selectedTextId by mutableStateOf<String?>(null)
+
+    /** الملاحظات اللاصقة والمحددة منها. */
+    var notes by mutableStateOf<Map<Int, List<StickyNote>>>(emptyMap())
+    var selectedNoteId by mutableStateOf<String?>(null)
 
     var textDialog by mutableStateOf<TextDialogReq?>(null)
 
@@ -331,6 +339,7 @@ class DocSession(entry: DocEntry) {
                 if (!disposed) outline = items
             }
             annotations = loaded.second.ink
+            notes = loaded.second.notes
             images = loaded.second.images
             marks = loaded.second.marks
             texts = loaded.second.texts
@@ -351,7 +360,7 @@ class DocSession(entry: DocEntry) {
 
     // ---------- التحرير والتراجع ----------
 
-    private fun snap() = EditSnapshot(annotations, images, marks, texts, summaryEdits)
+    private fun snap() = EditSnapshot(annotations, images, marks, texts, summaryEdits, notes)
 
     private fun restore(s: EditSnapshot) {
         annotations = s.ink
@@ -359,6 +368,8 @@ class DocSession(entry: DocEntry) {
         marks = s.marks
         texts = s.texts
         summaryEdits = s.edits
+        notes = s.notes
+        selectedNoteId = null
         selectedImageId = null
         selectedTextId = null
         lassoSel = null
@@ -526,6 +537,7 @@ class DocSession(entry: DocEntry) {
             else eraseStrokes(cur, at, radius, PenPrefs::erasable)
             if (next !== cur) annotations = annotations + (page to next)
         }
+        eraseNotesAt(page, at, radius)
         // الممحاة تزيل من التمييز الملتقط الكلمات التي تمرّ عليها فقط، ويبقى باقي التمييز ونصه في الملخص
         val ms = marks[page] ?: return
         val words = ocr[page]?.words
@@ -567,7 +579,7 @@ class DocSession(entry: DocEntry) {
         val s = snapshot ?: return
         snapshot = null
         if (s.ink === annotations && s.images === images && s.marks === marks && s.texts === texts &&
-            s.edits === summaryEdits
+            s.edits === summaryEdits && s.notes === notes
         ) return
         undoStack.add(s)
         if (undoStack.size > 100) undoStack.removeAt(0)
@@ -587,6 +599,75 @@ class DocSession(entry: DocEntry) {
         undoStack.add(snap())
         restore(redoStack.removeAt(redoStack.lastIndex))
         persist()
+    }
+
+    // ---------- الملاحظات اللاصقة ----------
+
+    fun note(id: String?): StickyNote? =
+        if (id == null) null else notes.values.firstNotNullOfOrNull { l -> l.firstOrNull { it.id == id } }
+
+    fun addNote(n: StickyNote) {
+        beginEdit()
+        notes = notes + (n.page to ((notes[n.page] ?: emptyList()) + n))
+        selectedNoteId = n.id
+        endEdit()
+    }
+
+    /** يعدّل ملاحظة دون تسجيله في التراجع؛ يُلف بـ beginEdit/endEdit. */
+    fun updateNote(id: String, transform: (StickyNote) -> StickyNote) {
+        val page = notes.entries.firstOrNull { e -> e.value.any { it.id == id } }?.key ?: return
+        notes = notes + (page to (notes[page] ?: emptyList()).map { if (it.id == id) transform(it) else it })
+    }
+
+    fun editNote(id: String, transform: (StickyNote) -> StickyNote) {
+        beginEdit()
+        updateNote(id, transform)
+        endEdit()
+    }
+
+    fun deleteNote(id: String) {
+        val page = notes.entries.firstOrNull { e -> e.value.any { it.id == id } }?.key ?: return
+        beginEdit()
+        notes = notes + (page to (notes[page] ?: emptyList()).filter { it.id != id })
+        if (selectedNoteId == id) selectedNoteId = null
+        endEdit()
+    }
+
+    fun duplicateNote(id: String) {
+        val n = note(id) ?: return
+        addNote(n.copy(id = UUID.randomUUID().toString(), x = n.x + 0.03f, y = n.y + 0.03f))
+    }
+
+    /** أعلى ملاحظة (غير مطوية) تحت النقطة على الصفحة. */
+    fun noteAt(page: Int, x: Float, y: Float, includeCollapsed: Boolean = false): StickyNote? =
+        (notes[page] ?: emptyList()).lastOrNull { n ->
+            val w = if (n.collapsed) NOTE_COLLAPSED else n.w
+            val h = if (n.collapsed) NOTE_COLLAPSED else n.h
+            (includeCollapsed || !n.collapsed) && x >= n.x && x <= n.x + w && y >= n.y && y <= n.y + h
+        }
+
+    /** يضيف خطًا إلى ملاحظة (نقاط الصفحة تُحوَّل إلى إحداثيات الملاحظة). */
+    fun addNoteInk(id: String, ink: Ink) {
+        updateNote(id) { n ->
+            n.copy(ink = n.ink + ink.copy(pts = ink.pts.map { Pt((it.x - n.x) / n.w, (it.y - n.y) / n.w, it.p) }, width = ink.width / n.w))
+        }
+    }
+
+    /** الممحاة على الملاحظات: تمسح من خطوطها حسب نمط الممحاة. */
+    fun eraseNotesAt(page: Int, at: Offset, radius: Float) {
+        val list = notes[page] ?: return
+        var changed = false
+        val next = list.map { n ->
+            if (n.collapsed || n.ink.isEmpty() || at.x < n.x - radius || at.x > n.x + n.w + radius || at.y < n.y - radius || at.y > n.y + n.h + radius) n
+            else {
+                val local = Offset((at.x - n.x) / n.w, (at.y - n.y) / n.w)
+                val r = radius / n.w
+                val ink = if (AppController.eraserMode == EraserMode.AREA) eraseStrokesArea(n.ink, local, r, PenPrefs::erasable)
+                else eraseStrokes(n.ink, local, r, PenPrefs::erasable)
+                if (ink !== n.ink) { changed = true; n.copy(ink = ink) } else n
+            }
+        }
+        if (changed) notes = notes + (page to next)
     }
 
     // ---------- الصور ----------
@@ -635,6 +716,7 @@ class DocSession(entry: DocEntry) {
         val nImg = HashMap<Int, List<ImageItem>>()
         val nMarks = HashMap<Int, List<TextMark>>()
         val nTexts = HashMap<Int, List<TextBox>>()
+        val nNotes = HashMap<Int, List<StickyNote>>()
         val nBm = HashSet<Int>()
         val nOcr = HashMap<Int, OcrPage>()
         order.forEachIndexed { ni, oi ->
@@ -644,6 +726,7 @@ class DocSession(entry: DocEntry) {
             images[oi]?.let { l -> nImg[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
             marks[oi]?.let { l -> nMarks[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
             texts[oi]?.let { l -> nTexts[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
+            notes[oi]?.let { l -> nNotes[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
             if (oi in bookmarks) nBm.add(ni)
             ocr[oi]?.let { nOcr[ni] = it }
         }
@@ -651,6 +734,7 @@ class DocSession(entry: DocEntry) {
         images = nImg
         marks = nMarks
         texts = nTexts
+        notes = nNotes
         bookmarks = nBm
         ocr.clear()
         ocr.putAll(nOcr)
@@ -693,6 +777,7 @@ class DocSession(entry: DocEntry) {
             movedTexts[nk] = list.map { it.copy(page = nk) }
         }
         texts = movedTexts
+        notes = notes.entries.associate { (k, l) -> shift(k) to l.map { it.copy(page = shift(k)) } }
         bookmarks = bookmarks.map { shift(it) }.toSet()
         val shiftedOcr = HashMap<Int, OcrPage>()
         ocr.forEach { (k, v) -> shiftedOcr[shift(k)] = v }
@@ -715,7 +800,10 @@ class DocSession(entry: DocEntry) {
         beginEdit()
         if (ink) annotations = annotations - page
         if (highlights) marks = marks - page
-        if (texts) this.texts = this.texts - page
+        if (texts) {
+            this.texts = this.texts - page
+            notes = notes - page
+        }
         if (pics) images = images - page
         endEdit()
     }
@@ -731,10 +819,11 @@ class DocSession(entry: DocEntry) {
         selection = null
         selectedImageId = null
         selectedTextId = null
+        selectedNoteId = null
         if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
 
         val pagesSnap = doc.pages
-        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
         val ocrSnap = ocr.toMap()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
@@ -1184,7 +1273,7 @@ class DocSession(entry: DocEntry) {
     }
 
     private fun saveNow() {
-        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
         AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 

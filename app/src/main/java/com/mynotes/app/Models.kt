@@ -17,6 +17,29 @@ enum class ShapeKind { LINE, ELBOW, CURVE, RECT, CIRCLE, TRIANGLE, DIAMOND, ELLI
 /** رأس السهم في طرف الخط. */
 enum class ArrowHead { NONE, OPEN, CLOSED }
 
+/**
+ * ملاحظة لاصقة على الصفحة: مربع ملوّن يُكتب عليه بالقلم.
+ * x, y, w, h نسبية لعرض الصفحة؛ ink بإحداثيات نسبية لعرض الملاحظة (0..1).
+ * style: 0 سادة، 1 بشريط جانبي، 2 مسطّرة، 3 مربعات.
+ */
+data class StickyNote(
+    val id: String,
+    val page: Int,
+    val x: Float,
+    val y: Float,
+    val w: Float,
+    val h: Float,
+    val color: Int,
+    val style: Int = 0,
+    val collapsed: Boolean = false,
+    val author: String = "",
+    val ink: List<Ink> = emptyList()
+)
+
+/** خطوط الملاحظة بإحداثيات الصفحة. */
+fun StickyNote.pageInk(): List<Ink> =
+    if (collapsed) emptyList() else ink.map { s -> s.copy(pts = s.pts.map { Pt(x + it.x * w, y + it.y * w, it.p) }, width = s.width * w) }
+
 /** عنوان في فهرس المستند (قابل للتعديل): page = رقم الصفحة الحالي. */
 data class OutlineEntry(val title: String, val level: Int, val page: Int)
 

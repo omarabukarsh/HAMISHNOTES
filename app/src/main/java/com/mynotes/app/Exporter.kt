@@ -43,7 +43,8 @@ object Exporter {
         val images: Map<Int, List<ImageItem>>,
         val marks: Map<Int, List<TextMark>>,
         val texts: Map<Int, List<TextBox>>,
-        val docId: String
+        val docId: String,
+        val notes: Map<Int, List<StickyNote>> = emptyMap()
     )
 
     fun snapshotOf(s: DocSession): Snapshot? {
@@ -52,7 +53,7 @@ object Exporter {
         val texts = s.texts.mapValues { (_, l) ->
             l.map { if (it.sticky) it.copy(w = 0.3f, x = it.x.coerceAtMost(0.68f)) else it }
         }
-        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id)
+        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id, s.notes)
     }
 
     /** يعيد عدد الصفحات المصدَّرة. */
@@ -69,6 +70,13 @@ object Exporter {
                     drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
                     drawTexts(c, snap.texts[i] ?: emptyList(), w)
                     (snap.ink[i] ?: emptyList()).forEach { drawInk(c, it, w) }
+                    // الملاحظات اللاصقة فوق الصفحة
+                    (snap.notes[i] ?: emptyList()).forEach { n ->
+                        val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+                        val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+                        c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
+                        n.pageInk().forEach { drawInk(c, it, w) }
+                    }
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
                     val page = out.startPage(PdfDocument.PageInfo.Builder(PDF_W, ph, i + 1).create())
@@ -174,13 +182,23 @@ object Exporter {
 
         val marks = snap.marks[i] ?: emptyList()
         val images = snap.images[i] ?: emptyList()
-        val ink = snap.ink[i] ?: emptyList()
+        val pageNotes = snap.notes[i] ?: emptyList()
+        val ink = (snap.ink[i] ?: emptyList()) + pageNotes.flatMap { it.pageInk() }
         val texts = snap.texts[i] ?: emptyList()
-        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty()) return
+        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty()) return
 
         com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
             doc, page, com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND, true, true
         ).use { cs ->
+            // الملاحظات اللاصقة: مربعات ملوّنة (خطوطها تُرسم مع الكتابة)
+            for (n in pageNotes) {
+                val col = androidx.compose.ui.graphics.Color(n.color)
+                val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+                val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+                cs.setNonStrokingColor(col.red, col.green, col.blue)
+                cs.addRect(px(n.x), py(n.y + nh), nw * w, nh * w)
+                cs.fill()
+            }
             // التمييز الملتقط: مستطيلات بمزج «ضرب» خلف النص
             if (marks.isNotEmpty()) {
                 val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()

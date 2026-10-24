@@ -2407,9 +2407,26 @@ private fun PageView(
                             var xB = xA
                             var yB = yA
 
+                            // «ارسم وأبقِ»: بعد ثباته لحظة يتحول الرسم إلى شكل وهو ما زال على الشاشة
+                            var snappedLive: List<Pt>? = null
+                            fun trySnapLive() {
+                                if (snappedLive != null || erasing || !live.tool.isPen() || !PenPrefs.drawAndHold) return
+                                if (System.currentTimeMillis() - lastMoveAt < 450L || livePts.size < 3) return
+                                val shape = ShapeRecognizer.recognize(livePts.toList()) ?: return
+                                snappedLive = shape
+                                livePts.clear()
+                                livePts.addAll(shape)
+                                live.hasPred = false
+                                live.sharp = true
+                                tick++
+                            }
                             try {
                                 while (true) {
-                                    val e = awaitPointerEvent()
+                                    val e = withTimeoutOrNull(480L) { awaitPointerEvent() }
+                                    if (e == null) {
+                                        trySnapLive()
+                                        continue
+                                    }
                                     val ch = e.changes.firstOrNull { it.id == id } ?: break
                                     if (!ch.pressed) {
                                         ch.consume()
@@ -2417,6 +2434,11 @@ private fun PageView(
                                     }
                                     AppController.lastInkAt = System.currentTimeMillis()
                                     val pr = pressureOf(ch)
+                                    if (snappedLive != null) {
+                                        // بعد التحول إلى شكل: لا تُضاف نقاط حتى رفع القلم
+                                        ch.consume()
+                                        continue
+                                    }
                                     if (erasing) {
                                         for (h in ch.historical) {
                                             session.eraseAt(index, Offset(h.position.x / w, h.position.y / w), eraseR)
@@ -2458,11 +2480,13 @@ private fun PageView(
                                             live.hasPred = true
                                         }
                                         tick++
+                                        trySnapLive()
                                     }
                                     ch.consume()
                                 }
                             } finally {
                                 live.hasPred = false
+                                live.sharp = false
                                 // بعد رفع القلم تختفي الحدود (وتعود مع التحويم إن دعمه الجهاز)
                                 if (erasing) {
                                     eraserCursor[0] = null
@@ -2483,7 +2507,7 @@ private fun PageView(
                                         // الأقلام: رسم يشبه شكلًا واضحًا يتحول إلى شكل مرتب
                                         val raw = livePts.toList()
                                         // الشكل المثالي فقط عند إبقاء القلم ثابتًا لحظة بعد الرسم
-                                        val shaped = if (live.tool.isPen() && PenPrefs.drawAndHold && held) {
+                                        val shaped = snappedLive ?: if (live.tool.isPen() && PenPrefs.drawAndHold && held) {
                                             ShapeRecognizer.recognize(raw)
                                         } else null
                                         val pts = shaped ?: PenPrefs.taper(raw, live.tool)

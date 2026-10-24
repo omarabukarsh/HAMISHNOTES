@@ -159,7 +159,9 @@ fun MyNotesApp() {
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
-        c.messages.collect { snackbar.showSnackbar(it) }
+        // Pro: لا تظهر في الأسفل إلا رسائل النسخ (طلب المستخدم)
+        val copyOnly = setOf("تم النسخ", "Copied", "نُسخت الملاحظة", "Note copied")
+        c.messages.collect { if (it in copyOnly) snackbar.showSnackbar(it) }
     }
 
     // زر الرجوع من المستند يعيد إلى المكتبة بدل إغلاق التطبيق

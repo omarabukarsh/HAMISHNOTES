@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -109,21 +110,24 @@ fun NotesLayer(s: DocSession, page: Int, night: Boolean) {
                         }
                         n.ink.forEach { st -> drawStroke(st, if (night) nightOf(st.color) else st.color, scaleW = size.width) }
                     }
-                    if (n.text.isNotBlank()) {
-                        val fs = with(density) { (n.textSize() * W).toSp() }
-                        Text(
-                            n.text, fontSize = fs, lineHeight = fs * 1.3f,
-                            color = if (night) Color(0xFFEDEDED) else Color(0xFF1F2933),
-                            overflow = TextOverflow.Clip,
-                            modifier = Modifier.padding(start = with(density) { (n.w * W * 0.06f).toDp() }, end = with(density) { (n.w * W * 0.06f).toDp() }, top = with(density) { (n.w * W * 0.06f).toDp() })
-                        )
-                    }
+                    val pad = with(density) { (n.w * W * 0.06f).toDp() }
+                    val fs = with(density) { (n.textSize() * W).toSp() }
+                    val nameH = if (n.author.isNotBlank()) with(density) { (n.textSize() * W * 1.1f).toDp() } else 0.dp
+                    // الاسم في أعلى الملاحظة
                     if (n.author.isNotBlank()) {
                         Text(
-                            n.author, fontSize = 7.sp, color = Color.Black.copy(alpha = 0.55f), maxLines = 1,
+                            n.author, fontSize = fs * 0.7f, color = Color.Black.copy(alpha = 0.5f), maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 4.dp, bottom = 2.dp)
+                            modifier = Modifier.align(Alignment.TopStart).padding(start = pad, end = pad, top = pad * 0.5f)
                         )
+                    }
+                    val textColor = if (night) Color(0xFFEDEDED) else Color(0xFF1F2933)
+                    val textMod = Modifier.fillMaxWidth().padding(start = pad, end = pad, top = pad + nameH)
+                    if (s.noteTextEditId == n.id) {
+                        // الكتابة مباشرة داخل الملاحظة بلوحة المفاتيح
+                        NoteTextEditor(s, n, fs, textColor, textMod)
+                    } else if (n.text.isNotBlank()) {
+                        Text(n.text, fontSize = fs, lineHeight = fs * 1.3f, color = textColor, overflow = TextOverflow.Clip, modifier = textMod)
                     }
                 }
             }
@@ -260,7 +264,7 @@ fun NoteBar(s: DocSession) {
                 }
             }
             // كتابة نص بلوحة المفاتيح
-            TBtn(onClick = { s.noteTextEditId = id }) {
+            TBtn(selected = s.noteTextEditId == id, onClick = { s.noteTextEditId = if (s.noteTextEditId == id) null else id }) {
                 PhIcon(R.drawable.ph_text, Palette.TextSecondary, 20.dp, L("كتابة نص", "Type text"))
             }
             // طيّ الملاحظة إلى مربع صغير
@@ -287,29 +291,8 @@ fun NoteBar(s: DocSession) {
                     DropdownMenuItem(text = { Text(L("الاسم على الملاحظات…", "Name on notes…")) }, onClick = { more = false; authorDialog = true })
                 }
             }
-            TextButton(onClick = { s.selectedNoteId = null }) { Text(L("تم", "Done")) }
+            TextButton(onClick = { s.noteTextEditId = null; s.selectedNoteId = null }) { Text(L("تم", "Done")) }
         }
-    }
-    if (s.noteTextEditId == id) {
-        var txt by remember(id) { mutableStateOf(n.text) }
-        AlertDialog(
-            onDismissRequest = { s.noteTextEditId = null },
-            title = { Text(L("نص الملاحظة", "Note text")) },
-            text = {
-                OutlinedTextField(
-                    value = txt, onValueChange = { txt = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
-                    placeholder = { Text(L("اكتب هنا…", "Type here…")) }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    s.editNote(id) { it.copy(text = txt.trimEnd()) }
-                    s.noteTextEditId = null
-                }) { Text(L("حفظ", "Save")) }
-            },
-            dismissButton = { TextButton(onClick = { s.noteTextEditId = null }) { Text(L("إلغاء", "Cancel")) } }
-        )
     }
     if (authorDialog) {
         var name by remember { mutableStateOf(PenPrefs.author) }
@@ -339,5 +322,28 @@ fun newStickyAt(page: Int, nx: Float, ny: Float, pageH: Float): StickyNote {
     return StickyNote(
         id = UUID.randomUUID().toString(), page = page, x = x, y = y, w = size, h = size,
         color = PenPrefs.stickyColor, style = PenPrefs.stickyStyle, author = PenPrefs.author
+    )
+}
+
+
+/** محرر نص داخل الملاحظة: يفتح لوحة المفاتيح مباشرة، والتعديل كله خطوة تراجع واحدة. */
+@Composable
+private fun NoteTextEditor(s: DocSession, n: StickyNote, fs: androidx.compose.ui.unit.TextUnit, color: Color, modifier: Modifier) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var value by remember(n.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(n.text, androidx.compose.ui.text.TextRange(n.text.length))) }
+    androidx.compose.runtime.DisposableEffect(n.id) {
+        s.beginEdit()
+        onDispose { s.endEdit() }
+    }
+    androidx.compose.runtime.LaunchedEffect(n.id) { focus.requestFocus() }
+    androidx.compose.foundation.text.BasicTextField(
+        value = value,
+        onValueChange = { v ->
+            value = v
+            s.updateNote(n.id) { it.copy(text = v.text) }
+        },
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = fs, lineHeight = fs * 1.3f, color = color),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(Palette.Navy),
+        modifier = modifier.focusRequester(focus)
     )
 }

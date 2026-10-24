@@ -3000,6 +3000,7 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dra
     val resize = sel != null && hypot(nx - (sel.x + sel.w), ny - (sel.y + sel.h)) < corner
     val target = if (resize) sel else session.noteAt(page, nx, ny, includeCollapsed = true)
     if (target == null) {
+        session.noteTextEditId = null
         if (session.selectedNoteId != null) session.selectedNoteId = null
         return false
     }

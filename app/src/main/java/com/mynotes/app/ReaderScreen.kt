@@ -793,11 +793,24 @@ private fun PenBar() {
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf(Tool.FOUNTAIN, Tool.BALLPOINT, Tool.BRUSH, Tool.PENCIL, Tool.HIGHLIGHTER).forEach { pt ->
+                // قلم واحد (حبر/جاف/فرشاة يُبدَّل بينها من إعداداته)، ثم الرصاص والهايلايتر.
+                // نقرة ثانية على الأداة المختارة تفتح إعداداتها تحتها مباشرة.
+                val inkPen = if (t in InkPens) t else PenPrefs.inkPen
+                listOf(inkPen, Tool.PENCIL, Tool.HIGHLIGHTER).forEach { pt ->
                     val sel = pt == t
-                    // نقرة ثانية على القلم المختار تفتح إعداداته
-                    TBtn(selected = sel, onClick = { if (sel) more = true else c.selectTool(pt) }) {
-                        ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
+                    Box {
+                        TBtn(selected = sel, onClick = { if (sel) more = true else c.selectTool(pt) }) {
+                            ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
+                        }
+                        DropdownMenu(
+                            expanded = more && sel,
+                            onDismissRequest = { more = false },
+                            shape = RoundedCornerShape(18.dp),
+                            containerColor = Color.White,
+                            shadowElevation = 12.dp
+                        ) {
+                            ToolSettingsPanel(onCustomColor = { more = false; picker = true })
+                        }
                     }
                 }
                 ToolbarSep()
@@ -842,18 +855,6 @@ private fun PenBar() {
                 ToolbarSep()
                 SizeSlots(t)
                 ToolbarSep()
-                // إعدادات الأداة تُفتح بنقرة ثانية على القلم المختار (القائمة تظهر هنا)
-                Box {
-                    DropdownMenu(
-                        expanded = more,
-                        onDismissRequest = { more = false },
-                        shape = RoundedCornerShape(18.dp),
-                        containerColor = Color.White,
-                        shadowElevation = 12.dp
-                    ) {
-                        ToolSettingsPanel(onCustomColor = { more = false; picker = true })
-                    }
-                }
                 TBtn(onClick = { c.penBarOpen = false }) {
                     PhIcon(R.drawable.ph_caret_up, Palette.TextSecondary, 20.dp, L("إخفاء شريط الأقلام", "Hide pen bar"))
                 }
@@ -888,6 +889,17 @@ private fun BarToggle(label: String, on: Boolean, onClick: () -> Unit) {
         }
         Text(label, fontSize = 12.sp, color = if (on) Color.White else Palette.TextPrimary, maxLines = 1)
     }
+}
+
+/** أنواع القلم التي تُبدَّل من تبويب واحد (الرصاص منفصل). */
+val InkPens = listOf(Tool.FOUNTAIN, Tool.BALLPOINT, Tool.BRUSH)
+
+/** اسم قصير لتبويب نوع القلم. */
+private fun penShortName(t: Tool): String = when (t) {
+    Tool.FOUNTAIN -> L("حبر", "Fountain")
+    Tool.BALLPOINT -> L("جاف", "Ballpoint")
+    Tool.BRUSH -> L("فرشاة", "Brush")
+    else -> toolName(t)
 }
 
 private fun toolName(t: Tool): String = when (t) {
@@ -944,9 +956,11 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
 
-        if (t.isPen()) {
+        // شريط الأقلام: الرصاص زر مستقل؛ الشريط الكلاسيكي: الرصاص ضمن الأنواع
+        val penTypes = if (c.toolbarStyle == ToolbarStyle.PEN_BAR) InkPens else InkPens + Tool.PENCIL
+        if (t in penTypes) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(Tool.FOUNTAIN, Tool.BALLPOINT, Tool.BRUSH, Tool.PENCIL).forEach { pt ->
+                penTypes.forEach { pt ->
                     val sel = pt == t
                     val shape = RoundedCornerShape(10.dp)
                     Column(
@@ -957,7 +971,7 @@ private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         PhIcon(toolIcon(pt, sel), if (sel) Color.White else Palette.TextPrimary, 18.dp)
-                        Text(toolName(pt), fontSize = 10.sp, maxLines = 1, color = if (sel) Color.White else Palette.TextPrimary)
+                        Text(penShortName(pt), fontSize = 11.sp, maxLines = 1, softWrap = false, color = if (sel) Color.White else Palette.TextPrimary)
                     }
                 }
             }

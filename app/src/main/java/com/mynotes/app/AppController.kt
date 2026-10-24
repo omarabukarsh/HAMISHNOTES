@@ -233,6 +233,7 @@ object AppController {
     fun selectTool(t: Tool) {
         lassoActive = false
         PenPrefs.shapeActive = false
+        PenPrefs.noteInkPen(t)
         tool = t
         if (t.isPen()) lastPen = t
         if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t

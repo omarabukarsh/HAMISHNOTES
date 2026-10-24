@@ -74,11 +74,20 @@ object PenPrefs {
     fun changeStickyStyle(v: Int) { stickyStyle = v; put("sticky_style", v) }
     fun changeAuthor(v: String) { author = v; put("author", v) }
 
+    /** آخر نوع قلم (حبر/جاف/فرشاة) يظهر في زر القلم. */
+    var inkPen by mutableStateOf(Tool.FOUNTAIN)
+        private set
+
+    fun noteInkPen(t: Tool) {
+        if (t == Tool.FOUNTAIN || t == Tool.BALLPOINT || t == Tool.BRUSH) { inkPen = t; put("ink_pen", t.name) }
+    }
+
     fun init(ctx: Context) {
         sp = ctx.getSharedPreferences("mynotes_pens", Context.MODE_PRIVATE)
         stickyColor = sp.getInt("sticky_color", 0xFFF6B3B5.toInt())
         stickyStyle = sp.getInt("sticky_style", 0)
         author = sp.getString("author", "") ?: ""
+        inkPen = try { Tool.valueOf(sp.getString("ink_pen", "FOUNTAIN")!!) } catch (t: Throwable) { Tool.FOUNTAIN }
         lineStyle = sp.getInt("line_style", 0)
         sharpness = sp.getFloat("sharpness", 0.25f)
         pressure = sp.getFloat("pressure", 0.5f)

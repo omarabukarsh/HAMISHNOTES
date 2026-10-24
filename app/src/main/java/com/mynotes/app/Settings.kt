@@ -294,6 +294,15 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             }
         }
     }
+    if (toolbarOpen) ToolbarCustomizeDialog(
+        onInfo = { id -> toolbarOpen = false; showTour(id) },
+        onDismiss = { toolbarOpen = false }
+    )
+    if (templateOpen) TemplatePickerDialog(
+        mode = PickerMode.DEFAULT,
+        onDismiss = { templateOpen = false },
+        onConfirm = { _, _, _ -> templateOpen = false; templateVer++ }
+    )
 }
 
 /** إن لم يعمل النقر المزدوج تلقائيًا: يتعلّم التطبيق الإشارة التي يرسلها القلم. */
@@ -330,15 +339,6 @@ private fun PenKeyLearnRow() {
             }
         }
     }
-    if (toolbarOpen) ToolbarCustomizeDialog(
-        onInfo = { id -> toolbarOpen = false; showTour(id) },
-        onDismiss = { toolbarOpen = false }
-    )
-    if (templateOpen) TemplatePickerDialog(
-        mode = PickerMode.DEFAULT,
-        onDismiss = { templateOpen = false },
-        onConfirm = { _, _, _ -> templateOpen = false; templateVer++ }
-    )
 }
 
 /** نافذة «تخصيص شريط الأدوات»: الشكل، الأدوات الأساسية، والأدوات التي تُضاف أو تُخفى. */

@@ -73,7 +73,7 @@ class StudyWidget : AppWidgetProvider() {
             } catch (t: Throwable) {
                 null
             }
-            v.setTextViewText(R.id.w_open, if (last != null) L("متابعة: ", "Continue: ") + last.name else L("فتح MyNotes Pro", "Open MyNotes Pro"))
+            v.setTextViewText(R.id.w_open, if (last != null) L("متابعة: ", "Continue: ") + last.name else L("فتح HAMISH PRO", "Open HAMISH PRO"))
 
             val open = PendingIntent.getActivity(
                 context, 9,

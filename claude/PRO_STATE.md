@@ -13,7 +13,7 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 
 ## Branch and identity
 
-- Branch pro. Merges of feature/premium-ui into pro: f858071 (2026-10-23), 80ea49a (2026-10-24). On merge keep: label «MyNotes Pro» (no «هامش / Hamish»), AI settings section, summaryAiMode, Pro comments, and the Pro UI removals below.
+- Branch pro. Merges of feature/premium-ui into pro: f858071 (2026-10-23), 80ea49a (2026-10-24). On merge keep: label «HAMISH PRO» (user, 2026-10-29: launcher label + visible "MyNotes Pro" texts renamed; applicationId, packages, prefs, artifact name «MyNotes-Pro» unchanged), AI settings section, summaryAiMode, Pro comments, and the Pro UI removals below.
 - applicationId com.mynotes.app.pro, versionName pro-1.0.<run>, versionCode = 100 + GITHUB_RUN_NUMBER of build.yml. Committed keystore → installs as update. Install only the «MyNotes-Pro» artifact.
 - Latest good build before the AI v4 round: #169 (8afc919), run 40127399922, artifact 12573704554.
 - Latest build: #175 (8ff6dc6 = AI v4.3 + CLAUDE.md), run 40142039055, artifact 12579770101.

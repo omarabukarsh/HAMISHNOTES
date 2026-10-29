@@ -50,8 +50,8 @@ fun LicensesDialog(onDismiss: () -> Unit) {
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Text(
-                    L("يستخدم «MyNotes Pro» المكوّنات التالية وفق تراخيصها. انقر على أي منها لقراءة نص الترخيص.",
-                        "MyNotes Pro uses the following components under their licenses. Tap one to read its license text."),
+                    L("يستخدم «HAMISH PRO» المكوّنات التالية وفق تراخيصها. انقر على أي منها لقراءة نص الترخيص.",
+                        "HAMISH PRO uses the following components under their licenses. Tap one to read its license text."),
                     fontSize = 13.sp, color = Palette.TextSecondary
                 )
                 Spacer(Modifier.height(10.dp))
@@ -92,11 +92,11 @@ fun LicensesDialog(onDismiss: () -> Unit) {
 
 /** نص سياسة الخصوصية (نفس محتوى PRIVACY_POLICY.md في المستودع). */
 fun privacyText(): String = L(
-    """سياسة الخصوصية — MyNotes Pro
+    """سياسة الخصوصية — HAMISH PRO
 
 آخر تحديث: أكتوبر 2026
 
-• ملفاتك تبقى على جهازك: ملفات PDF والكتابة والتمييز والملخصات والتسجيلات الصوتية تُحفظ داخل التطبيق على جهازك فقط. لا يرسل «MyNotes Pro» ملفاتك أو ملاحظاتك إلى أي خادم، ولا يملك المطوّر أي خادم يجمع بياناتك.
+• ملفاتك تبقى على جهازك: ملفات PDF والكتابة والتمييز والملخصات والتسجيلات الصوتية تُحفظ داخل التطبيق على جهازك فقط. لا يرسل «HAMISH PRO» ملفاتك أو ملاحظاتك إلى أي خادم، ولا يملك المطوّر أي خادم يجمع بياناتك.
 
 • الذكاء الاصطناعي: الذكاء الاصطناعي يعمل بالكامل على جهازك دون إنترنت ولا يرسل شيئًا إلى أي جهة. الإنترنت يُستعمل فقط لتنزيل النموذج مرة واحدة.
 
@@ -115,11 +115,11 @@ fun privacyText(): String = L(
 • الأطفال: التطبيق أداة دراسة عامة ولا يجمع بيانات من أي مستخدم.
 
 للتواصل: [ضع بريدك الإلكتروني هنا]""",
-    """Privacy Policy — MyNotes Pro
+    """Privacy Policy — HAMISH PRO
 
 Last updated: October 2026
 
-• Your files stay on your device: PDFs, handwriting, highlights, summaries and audio recordings are stored inside the app on your device only. MyNotes Pro does not send your files or notes to any server, and the developer runs no server that collects your data.
+• Your files stay on your device: PDFs, handwriting, highlights, summaries and audio recordings are stored inside the app on your device only. HAMISH PRO does not send your files or notes to any server, and the developer runs no server that collects your data.
 
 • AI: the AI runs entirely on your device, offline, and sends nothing to anyone. The internet is used only to download the model once.
 
@@ -155,7 +155,7 @@ fun PrivacyDialog(onDismiss: () -> Unit) {
 
 /** نص شروط الاستخدام (نفس محتوى TERMS.md في المستودع). */
 fun termsText(): String = L(
-    """شروط الاستخدام — MyNotes Pro
+    """شروط الاستخدام — HAMISH PRO
 
 آخر تحديث: أكتوبر 2026
 
@@ -174,7 +174,7 @@ fun termsText(): String = L(
 7. قد تُحدَّث هذه الشروط؛ استمرارك في استخدام التطبيق يعني قبولك للنسخة الأحدث.
 
 للتواصل: [ضع بريدك الإلكتروني هنا]""",
-    """Terms of Use — MyNotes Pro
+    """Terms of Use — HAMISH PRO
 
 Last updated: October 2026
 

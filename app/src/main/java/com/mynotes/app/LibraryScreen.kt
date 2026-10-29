@@ -344,7 +344,7 @@ private fun Spine() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text(
-                    "MyNotes Pro", color = Palette.OnInk, fontFamily = Fonts.Display,
+                    "HAMISH PRO", color = Palette.OnInk, fontFamily = Fonts.Display,
                     fontWeight = FontWeight.Bold, fontSize = 23.sp, lineHeight = 26.sp
                 )
                 Text(L("مكتبة الدراسة", "Study library"), color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 16.sp)
@@ -875,7 +875,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onSel
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "MyNotes Pro", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                    "HAMISH PRO", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                 )
                 PomodoroControl(showStartLabel = false)

@@ -18,7 +18,7 @@
         </intent>
     </queries>
     <application
-        android:label="MyNotes Pro"
+        android:label="HAMISH PRO"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true"
         android:theme="@style/Theme.MyNotes">
@@ -84,7 +84,7 @@
         <receiver
             android:name=".StudyWidget"
             android:exported="false"
-            android:label="MyNotes Pro">
+            android:label="HAMISH PRO">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

@@ -110,6 +110,8 @@ object Fonts {
         Font(R.font.almarai_bold, FontWeight.Bold),
         Font(R.font.almarai_extrabold, FontWeight.ExtraBold)
     )
+    /** خط يدوي للنصوص الصغيرة المائلة (Caveat). */
+    val Script = FontFamily(Font(R.font.caveat_medium, FontWeight.Medium))
     val Display = FontFamily(
         Font(R.font.almarai_bold, FontWeight.Normal),
         Font(R.font.almarai_extrabold, FontWeight.Bold)

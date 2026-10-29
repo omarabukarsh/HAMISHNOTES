@@ -45,7 +45,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -284,10 +283,10 @@ fun CoverDialog(entry: DocEntry, onDismiss: () -> Unit) {
     )
 }
 
-/** نص بخط يدوي (خط الكتابة المتصلة في الجهاز) مثل «تابع من حيث توقفت». */
+/** نص بخط يدوي (Caveat) مثل «تابع من حيث توقفت». */
 @Composable
 fun ScriptLabel(text: String, color: Color = Lib.accentDeep, size: Int = 16) {
-    Text(text, fontSize = (size + 4).sp, fontFamily = FontFamily.Cursive, color = color, fontWeight = FontWeight.Medium)
+    Text(text, fontSize = (size + 4).sp, fontFamily = Fonts.Script, color = color, fontWeight = FontWeight.Medium)
 }
 
 /** رسم دفتر بعلامة حمراء وقلم أزرق لبطاقة «تابع من حيث توقفت». */

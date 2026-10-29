@@ -866,6 +866,15 @@ object AppController {
         saveSession()
     }
 
+    /** يحرّك تبويبًا إلى موضع جديد (السحب في شريط التبويبات). الحفظ عند انتهاء السحب. */
+    fun moveTab(from: Int, to: Int) {
+        if (from !in tabs.indices || to !in tabs.indices || from == to) return
+        val t = tabs.removeAt(from)
+        tabs.add(to, t)
+    }
+
+    fun commitTabOrder() = saveSession()
+
     fun closeTab(id: String) {
         val idx = tabs.indexOfFirst { it.id == id }
         if (idx < 0) return

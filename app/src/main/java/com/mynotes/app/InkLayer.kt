@@ -46,7 +46,9 @@ import kotlin.math.sqrt
 private const val MAX_W = 4096
 private const val MAX_PIXELS = 4096L * 4096L
 private const val RENDER_GAP_MS = 100L
-private const val RESIZE_DELAY_MS = 250L
+private const val RESIZE_DELAY_MS = 150L
+/** أقصى عدد خطوط يُرسم مباشرة أثناء التقريب (فوقه تبقى الصورة المكبّرة حفاظًا على السلاسة). */
+private const val MAX_LIVE_VECTOR = 400
 
 /** حجم الصورة لصفحة معروضة بحجم w×h بكسل، بحد أقصى للعرض وللعدد الكلي للبكسلات. */
 internal fun inkBitmapSize(w: Int, h: Int): IntSize {
@@ -185,8 +187,10 @@ fun InkLayer(strokes: List<Ink>, night: Boolean, modifier: Modifier = Modifier) 
         @Suppress("UNUSED_VARIABLE")
         val v = cache.version
         val img = cache.image
-        if (img == null) {
-            // قبل جهوز الصورة الأولى: الرسم المباشر كما كان
+        // الصورة أصغر من المطلوب (أثناء التقريب وقبل إعادة الرسم): نرسم الخطوط مباشرة بدل تكبير الصورة فتظهر مبكسلة
+        val stale = img != null && img.width < size.width * 0.9f && strokes.size <= MAX_LIVE_VECTOR
+        if (img == null || stale) {
+            // قبل جهوز الصورة الأولى أو أثناء التقريب: الرسم المباشر
             strokes.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
         } else {
             drawImage(

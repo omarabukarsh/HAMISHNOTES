@@ -2417,21 +2417,8 @@ private fun PageView(
                                         xB = ch.position.x
                                         yB = ch.position.y
 
-                                        val dt = (tB - tA).toFloat()
-                                        if (dt > 0f) {
-                                            var dx = (xB - xA) / dt * 14f
-                                            var dy = (yB - yA) / dt * 14f
-                                            val len = hypot(dx, dy)
-                                            val cap = w * 0.03f
-                                            if (len > cap) {
-                                                dx *= cap / len
-                                                dy *= cap / len
-                                            }
-                                            live.predX = (xB + dx) / w
-                                            live.predY = (yB + dy) / w
-                                            live.predP = pr
-                                            live.hasPred = true
-                                        }
+                                        // لا تنبؤ بموضع القلم: كان يرسم خطًا وهميًا أمام القلم يظهر ثم يختفي عند الرفع
+                                        live.hasPred = false
                                         tick++
                                         trySnapLive()
                                     }
@@ -2464,7 +2451,8 @@ private fun PageView(
                                         val shaped = snappedLive ?: if (live.tool.isPen() && PenPrefs.drawAndHold && held) {
                                             ShapeRecognizer.recognize(raw)
                                         } else null
-                                        val pts = shaped ?: PenPrefs.taper(raw, live.tool)
+                                        // بلا تدبيب عند الحفظ: الخط المحفوظ يطابق ما كان ظاهرًا أثناء الكتابة
+                                        val pts = shaped ?: raw
                                         val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
                                         if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
                                     }
@@ -2895,6 +2883,7 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
     val scope = rememberCoroutineScope()
     var dragging by remember { mutableStateOf(false) }
     var dragPage by remember { mutableStateOf(0) }
+    var dragY by remember { mutableStateOf(0f) }
     val cur = s.listState.firstVisibleItemIndex
     BoxWithConstraints(modifier.fillMaxHeight().width(150.dp)) {
         val trackH = constraints.maxHeight.toFloat()
@@ -2902,7 +2891,7 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
         val handleH = with(density) { 54.dp.toPx() }
         val shown = if (dragging) dragPage else cur
         val frac = shown / (n - 1).toFloat()
-        val y = (trackH - handleH) * frac
+        val y = if (dragging) dragY else (trackH - handleH) * frac
         // فقاعة المعاينة أثناء السحب
         if (dragging) {
             val ref = pdf.pages.getOrNull(dragPage)
@@ -2947,6 +2936,7 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
                         onDragStart = {
                             dragging = true
                             dragPage = s.listState.firstVisibleItemIndex
+                            dragY = (trackH - handleH).coerceAtLeast(1f) * (dragPage / (n - 1).toFloat())
                         },
                         onDragEnd = {
                             dragging = false
@@ -2956,8 +2946,10 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
                         onDragCancel = { dragging = false }
                     ) { change, dy ->
                         change.consume()
-                        val curY = (trackH - handleH) * (dragPage / (n - 1).toFloat()) + dy
-                        dragPage = ((curY / (trackH - handleH).coerceAtLeast(1f)) * (n - 1)).roundToInt().coerceIn(0, n - 1)
+                        // موضع عشري متراكم: كانت الإزاحات الصغيرة تُقرَّب إلى صفر فيتوقف المقبض ثم يقفز
+                        val range = (trackH - handleH).coerceAtLeast(1f)
+                        dragY = (dragY + dy).coerceIn(0f, range)
+                        dragPage = ((dragY / range) * (n - 1)).roundToInt().coerceIn(0, n - 1)
                     }
                 }
         )

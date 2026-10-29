@@ -108,9 +108,13 @@ object Exporter {
         snap: Snapshot,
         fileFor: (String) -> java.io.File?,
         uri: Uri,
-        onPage: (Int) -> Unit
+        onPage: (Int) -> Unit,
+        /** بيانات النسخة القابلة للتعديل (null = نسخة نهائية). */
+        editableData: String? = null,
+        editableImages: List<java.io.File> = emptyList()
     ): Int {
         val out = com.tom_roush.pdfbox.pdmodel.PDDocument()
+        val counts = ArrayList<Int>()
         val sources = HashMap<String, com.tom_roush.pdfbox.pdmodel.PDDocument>()
         try {
             snap.pages.forEachIndexed { i, ref ->
@@ -148,8 +152,10 @@ object Exporter {
                         bmp.recycle()
                     }
                 }
+                counts.add(EditablePdf.contentCount(page))
                 drawOverlay(out, page, snap, i)
             }
+            if (editableData != null) EditablePdf.embed(out, editableData, counts, editableImages)
             val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
             os.use { out.save(it) }
             return snap.pages.size

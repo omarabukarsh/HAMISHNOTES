@@ -37,11 +37,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -63,15 +63,32 @@ fun studyStreak(): Int {
 
 /** حلقة صغيرة لتقدم هدف اليوم. */
 @Composable
-fun GoalRing(size: Dp = 34.dp, stroke: Dp = 4.dp, track: Color = Palette.Divider) {
+fun GoalRing(size: Dp = 34.dp, stroke: Dp = 4.dp, track: Color = Palette.Divider, flame: Boolean = false) {
     val goal = AppController.goalMinutes * 60_000L
     val frac = (dayMs(LocalDate.now()).toFloat() / goal).coerceIn(0f, 1f)
+    val flamePath = remember {
+        androidx.compose.ui.graphics.vector.PathParser()
+            .parsePathString("M12,2C12,2 18,7 18,13.5A6,6 0 0 1 6,13.5C6,11 7.2,9.4 8.4,8.2C8.6,9.8 9.4,10.8 10.4,10.8C10.4,7.4 11.6,5 12,2Z")
+            .toPath()
+    }
     Canvas(Modifier.size(size)) {
         val sw = stroke.toPx()
         val r = Size(this.size.width - sw, this.size.height - sw)
         val o = Offset(sw / 2f, sw / 2f)
         drawArc(track, 0f, 360f, false, o, r, style = Stroke(sw))
         drawArc(Palette.Gold, -90f, 360f * frac, false, o, r, style = Stroke(sw, cap = StrokeCap.Round))
+        if (flame) {
+            // لهب صغير في وسط الحلقة (السلسلة اليومية)
+            val k = this.size.width * 0.46f / 24f
+            val off = (this.size.width - 24f * k) / 2f
+            withTransform({
+                translate(off, off + this.size.width * 0.02f)
+                scale(k, k, pivot = Offset.Zero)
+            }) {
+                drawPath(flamePath, Color(0xFFE8864A))
+                drawPath(flamePath, Color(0xFFC45F2A), style = Stroke(1.4f, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+        }
     }
 }
 
@@ -263,7 +280,7 @@ private fun GoalDialog(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Uni
     var hours by remember { mutableStateOf((current / 60).toString()) }
     var minutes by remember { mutableStateOf((current % 60).toString()) }
     val total = (hours.toIntOrNull() ?: 0) * 60 + (minutes.toIntOrNull() ?: 0)
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(L("الهدف اليومي", "Daily goal")) },
         text = {

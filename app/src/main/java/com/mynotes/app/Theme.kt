@@ -37,11 +37,11 @@ object Palette {
     // الكحلي
     val Navy = Color(0xFF1B365D)
     /** كعب المجلد: شريط التبويبات (وفي الكحلي الشريط الجانبي أيضًا). */
-    val Ink: Color get() = if (ThemeState.light) Color(0xFFE4E9F0) else Color(0xFF13233B)
+    val Ink: Color get() = if (ThemeState.light) Color(0xFFE4E9F0) else Color(0xFF000000)
     /** الشريط الجانبي للمكتبة. */
-    val Spine: Color get() = if (ThemeState.light) Color.White else Color(0xFF13233B)
-    val InkRaised: Color get() = if (ThemeState.light) Color(0xFFE8EDF5) else Color(0xFF1E3250)
-    val InkLine: Color get() = if (ThemeState.light) Color(0xFFE2E6EC) else Color(0xFF2A4064)
+    val Spine: Color get() = if (ThemeState.light) Color.White else Color(0xFF0A0A0A)
+    val InkRaised: Color get() = if (ThemeState.light) Color(0xFFE8EDF5) else Color(0xFF1C1C1C)
+    val InkLine: Color get() = if (ThemeState.light) Color(0xFFE2E6EC) else Color(0xFF262626)
     val NavySoft = Color(0xFFE8EDF5)
 
     // الذهبي
@@ -60,17 +60,43 @@ object Palette {
     val ReaderBackground = Color(0xFFD9DEE5)
     val TabBar: Color get() = Ink
     /** خلفية شريط التبويبات: أغمق من الشريط الجانبي للمكتبة كي يظهر التبويب النشط متصلًا بما تحته. */
-    val TabRail: Color get() = if (ThemeState.light) Color(0xFFD3DAE4) else Color(0xFF0A1424)
+    val TabRail: Color get() = if (ThemeState.light) Color(0xFFD3DAE4) else Color(0xFF000000)
     /** التبويبات غير النشطة: لون ثالث واضح بين الشريط والتبويب النشط. */
-    val TabIdle: Color get() = if (ThemeState.light) Color(0xFFB9C4D3) else Color(0xFF2A3F5F)
+    val TabIdle: Color get() = if (ThemeState.light) Color(0xFFB9C4D3) else Color(0xFF1F1F1F)
 
     // النص
     val TextPrimary = Color(0xFF1A2230)
     val TextSecondary = Color(0xFF667085)
-    val OnInk: Color get() = if (ThemeState.light) Color(0xFF1A2230) else Color(0xFFEDE6D4)
-    val OnInkMuted: Color get() = if (ThemeState.light) Color(0xFF667085) else Color(0xFF94A2B8)
+    val OnInk: Color get() = if (ThemeState.light) Color(0xFF1A2230) else Color(0xFFF2F2F2)
+    val OnInkMuted: Color get() = if (ThemeState.light) Color(0xFF667085) else Color(0xFF9A9A9A)
 
     val Danger = Color(0xFFB3261E)
+}
+
+/**
+ * ألوان المكتبة: فاتح كريمي دافئ، أو داكن أسود تمامًا (يوفّر البطارية في شاشات OLED).
+ */
+object Lib {
+    private val L get() = ThemeState.light
+    val bg: Color get() = if (L) Color(0xFFFAF4E6) else Color(0xFF000000)
+    val side: Color get() = if (L) Color(0xFFFFFEFB) else Color(0xFF0A0A0A)
+    val card: Color get() = if (L) Color.White else Color(0xFF141414)
+    val text: Color get() = if (L) Color(0xFF1E2A44) else Color(0xFFF2F2F2)
+    val muted: Color get() = if (L) Color(0xFF6B7280) else Color(0xFF9A9A9A)
+    val line: Color get() = if (L) Color(0xFFEADFC8) else Color(0xFF262626)
+    val accent = Color(0xFFF4C95D)
+    val accentDeep = Color(0xFFB8860B)
+    val accentSoft: Color get() = if (L) Color(0xFFFCEBC2) else Color(0xFF2B2410)
+    val resume: Color get() = if (L) Color(0xFFFCEBBE) else Color(0xFF17140A)
+    /** الزر الرئيسي الداكن (في الوضع الداكن يصبح فاتحًا). */
+    val strong: Color get() = if (L) Color(0xFF1E2A44) else Color(0xFFF2F2F2)
+    val onStrong: Color get() = if (L) Color.White else Color(0xFF000000)
+    val exam = Color(0xFFB0413E)
+    /** أيقونات القائمة الجانبية الملوّنة (الكتب والنجمة). */
+    val iconBlue: Color get() = if (L) Color(0xFF2F4B7C) else Color(0xFF8FA8D6)
+    val study: Color get() = if (L) Color(0xFFEEF2F9) else Color(0xFF10141C)
+    /** لون غلاف الدفتر الافتراضي. */
+    val cover = Color(0xFF2F4B7C)
 }
 
 /**
@@ -84,6 +110,8 @@ object Fonts {
         Font(R.font.almarai_bold, FontWeight.Bold),
         Font(R.font.almarai_extrabold, FontWeight.ExtraBold)
     )
+    /** خط يدوي للنصوص الصغيرة المائلة (Caveat). */
+    val Script = FontFamily(Font(R.font.caveat_medium, FontWeight.Medium))
     val Display = FontFamily(
         Font(R.font.almarai_bold, FontWeight.Normal),
         Font(R.font.almarai_extrabold, FontWeight.Bold)

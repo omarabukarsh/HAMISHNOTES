@@ -7,9 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
@@ -74,8 +72,16 @@ const val PAGES_PANEL_W = 300
 fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     val c = AppController
     val scope = rememberCoroutineScope()
-    val gridState = rememberLazyGridState()
     val cur = s.listState.firstVisibleItemIndex
+    // يفتح الدرج عند الصفحة المعروضة لا من البداية
+    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = (cur - 2).coerceAtLeast(0))
+    var tabForFollow by remember { mutableStateOf(0) }
+    // تقليب صفحات المستند والدرج مفتوح: تبقى صورة الصفحة الحالية ظاهرة في الدرج
+    androidx.compose.runtime.LaunchedEffect(cur, tabForFollow) {
+        if (tabForFollow != 0) return@LaunchedEffect
+        val vis = gridState.layoutInfo.visibleItemsInfo
+        if (vis.isEmpty() || vis.none { it.index == cur }) gridState.animateScrollToItem((cur - 2).coerceAtLeast(0))
+    }
     var tab by remember { mutableStateOf(0) } // 0 الصفحات، 1 الفهرس، 2 العلامات، 3 التسجيلات
     var cols by remember { mutableStateOf(2) }
     var selecting by remember { mutableStateOf(false) }
@@ -118,6 +124,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                                 .background(if (on) Color.White else Color.Transparent)
                                 .clickable {
                                     tab = k
+                                    tabForFollow = k
                                     if (k != 0) { selecting = false; picked.clear() }
                                 },
                             contentAlignment = Alignment.Center

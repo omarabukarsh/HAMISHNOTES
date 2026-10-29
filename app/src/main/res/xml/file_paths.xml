@@ -2,4 +2,6 @@
 <paths>
     <!-- نسخ مؤقتة من عروض الباوربوينت تُرسل إلى أداة التحويل -->
     <cache-path name="convert" path="convert/" />
+    <!-- ملفات PDF مؤقتة للمشاركة (تلغرام، واتساب…) -->
+    <cache-path name="share" path="share/" />
 </paths>

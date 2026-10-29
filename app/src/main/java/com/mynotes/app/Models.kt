@@ -225,7 +225,11 @@ data class DocEntry(
     /** المادة (المجلد) التي ينتمي إليها المستند؛ فارغ = بدون مادة. */
     val folder: String = "",
     /** مستند مقفل برمز أو بصمة. */
-    val locked: Boolean = false
+    val locked: Boolean = false,
+    /** لون غلاف الدفتر في المكتبة (ARGB)؛ 0 = اللون الافتراضي. */
+    val coverColor: Int = 0,
+    /** ملصق على الغلاف (رمز تعبيري)؛ فارغ = بدون. */
+    val sticker: String = ""
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

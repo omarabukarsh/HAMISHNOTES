@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +31,7 @@ private val ossItems = listOf(
     OssItem("Kotlin, kotlinx.coroutines", "JetBrains s.r.o.", "Apache License 2.0", "apache-2.0.txt"),
     OssItem("PdfBox-Android (based on Apache PDFBox)", "Tom Roush; The Apache Software Foundation", "Apache License 2.0", "apache-2.0.txt"),
     OssItem("Almarai font", "Boutros Fonts", "SIL Open Font License 1.1", "ofl-1.1.txt"),
+    OssItem("Caveat font", "The Caveat Project Authors", "SIL Open Font License 1.1", "ofl-caveat.txt"),
     OssItem("Phosphor Icons", "Phosphor Icons", "MIT License", "mit-phosphor.txt"),
     OssItem(
         "Google ML Kit (text recognition, translation, digital ink recognition)", "Google LLC",

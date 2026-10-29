@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,10 +40,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.zIndex
+import kotlin.math.abs
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -219,6 +229,11 @@ private fun TabBar() {
     // الشريط أغمق، والتبويبات الأخرى بلون ثالث واضح فيظهر التباين.
     val libraryActive = c.activeId == null
     val activeBg = if (libraryActive) Palette.Spine else Palette.Desk
+    // ترتيب التبويبات: ضغط مطوّل ثم سحب أفقي
+    var dragId by remember { mutableStateOf<String?>(null) }
+    var dragDx by remember { mutableStateOf(0f) }
+    val widths = remember { mutableMapOf<String, Int>() }
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Row(
         Modifier.fillMaxWidth().background(Palette.TabRail)
             .horizontalScroll(rememberScrollState())
@@ -236,13 +251,43 @@ private fun TabBar() {
         )
         c.tabs.forEach { s ->
             key(s.id) {
+                val dragging = dragId == s.id
                 TabItem(
                     title = s.title,
                     active = c.activeId == s.id,
                     home = false,
                     activeBg = activeBg,
                     onClick = { c.activate(s.id) },
-                    onClose = { c.closeTab(s.id) }
+                    onClose = { c.closeTab(s.id) },
+                    modifier = Modifier
+                        .onSizeChanged { widths[s.id] = it.width }
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer {
+                            translationX = if (dragging) dragDx else 0f
+                            val sc = if (dragging) 1.05f else 1f
+                            scaleX = sc
+                            scaleY = sc
+                            alpha = if (dragging) 0.92f else 1f
+                        }
+                        .pointerInput(s.id) {
+                            val gap = 4.dp.toPx()
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { dragId = s.id; dragDx = 0f },
+                                onDragEnd = { dragId = null; dragDx = 0f; c.commitTabOrder() },
+                                onDragCancel = { dragId = null; dragDx = 0f; c.commitTabOrder() }
+                            ) { change, amount ->
+                                change.consume()
+                                dragDx += amount.x
+                                val idx = c.tabs.indexOfFirst { it.id == s.id }
+                                val dir = if (dragDx > 0f) 1 else -1
+                                val nIdx = idx + (if (rtl) -dir else dir)
+                                val nw = c.tabs.getOrNull(nIdx)?.let { widths[it.id] } ?: 0
+                                if (idx >= 0 && nw > 0 && abs(dragDx) > nw / 2f) {
+                                    c.moveTab(idx, nIdx)
+                                    dragDx -= dir * (nw + gap)
+                                }
+                            }
+                        }
                 )
             }
         }
@@ -257,7 +302,8 @@ private fun TabItem(
     home: Boolean,
     activeBg: Color,
     onClick: () -> Unit,
-    onClose: (() -> Unit)?
+    onClose: (() -> Unit)?,
+    modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
     // لون النص حسب خلفية التبويب (داكنة أو فاتحة)
@@ -265,7 +311,7 @@ private fun TabItem(
     val darkBg = bg.luminance() < 0.4f
     val fg = if (darkBg) Color(0xFFEDE6D4) else Palette.Navy
     val fgMuted = if (darkBg) Color(0xFFB4BFD0) else Palette.TextSecondary
-    Column(Modifier.width(IntrinsicSize.Max)) {
+    Column(modifier.width(IntrinsicSize.Max)) {
         Row(
             Modifier.height(if (active) 40.dp else 36.dp)
                 .clip(shape)

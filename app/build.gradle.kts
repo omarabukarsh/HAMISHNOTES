@@ -38,6 +38,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // مكتبات arm64 فقط (جهاز المستخدم وكل الأجهزة الحديثة): حجم أصغر بكثير. نسخة debug تبقى لكل المعالجات (المحاكي).
+            ndk { abiFilters += "arm64-v8a" }
         }
     }
     lint { checkReleaseBuilds = false }

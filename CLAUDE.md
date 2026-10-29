@@ -10,7 +10,7 @@ Read `claude/PRO_STATE.md` first (project state, history, pitfalls) and check `g
 - AI features must work for any subject and any file type (Arabic and English), not only pharmacy and not tuned to one file.
 - For big changes: read the code first, send a plan in Arabic (problems found, improvements by priority, files, speed impact on the device, how it will be verified, risks) and wait for «نفّذ».
 - Priority: accuracy of summaries first, speed second.
-- Answer the user in Arabic.
+- Answer the user in Arabic, VERY short (user, 2026-10-29): a few lines, no long explanations.
 
 ## After every push to `pro`
 - Wait for **Build APK** to succeed, then give the direct link:

@@ -70,6 +70,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.SideEffect
@@ -122,7 +123,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -146,6 +149,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -1308,6 +1314,7 @@ private fun Modifier.multiFingerTap(onTwo: () -> Unit, onThree: () -> Unit): Mod
 private fun Modifier.zoomAndPan(
     zoomed: () -> Boolean,
     onPinch: (Float, Offset, Offset) -> Unit,
+    onPinchEnd: () -> Unit,
     onPanX: (Float) -> Unit
 ): Modifier = pointerInput(Unit) {
     awaitEachGesture {
@@ -1316,12 +1323,14 @@ private fun Modifier.zoomAndPan(
         var prevCentroid = Offset.Zero
         var mode = 0 // 0 غير محدد، 1 سحب أفقي، 2 تمرير رأسي، 3 قرصة
         var total = Offset.Zero
+        var pinching = false
         do {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val stylusDown = event.changes.any { it.pressed && it.type != PointerType.Touch }
             val touches = event.changes.filter { it.pressed && it.type == PointerType.Touch }
             if (!stylusDown && touches.size >= 2) {
                 mode = 3
+                pinching = true
                 val c = (touches[0].position + touches[1].position) / 2f
                 val d = (touches[0].position - touches[1].position).getDistance()
                 if (prevDist > 0f && d > 0f) onPinch(d / prevDist, prevCentroid, c)
@@ -1330,6 +1339,11 @@ private fun Modifier.zoomAndPan(
                 touches.forEach { it.consume() }
             } else {
                 prevDist = 0f
+                // انتهت القرصة (رُفع أحد الإصبعين): يُطبَّق التكبير الحقيقي مرة واحدة
+                if (pinching) {
+                    pinching = false
+                    onPinchEnd()
+                }
                 if (!stylusDown && touches.size == 1 && mode != 3 && zoomed()) {
                     val t = touches[0]
                     val delta = t.positionChange()
@@ -1344,6 +1358,7 @@ private fun Modifier.zoomAndPan(
                 }
             }
         } while (event.changes.any { it.pressed })
+        if (pinching) onPinchEnd()
     }
 }
 
@@ -1407,9 +1422,36 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             scope.launch(start = CoroutineStart.UNDISPATCHED) { s.listState.scrollToItem(q, off) }
         }
 
+        /**
+         * القرصة الجارية تُعرض بطبقة رسم فقط (بلا إعادة ترتيب الصفحات أو رسمها):
+         * موضع الشاشة = موضع المحتوى × pinchK + (pinchTx, pinchTy). عند انتهائها تُطبَّق مرة واحدة.
+         */
+        var pinchK by remember { mutableStateOf(1f) }
+        var pinchTx by remember { mutableStateOf(0f) }
+        var pinchTy by remember { mutableStateOf(0f) }
+        fun pinch(rIn: Float, prev: Offset, now: Offset) {
+            val k1 = (pinchK * rIn).coerceIn(MIN_SCALE / s.scale, 4f / s.scale)
+            val r = k1 / pinchK
+            pinchTx = r * (pinchTx - prev.x) + now.x
+            pinchTy = r * (pinchTy - prev.y) + now.y
+            pinchK = k1
+        }
+        fun endPinch() {
+            val k = pinchK
+            if (abs(k - 1f) > 0.001f) {
+                // نقطة المحتوى الظاهرة في وسط الشاشة تبقى في وسطها بعد التطبيق
+                val c = Offset(vw / 2f, vh / 2f)
+                val src = Offset((c.x - pinchTx) / k, (c.y - pinchTy) / k)
+                applyZoom(k, src, c)
+            }
+            pinchK = 1f
+            pinchTx = 0f
+            pinchTy = 0f
+        }
         val zoomFn = rememberUpdatedState<(Float, Offset, Offset) -> Unit>(
-            { r, a, b -> applyZoom(r, a, b) }
+            { r, a, b -> pinch(r, a, b) }
         )
+        val pinchEndFn = rememberUpdatedState({ endPinch() })
         val panFn = rememberUpdatedState<(Float) -> Unit>(
             { dx -> s.panX = (s.panX - dx).coerceIn(0f, vw * (s.scale - 1f)) }
         )
@@ -1491,12 +1533,19 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             ).zoomAndPan(
                 zoomed = { s.scale > 1.01f },
                 onPinch = { r, a, b -> zoomFn.value(r, a, b) },
+                onPinchEnd = { pinchEndFn.value() },
                 onPanX = { dx -> panFn.value(dx) }
             )
         ) {
             LazyColumn(
                 state = s.listState,
-                modifier = Modifier.layout { measurable, constraints ->
+                modifier = Modifier.graphicsLayer {
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                    scaleX = pinchK
+                    scaleY = pinchK
+                    translationX = pinchTx
+                    translationY = pinchTy
+                }.layout { measurable, constraints ->
                     val w = (constraints.maxWidth * s.scale).roundToInt().coerceAtLeast(1)
                     val placeable = measurable.measure(Constraints.fixed(w, constraints.maxHeight))
                     layout(constraints.maxWidth, constraints.maxHeight) {
@@ -1899,6 +1948,15 @@ private fun PageView(
     val eraserCursor = remember { arrayOfNulls<Offset>(1) }
     val eraserR = remember { floatArrayOf(0f) }
     val livePts = remember { ArrayList<Pt>() }
+    /** الخط الحي مرسومًا تراكميًا (LiveInk.kt)، ورقم الخط الحالي. */
+    val liveRaster = remember { LiveInkRaster() }
+    val liveGen = remember { intArrayOf(0) }
+    DisposableEffect(liveRaster) { onDispose { liveRaster.release() } }
+    /** خطوط رُفع القلم عنها ولم تظهر بعد في صورة الخطوط: تبقى مرسومة هنا حتى تظهر هناك. */
+    val pendingInk = remember { ArrayList<Ink>() }
+    val strokesNow by rememberUpdatedState(strokes)
+    /** الجزء الظاهر من الصفحة على الشاشة بإحداثياتها (بالبكسل). */
+    val visRect = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val laser = remember { ArrayList<LaserPt>() }
     val lz = remember { LaserState() }
     var laserOn by remember { mutableStateOf(false) }
@@ -1942,6 +2000,11 @@ private fun PageView(
     Box(
         Modifier.fillMaxWidth().aspectRatio(ratio)
             .onSizeChanged { wPx = it.width }
+            .onGloballyPositioned { co ->
+                val b = co.boundsInWindow()
+                visRect.value = if (b.isEmpty) androidx.compose.ui.geometry.Rect.Zero
+                else androidx.compose.ui.geometry.Rect(co.windowToLocal(b.topLeft), co.windowToLocal(b.bottomRight))
+            }
             .shadow(6.dp, paper)
             .background(if (night) nightOf(paperColor) else paperColor)
     ) {
@@ -1956,6 +2019,8 @@ private fun PageView(
                 colorFilter = if (night) ColorFilter.colorMatrix(ColorMatrix(NightMatrix)) else null
             )
         }
+        // التكبير الكبير: الجزء الظاهر بدقة الشاشة فوق صورة الصفحة
+        PdfSharpPatch(pdf, ref, wPx, ratio, visRect, night)
 
         // التمييز الملتقط: يُرسم بمزج «ضرب» فوق صورة الصفحة فيبدو خلف النص والنص واضح فوقه
         if (pageMarks.isNotEmpty()) {
@@ -2122,7 +2187,14 @@ private fun PageView(
         }
 
         // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
-        InkLayer(strokes, night, Modifier.fillMaxSize())
+        InkLayer("${session.id}:$index", strokes, night, visRect, Modifier.fillMaxSize()) { drawnLists ->
+            if (pendingInk.isNotEmpty()) {
+                val cur = strokesNow
+                val before = pendingInk.size
+                pendingInk.removeAll { p -> drawnLists.all { l -> l.any { it === p } } || cur.none { it === p } }
+                if (pendingInk.size != before) tick++
+            }
+        }
         // الملاحظات اللاصقة فوق الكتابة
         NotesLayer(session, index, night)
 
@@ -2330,6 +2402,7 @@ private fun PageView(
                                 eraserR[0] = eraseR
                                 tick++
                             } else {
+                                liveGen[0]++
                                 livePts.add(Pt(down.position.x / w, down.position.y / w, pressureOf(down)))
                                 tick++
                             }
@@ -2362,9 +2435,13 @@ private fun PageView(
 
                             // «ارسم وأبقِ»: بعد ثباته لحظة يتحول الرسم إلى شكل وهو ما زال على الشاشة
                             var snappedLive: List<Pt>? = null
+                            /** آخر توقف جُرّب عنده التعرف على الشكل (مرة واحدة لكل توقف، لا مع كل حدث). */
+                            var snapTriedAt = -1L
                             fun trySnapLive() {
                                 if (snappedLive != null || erasing || !live.tool.isPen() || !PenPrefs.drawAndHold) return
                                 if (System.currentTimeMillis() - lastMoveAt < 450L || livePts.size < 3) return
+                                if (snapTriedAt == lastMoveAt) return
+                                snapTriedAt = lastMoveAt
                                 val shape = ShapeRecognizer.recognize(livePts.toList()) ?: return
                                 snappedLive = shape
                                 livePts.clear()
@@ -2443,7 +2520,10 @@ private fun PageView(
                                         snapPts = if (hlStraight) PenPrefs.straighten(livePts.toList()) else livePts.toList()
                                     } else if (hlStraight) {
                                         val ink = Ink(PenPrefs.straighten(livePts.toList()), live.color, live.width, live.tool, System.currentTimeMillis())
-                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
+                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else {
+                                            pendingInk.add(ink)
+                                            session.addInk(index, ink)
+                                        }
                                     } else {
                                         // الأقلام: رسم يشبه شكلًا واضحًا يتحول إلى شكل مرتب
                                         val raw = livePts.toList()
@@ -2454,7 +2534,10 @@ private fun PageView(
                                         // بلا تدبيب عند الحفظ: الخط المحفوظ يطابق ما كان ظاهرًا أثناء الكتابة
                                         val pts = shaped ?: raw
                                         val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
-                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else session.addInk(index, ink)
+                                        if (noteTarget != null) session.addNoteInk(noteTarget, ink) else {
+                                            pendingInk.add(ink)
+                                            session.addInk(index, ink)
+                                        }
                                     }
                                 }
                                 livePts.clear()
@@ -2692,7 +2775,14 @@ private fun PageView(
                     )
                 }
             } else {
-                drawInk(livePts, if (night) nightOf(live.color) else live.color, live.width, live.tool, if (live.sharp) null else extra, style = live.style, sharp = live.sharp)
+                // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط
+                pendingInk.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
+                val lc = if (night) nightOf(live.color) else live.color
+                if (livePts.isNotEmpty() && extra == null && liveRaster.handles(live.style, live.sharp)) {
+                    liveRaster.draw(this, livePts, lc, live.width, live.tool, visRect.value, liveGen[0])
+                } else {
+                    drawInk(livePts, lc, live.width, live.tool, if (live.sharp) null else extra, style = live.style, sharp = live.sharp)
+                }
             }
 
             // التحديد الحر: إطار متقطع حول الخطوط المحددة ومقبض للتكبير
@@ -2872,32 +2962,151 @@ private fun LinkDialog(s: DocSession, cur: Int, onDismiss: () -> Unit) {
     )
 }
 
+private class PdfPatch(val bmp: Bitmap, val fullW: Int, val l: Int, val t: Int) {
+    val img: ImageBitmap = bmp.asImageBitmap()
+}
+
 /**
- * شريط تمرير بالصفحات على حافة الشاشة: اسحب المقبض فتظهر صورة الصفحة ورقمها،
- * وعند الإفلات تنتقل إليها مباشرة.
+ * عند التكبير أكثر من دقة صورة الصفحة: يُرسم الجزء الظاهر وحده بدقة الشاشة بعد توقف الحركة،
+ * ويبقى في مكانه من الصفحة أثناء التمرير حتى يُرسم الجزء الجديد.
+ */
+@Composable
+private fun PdfSharpPatch(pdf: PdfDoc, ref: PageRef?, wPx: Int, ratio: Float, vis: androidx.compose.runtime.State<androidx.compose.ui.geometry.Rect>, night: Boolean) {
+    val scope = rememberCoroutineScope()
+    var patch by remember { mutableStateOf<PdfPatch?>(null) }
+    val wNow by rememberUpdatedState(wPx)
+    fun set(p: PdfPatch?) {
+        val old = patch
+        patch = p
+        if (old != null) scope.launch {
+            // قد تكون في الإطار الجاري رسمه
+            withFrameNanos { }
+            withFrameNanos { }
+            old.bmp.recycle()
+        }
+    }
+    LaunchedEffect(pdf, ref, ratio) {
+        snapshotFlow { vis.value to wNow }.collectLatest { (v, w) ->
+            if (ref == null || w <= 0 || w < renderWidthFor(w) * SHARP_MIN_RATIO) {
+                if (patch != null) set(null)
+                return@collectLatest
+            }
+            val h = (w / ratio).toInt()
+            val l = floor(v.left.coerceIn(0f, w.toFloat())).toInt()
+            val t = floor(v.top.coerceIn(0f, h.toFloat())).toInt()
+            val r = ceil(v.right.coerceIn(0f, w.toFloat())).toInt()
+            val b = ceil(v.bottom.coerceIn(0f, h.toFloat())).toInt()
+            if (r - l < 1 || b - t < 1) return@collectLatest
+            val cur = patch
+            if (cur != null && cur.fullW == w && cur.l == l && cur.t == t && cur.bmp.width == r - l && cur.bmp.height == b - t) return@collectLatest
+            delay(150)
+            var out: Bitmap? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    val ctx = coroutineContext
+                    out = try {
+                        pdf.renderRegion(ref, w, l, t, r - l, b - t) { ctx.isActive }
+                    } catch (e: Throwable) {
+                        null
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                out?.recycle()
+                throw e
+            }
+            out?.let { set(PdfPatch(it, w, l, t)) }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { patch?.bmp?.recycle() } }
+    val p = patch ?: return
+    Canvas(Modifier.fillMaxSize()) {
+        if (p.fullW == size.width.roundToInt() && !p.bmp.isRecycled) {
+            drawImage(
+                p.img, IntOffset.Zero, IntSize(p.bmp.width, p.bmp.height),
+                IntOffset(p.l, p.t), IntSize(p.bmp.width, p.bmp.height),
+                colorFilter = if (night) ColorFilter.colorMatrix(ColorMatrix(NightMatrix)) else null
+            )
+        }
+    }
+}
+
+/**
+ * شريط تمرير بالصفحات على حافة الشاشة: موضع المقبض يقابل موضع التمرير في المستند بشكل متصل
+ * (صفحة + موضع داخلها)، والمستند يلحق المقبض بحركة ناعمة سريعة مارًّا بالصفحات بدل القفز إليها،
+ * وعند الإفلات يكمل بسرعة الإصبع ويتباطأ حتى يتوقف حيث وصل. تظهر صورة الصفحة ورقمها أثناء الحركة.
  */
 @Composable
 fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
     val n = pdf.count
-    if (n < 4) return
-    val scope = rememberCoroutineScope()
-    var dragging by remember { mutableStateOf(false) }
+    if (n < 2) return
+    /** 0 ساكن، 1 سحب، 2 استمرار بعد الإفلات. */
+    var mode by remember { mutableStateOf(0) }
     var dragPage by remember { mutableStateOf(0) }
     var dragY by remember { mutableStateOf(0f) }
+    /** موضع المستند الذي يقوده الشريط بوحدة الصفحات (0 … n-1)، والهدف الذي يلحقه، والسرعة بعد الإفلات. */
+    var pos by remember { mutableStateOf(0f) }
+    val target = remember { floatArrayOf(0f) }
+    val vel = remember { floatArrayOf(0f) }
     BoxWithConstraints(modifier.fillMaxHeight().width(150.dp)) {
         val trackH = constraints.maxHeight.toFloat()
         val density = LocalDensity.current
         val handleH = with(density) { 54.dp.toPx() }
         val range = (trackH - handleH).coerceAtLeast(1f)
-        /** موضع التمرير الفعلي (متصل، لا صفحة بصفحة). يُقرأ داخل طبقة الرسم فقط فلا تُعاد التركيبة. */
-        fun scrollFrac(): Float {
+        val last = (n - 1).toFloat()
+        /** موضع التمرير الفعلي بوحدة الصفحات. يُقرأ داخل طبقة الرسم فقط فلا تُعاد التركيبة. */
+        fun docPos(): Float {
             val st = s.listState
             val h = (st.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1).coerceAtLeast(1)
-            return ((st.firstVisibleItemIndex + st.firstVisibleItemScrollOffset / h.toFloat()) / (n - 1)).coerceIn(0f, 1f)
+            return (st.firstVisibleItemIndex + st.firstVisibleItemScrollOffset / h.toFloat()).coerceIn(0f, last)
         }
-        val y = if (dragging) dragY else range * scrollFrac()
-        // فقاعة المعاينة أثناء السحب
-        if (dragging) {
+        fun handleY(): Float = when (mode) {
+            1 -> dragY
+            2 -> range * pos / last
+            else -> range * docPos() / last
+        }
+
+        // محرك واحد يقود المستند إطارًا بإطار أثناء السحب وبعد الإفلات
+        LaunchedEffect(mode != 0) {
+            if (mode == 0) return@LaunchedEffect
+            var prevT = 0L
+            while (mode != 0) {
+                val t = withFrameNanos { it }
+                val dt = if (prevT == 0L) 0.016f else ((t - prevT) / 1e9f).coerceIn(0.001f, 0.05f)
+                prevT = t
+                if (mode == 2) {
+                    // الاستمرار بعد الإفلات: تباطؤ تدريجي
+                    target[0] = (target[0] + vel[0] * dt).coerceIn(0f, last)
+                    vel[0] *= exp(-dt / 0.35f)
+                    if (target[0] <= 0f || target[0] >= last) vel[0] = 0f
+                }
+                // يلحق الهدف بسرعة (ثابت زمني 70 ms) فيمر بالصفحات ولا يقفز
+                val k = 1f - exp(-dt / 0.07f)
+                var p = pos + (target[0] - pos) * k
+                if (abs(target[0] - p) < 0.002f) p = target[0]
+                pos = p
+                val page = floor(p).toInt().coerceIn(0, n - 1)
+                val first = s.listState.layoutInfo.visibleItemsInfo.firstOrNull()
+                // ارتفاع الصفحة الهدف من عرض الصفحات الظاهرة ونسبة أبعادها
+                val pageW = if (first != null) first.size * pdf.ratio(first.index) else 0f
+                val pageH = if (pageW > 0f) pageW / pdf.ratio(page) else 0f
+                val off = ((p - page) * pageH).roundToInt().coerceAtLeast(0)
+                try {
+                    s.listState.scrollToItem(page, off)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // لمسة على المستند أخذت التمرير: يتوقف الشريط
+                    if (!kotlinx.coroutines.currentCoroutineContext().isActive) throw e
+                    mode = 0
+                    break
+                }
+                if (mode == 2) {
+                    dragPage = p.roundToInt().coerceIn(0, n - 1)
+                    if (abs(vel[0]) < 0.05f && abs(target[0] - pos) < 0.01f) mode = 0
+                }
+            }
+        }
+
+        // فقاعة المعاينة أثناء الحركة
+        if (mode != 0) {
             val ref = pdf.pages.getOrNull(dragPage)
             val bmp by produceState<Bitmap?>(pdf.cached(ref, PREVIEW_W), ref) {
                 value = pdf.cached(ref, PREVIEW_W) ?: withContext(Dispatchers.IO) {
@@ -2910,7 +3119,7 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
             }
             Column(
                 Modifier.align(Alignment.TopEnd)
-                    .offset { IntOffset(-with(density) { 34.dp.roundToPx() }, (y - handleH).roundToInt().coerceAtLeast(0)) }
+                    .offset { IntOffset(-with(density) { 34.dp.roundToPx() }, (handleY() - handleH).roundToInt().coerceAtLeast(0)) }
                     .width(104.dp)
                     .shadow(8.dp, RoundedCornerShape(10.dp))
                     .background(Color.White, RoundedCornerShape(10.dp))
@@ -2931,27 +3140,37 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
         // منطقة اللمس أعرض من المقبض المرئي، والحركة بطبقة رسم (بلا إعادة تركيب أو قياس)
         Box(
             Modifier.align(Alignment.TopEnd)
-                .graphicsLayer { translationY = if (dragging) dragY else range * scrollFrac() }
+                .graphicsLayer { translationY = handleY() }
                 .width(44.dp).height(54.dp)
                 .pointerInput(n, trackH) {
+                    val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
                     detectVerticalDragGestures(
                         onDragStart = {
-                            dragging = true
-                            dragPage = s.listState.firstVisibleItemIndex
-                            dragY = range * scrollFrac()
+                            tracker.resetTracking()
+                            // يبدأ من موضع المستند الحالي (أو من حيث وصل الاستمرار السابق)
+                            if (mode == 0) pos = docPos()
+                            dragY = range * pos / last
+                            target[0] = pos
+                            vel[0] = 0f
+                            dragPage = pos.roundToInt().coerceIn(0, n - 1)
+                            mode = 1
                         },
-                        onDragEnd = { dragging = false },
-                        onDragCancel = { dragging = false }
+                        onDragEnd = {
+                            // سرعة الإصبع (بكسل/ث) بوحدة الصفحات
+                            val v = tracker.calculateVelocity().y
+                            vel[0] = v / range * last
+                            mode = 2
+                        },
+                        onDragCancel = { mode = 2 }
                     ) { change, dy ->
                         change.consume()
-                        // موضع عشري متراكم يتبع الإصبع بدقة
+                        // موضع متراكم يتبع الإصبع بدقة، والمستند يلحقه بشكل متصل
                         dragY = (dragY + dy).coerceIn(0f, range)
-                        val p = ((dragY / range) * (n - 1)).roundToInt().coerceIn(0, n - 1)
-                        if (p != dragPage) {
-                            dragPage = p
-                            // المستند يتمرر مع المقبض مباشرة
-                            scope.launch { s.listState.scrollToItem(p) }
-                        }
+                        // المقبض يتحرك مع الإصبع، فالسرعة تُحسب من موضعه المتراكم
+                        tracker.addPosition(change.uptimeMillis, Offset(0f, dragY))
+                        target[0] = dragY / range * last
+                        val p = target[0].roundToInt().coerceIn(0, n - 1)
+                        if (p != dragPage) dragPage = p
                     }
                 }
         ) {
@@ -2959,7 +3178,7 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
                 Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)
                     .width(18.dp).height(54.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (dragging) Palette.Navy else Palette.Navy.copy(alpha = 0.35f))
+                    .background(if (mode == 1) Palette.Navy else Palette.Navy.copy(alpha = 0.35f))
             )
         }
     }

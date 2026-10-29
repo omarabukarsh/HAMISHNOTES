@@ -164,6 +164,43 @@ class PdfDoc private constructor(private val id: String) {
         return bmp
     }
 
+    /**
+     * جزء من الصفحة بدقة الشاشة (للتكبير الكبير): الصفحة كلها بعرض fullW، ويُرسم منها المستطيل
+     * (left, top, w, h) فقط. صورة جديدة غير مخزّنة، يجب على المستدعي تحريرها بـ recycle().
+     */
+    fun renderRegion(ref: PageRef?, fullW: Int, left: Int, top: Int, w: Int, h: Int, alive: () -> Boolean = { true }): Bitmap? {
+        if (ref == null || fullW <= 0 || w <= 0 || h <= 0) return null
+        return synchronized(this) {
+            if (closed || !alive()) return null
+            val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            if (ref.src.startsWith("blank:")) {
+                val fullH = fullW / ref.ratio
+                val c = Canvas(b)
+                c.translate(-left.toFloat(), -top.toFloat())
+                val style = Templates.parse(ref.src)
+                Templates.draw(c, fullW.toFloat(), fullH, style.first, style.second)
+                return b
+            }
+            val src = sources[ref.src]
+            if (src == null || ref.index < 0 || ref.index >= src.renderer.pageCount) {
+                b.recycle()
+                return null
+            }
+            val page = src.renderer.openPage(ref.index)
+            try {
+                val k = fullW.toFloat() / page.width
+                val m = android.graphics.Matrix()
+                m.setScale(k, k)
+                m.postTranslate(-left.toFloat(), -top.toFloat())
+                b.eraseColor(android.graphics.Color.WHITE)
+                page.render(b, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                b
+            } finally {
+                page.close()
+            }
+        }
+    }
+
     /** للقراءة الضوئية: صورة جديدة غير مخزّنة، يجب على المستدعي تحريرها بـ recycle(). */
     fun renderFresh(ref: PageRef?, widthPx: Int): Bitmap? {
         if (ref == null || widthPx <= 0) return null

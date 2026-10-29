@@ -130,7 +130,9 @@ class LibraryRepository(context: Context) {
                         isNote = o.optBoolean("note"),
                         readMs = o.optLong("read"),
                         folder = o.optString("folder", ""),
-                        locked = o.optBoolean("lock", false)
+                        locked = o.optBoolean("lock", false),
+                        coverColor = o.optInt("cover", 0),
+                        sticker = o.optString("sticker", "")
                     )
                 } catch (e: Throwable) {
                     null
@@ -166,6 +168,8 @@ class LibraryRepository(context: Context) {
                             .put("read", e.readMs)
                             .put("folder", e.folder)
                             .put("lock", e.locked)
+                            .put("cover", e.coverColor)
+                            .put("sticker", e.sticker)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())

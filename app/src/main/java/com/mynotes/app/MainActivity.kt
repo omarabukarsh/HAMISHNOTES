@@ -181,16 +181,23 @@ fun MyNotesApp() {
     ) {
         Column(Modifier.fillMaxSize()) {
             if (c.tabs.isNotEmpty() && !(c.focusMode && c.activeId != null)) TabBar()
-            val active = c.tabs.firstOrNull { it.id == c.activeId }
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                if (active == null) {
-                    LibraryScreen()
-                } else {
-                    val second = c.tabs.firstOrNull { it.id == c.splitId && it.id != active.id }
-                    if (second == null || c.focusMode) {
-                        key(active.id) { ReaderScreen(active) }
+                // انتقال ناعم بين المكتبة والمستندات (وبين التبويبات)
+                androidx.compose.animation.Crossfade(
+                    targetState = c.activeId,
+                    animationSpec = androidx.compose.animation.core.tween(Motion.ENTER),
+                    label = "screen"
+                ) { id ->
+                    val active = c.tabs.firstOrNull { it.id == id }
+                    if (active == null) {
+                        LibraryScreen()
                     } else {
-                        SplitReaders(active, second)
+                        val second = c.tabs.firstOrNull { it.id == c.splitId && it.id != active.id }
+                        if (second == null || c.focusMode) {
+                            key(active.id) { ReaderScreen(active) }
+                        } else {
+                            SplitReaders(active, second)
+                        }
                     }
                 }
             }

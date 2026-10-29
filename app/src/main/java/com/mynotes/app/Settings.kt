@@ -62,7 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1181,7 +1180,7 @@ private fun ReminderRow() {
     }
     if (picking) {
         val state = androidx.compose.material3.rememberTimePickerState(c.reminderMinute / 60, c.reminderMinute % 60, true)
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { picking = false },
             title = { Text(L("وقت التذكير", "Reminder time")) },
             text = { androidx.compose.material3.TimePicker(state = state) },

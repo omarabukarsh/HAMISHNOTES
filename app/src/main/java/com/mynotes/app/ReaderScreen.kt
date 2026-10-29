@@ -56,10 +56,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -371,17 +369,26 @@ internal fun TBtn(
     onClick: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    // انتقال لوني ناعم عند الاختيار، وانضغاط خفيف عند اللمس
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (selected) Palette.NavySoft else Color.Transparent, tween(Motion.ENTER), label = "tbtn"
+    )
     Box(
-        Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
-            .background(if (selected) Palette.NavySoft else Color.Transparent)
+        Modifier.size(42.dp).pressScale().clip(RoundedCornerShape(12.dp))
+            .background(bg)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         content()
         // مؤشر ذهبي صغير أسفل الأداة المختارة
-        if (selected) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = selected,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(tween(Motion.ENTER)) + androidx.compose.animation.scaleIn(tween(Motion.ENTER)),
+            exit = fadeOut(tween(Motion.EXIT))
+        ) {
             Box(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
+                Modifier.padding(bottom = 3.dp)
                     .width(14.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
                     .background(Palette.Gold)
             )

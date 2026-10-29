@@ -1437,6 +1437,12 @@ object AppController {
         }
     }
 
+    /** غلاف الدفتر في المكتبة: اللون والملصق. */
+    fun setCover(id: String, color: Int, sticker: String) {
+        updateEntry(id) { it.copy(coverColor = color, sticker = sticker) }
+        saveLibrary()
+    }
+
     fun toggleFavorite(id: String) {
         updateEntry(id) { it.copy(favorite = !it.favorite) }
         saveLibrary()

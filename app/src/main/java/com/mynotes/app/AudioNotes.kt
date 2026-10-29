@@ -253,7 +253,7 @@ fun AudioDialog(s: DocSession, onDismiss: () -> Unit) {
         if (ok) begin() else AppController.messages.tryEmit(L("يلزم إذن الميكروفون للتسجيل", "Microphone permission is required"))
     }
     val recs = AudioNotes.list(s.id)
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = { androidx.compose.material3.Text(L("تسجيل المحاضرة", "Lecture recording")) },
         text = {

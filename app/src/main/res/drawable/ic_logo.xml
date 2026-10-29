@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp" android:height="40dp" android:viewportWidth="40" android:viewportHeight="40">
+    <!-- دفتر بغلاف كحلي وصفحة صفراء وقلم -->
+    <path android:fillColor="#F4C95D" android:pathData="M10,6h18a3,3 0,0 1,3 3v24a3,3 0,0 1,-3 3h-18z"/>
+    <path android:fillColor="#2F4B7C" android:pathData="M7,5h17a3,3 0,0 1,3 3v24a3,3 0,0 1,-3 3h-17a2,2 0,0 1,-2 -2v-26a2,2 0,0 1,2 -2z"/>
+    <path android:fillColor="#1E3358" android:pathData="M5,7a2,2 0,0 1,2 -2h3v30h-3a2,2 0,0 1,-2 -2z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M13,10h10a1.5,1.5 0,0 1,1.5 1.5v3a1.5,1.5 0,0 1,-1.5 1.5h-10a1.5,1.5 0,0 1,-1.5 -1.5v-3a1.5,1.5 0,0 1,1.5 -1.5z"/>
+    <path android:fillColor="#F4C95D" android:pathData="M33.5,12.5l2,2l-12,12l-3,1l1,-3z"/>
+    <path android:fillColor="#1E2A44" android:pathData="M20.5,27.5l1,-3l2,2z"/>
+</vector>

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,11 +50,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -134,7 +133,7 @@ fun LibraryScreen() {
             docs.firstOrNull { it.lastOpened > 0L }
         else null
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Palette.Background)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Lib.bg)) {
         val wide = maxWidth >= 840.dp
         Row(Modifier.fillMaxSize()) {
             if (wide) Spine()
@@ -163,7 +162,7 @@ fun LibraryScreen() {
                 if (!wide) FilterRow()
                 c.libraryFolder?.let { f -> ExamPlanCard(f) }
                 if (c.importing) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = Palette.Gold)
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = Lib.accent)
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when {
@@ -178,19 +177,33 @@ fun LibraryScreen() {
                                 L("لا يوجد مستند باسم «$query»", "No document named “$query”")
                         )
                         else -> LazyVerticalGrid(
-                            columns = GridCells.Adaptive(if (wide) 172.dp else 148.dp),
+                            columns = GridCells.Adaptive(if (wide) 164.dp else 140.dp),
                             contentPadding = PaddingValues(start = 28.dp, end = 28.dp, top = 8.dp, bottom = 32.dp),
-                            horizontalArrangement = Arrangement.spacedBy(26.dp),
-                            verticalArrangement = Arrangement.spacedBy(30.dp),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(26.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            if (resume != null) {
+                            if (resume != null || (wide && c.libraryFolder == null && c.folders.isNotEmpty() && query.isEmpty())) {
                                 item(key = "resume", span = { GridItemSpan(maxLineSpan) }) {
-                                    ResumeCard(resume, wide) { c.openDocument(resume.id) }
+                                    ResumeRow(resume, wide)
+                                }
+                            }
+                            item(key = "docs-title", span = { GridItemSpan(maxLineSpan) }) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                                    Text(
+                                        L("المستندات", "Documents"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                                        fontSize = 22.sp, color = Lib.text, modifier = Modifier.weight(1f)
+                                    )
+                                    if (c.libraryFilter == LibraryFilter.RECENT) {
+                                        Text(L("حسب آخر فتح", "Sorted by last opened"), fontSize = 13.sp, color = Lib.muted)
+                                    } else {
+                                        SortMenu(c.librarySort) { c.librarySort = it }
+                                    }
                                 }
                             }
                             items(docs, key = { it.id }) { e ->
                                 DocCard(
+                                    modifier = Modifier.animateItem(),
                                     entry = e,
                                     selecting = selecting,
                                     selected = e.id in selected,
@@ -338,21 +351,23 @@ private fun Spine() {
     val favCount = c.library.count { it.favorite }
     val pages = c.library.sumOf { it.pageCount }
     Column(
-        Modifier.width(248.dp).fillMaxHeight().background(Palette.Spine)
+        Modifier.width(248.dp).fillMaxHeight().background(Lib.side)
             .padding(horizontal = 16.dp, vertical = 22.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(R.drawable.ic_logo), null, Modifier.size(42.dp)
+            )
+            Spacer(Modifier.width(10.dp))
             Column {
                 Text(
-                    L("هامش", "Hamish"), color = Palette.OnInk, fontFamily = Fonts.Display,
-                    fontWeight = FontWeight.Bold, fontSize = 32.sp, lineHeight = 36.sp
+                    L("هامش", "hamish"), color = Lib.text, fontFamily = Fonts.Display,
+                    fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 28.sp
                 )
-                Text(L("مكتبة الدراسة", "Study library"), color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 16.sp)
+                Text(L("مكتبة الدراسة", "Study library"), color = Lib.muted, fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
         Spacer(Modifier.height(22.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.InkLine))
-        Spacer(Modifier.height(16.dp))
 
         val noFolder = c.libraryFolder == null
         SpineItem(L("الأحدث", "Recent"), R.drawable.ph_recent, null, noFolder && c.libraryFilter == LibraryFilter.RECENT) {
@@ -375,10 +390,8 @@ private fun Spine() {
         }
 
         StudyCard()
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.InkLine))
-        Spacer(Modifier.height(10.dp))
-        Text(docsCount(c.library.size) + L("، ", ", ") + pagesCount(pages), color = Palette.OnInkMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(14.dp))
+        Text(docsCount(c.library.size) + " · " + pagesCount(pages), color = Lib.muted, fontSize = 12.sp)
         Spacer(Modifier.height(10.dp))
         ThemeSwitch()
     }
@@ -392,37 +405,30 @@ private fun SpineItem(
     count: Int?,
     selected: Boolean,
     onLongClick: (() -> Unit)? = null,
+    sub: String? = null,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(14.dp)
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (selected) Lib.accentSoft else Color.Transparent, androidx.compose.animation.core.tween(Motion.ENTER), label = "spine"
+    )
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 2.dp).height(46.dp).clip(shape)
-            .background(if (selected) Palette.InkRaised else Color.Transparent)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        Modifier.fillMaxWidth().padding(vertical = 2.dp).heightIn(min = 46.dp).pressScale(0.97f).clip(shape)
+            .background(bg)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // شريط ذهبي على حافة العنصر المختار
-        Box(
-            Modifier.width(3.dp).height(22.dp).clip(RoundedCornerShape(2.dp))
-                .background(if (selected) Palette.Gold else Color.Transparent)
-        )
-        Spacer(Modifier.width(11.dp))
-        PhIcon(
-            if (selected) filledOf(icon) else icon,
-            if (selected) Palette.Gold else Palette.OnInkMuted, 20.dp
-        )
+        PhIcon(if (selected) filledOf(icon) else icon, Lib.text, 20.dp)
         Spacer(Modifier.width(12.dp))
-        Text(
-            label, fontSize = 15.sp, modifier = Modifier.weight(1f),
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) Palette.OnInk else Palette.OnInk.copy(alpha = 0.78f)
-        )
-        if (count != null) {
+        Column(Modifier.weight(1f)) {
             Text(
-                "$count", fontSize = 12.sp, color = Palette.OnInkMuted,
-                modifier = Modifier.padding(end = 12.dp)
+                label, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, color = Lib.text
             )
+            if (sub != null) Text(sub, fontSize = 11.sp, color = Lib.exam, fontWeight = FontWeight.Bold)
         }
+        if (count != null) Text("$count", fontSize = 13.sp, color = Lib.muted)
     }
 }
 
@@ -430,15 +436,15 @@ private fun SpineItem(
 @Composable
 private fun TextSearchButton() {
     var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(24.dp)
     Row(
-        Modifier.height(44.dp).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
-            .clickable { open = true }.padding(horizontal = 12.dp),
+        Modifier.height(48.dp).pressScale(0.96f).clip(shape).background(Lib.card).border(1.dp, Lib.line, shape)
+            .clickable { open = true }.padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        PhIcon(R.drawable.ph_search_all, Palette.Navy, 19.dp)
+        PhIcon(R.drawable.ph_search_all, Lib.text, 19.dp)
         Spacer(Modifier.width(6.dp))
-        Text(L("داخل النصوص", "In text"), fontSize = 13.sp, color = Palette.Navy, maxLines = 1, softWrap = false)
+        Text(L("داخل النصوص", "In text"), fontSize = 14.sp, color = Lib.text, maxLines = 1, softWrap = false)
     }
     if (open) LibrarySearchDialog(onDismiss = { open = false })
 }
@@ -458,7 +464,7 @@ private fun LibrarySearchDialog(onDismiss: () -> Unit) {
             busy = false
         }
     }
-    androidx.compose.ui.window.Dialog(
+    Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
@@ -543,9 +549,9 @@ private fun FolderSection() {
     }
     Spacer(Modifier.height(16.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(L("المواد", "Subjects"), color = Palette.OnInkMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(L("المواد", "SUBJECTS"), color = Lib.muted, fontSize = 12.sp, letterSpacing = 1.5.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
         Text(
-            L("+ مادة", "+ Subject"), color = Palette.Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            L("+ مادة", "+ Subject"), color = Lib.accentDeep, fontSize = 13.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { adding = true }
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         )
@@ -553,7 +559,7 @@ private fun FolderSection() {
     if (c.folders.isEmpty()) {
         Text(
             L("رتّب مستنداتك حسب المادة: أضف مادة، ثم «نقل إلى مادة» من قائمة أي مستند.", "Organize documents by subject: add a subject, then “Move to subject” from any document’s menu."),
-            color = Palette.OnInkMuted, fontSize = 12.sp, lineHeight = 18.sp,
+            color = Lib.muted, fontSize = 12.sp, lineHeight = 18.sp,
             modifier = Modifier.padding(top = 4.dp, start = 4.dp)
         )
     }
@@ -562,17 +568,11 @@ private fun FolderSection() {
         var menu by remember(f) { mutableStateOf(false) }
         Column {
             SpineItem(
-                f, R.drawable.ph_note, c.library.count { it.folder == f }, c.libraryFolder == f,
-                onLongClick = { menu = true }
+                f, R.drawable.ph_folder, c.library.count { it.folder == f }, c.libraryFolder == f,
+                onLongClick = { menu = true }, sub = c.daysToExam(f)?.let { examLabel(it) }
             ) {
                 c.libraryFolder = f
                 c.libraryFilter = LibraryFilter.ALL
-            }
-            c.daysToExam(f)?.let { d ->
-                Text(
-                    examLabel(d), color = Palette.Gold, fontSize = 10.sp,
-                    modifier = Modifier.padding(start = 44.dp, bottom = 4.dp)
-                )
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text(L("حفظ ملخص المادة كاملة (PDF)", "Save the whole subject summary (PDF)")) }, onClick = {
@@ -749,16 +749,16 @@ private fun StudyCard() {
     var open by remember { mutableStateOf(false) }
     val c = AppController
     val today = c.stats[c.todayKey()] ?: 0L
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(18.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).border(1.dp, Palette.InkLine, shape)
-            .clickable { open = true }.padding(10.dp),
+        Modifier.fillMaxWidth().pressScale(0.97f).clip(shape).background(Lib.study).border(1.dp, Lib.line, shape)
+            .clickable { open = true }.padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        GoalRing(34.dp, 4.dp, Palette.InkLine)
+        GoalRing(38.dp, 4.dp, Lib.line)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(L("اليوم ${formatReading(today)}", "Today ${formatReading(today)}"), color = Palette.OnInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(L("اليوم ${formatReading(today)}", "Today ${formatReading(today)}"), color = Lib.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             val streak = studyStreak()
             Text(
                 if (streak > 0) L(
@@ -766,41 +766,42 @@ private fun StudyCard() {
                     "Streak $streak ${if (streak == 1) "day" else "days"}, goal ${formatReading(c.goalMinutes * 60_000L)}"
                 )
                 else L("الهدف ${formatReading(c.goalMinutes * 60_000L)}", "Goal ${formatReading(c.goalMinutes * 60_000L)}"),
-                color = Palette.OnInkMuted, fontSize = 11.sp
+                color = Lib.muted, fontSize = 11.sp
             )
         }
-        PhIcon(R.drawable.ph_caret_down, Palette.OnInkMuted, 14.dp)
     }
     if (open) StatsDialog(onDismiss = { open = false })
 }
 
-/** اختيار الثيم: كحلي فاخر أو فاتح كلاسيكي. */
 @Composable
 private fun ThemeSwitch() {
     val c = AppController
-    Text(L("المظهر", "Appearance"), color = Palette.OnInkMuted, fontSize = 12.sp)
-    Spacer(Modifier.height(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Lib.line.copy(alpha = 0.6f)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         listOf(
-            AppTheme.NAVY to L("كحلي", "Navy"),
+            AppTheme.NAVY to L("داكن", "Dark"),
             AppTheme.LIGHT to L("فاتح", "Light")
         ).forEach { (t, label) ->
             val sel = ThemeState.theme == t
-            val shape = RoundedCornerShape(10.dp)
+            val bg by androidx.compose.animation.animateColorAsState(
+                if (sel) Lib.card else Color.Transparent, androidx.compose.animation.core.tween(Motion.ENTER), label = "theme"
+            )
             Row(
-                Modifier.weight(1f).clip(shape)
-                    .border(if (sel) 1.5.dp else 1.dp, if (sel) Palette.Gold else Palette.InkLine, shape)
+                Modifier.weight(1f).clip(RoundedCornerShape(11.dp)).background(bg)
                     .clickable { c.setTheme(t) }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
                 Box(
-                    Modifier.size(14.dp).clip(CircleShape)
-                        .background(if (t == AppTheme.NAVY) Color(0xFF13233B) else Color(0xFFE4E9F0))
-                        .border(1.dp, Palette.Gold, CircleShape)
+                    Modifier.size(12.dp).clip(CircleShape)
+                        .background(if (t == AppTheme.NAVY) Color(0xFF111111) else Lib.accent)
+                        .border(1.dp, Lib.line, CircleShape)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(label, fontSize = 13.sp, color = Palette.OnInk)
+                Text(label, fontSize = 14.sp, color = Lib.text, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
             }
         }
     }
@@ -834,83 +835,27 @@ private fun FilterRow() {
 @Composable
 private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onSelect: () -> Unit, onNewNote: () -> Unit) {
     val c = AppController
-    if (wide) {
-        // سطران: العنوان والأزرار، ثم البحث والترتيب؛ حتى لا يُضغط العنوان أو الأزرار في أي اتجاه للشاشة
-        Column(
-            Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = 22.dp, bottom = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        c.libraryFolder ?: filterTitle(c.libraryFilter),
-                        style = MaterialTheme.typography.headlineLarge, color = Palette.TextPrimary,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    Text(docsCount(shown), fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1)
-                }
-                PomodoroControl(showStartLabel = false)
-                SelectButton(onSelect)
-                NewNoteButton(onNewNote)
-                ImportButton(onImport)
+    val title = c.libraryFolder ?: filterTitle(c.libraryFilter)
+    Column(
+        Modifier.fillMaxWidth().padding(start = if (wide) 28.dp else 20.dp, end = if (wide) 28.dp else 20.dp, top = if (wide) 24.dp else 16.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+                UnderlinedTitle(title, if (wide) 40 else 30)
+                Spacer(Modifier.width(12.dp))
+                ScriptLabel(docsCount(shown), Lib.muted, 15)
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
-                TextSearchButton()
-                if (c.libraryFilter != LibraryFilter.RECENT) {
-                    SortMenu(c.librarySort) { c.librarySort = it }
-                }
+            PomodoroControl(showStartLabel = false)
+            if (!wide) {
+                IconCircleButton(R.drawable.ph_sliders, L("الإعدادات", "Settings")) { c.settingsOpen = true }
             }
+            IconCircleButton(R.drawable.ph_check, L("تحديد", "Select"), onClick = onSelect)
+            NewMenuButton(onNewNote, onImport)
         }
-    } else {
-        Column(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    L("هامش", "Hamish"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
-                )
-                PomodoroControl(showStartLabel = false)
-                var stats by remember { mutableStateOf(false) }
-                IconButton(onClick = { stats = true }) { GoalRing(26.dp, 3.dp) }
-                if (stats) StatsDialog(onDismiss = { stats = false })
-                IconButton(onClick = {
-                    c.setTheme(if (ThemeState.light) AppTheme.NAVY else AppTheme.LIGHT)
-                }) {
-                    PhIcon(R.drawable.ph_palette, Palette.TextSecondary, 21.dp, L("تبديل المظهر", "Switch theme"))
-                }
-                IconButton(onClick = { c.settingsOpen = true }) {
-                    PhIcon(R.drawable.ph_sliders, Palette.TextSecondary, 21.dp, L("الإعدادات", "Settings"))
-                }
-            }
-            // الأزرار في سطر مستقل قابل للتمرير حتى لا تُضغط على الشاشات الضيقة
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ImportButton(onImport)
-                NewNoteButton(onNewNote)
-                SelectButton(onSelect)
-                if (c.libraryFilter != LibraryFilter.RECENT) {
-                    SortMenu(c.librarySort) { c.librarySort = it }
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
-                TextSearchButton()
-            }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
+            TextSearchButton()
         }
     }
 }
@@ -1016,26 +961,26 @@ private fun NewNoteButton(onClick: () -> Unit) {
 
 @Composable
 private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(24.dp)
     Row(
-        modifier.height(44.dp)
+        modifier.height(48.dp)
             .clip(shape)
-            .background(Color.White)
-            .border(1.dp, Palette.Divider, shape)
-            .padding(horizontal = 12.dp),
+            .background(Lib.card)
+            .border(1.dp, Lib.line, shape)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        PhIcon(R.drawable.ph_search, Palette.TextSecondary, 19.dp)
-        Spacer(Modifier.width(8.dp))
+        PhIcon(R.drawable.ph_search, Lib.muted, 19.dp)
+        Spacer(Modifier.width(10.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
-                Text(L("ابحث باسم المستند", "Search by document name"), color = Palette.TextSecondary, fontSize = 14.sp, maxLines = 1)
+                Text(L("ابحث باسم المستند", "Search by document name"), color = Lib.muted, fontSize = 15.sp, maxLines = 1)
             }
             BasicTextField(
                 value = value,
                 onValueChange = onChange,
                 singleLine = true,
-                textStyle = TextStyle(color = Palette.TextPrimary, fontSize = 14.sp, fontFamily = Fonts.Sans),
+                textStyle = TextStyle(color = Lib.text, fontSize = 15.sp, fontFamily = Fonts.Sans),
                 cursorBrush = SolidColor(Palette.Navy),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1055,9 +1000,9 @@ private fun SortMenu(sort: SortMode, onSelect: (SortMode) -> Unit) {
         OutlinedButton(
             onClick = { open = true },
             shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Palette.Divider),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.TextPrimary),
-            modifier = Modifier.height(44.dp)
+            border = BorderStroke(1.dp, Lib.line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Lib.text),
+            modifier = Modifier.height(40.dp)
         ) {
             Text(L("الترتيب: ", "Sort: ") + sortLabel(sort), fontSize = 13.sp, maxLines = 1, softWrap = false)
             PhIcon(R.drawable.ph_caret_down, Palette.TextSecondary, 16.dp)
@@ -1084,68 +1029,86 @@ private fun SortMenu(sort: SortMode, onSelect: (SortMode) -> Unit) {
 
 // ---------------------------------------------------------------- متابعة القراءة
 
+/** صف «تابع من حيث توقفت» مع مجلدات المواد بجانبه. */
 @Composable
-private fun ResumeCard(entry: DocEntry, wide: Boolean, onOpen: () -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
-    val total = maxOf(1, entry.pageCount)
-    val page = (entry.lastPage + 1).coerceIn(1, total)
-    Row(
-        Modifier.fillMaxWidth().padding(bottom = 4.dp)
-            .shadow(2.dp, shape)
-            .clip(shape)
-            .background(Palette.Ivory)
-            .border(1.dp, Palette.Divider, shape)
-            .clickable(onClick = onOpen)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.width(if (wide) 86.dp else 64.dp).aspectRatio(0.74f)
-                .shadow(3.dp, RoundedCornerShape(3.dp)).background(Color.White)
-        ) { Thumbnail(entry) }
-        Spacer(Modifier.width(18.dp))
-        Column(Modifier.weight(1f)) {
-            Text(L("تابع من حيث توقفت", "Continue where you left off"), fontSize = 12.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Medium)
-            Text(
-                entry.name, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                fontSize = if (wide) 24.sp else 20.sp, lineHeight = if (wide) 34.sp else 28.sp,
-                color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(Palette.Divider)
-                ) {
-                    Box(
-                        Modifier.fillMaxHeight().fillMaxWidth(page.toFloat() / total)
-                            .background(Palette.Gold)
-                    )
+private fun ResumeRow(resume: DocEntry?, wide: Boolean) {
+    val c = AppController
+    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (resume != null) {
+            ResumeCard(resume, wide, Modifier.weight(if (wide && c.folders.isNotEmpty()) 1.25f else 1f)) { c.openDocument(resume.id) }
+        }
+        if (wide && c.folders.isNotEmpty()) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                c.folders.toList().take(3).forEach { f ->
+                    FolderTile(f, c.library.count { it.folder == f }, c.libraryFolder == f, Modifier.weight(1f)) {
+                        c.libraryFolder = f
+                        c.libraryFilter = LibraryFilter.ALL
+                    }
                 }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    L("الصفحة $page من $total", "Page $page of $total"), fontSize = 12.sp, color = Palette.TextSecondary
-                )
-                if (entry.readMs >= 60_000L) {
-                    Spacer(Modifier.width(14.dp))
-                    ReadingTimeBadge(entry.readMs, Palette.GoldDeep)
-                }
+                repeat((3 - c.folders.size).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
             }
         }
-        if (wide) {
-            Spacer(Modifier.width(20.dp))
-            Button(
-                onClick = onOpen,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
-            ) { Text(L("متابعة القراءة", "Continue reading")) }
+    }
+}
+
+@Composable
+private fun ResumeCard(entry: DocEntry, wide: Boolean, modifier: Modifier, onOpen: () -> Unit) {
+    val shape = RoundedCornerShape(26.dp)
+    val total = maxOf(1, entry.pageCount)
+    val page = (entry.lastPage + 1).coerceIn(1, total)
+    val readMin = entry.readMs / 60_000L
+    Row(
+        modifier.padding(bottom = 4.dp)
+            .pressScale(0.98f)
+            .clip(shape)
+            .background(Lib.resume)
+            .border(1.dp, Lib.accent.copy(alpha = 0.45f), shape)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 22.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.width(if (wide) 104.dp else 72.dp).rotate(-6f)) {
+            NotebookCover(entry, Modifier.fillMaxWidth(), compact = true)
+        }
+        Spacer(Modifier.width(22.dp))
+        Column(Modifier.weight(1f)) {
+            ScriptLabel(L("تابع من حيث توقفت", "continue where you left off"), Lib.accentDeep, 15)
+            Text(
+                entry.name, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                fontSize = if (wide) 30.sp else 22.sp, lineHeight = if (wide) 38.sp else 28.sp,
+                color = Lib.text, maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(10.dp))
+            // شريط التقدم مع مقبض دائري
+            val frac = page.toFloat() / total
+            Box(Modifier.fillMaxWidth().height(14.dp), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Lib.accent.copy(alpha = 0.35f)))
+                Box(Modifier.fillMaxWidth(frac).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Lib.strong))
+                Box(Modifier.fillMaxWidth(frac), contentAlignment = Alignment.CenterEnd) {
+                    Box(Modifier.size(14.dp).clip(CircleShape).background(Lib.strong).border(2.dp, Lib.resume, CircleShape))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    L("الصفحة $page من $total", "Page $page of $total") +
+                        (if (readMin >= 1) " · " + L("$readMin د قراءة", "$readMin min read") else ""),
+                    fontSize = 13.sp, color = Lib.muted, modifier = Modifier.weight(1f)
+                )
+                if (wide) {
+                    Box(
+                        Modifier.pressScale(0.95f).clip(RoundedCornerShape(22.dp)).background(Lib.strong)
+                            .clickable(onClick = onOpen).padding(horizontal = 22.dp, vertical = 12.dp)
+                    ) { Text(L("متابعة القراءة", "Continue reading"), color = Lib.onStrong, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+                }
+            }
         }
     }
 }
 
 // ---------------------------------------------------------------- بطاقة المستند
 
-/** المستند ككتاب على الرف: غلاف بظل ورقي، وأوراق خلفه إن كان متعدد الصفحات. */
+/** المستند كدفتر على الرف: غلاف بلون يختاره المستخدم واسم وملصق. */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun DocCard(
@@ -1158,92 +1121,60 @@ private fun DocCard(
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
     onMove: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var menu by remember { mutableStateOf(false) }
     var shareOpen by remember { mutableStateOf(false) }
-    val sheet = RoundedCornerShape(3.dp)
+    var coverOpen by remember { mutableStateOf(false) }
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (selected) Lib.accentSoft else Color.Transparent, androidx.compose.animation.core.tween(Motion.ENTER), label = "doc"
+    )
     // في وضع التحديد: النقر يحدد، والضغط المطول يبدأ التحديد
     Column(
-        Modifier.clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Palette.GoldSoft else Color.Transparent)
+        modifier.clip(RoundedCornerShape(12.dp))
+            .background(bg)
             .combinedClickable(onClick = { if (selecting) onToggleSelect() else onOpen() }, onLongClick = onToggleSelect)
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.74f).padding(end = 6.dp, top = 6.dp)) {
-            if (entry.pageCount > 1) {
-                // ورقتان خلف الغلاف توحيان بسماكة المستند
+        Box(Modifier.fillMaxWidth().padding(end = 6.dp).pressScale(0.96f)) {
+            NotebookCover(entry, Modifier.fillMaxWidth())
+            if (selecting) {
                 Box(
-                    Modifier.matchParentSize().offset(x = 6.dp, y = (-6).dp)
-                        .clip(sheet).background(Color(0xFFEDE8DD)).border(1.dp, Palette.Divider, sheet)
-                )
-                Box(
-                    Modifier.matchParentSize().offset(x = 3.dp, y = (-3).dp)
-                        .clip(sheet).background(Color(0xFFF6F2EA)).border(1.dp, Palette.Divider, sheet)
-                )
+                    Modifier.align(Alignment.TopStart).padding(8.dp).size(26.dp).clip(CircleShape)
+                        .background(if (selected) Lib.strong else Color.White.copy(alpha = 0.9f))
+                        .border(2.dp, if (selected) Lib.accent else Lib.line, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { if (selected) PhIcon(R.drawable.ph_check, Lib.onStrong, 15.dp) }
             }
-            Box(
-                Modifier.matchParentSize().shadow(4.dp, sheet).background(Color.White)
-            ) {
-                Thumbnail(entry)
-                if (selecting) {
-                    Box(
-                        Modifier.align(Alignment.TopStart).padding(6.dp).size(26.dp).clip(CircleShape)
-                            .background(if (selected) Palette.Navy else Color.White.copy(alpha = 0.9f))
-                            .border(2.dp, if (selected) Palette.Gold else Palette.Divider, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) { if (selected) PhIcon(R.drawable.ph_check, Color.White, 15.dp) }
-                }
-                if (entry.favorite) {
-                    Box(
-                        Modifier.align(Alignment.TopEnd).padding(6.dp).size(26.dp)
-                            .clip(CircleShape).background(Color(0xD113233B))
-                            .clickable(onClick = onFavorite),
-                        contentAlignment = Alignment.Center
-                    ) { StarGlyph(filled = true, tint = Palette.Gold, modifier = Modifier.size(15.dp)) }
-                }
-                if (entry.isNote) {
-                    Box(
-                        Modifier.align(Alignment.BottomStart).padding(6.dp)
-                            .clip(RoundedCornerShape(6.dp)).background(Palette.GoldSoft)
-                            .padding(horizontal = 7.dp, vertical = 1.dp)
-                    ) {
-                        Text(L("ملاحظة", "Note"), color = Palette.GoldDeep, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
+            if (entry.favorite) {
+                Box(
+                    Modifier.align(Alignment.BottomStart).padding(start = 14.dp, bottom = 8.dp).size(26.dp)
+                        .clip(CircleShape).background(Color.Black.copy(alpha = 0.35f))
+                        .clickable(onClick = onFavorite),
+                    contentAlignment = Alignment.Center
+                ) { StarGlyph(filled = true, tint = Lib.accent, modifier = Modifier.size(15.dp)) }
             }
         }
-        // تقدم القراءة: خط ذهبي رفيع تحت الغلاف
-        if (entry.lastOpened > 0L && entry.pageCount > 1) {
-            val frac = ((entry.lastPage + 1).toFloat() / entry.pageCount).coerceIn(0f, 1f)
-            Box(
-                Modifier.padding(top = 8.dp, end = 6.dp).fillMaxWidth().height(2.dp)
-                    .clip(RoundedCornerShape(1.dp)).background(Palette.Divider)
-            ) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(frac).background(Palette.Gold))
-            }
-        } else {
-            Spacer(Modifier.height(10.dp))
-        }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    entry.name, fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold,
-                    color = Palette.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis
+                    entry.name, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold,
+                    color = Lib.text, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    pagesCount(entry.pageCount) + L("، ", ", ") + (
+                    pagesCount(entry.pageCount) + " · " + (
                         if (entry.lastOpened > 0L) L("فُتح ", "Opened ") + formatRelative(entry.lastOpened)
                         else L("أُضيف ", "Added ") + formatRelative(entry.addedAt)
                         ),
-                    fontSize = 12.sp, color = Palette.TextSecondary,
+                    fontSize = 12.sp, color = Lib.muted,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.size(30.dp)) {
-                    PhIcon(R.drawable.ph_more, Palette.TextSecondary, 20.dp, L("خيارات المستند", "Document options"))
+                    PhIcon(R.drawable.ph_more, Lib.muted, 20.dp, L("خيارات المستند", "Document options"))
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
@@ -1253,6 +1184,7 @@ private fun DocCard(
                         },
                         onClick = { menu = false; onFavorite() }
                     )
+                    DropdownMenuItem(text = { Text(L("غلاف الدفتر (اللون والملصق)…", "Notebook cover (color and sticker)…")) }, onClick = { menu = false; coverOpen = true })
                     DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; onRename() })
                     DropdownMenuItem(text = { Text(L("إنشاء نسخة", "Duplicate")) }, onClick = { menu = false; onDuplicate() })
                     DropdownMenuItem(
@@ -1279,13 +1211,14 @@ private fun DocCard(
                 }
             }
             if (shareOpen) ShareExportDialog(entry.id) { shareOpen = false }
+            if (coverOpen) CoverDialog(entry) { coverOpen = false }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 formatSize(entry.sizeBytes), fontSize = 11.sp,
-                color = Palette.TextSecondary.copy(alpha = 0.75f), modifier = Modifier.weight(1f)
+                color = Lib.muted.copy(alpha = 0.8f), modifier = Modifier.weight(1f)
             )
-            if (entry.readMs >= 60_000L) ReadingTimeBadge(entry.readMs, Palette.GoldDeep, 11)
+            if (entry.readMs >= 60_000L) ReadingTimeBadge(entry.readMs, Lib.accentDeep, 11)
         }
     }
 }
@@ -1336,17 +1269,14 @@ private fun EmptyLibrary(onImport: () -> Unit, onNewNote: () -> Unit) {
     ) {
         EmptyShelfArt()
         Spacer(Modifier.height(20.dp))
-        Text(L("ابدأ مكتبتك", "Start your library"), style = MaterialTheme.typography.headlineMedium, color = Palette.TextPrimary)
+        Text(L("ابدأ مكتبتك", "Start your library"), style = MaterialTheme.typography.headlineMedium, color = Lib.text)
         Spacer(Modifier.height(6.dp))
         Text(
             L("استورد محاضرة أو كتابًا بصيغة PDF لتقرأه وتكتب عليه بالقلم،\nأو أنشئ ملاحظة فارغة.", "Import a lecture or book as PDF to read and write on it with your pen,\nor create a blank note."),
             fontSize = 15.sp, lineHeight = 24.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            NewNoteButton(onNewNote)
-            ImportButton(onImport)
-        }
+        NewMenuButton(onNewNote, onImport)
     }
 }
 

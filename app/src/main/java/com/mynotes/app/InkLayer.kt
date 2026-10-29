@@ -64,7 +64,7 @@ private const val MAX_W = 2400
 private const val MAX_PIXELS = 2400L * 3400L
 private const val RENDER_GAP_MS = 100L
 /** إعادة الرسم بالحجم الجديد بعد أن يتوقف التقريب/التصغير؛ وقبلها تبقى الصورة الحالية مكبّرة. */
-private const val RESIZE_DELAY_MS = 250L
+private const val RESIZE_DELAY_MS = 500L
 /** الطبقة الحادة تُرسم بعد أن يثبت الجزء الظاهر هذه المدة. */
 private const val SHARP_DELAY_MS = 150L
 /** الطبقة الحادة فقط إذا كانت الصفحة على الشاشة أعرض من الصورة الأساسية بهذه النسبة. */

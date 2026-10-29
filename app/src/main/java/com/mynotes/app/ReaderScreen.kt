@@ -2884,14 +2884,18 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
     var dragging by remember { mutableStateOf(false) }
     var dragPage by remember { mutableStateOf(0) }
     var dragY by remember { mutableStateOf(0f) }
-    val cur = s.listState.firstVisibleItemIndex
     BoxWithConstraints(modifier.fillMaxHeight().width(150.dp)) {
         val trackH = constraints.maxHeight.toFloat()
         val density = LocalDensity.current
         val handleH = with(density) { 54.dp.toPx() }
-        val shown = if (dragging) dragPage else cur
-        val frac = shown / (n - 1).toFloat()
-        val y = if (dragging) dragY else (trackH - handleH) * frac
+        val range = (trackH - handleH).coerceAtLeast(1f)
+        /** موضع التمرير الفعلي (متصل، لا صفحة بصفحة). يُقرأ داخل طبقة الرسم فقط فلا تُعاد التركيبة. */
+        fun scrollFrac(): Float {
+            val st = s.listState
+            val h = (st.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1).coerceAtLeast(1)
+            return ((st.firstVisibleItemIndex + st.firstVisibleItemScrollOffset / h.toFloat()) / (n - 1)).coerceIn(0f, 1f)
+        }
+        val y = if (dragging) dragY else range * scrollFrac()
         // فقاعة المعاينة أثناء السحب
         if (dragging) {
             val ref = pdf.pages.getOrNull(dragPage)
@@ -2924,35 +2928,40 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
                 Text("${dragPage + 1} / $n", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
             }
         }
+        // منطقة اللمس أعرض من المقبض المرئي، والحركة بطبقة رسم (بلا إعادة تركيب أو قياس)
         Box(
             Modifier.align(Alignment.TopEnd)
-                .offset { IntOffset(0, y.roundToInt()) }
-                .width(22.dp).height(54.dp)
-                .padding(end = 4.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (dragging) Palette.Navy else Palette.Navy.copy(alpha = 0.35f))
+                .graphicsLayer { translationY = if (dragging) dragY else range * scrollFrac() }
+                .width(44.dp).height(54.dp)
                 .pointerInput(n, trackH) {
                     detectVerticalDragGestures(
                         onDragStart = {
                             dragging = true
                             dragPage = s.listState.firstVisibleItemIndex
-                            dragY = (trackH - handleH).coerceAtLeast(1f) * (dragPage / (n - 1).toFloat())
+                            dragY = range * scrollFrac()
                         },
-                        onDragEnd = {
-                            dragging = false
-                            val p = dragPage
-                            scope.launch { s.listState.scrollToItem(p) }
-                        },
+                        onDragEnd = { dragging = false },
                         onDragCancel = { dragging = false }
                     ) { change, dy ->
                         change.consume()
-                        // موضع عشري متراكم: كانت الإزاحات الصغيرة تُقرَّب إلى صفر فيتوقف المقبض ثم يقفز
-                        val range = (trackH - handleH).coerceAtLeast(1f)
+                        // موضع عشري متراكم يتبع الإصبع بدقة
                         dragY = (dragY + dy).coerceIn(0f, range)
-                        dragPage = ((dragY / range) * (n - 1)).roundToInt().coerceIn(0, n - 1)
+                        val p = ((dragY / range) * (n - 1)).roundToInt().coerceIn(0, n - 1)
+                        if (p != dragPage) {
+                            dragPage = p
+                            // المستند يتمرر مع المقبض مباشرة
+                            scope.launch { s.listState.scrollToItem(p) }
+                        }
                     }
                 }
-        )
+        ) {
+            Box(
+                Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)
+                    .width(18.dp).height(54.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (dragging) Palette.Navy else Palette.Navy.copy(alpha = 0.35f))
+            )
+        }
     }
 }
 

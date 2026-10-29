@@ -135,6 +135,7 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
     var partial by mutableStateOf("")
         private set
     var stepFraction by mutableStateOf(0f)
+        private set
     /** ضغط صريح على الترتيب: نافذة معالجة تمنع استعمال التطبيق حتى ينتهي أو يُلغى (التشغيل التلقائي لا يحجب). */
     var blocking by mutableStateOf(false)
         private set
@@ -143,7 +144,6 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
     private var visualFailed = false
 
     fun cancelRunning() { job?.cancel() }
-        private set
     private var job: Job? = null
 
     /** النتائج المحفوظة (تُحمَّل عند الطلب). */

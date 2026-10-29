@@ -90,13 +90,8 @@ object Summary {
 
     private fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 
-    /** هل الفقرة التالية تكمل السابقة؟ */
-    private fun continues(prev: String, next: String): Boolean {
-        val end = prev.trimEnd().lastOrNull() ?: return false
-        if (end == ':' || end == '：') return false
-        val startsLower = next.firstOrNull()?.isLowerCase() == true
-        return end !in TERMINAL || startsLower
-    }
+    /** هل الفقرة التالية تكمل السابقة؟ (نفس قاعدة TextTidy: غياب النقطة وحده لا يكفي، فعناوين الشرائح ونقاطها لا تُلصق) */
+    private fun continues(prev: String, next: String): Boolean = TextTidy.continues(prev, next)
 
     private fun emphasisOf(m: TextMark, text: String): List<String> =
         if (m.level >= 2) listOf(text) else m.emphasis

@@ -6,15 +6,32 @@
 import re
 
 TERMINAL = ".!?؟…"
-# رموز النقاط في أول السطر: ليست خلية جدول
-BULLETS = set("•●◦▪■□➢➤►▸‣⁃–—-*·✓✔")
+# رموز النقاط (مثل TextTidy.isBulletChar)
+BULLET_CHARS = set("•●▪■◦○►▶➢➤✓✔❖◆♦–—-")
+ABBREVIATIONS = {"e.g", "i.e", "eg", "ie", "cf", "viz", "esp", "incl", "etc", "vs", "dr", "mr", "mrs", "ms", "prof",
+                 "fig", "no", "vol", "approx", "al"}
 
+# صارت في التطبيق (2026-10-29): F1 (رمز النقطة يُلصق بما بعده ويبقى في النص)، نقطة جديدة عند رمز النقطة،
+# «eg.» في آخر السطر ليست نهاية جملة، عنوان الشريحة (عريض أو مسطّر، ≥1.1× النص، ≤10 كلمات) بدل F3.
 FIXES = """
-F1 رمز النقطة في أول السطر لا يكون خلية مستقلة (يُلصق بما بعده).
-F3 سطر قصير عريض أكبر قليلًا من نص الصفحة = عنوان (عنوان الشريحة من كلمة واحدة).
 F2 صف واحد بخلايا (2 أو 3+) يبدأ جدولًا فقط إن كان في الصفحة صف مجاور قريب بخليتين فأكثر
    وأعمدة متطابقة؛ وإلا فالفراغ داخل جملة (مكان سهم أو صورة) والصف نص عادي.
 """
+
+
+def is_bullet_char(c):
+    return c in BULLET_CHARS or 0xF000 <= ord(c) <= 0xF0FF
+
+
+def starts_with_bullet(text):
+    t = text.lstrip()
+    if not t or not is_bullet_char(t[0]):
+        return False
+    if len(t) == 1:
+        return True
+    if t[0] in "–—-":  # «–ve» و«-5» ليست نقاطًا
+        return t[1] == " "
+    return t[1] == " " or t[1].isalpha() or t[1] == "("
 
 
 def h(w):
@@ -90,20 +107,20 @@ class Row:
                 prev = self.words[k - 1]
                 gap = (prev[1] - w[3]) if self.rtl else (w[1] - prev[3])
                 line_changed = w[5] != prev[5]
-                bullet_lead = fixed and k == 1 and prev[0].strip() in BULLETS
+                bullet_lead = k == 1 and len(prev[0]) == 1 and is_bullet_char(prev[0])
                 if not bullet_lead and (gap > 1.4 * self.height or (line_changed and gap > 1.0 * self.height)):
                     flush()
             group.append(w)
         flush()
-        if fixed and out and out[0].text.split(" ", 1)[0] in BULLETS:
-            # F1: «•  نص» خلية واحدة؛ ويُحذف الرمز من النص (التطبيق يعرض نقاطه بنفسه)
-            c0 = out[0]
-            out[0] = Cell(c0.text.split(" ", 1)[1] if " " in c0.text else c0.text, c0.l, c0.r, self.rtl)
         self.cells = out
 
     @property
     def text(self):
         return " ".join(c.text for c in self.cells)
+
+    @property
+    def bullet(self):
+        return starts_with_bullet(self.text)
 
     @property
     def numbered_heading(self):
@@ -166,8 +183,11 @@ def starts_new_paragraph(prev, nxt, block_l, block_r):
         return True
     if abs(nxt.height - prev.height) > 0.25 * lh:
         return True
+    if nxt.bullet:
+        return True
     pe = prev.text.rstrip()[-1:]
-    ended = pe != "" and pe in TERMINAL
+    last_word = prev.text.rstrip().split(" ")[-1].rstrip(".").lower()
+    ended = pe != "" and pe in TERMINAL and last_word not in ABBREVIATIONS
     if prev.rtl:
         if ended and prev.l > block_l + 2.5 * lh:
             return True
@@ -222,12 +242,13 @@ def build_text(page_words, idx, fixed=False):
     is_heading = []
     for i in range(n):
         ratio = 1.25 if len(rows[i].words) >= 2 else 1.6
-        hd = rows[i].height >= ratio * body or (rows[i].numbered_heading and rows[i].height >= 1.08 * body)
-        if fixed and not hd:
-            # F3: سطر قصير عريض (عنوان شريحة) أكبر قليلًا من نص الصفحة، بلا علامة نهاية جملة
-            ws = rows[i].words
-            bold = sum(1 for w in ws if w[6]) * 5 >= len(ws) * 4
-            hd = bold and len(ws) <= 8 and rows[i].height >= 1.2 * body and rows[i].text.rstrip()[-1:] not in TERMINAL
+        r = rows[i]
+        ws = r.words
+        # عنوان شريحة: عريض أو مسطّر كله (w[7] إن وُجد)، ≥1.1× النص، ≤10 كلمات، بلا نهاية جملة ولا رمز نقطة
+        styled = sum(1 for w in ws if w[6]) * 5 >= len(ws) * 4 or all(len(w) > 7 and w[7] for w in ws)
+        last = r.text.rstrip()[-1:]
+        slide_title = styled and len(ws) <= 10 and r.height >= 1.1 * body and not r.bullet and last != "" and last not in TERMINAL
+        hd = r.height >= ratio * body or (r.numbered_heading and r.height >= 1.08 * body) or slide_title
         is_heading.append(not starts_table[i] and hd)
     block_l = min(r.l for r in rows)
     block_r = max(r.r for r in rows)

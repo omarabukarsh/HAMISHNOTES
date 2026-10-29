@@ -175,7 +175,9 @@ object TextLayout {
                     val prev = words[k - 1]
                     val gap = if (rtl) prev.l - w.r else w.l - prev.r
                     val lineChanged = w.line != prev.line
-                    if (gap > 1.4f * height || (lineChanged && gap > 1.0f * height)) flush()
+                    // رمز النقطة في أول السطر («•    نص» في الشرائح) ليس خلية جدول مستقلة
+                    val bulletLead = k == 1 && prev.text.length == 1 && TextTidy.isBulletChar(prev.text[0])
+                    if (!bulletLead && (gap > 1.4f * height || (lineChanged && gap > 1.0f * height))) flush()
                 }
                 group.add(w)
             }
@@ -183,6 +185,8 @@ object TextLayout {
             out
         }
         val text: String get() = cells.joinToString(" ") { it.text }
+        /** سطر يبدأ برمز نقطة: بداية نقطة جديدة. */
+        val bullet: Boolean get() = TextTidy.startsWithBullet(text)
         val numberedHeading: Boolean get() =
             Regex("^\\p{Nd}+([.٫]\\p{Nd}+)*[.٫]?\\s+\\S").containsMatchIn(text) &&
                 text.split(' ').size <= 10 && text.trimEnd().lastOrNull() != '.'
@@ -266,10 +270,16 @@ object TextLayout {
             multi && (nextMulti || nextCont || rows[i].cells.size >= 3)
         }
         val isHeading = BooleanArray(rows.size) { i ->
-            val ratio = if (rows[i].words.size >= 2) 1.25f else 1.6f
+            val r = rows[i]
+            val ratio = if (r.words.size >= 2) 1.25f else 1.6f
+            // عنوان شريحة: سطر قصير عريض أو مسطّر كله، أكبر قليلًا من نص الصفحة، بلا نهاية جملة ولا رمز نقطة
+            val styled = r.words.count { it.bold } * 5 >= r.words.size * 4 || r.words.all { it.underline }
+            val slideTitle = styled && r.words.size <= 10 && r.height >= 1.1f * body && !r.bullet &&
+                r.text.trimEnd().lastOrNull().let { it != null && it !in TERMINAL }
             !startsTable[i] && (
-                rows[i].height >= ratio * body ||
-                    (rows[i].numberedHeading && rows[i].height >= 1.08f * body)
+                r.height >= ratio * body ||
+                    (r.numberedHeading && r.height >= 1.08f * body) ||
+                    slideTitle
                 )
         }
 
@@ -324,8 +334,12 @@ object TextLayout {
         if (next.t - prev.b > 0.9f * lh) return true
         // تغيّر واضح في حجم الخط
         if (abs(next.height - prev.height) > 0.25f * lh) return true
+        // سطر يبدأ برمز نقطة = نقطة جديدة
+        if (next.bullet) return true
         val prevEnd = prev.text.trimEnd().lastOrNull()
-        val ended = prevEnd != null && prevEnd in TERMINAL
+        // "eg." في آخر السطر اختصار، لا نهاية جملة
+        val lastWord = prev.text.trimEnd().substringAfterLast(' ').trimEnd('.').lowercase()
+        val ended = prevEnd != null && prevEnd in TERMINAL && lastWord !in TextTidy.abbreviations
         // سطر قصير منتهٍ بنقطة = نهاية فقرة
         if (prev.rtl) {
             if (ended && prev.l > blockL + 2.5f * lh) return true

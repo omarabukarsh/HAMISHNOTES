@@ -896,7 +896,7 @@ class DocSession(entry: DocEntry) {
         val doc = pdf ?: return null
         val strokes = annotations[page] ?: emptyList()
         // الإصدار يشمل مصدر القراءة (طبقة النص)، فتُعاد قراءة الصفحات المحفوظة بالطريقة القديمة مرة واحدة
-        val ver = OcrEngine.versionOf(strokes) * 31 + 5
+        val ver = OcrEngine.versionOf(strokes) * 31 + 6
         val existing = ocr[page]
         if (existing != null && existing.version == ver) return existing
 
@@ -956,8 +956,35 @@ class DocSession(entry: DocEntry) {
         if (result != null) {
             ocr[page] = result
             withContext(Dispatchers.IO) { AppController.repo.saveOcrPage(id, page, result) }
+            refreshMarkTexts(page, result.words)
         }
         return result
+    }
+
+    /**
+     * بعد قراءة جديدة للصفحة: يُعاد بناء نص تمييزاتها بقواعد فهم الشكل الحالية (عناوين الشرائح، النقاط)،
+     * فقط إن بقيت الكلمات نفسها (لم يعدّل المستخدم النص) ولم يُعدَّل الجزء في الملخص يدويًا (ترتيب، نوع، جدول).
+     */
+    private fun refreshMarkTexts(page: Int, words: List<OcrWord>) {
+        val ms = marks[page] ?: return
+        val e = summaryEdits
+        val editedIds = (e.order + e.kinds.keys + e.tables.flatMap { it.keys })
+            .map { it.substringAfter(':').substringBefore('#') }.toSet()
+        fun letters(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
+        var changed = false
+        val next = ms.map { m ->
+            if (m.id in editedIds) return@map m
+            val idx = TextLayout.wordsInside(words, m.rects)
+            if (idx.isEmpty()) return@map m
+            val t = TextLayout.buildText(words, idx).trim()
+            if (t == m.text || letters(t) != letters(m.text)) return@map m
+            changed = true
+            m.copy(text = t)
+        }
+        if (changed) {
+            marks = marks + (page to next)
+            persist()
+        }
     }
 
     /** يقرأ كل الصفحات غير المقروءة في الخلفية، ويتوقف مؤقتًا أثناء الكتابة بالقلم. */

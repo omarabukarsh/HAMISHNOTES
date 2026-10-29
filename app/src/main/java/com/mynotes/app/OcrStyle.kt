@@ -80,40 +80,53 @@ object OcrStyle {
         val sortedD = density.filter { it > 0f }.sorted()
         val medD = if (sortedD.isEmpty()) 0f else sortedD[sortedD.size / 2]
 
+        // حدود كل سطر: تسطير العنوان يمتد على السطر كله، فيُقاس امتداده نسبة إلى السطر لا إلى الكلمة
+        val lineL = HashMap<Int, Float>()
+        val lineR = HashMap<Int, Float>()
+        for (wd in words) {
+            lineL[wd.line] = min(lineL[wd.line] ?: wd.l, wd.l)
+            lineR[wd.line] = max(lineR[wd.line] ?: wd.r, wd.r)
+        }
         val out = words.mapIndexed { i, wd ->
             val col = colors[i]
             val named = colorName(col)
             val bold = wd.bold || (medD > 0f && density[i] > medD * 1.45f && (wd.r - wd.l) * w > 18)
             wd.copy(
                 bold = bold,
-                underline = wd.underline || underlined(px, w, h, wd),
+                underline = wd.underline || underlined(px, w, h, wd, lineL[wd.line] ?: wd.l, lineR[wd.line] ?: wd.r),
                 color = if (named != null) col else -1
             )
         }
         return Pair(out, shapes)
     }
 
-    /** خط أفقي رفيع مباشرة تحت الكلمة بطولها تقريبًا، ولا يمتد بعيدًا عنها (وإلا فهو حد جدول أو فاصل). */
-    private fun underlined(px: IntArray, w: Int, h: Int, wd: OcrWord): Boolean {
+    /**
+     * خط أفقي رفيع تحت الكلمة بطولها تقريبًا. يُبحث من منطقة ذيول الحروف (PowerPoint يرسم التسطير
+     * داخل مربع الكلمة تحت خط الأساس) إلى ما تحت المربع قليلًا. الخط الممتد بعيدًا عن حدود السطر
+     * (lineL..lineR) حد جدول أو فاصل، لا تسطير.
+     */
+    private fun underlined(px: IntArray, w: Int, h: Int, wd: OcrWord, lineL: Float, lineR: Float): Boolean {
         val x0 = (wd.l * w).toInt().coerceIn(0, w - 1)
         val x1 = (wd.r * w).toInt().coerceIn(x0 + 1, w)
         val y1 = (wd.b * w).toInt().coerceIn(0, h - 1)
         val hh = max(4, ((wd.b - wd.t) * w).toInt())
         val width = x1 - x0
         if (width < 12) return false
+        val l0 = (lineL * w).toInt().coerceIn(0, w - 1)
+        val r0 = (lineR * w).toInt().coerceIn(l0 + 1, w)
+        val lineW = r0 - l0
         val yEnd = min(h - 1, y1 + max(3, hh / 3))
-        for (y in max(0, y1 - 1)..yEnd) {
+        for (y in max(0, y1 - (hh * 0.35f).toInt())..yEnd) {
             var dark = 0
             for (x in x0 until x1) if (lum(px[y * w + x]) < 150) dark++
             if (dark < width * 0.85f) continue
-            // الامتداد خارج الكلمة: خط أطول بكثير من الكلمة ليس تسطيرًا
             var left = 0
-            var x = x0 - 1
-            while (x >= 0 && left < width * 2 && lum(px[y * w + x]) < 150) { left++; x-- }
+            var x = l0 - 1
+            while (x >= 0 && left < lineW && lum(px[y * w + x]) < 150) { left++; x-- }
             var right = 0
-            x = x1
-            while (x < w && right < width * 2 && lum(px[y * w + x]) < 150) { right++; x++ }
-            if (left + right < width * 1.5f) return true
+            x = r0
+            while (x < w && right < lineW && lum(px[y * w + x]) < 150) { right++; x++ }
+            if (left + right < lineW * 0.5f) return true
         }
         return false
     }

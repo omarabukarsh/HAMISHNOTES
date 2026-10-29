@@ -66,4 +66,44 @@ class SummaryRulesTest {
         val blocks = Summary.build(listOf(mark("a", "Where each group acts \\| مكان عمل كل مجموعة")), tidy = false)
         assertEquals(listOf("Where each group acts | مكان عمل كل مجموعة"), blocks.map { (it as SPara).text })
     }
+
+    @Test
+    fun slideTitleAndBulletsAreNotGluedByTidy() {
+        val blocks = Summary.build(
+            listOf(
+                mark(
+                    "a",
+                    "Classification of Anti-inflammatory drugs\n\n• Steroidal anti-inflammatory drugs (SAIDs)\n" +
+                        "are synthetic drugs similar to cortisone, a\nnaturally occurring hormone. eg.\n" +
+                        "Corticosteroids.... (Endocrine topic)\n\n• Non-steroidal anti-inflammatory drugs\n(NSAIDs)"
+                )
+            ),
+            tidy = true
+        )
+        assertEquals(
+            listOf(
+                "Classification of Anti-inflammatory drugs",
+                "• Steroidal anti-inflammatory drugs (SAIDs) are synthetic drugs similar to cortisone, a naturally " +
+                    "occurring hormone. eg. Corticosteroids... (Endocrine topic)",
+                "• Non-steroidal anti-inflammatory drugs (NSAIDs)"
+            ),
+            blocks.map { (it as SPara).text }
+        )
+    }
+
+    @Test
+    fun continuationNeedsEvidenceNotJustMissingPeriod() {
+        assertEquals(false, TextTidy.continues("(typically achieved at higher doses", "NSAIDs are widely available"))
+        assertEquals(true, TextTidy.continues("Penicillins are used in combination with", "Probenecid"))
+        assertEquals(true, TextTidy.continues("similar to cortisone, a", "naturally occurring hormone."))
+        assertEquals(false, TextTidy.continues("Drugs that have", "• Analgesic effect"))
+        assertEquals(true, TextTidy.continues("يرتبط البنسلين", "بإنزيم الجدار"))
+    }
+
+    @Test
+    fun bulletIsKeptOnlyAtTheStart() {
+        assertEquals("• Fever and cough", TextTidy.clean("•   Fever and cough"))
+        assertEquals("-5 degrees", TextTidy.clean("-5 degrees"))
+        assertEquals(false, TextTidy.startsWithBullet("–ve bacteria"))
+    }
 }

@@ -233,7 +233,10 @@ fun AlertDialog(
     icon: (@Composable () -> Unit)? = null,
     title: (@Composable () -> Unit)? = null,
     text: (@Composable () -> Unit)? = null,
-    properties: DialogProperties = DialogProperties()
+    properties: DialogProperties = DialogProperties(),
+    containerColor: Color = androidx.compose.material3.AlertDialogDefaults.containerColor,
+    titleContentColor: Color = androidx.compose.material3.AlertDialogDefaults.titleContentColor,
+    textContentColor: Color = androidx.compose.material3.AlertDialogDefaults.textContentColor
 ) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -243,7 +246,10 @@ fun AlertDialog(
         icon = icon,
         title = title,
         text = text,
-        properties = properties
+        properties = properties,
+        containerColor = containerColor,
+        titleContentColor = titleContentColor,
+        textContentColor = textContentColor
     )
 }
 

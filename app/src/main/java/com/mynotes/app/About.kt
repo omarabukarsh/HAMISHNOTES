@@ -96,9 +96,9 @@ fun privacyText(): String = L(
 
 آخر تحديث: أكتوبر 2026
 
-• ملفاتك تبقى على جهازك: ملفات PDF والكتابة والتمييز والملخصات والتسجيلات الصوتية تُحفظ داخل التطبيق على جهازك فقط. لا يرسل «MyNotes Pro» ملفاتك أو ملاحظاتك إلى أي خادم (عدا نص الذكاء الاصطناعي الذي تختار إرساله إلى Claude أو ChatGPT، انظر أدناه)، ولا يملك المطوّر أي خادم يجمع بياناتك.
+• ملفاتك تبقى على جهازك: ملفات PDF والكتابة والتمييز والملخصات والتسجيلات الصوتية تُحفظ داخل التطبيق على جهازك فقط. لا يرسل «MyNotes Pro» ملفاتك أو ملاحظاتك إلى أي خادم، ولا يملك المطوّر أي خادم يجمع بياناتك.
 
-• الذكاء الاصطناعي: النموذج الذي على الجهاز يعمل دون إنترنت ولا يرسل شيئًا. إذا اخترت بنفسك Claude أو ChatGPT في الإعدادات وأدخلت مفتاح API الخاص بك، يُرسل النص الذي تطلب شرحه أو ترتيبه أو تعديله (وصورة الصفحة عند «قراءة الصفحة») مباشرة إلى Anthropic أو OpenAI وفق سياسة خصوصية الشركة المختارة. المفتاح يُحفظ على جهازك فقط.
+• الذكاء الاصطناعي: الذكاء الاصطناعي يعمل بالكامل على جهازك دون إنترنت ولا يرسل شيئًا إلى أي جهة. الإنترنت يُستعمل فقط لتنزيل النموذج مرة واحدة.
 
 • لا حسابات ولا إعلانات: لا يطلب التطبيق تسجيل الدخول، ولا يحتوي إعلانات، ولا يضيف المطوّر أي أدوات تحليلات أو تتبّع.
 
@@ -119,9 +119,9 @@ fun privacyText(): String = L(
 
 Last updated: October 2026
 
-• Your files stay on your device: PDFs, handwriting, highlights, summaries and audio recordings are stored inside the app on your device only. MyNotes Pro does not send your files or notes to any server (except the AI text you choose to send to Claude or ChatGPT, see below), and the developer runs no server that collects your data.
+• Your files stay on your device: PDFs, handwriting, highlights, summaries and audio recordings are stored inside the app on your device only. MyNotes Pro does not send your files or notes to any server, and the developer runs no server that collects your data.
 
-• AI: the on-device model works offline and sends nothing. If you choose Claude or ChatGPT in Settings and enter your own API key, the text you ask to explain, organize or edit (and the page image for “Read page”) is sent directly to Anthropic or OpenAI under that company’s privacy policy. The key is stored on your device only.
+• AI: the AI runs entirely on your device, offline, and sends nothing to anyone. The internet is used only to download the model once.
 
 • No accounts or ads: the app needs no sign-in, contains no ads, and the developer adds no analytics or tracking tools.
 

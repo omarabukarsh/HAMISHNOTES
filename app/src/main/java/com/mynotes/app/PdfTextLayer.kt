@@ -149,7 +149,7 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
                 b = maxOf(b, base + h * 0.22f)
             }
             if (r <= l || b <= t) return
-            out.add(OcrWord(ArabicFix.word(word), l / pageW, t / pageW, r / pageW, b / pageW, line, isBold(ps)))
+            out.add(OcrWord(ArabicFix.word(word), l / pageW, t / pageW, r / pageW, b / pageW, line, isBold(ps), italic = isItalic(ps)))
         }
 
         /** الكلمة عريضة إن كان خط أغلب حروفها عريضًا (من اسم الخط أو وزنه). */
@@ -166,6 +166,20 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
                 ) bold++
             }
             return bold * 2 > ps.size
+        }
+
+        /** الكلمة مائلة إن كان خط أغلب حروفها مائلًا (من اسم الخط أو زاوية الميل أو علامة الخط). */
+        private fun isItalic(ps: List<TextPosition>): Boolean {
+            var it = 0
+            for (p in ps) {
+                val f = try { p.font } catch (t: Throwable) { null } ?: continue
+                val name = (try { f.name } catch (t: Throwable) { null } ?: "").lowercase()
+                val d = try { f.fontDescriptor } catch (t: Throwable) { null }
+                val angle = try { d?.italicAngle ?: 0f } catch (t: Throwable) { 0f }
+                val flag = try { d?.isItalic == true } catch (t: Throwable) { false }
+                if (flag || angle != 0f || name.contains("italic") || name.contains("oblique")) it++
+            }
+            return it * 2 > ps.size
         }
 
         override fun writeLineSeparator() {

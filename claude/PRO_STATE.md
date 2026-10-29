@@ -26,7 +26,7 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 
 ## AI
 
-- On device: LiteRT-LM 0.18.0, CPU only, temperature 0.2. Qwen3-1.7B, Qwen3-0.6B, Gemma 4 E2B (vision), imported file. Cloud: CloudAi.kt with user's own key (Claude / OpenAI), Ai.budget(x) = x*8.
+- On device: LiteRT-LM 0.18.0, CPU only (also vision), temperature 0.2. Two models only, shown as «AI» (E2B) and «AI أقوى» (E4B) with no model names. Qwen, imported file, GPU switch and all cloud code (CloudAi.kt, Claude/ChatGPT) were REMOVED (2026-10-29, user request); old Qwen files are deleted on first start and the saved choice migrates to «AI».
 - All prompts are subject-neutral (no "pharmacy" wording) since VERSION 4: summary, review, mind map, cards, comparison table, edit, explain.
 
 ### Structured summary (AiStructure.kt, VERSION 4)
@@ -75,6 +75,15 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 - Metrics independent of the app checks: invented words, coverage, numbers kept, negations lost, broken-sentence bullets, lines in the wrong section, tables; mind map points / >7 words / cut mid-word / not from one line; cards / answer not in notes / yes-no / answer in question / near-duplicate pairs; model time per stage.
 - Workflow runs on changes to tools/ai-eval or AiStructure/AiOrganize/MindMap; results in annotations (3 steps: metrics, summaries, mind map + cards) and in the job log.
 - `python tools/ai-eval/eval.py --stub` runs locally without the model (logic check).
+
+## Round 2026-10-29 (OCR + visual summary + explicit AI) — UNVERIFIED on device and in CI until a build runs
+- Automatic AI triggers (auto-continue after highlight, page read before organize, whole-doc background read, auto cards) are kept but OFF by default; toggles in Settings > AI (and the drawer's AI settings). Explicit request = the button in the summaries drawer AI tab; it shows a blocking dialog (AiBlockingDialog, hosted in ReaderScreen) with Cancel. Auto runs never block.
+- Explicit organize reads highlighted pages visually (AiPageReader.readVisual: page image + numbered colored frames, one image per conversation, max 8 frames) ONLY if Ai.visionOk; each accepted transcript replaces that mark's text (length sanity check, no "[unreadable]"), else the OCR text stays; final message states how many highlights came from the image. CPU vision on Kirin is unproven: Settings has «اختبر قراءة الصور» (Ai.visionTest, 2 fresh conversations, shows result/time/PSS). If it fails nothing claims visual reading.
+- Non-highlighted pages: stored page text only as Part.context (<=900/500 chars, "CONTEXT ... never copy"), included in cacheKey. Grounding checks still use Part.notes only.
+- AiPageReader results are keyed by hash of the page layout text (not page index), old *_pN.txt files are deleted once; API result(s,page)/save(s,page,..)/context(s,page,max). Inflight set prevents double reads.
+- OCR: OcrWord has italic/underline/color/conf/block; OcrPage.shapes (long rules). OcrStyle.kt analyzes the page bitmap (ink color, underline, bold by ink density, horizontal/vertical rules). PdfTextLayer detects italic from the font. OcrEngine.recognizeBest re-reads a contrast-enhanced copy when mean confidence < 0.6. OCR cache version = versionOf*31+5 (re-reads pages once). ML Kit is still Latin-only; Arabic scans rely on the PDF text layer or visual reading.
+- Selection bar: «اجعله بطاقة» is one tap (front = nearest heading or first words, back = selected text, no dialog); «إلى الخريطة الذهنية» stores DocData.mindNotes ("mind" in the doc JSON) shown by MindMap.withNotes under their heading.
+- tools/ai-eval mirrors were NOT changed (SYSTEM/prompt without context are identical).
 
 ## Pro UI
 - Templates + TemplatePicker, PagePanel (⋯), tab bar contrast, document settings, toolbar customization page, default toolbar + ✦ AI button, library multi-select, «manual edits» bar removed from summaries.

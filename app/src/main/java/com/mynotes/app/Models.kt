@@ -166,10 +166,26 @@ data class OcrWord(
     val b: Float,
     val line: Int,
     /** خط عريض في ملف PDF (لاكتشاف العناوين الفرعية في ترتيب الملخص). */
-    val bold: Boolean = false
+    val bold: Boolean = false,
+    /** خط مائل. */
+    val italic: Boolean = false,
+    /** تحته خط (من تحليل صورة الصفحة). */
+    val underline: Boolean = false,
+    /** لون الحبر RGB (0xRRGGBB)، -1 = غير معروف. */
+    val color: Int = -1,
+    /** ثقة القراءة الضوئية 0..1، -1 = غير معروفة (نص رقمي من الملف ثقته كاملة). */
+    val conf: Float = -1f,
+    /** رقم كتلة النص (ترتيب القراءة بين الأعمدة والفقرات). */
+    val block: Int = 0
 )
 
-data class OcrPage(val words: List<OcrWord>, val version: Int)
+/** شكل على الصفحة: خط أفقي (0) أو رأسي (1) من تحليل الصورة (حدود جداول، فواصل، خطوط مخططات). نسبيًا لعرض الصفحة. */
+data class OcrShape(val kind: Int, val l: Float, val t: Float, val r: Float, val b: Float)
+
+data class OcrPage(val words: List<OcrWord>, val version: Int, val shapes: List<OcrShape> = emptyList())
+
+/** نقطة أضافها المستخدم من تحديد نص إلى الخريطة الذهنية، مع عنوانها في المستند إن عُرف. */
+data class MindNote(val id: String, val page: Int, val text: String, val title: String?, val sub: String?)
 
 data class SearchHit(val page: Int, val start: Int, val end: Int)
 

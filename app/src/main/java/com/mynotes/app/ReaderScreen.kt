@@ -232,6 +232,9 @@ private fun ReaderContent(s: DocSession) {
         if (mode == "full") AiOrganizer.startAuto(s) else AiOrganizer.continueSummary(s, quiet = true)
     }
 
+    // ضغط صريح على ترتيب الملخص: نافذة معالجة تمنع استعمال التطبيق حتى ينتهي أو يُلغى
+    AiBlockingDialog()
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {
@@ -1604,28 +1607,23 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
     }
 }
 
+/** أعلى موضع في التحديد (نسبة إلى عرض الصفحة) لمعرفة العنوان الذي يقع تحته. */
+private fun selectionTop(s: DocSession, sel: TextSelection): Float {
+    val ws = s.ocr[sel.page]?.words ?: return 0.5f
+    if (ws.isEmpty()) return 0.5f
+    val lo = minOf(sel.start, sel.end).coerceIn(0, ws.size - 1)
+    return ws[lo].t
+}
+
 @Composable
 private fun SelectionBar(s: DocSession) {
     val context = LocalContext.current
     val sel = s.selection ?: return
-    var cardBack by remember { mutableStateOf<String?>(null) }
     var translateText by remember { mutableStateOf<String?>(null) }
     translateText?.let { t -> TranslateDialog(t) { translateText = null } }
     var explainText by remember { mutableStateOf<String?>(null) }
     var explainCtx by remember { mutableStateOf("") }
     explainText?.let { t -> AiExplainDialog(t, explainCtx) { explainText = null } }
-    cardBack?.let { back ->
-        AddCardDialog(
-            initialFront = "",
-            initialBack = back,
-            onSave = { f, b ->
-                s.addCustomCard(f, b)
-                cardBack = null
-                s.selection = null
-            },
-            onDismiss = { cardBack = null }
-        )
-    }
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 6.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()),
@@ -1642,10 +1640,25 @@ private fun SelectionBar(s: DocSession) {
             TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
                 Text(L("إلى الملخصات", "To summaries"), color = Palette.GoldDeep)
             }
+            // بطاقة بنقرة واحدة: الجواب هو النص المحدد، والسؤال عنوانه في المستند (أو أول كلماته)
             TextButton(onClick = {
                 val text = s.selectionText()
-                if (text.isNotEmpty()) cardBack = TextTidy.clean(text)
+                if (text.isNotEmpty()) {
+                    val back = TextTidy.clean(text)
+                    val (title, sub) = AiStructure.headingFor(s, sel.page, selectionTop(s, sel))
+                    val front = sub ?: title ?: (back.split(Regex("\\s+")).take(8).joinToString(" ") + "…")
+                    s.addCustomCard(front, back)
+                    s.selection = null
+                    AppController.messages.tryEmit(L("أُضيفت بطاقة", "Card added"))
+                }
             }) { Text(L("اجعله بطاقة", "Make it a card")) }
+            TextButton(onClick = {
+                val text = s.selectionText()
+                if (text.isNotEmpty()) {
+                    s.addMindNote(sel.page, TextTidy.clean(text), selectionTop(s, sel))
+                    s.selection = null
+                }
+            }) { Text(L("إلى الخريطة الذهنية", "To mind map")) }
             TextButton(onClick = {
                 val text = s.selectionText()
                 if (text.isNotEmpty()) translateText = TextTidy.clean(text)
@@ -1653,7 +1666,7 @@ private fun SelectionBar(s: DocSession) {
             TextButton(onClick = {
                 val text = s.selectionText()
                 if (text.isNotEmpty()) {
-                    explainCtx = AiDocReader.context(s.id, sel.page, if (Ai.isCloud) 12000 else 1800)
+                    explainCtx = AiDocReader.context(s, sel.page, 1800)
                     explainText = ArabicFix.text(TextTidy.clean(text))
                 }
             }) { Text(L("✦ اشرح", "✦ Explain"), color = Palette.GoldDeep) }

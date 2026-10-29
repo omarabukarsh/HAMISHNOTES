@@ -1,7 +1,6 @@
 package com.mynotes.app
 
 import android.content.Context
-import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,31 +47,21 @@ object Ai {
 
     val models = listOf(
         Model(
-            "qwen17", { L("متوازن (موصى به)", "Balanced (recommended)") },
-            { L("Qwen3 1.7B — جيد بالعربية والإنجليزية، مناسب لجهازك", "Qwen3 1.7B — good in Arabic and English, suits your device") },
-            "litert-community/Qwen3-1.7B", "Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm", 932
-        ),
-        Model(
-            "qwen06", { L("خفيف وسريع", "Light and fast") },
-            { L("Qwen3 0.6B — أسرع لكنه أقل دقة", "Qwen3 0.6B — faster but less accurate") },
-            "litert-community/Qwen3-0.6B", "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm", 329
-        ),
-        Model(
-            "gemma4", { L("الأدق (أبطأ وأكبر)", "Most accurate (slower, larger)") },
-            { L("Gemma 4 E2B من Google — يحتاج ذاكرة أكبر", "Google Gemma 4 E2B — needs more memory") },
+            "gemma4", { L("AI", "AI") },
+            { L("الأسرع وذاكرته أقل، مناسب لجهازك", "Faster and lighter on memory; suits your device") },
             "litert-community/gemma-4-E2B-it-litert-lm", "gemma-4-E2B-it.litertlm", 2583, vision = true
         ),
         Model(
-            "custom", { L("ملف مستورد", "Imported file") },
-            { L("ملف نموذج ‎.litertlm‎ نقلته إلى الجهاز بنفسك", "A .litertlm model file you copied to the device") },
-            null, "custom.litertlm", 0
+            "gemma4plus", { L("AI أقوى", "Stronger AI") },
+            { L("أدق وأبطأ ويحتاج ذاكرة أكبر بكثير، وقد لا يناسب جهازك", "More accurate but slower and needs much more memory; it may not suit your device") },
+            "litert-community/gemma-4-E4B-it-litert-lm", "gemma-4-E4B-it.litertlm", 3654, vision = true
         )
     )
 
     private lateinit var ctx: Context
     private val prefs by lazy { ctx.getSharedPreferences("mynotes_ai", Context.MODE_PRIVATE) }
 
-    var selectedId by mutableStateOf("qwen17")
+    var selectedId by mutableStateOf("gemma4")
         private set
     var useGpu by mutableStateOf(false)
         private set
@@ -98,7 +87,20 @@ object Ai {
     fun init(context: Context) {
         if (::ctx.isInitialized) return
         ctx = context.applicationContext
-        selectedId = prefs.getString("model", "qwen17") ?: "qwen17"
+        // النماذج القديمة (Qwen والملف المستورد) أُلغيت: من اختارها ينتقل إلى «AI»، وتُحذف ملفاتها لتحرير المساحة
+        val saved = prefs.getString("model", "gemma4") ?: "gemma4"
+        selectedId = if (models.any { it.id == saved }) saved else "gemma4"
+        if (saved != selectedId) prefs.edit().putString("model", selectedId).apply()
+        AppController.scope.launch(Dispatchers.IO) {
+            try {
+                val keep = models.map { it.file }.toSet()
+                modelDir().listFiles()?.forEach { f ->
+                    val base = f.name.removeSuffix(".part")
+                    if (f.isFile && base.endsWith(".litertlm") && base !in keep) f.delete()
+                }
+            } catch (t: Throwable) {
+            }
+        }
         // زر معالج الرسوم أُلغي: التشغيل على المعالج (CPU) دائمًا، ويُمسح الاختيار القديم
         useGpu = false
         if (prefs.contains("gpu")) prefs.edit().remove("gpu").apply()
@@ -112,33 +114,23 @@ object Ai {
     }
 
     val selected: Model get() = models.firstOrNull { it.id == selectedId } ?: models[0]
-    /** الذكاء عبر الإنترنت (Claude أو ChatGPT بمفتاح المستخدم) مختار ومفتاحه موجود. */
-    val isCloud: Boolean get() = CloudAi.active
-    val ready: Boolean get() = isCloud || installed(selected)
+    val ready: Boolean get() = installed(selected)
 
-    /** يقرأ صورة الصفحة نفسها: Claude وChatGPT دائمًا، وعلى الجهاز Gemma 4 فقط. */
-    val canSee: Boolean get() = isCloud || (installed(selected) && selected.vision && !visionFailed)
+    /** النموذج المختار منزّل ويقرأ الصور ولم يفشل تشغيل قارئ الصور (الاستنتاج على المعالج CPU دائمًا). */
+    val visionOk: Boolean get() = installed(selected) && selected.vision && !visionFailed
 
-    /** رسالة خطأ واضحة: من Claude/ChatGPT كما هي، وإلا رسالة النموذج المحلي. */
-    fun errorText(t: Throwable, local: String): String = when {
-        t is CloudAi.ApiError -> CloudAi.label + ": " + (t.message ?: "")
-        isCloud -> CloudAi.label + ": " + L("تعذر الاتصال، تأكد من الإنترنت", "could not connect, check the internet")
-        else -> local
-    }
+    /** رسالة خطأ واضحة للمستخدم. */
+    fun errorText(t: Throwable, local: String): String =
+        if (t is VisionUnavailable) L("قراءة الصور غير متاحة على هذا الجهاز مع النموذج الحالي", "Image reading is not available on this device with the current model") else local
 
-    /** حجم النص في الطلب الواحد: النماذج عبر الإنترنت تقبل أكثر بكثير من نموذج الجهاز. */
-    fun budget(local: Int): Int = if (isCloud) local * 8 else local
+    /** يُرمى حين يُطلب تحليل صورة ولا يستطيع المحرّك قراءتها (فلا يُستبدل بنص دون إعلام). */
+    class VisionUnavailable : IllegalStateException("vision unavailable")
     private var visionFailed = false
     private var engineVision = false
 
     fun select(id: String) {
         selectedId = id
         prefs.edit().putString("model", id).apply()
-    }
-
-    fun setGpu(on: Boolean) {
-        useGpu = on
-        prefs.edit().putBoolean("gpu", on).apply()
     }
 
     // ---------- التنزيل والاستيراد ----------
@@ -174,8 +166,8 @@ object Ai {
             } catch (t: Throwable) {
                 AppController.messages.tryEmit(
                     L(
-                        "تعذر تنزيل النموذج. تأكد من الإنترنت وأعد المحاولة (يستكمل من حيث توقف)، أو استورد الملف يدويًا.",
-                        "Could not download the model. Check your internet and retry (it resumes), or import the file manually."
+                        "تعذر تنزيل النموذج. تأكد من الإنترنت وأعد المحاولة (يستكمل من حيث توقف).",
+                        "Could not download the model. Check your internet and retry (it resumes)."
                     )
                 )
             } finally {
@@ -229,33 +221,6 @@ object Ai {
         downloads[m.id]?.cancel()
     }
 
-    /** يستورد ملف ‎.litertlm‎ اختاره المستخدم (إن لم يتوفر الإنترنت على الجهاز). */
-    fun importFile(uri: Uri) {
-        val m = models.first { it.id == "custom" }
-        progress[m.id] = 0f
-        AppController.scope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    val target = fileOf(m)
-                    val part = File(target.path + ".part")
-                    ctx.contentResolver.openInputStream(uri)!!.use { input ->
-                        FileOutputStream(part).use { out -> input.copyTo(out, 256 * 1024) }
-                    }
-                    if (target.exists()) target.delete()
-                    part.renameTo(target)
-                }
-                closeEngine()
-                select(m.id)
-                AppController.messages.tryEmit(L("استُورد النموذج واختير", "Model imported and selected"))
-            } catch (t: Throwable) {
-                AppController.messages.tryEmit(L("تعذر استيراد الملف", "Could not import the file"))
-            } finally {
-                progress.remove(m.id)
-                filesVersion++
-            }
-        }
-    }
-
     fun delete(m: Model) {
         AppController.scope.launch {
             if (enginePath == fileOf(m).path) closeEngine()
@@ -279,7 +244,7 @@ object Ai {
         fun create(vision: Boolean) = Engine(
             EngineConfig(
                 modelPath = path,
-                backend = if (useGpu) Backend.GPU() else Backend.CPU(),
+                backend = Backend.CPU(),
                 visionBackend = if (vision) Backend.CPU() else null,
                 cacheDir = ctx.cacheDir.path
             )
@@ -334,14 +299,17 @@ object Ai {
         system: String,
         prompt: String,
         image: ByteArray? = null,
-        /** true = النموذج الذي على الجهاز دائمًا (مجاني)، حتى لو اختير Claude/ChatGPT. */
-        local: Boolean = false,
+        /** true = الصورة لازمة (لا نص يكفي): إن تعذّر قارئ الصور يُرمى VisionUnavailable بدل المتابعة بلا صورة. */
+        requireImage: Boolean = false,
         onPartial: (String) -> Unit = {}
     ): String {
-        if (isCloud && !local) return CloudAi.generate(system, prompt, image) { onPartial(cleanThinking(it)) }.let { cleanThinking(it) }
         if (!installed(selected)) throw IllegalStateException("model not installed")
         idleJob?.cancel()
         val eng = ensureEngine()
+        if (image != null && requireImage && !engineVision) {
+            scheduleIdleRelease()
+            throw VisionUnavailable()
+        }
         val out = StringBuilder()
         try {
             withContext(dispatcher) {
@@ -373,6 +341,55 @@ object Ai {
             scheduleIdleRelease()
         }
         return cleanThinking(out.toString())
+    }
+
+    /**
+     * اختبار قراءة الصور على هذا الجهاز (بطلب المستخدم فقط): يحمّل المحرّك مع قارئ الصور على المعالج CPU
+     * ويقرأ صورة فيها رقم معروف في محادثتين جديدتين متتاليتين، ثم يعرض النتيجة والزمن وذاكرة التطبيق.
+     */
+    suspend fun visionTest(): String {
+        if (!installed(selected)) return L("نزّل النموذج أولًا", "Download the model first")
+        if (!selected.vision) return L("هذا النموذج لا يقرأ الصور", "This model does not read images")
+        val t0 = System.currentTimeMillis()
+        return try {
+            val png = withContext(Dispatchers.Default) { testImage() }
+            val q = "What number is written in the image? Answer with only the number."
+            val a = generate("You read images.", q, png, requireImage = true)
+            val t1 = System.currentTimeMillis()
+            val b = generate("You read images.", q, png, requireImage = true)
+            val t2 = System.currentTimeMillis()
+            val okA = a.contains("4719")
+            val okB = b.contains("4719")
+            val mb = android.os.Debug.getPss() / 1024L
+            val times = L("الزمن: ${(t1 - t0) / 1000} ثانية ثم ${(t2 - t1) / 1000} ثانية، ذاكرة التطبيق نحو $mb ميغابايت",
+                "Time: ${(t1 - t0) / 1000}s then ${(t2 - t1) / 1000}s, app memory about $mb MB")
+            when {
+                okA && okB -> "✓ " + L("قراءة الصور تعمل على المعالج. ", "Image reading works on the CPU. ") + times
+                okA || okB -> "⚠ " + L("قرأ إحدى المرتين فقط، لا تعتمد عليه. ", "Read only one of two tries; do not rely on it. ") + times
+                else -> "✗ " + L("عمل قارئ الصور لكن القراءة خاطئة. ", "The image reader ran but read wrongly. ") + times
+            }
+        } catch (e: VisionUnavailable) {
+            "✗ " + L("لم يعمل قارئ الصور على المعالج في هذا الجهاز.", "The image reader did not start on the CPU on this device.")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            "✗ " + (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    private fun testImage(): ByteArray {
+        val bmp = android.graphics.Bitmap.createBitmap(640, 240, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bmp)
+        c.drawColor(android.graphics.Color.WHITE)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = android.graphics.Color.BLACK
+        paint.textSize = 150f
+        paint.isFakeBoldText = true
+        c.drawText("4719", 90f, 175f, paint)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+        bmp.recycle()
+        return out.toByteArray()
     }
 
     /** يحذف «تفكير» النموذج إن ظهر في النص. */

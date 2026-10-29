@@ -57,6 +57,44 @@ object OcrEngine {
         return bmp
     }
 
+    /** نسخة أوضح للقراءة: رمادية بتباين أعلى (للصفحات الباهتة أو المصوّرة بإضاءة سيئة). */
+    private fun enhance(src: Bitmap): Bitmap {
+        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val p = Paint(Paint.FILTER_BITMAP_FLAG)
+        val cm = android.graphics.ColorMatrix()
+        cm.setSaturation(0f)
+        val k = 1.6f
+        val t = (-0.5f * k + 0.5f) * 255f
+        cm.postConcat(android.graphics.ColorMatrix(floatArrayOf(
+            k, 0f, 0f, 0f, t,
+            0f, k, 0f, 0f, t,
+            0f, 0f, k, 0f, t,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        p.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+        c.drawBitmap(src, 0f, 0f, p)
+        return out
+    }
+
+    private fun meanConf(ws: List<OcrWord>): Float {
+        val v = ws.filter { it.conf >= 0f }
+        return if (v.isEmpty()) 1f else v.map { it.conf }.average().toFloat()
+    }
+
+    /** قراءة الصفحة: إن كانت الثقة منخفضة تُعاد القراءة على نسخة أوضح وتبقى الأفضل. */
+    suspend fun recognizeBest(bmp: Bitmap): List<OcrWord> {
+        val first = recognize(bmp)
+        if (first.isEmpty() || meanConf(first) >= 0.6f) return first
+        val clear = enhance(bmp)
+        return try {
+            val second = recognize(clear)
+            if (second.size >= first.size * 0.8 && meanConf(second) > meanConf(first)) second else first
+        } finally {
+            clear.recycle()
+        }
+    }
+
     /** الإحداثيات الناتجة نسبية لعرض الصورة، بنفس نظام الكتابة اليدوية. */
     suspend fun recognize(bmp: Bitmap): List<OcrWord> {
         val image = InputImage.fromBitmap(bmp, 0)
@@ -68,15 +106,17 @@ object OcrEngine {
         val w = bmp.width.toFloat()
         val out = ArrayList<OcrWord>()
         var lineId = 0
+        var blockId = 0
         for (block in result.textBlocks) {
             for (line in block.lines) {
                 val lineBox = line.boundingBox
                 for (el in line.elements) {
                     val r = el.boundingBox ?: lineBox ?: continue
-                    out.add(OcrWord(el.text, r.left / w, r.top / w, r.right / w, r.bottom / w, lineId))
+                    out.add(OcrWord(el.text, r.left / w, r.top / w, r.right / w, r.bottom / w, lineId, conf = el.confidence, block = blockId))
                 }
                 lineId++
             }
+            blockId++
         }
         return out
     }

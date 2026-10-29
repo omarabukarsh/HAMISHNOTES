@@ -13,6 +13,8 @@ package com.mynotes.app
 object AiStructure {
     /** جزء يُعالَج: عنوانه وعنوانه الفرعي، وإما جدول جاهز بالكود، أو ملاحظات للنموذج. headed = أول صف في الجدول رأس. */
     class Part(val title: String?, val sub: String?, val table: String?, val notes: String, val marks: List<TextMark>, val headed: Boolean = true) {
+        /** سياق من صفحات أخرى للفهم فقط (لا يُنسخ منه شيء إلى الملخص). */
+        var context: String = ""
         /** نصوص ظُلّلت مرتين (مهمة): تظهر بخط عريض في الملخص. */
         val emphasis: List<String>
             get() = marks.flatMap { m ->
@@ -220,7 +222,7 @@ OUTPUT:
     private fun pageHeadings(s: DocSession, page: Int): List<Heading> {
         val ls = lines(s.ocr[page]?.words ?: emptyList())
         // عناوين من «قراءة الصفحة بالذكاء» (إن قُرئت): «# » عنوان و«## » عنوان فرعي
-        val aiHeads = (AiPageReader.result(s.id, page) ?: "").lines().mapNotNull { l ->
+        val aiHeads = (AiPageReader.result(s, page) ?: "").lines().mapNotNull { l ->
             val x = l.trim()
             when {
                 x.startsWith("## ") -> Pair(x.removePrefix("## ").trim(), 2)
@@ -266,6 +268,9 @@ OUTPUT:
                 lineHeight(l) >= normal * 1.15f -> Heading(page, pos, t, 2)
                 l.count { it.bold } * 5 >= l.size * 4 && l.size <= 10 && !lineText(l).contains(" | ") &&
                     !t.endsWith(".") -> Heading(page, pos, t.trimEnd(':').trim(), 2)
+                // سطر قصير كله مسطّر أو كله بلون مميز (تنسيق عنوان في كثير من الملفات)
+                (l.all { it.underline } || l.all { OcrStyle.colorName(it.color) != null }) && l.size <= 8 &&
+                    !lineText(l).contains(" | ") && !t.endsWith(".") -> Heading(page, pos, t.trimEnd(':').trim(), 2)
                 else -> null
             }
         }.sortedBy { it.pos }
@@ -463,7 +468,23 @@ OUTPUT:
         return out
     }
 
-    fun prompt(p: Part): String = "SECTION: " + listOfNotNull(p.title, p.sub).joinToString(" › ") + "\nNOTES:\n" + p.notes
+    fun prompt(p: Part): String {
+        val base = "SECTION: " + listOfNotNull(p.title, p.sub).joinToString(" › ") + "\nNOTES:\n" + p.notes
+        return if (p.context.isBlank() || p.table != null) base
+        else base + "\n\nCONTEXT (other places in the same document, ONLY to understand the notes; never copy anything from it into the output):\n" + p.context
+    }
+
+    /** العنوان والعنوان الفرعي فوق موضع في صفحة (للإضافة إلى الخريطة الذهنية). top نسبة إلى عرض الصفحة. */
+    fun headingFor(s: DocSession, page: Int, top: Float): Pair<String?, String?> {
+        val lo = maxOf(0, page - 3)
+        val before = (lo..page).flatMap { p ->
+            pageHeadings(s, p).filter { p < page || it.pos <= top + 0.002f }
+        }
+        val main = before.lastOrNull { it.level == 1 }
+        val sub = before.lastOrNull { it.level == 2 && (main == null || it.page > main.page || (it.page == main.page && it.pos > main.pos)) }
+        val title = main?.text ?: s.outlineEntries().sortedBy { it.page }.lastOrNull { it.page <= page }?.title
+        return Pair(title, if (sub != null && page - sub.page <= 1) sub.text else null)
+    }
 
     /** جزء صغير جدًا (سطر أو سطران قصيران) لا يحتاج النموذج: يُرتّب بالكود مباشرة. */
     fun trivial(p: Part): Boolean = p.table == null && p.notes.length <= 200 && p.notes.lines().count { it.isNotBlank() } <= 2
@@ -473,7 +494,7 @@ OUTPUT:
 
     /** مفتاح ذاكرة الأجزاء: نفس الطريقة والنموذج والعنوان والملاحظات = نفس النتيجة. */
     fun cacheKey(p: Part, model: String): String {
-        val raw = "$VERSION|$model|${p.title}|${p.sub}|${p.notes}|${p.emphasis.joinToString("¦")}"
+        val raw = "$VERSION|$model|${p.title}|${p.sub}|${p.notes}|${p.emphasis.joinToString("¦")}|${p.context}"
         val md = java.security.MessageDigest.getInstance("SHA-1").digest(raw.toByteArray())
         return md.joinToString("") { "%02x".format(it) }
     }

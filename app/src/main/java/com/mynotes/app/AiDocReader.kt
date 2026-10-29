@@ -12,14 +12,14 @@ import kotlinx.coroutines.launch
 
 /**
  * MyNotes Pro: قراءة المستند كاملًا بالذكاء الاصطناعي في الخلفية، مثل القراءة الضوئية.
- * بالنموذج الذي على الجهاز فقط (مجاني دائمًا، ولا يُستعمل Claude/ChatGPT هنا حتى لو اختيرا).
+ * بالنموذج الذي على الجهاز فقط. مطفأة افتراضيًا؛ تُشغَّل من الإعدادات.
  * كل صفحة تُقرأ مرة واحدة وتُحفظ («قراءة الصفحة بالذكاء»)، وتُستعمل في عناوين الملخص وفي الشرح.
  * تتنحى أثناء الكتابة بالقلم وأثناء أي مهمة ذكاء أخرى.
  */
 object AiDocReader {
     private fun prefs() = AppController.appContext.getSharedPreferences("mynotes_ai", Context.MODE_PRIVATE)
 
-    var enabled by mutableStateOf(prefs().getBoolean("bg_read", true))
+    var enabled by mutableStateOf(prefs().getBoolean("bg_read", false))
         private set
 
     fun toggle(on: Boolean) {
@@ -72,23 +72,23 @@ object AiDocReader {
         try {
             if (s.status !is SessionStatus.Ready) return
             val n = s.pdf?.count ?: return
-            var read = (0 until n).count { AiPageReader.result(id, it) != null }
+            var read = (0 until n).count { AiPageReader.result(s, it) != null }
             progress[id] = Pair(read, n)
             for (p in 0 until n) {
                 if (!enabled || !localReady()) return
-                if (AiPageReader.result(id, p) != null) continue
+                if (AiPageReader.result(s, p) != null) continue
                 // صفحة المستند المفتوح التي أمام المستخدم أولًا
                 waitIdle()
                 if (open != null && open.status is SessionStatus.Ready) {
                     val cur = open.listState.firstVisibleItemIndex
-                    if (AiPageReader.result(id, cur) == null && cur != p && cur in 0 until n) {
+                    if (AiPageReader.result(s, cur) == null && cur != p && cur in 0 until n) {
                         readOne(s, cur)
                         read++
                         progress[id] = Pair(read, n)
                         waitIdle()
                     }
                 }
-                if (AiPageReader.result(id, p) != null) continue
+                if (AiPageReader.result(s, p) != null) continue
                 readOne(s, p)
                 read++
                 progress[id] = Pair(read, n)
@@ -102,8 +102,8 @@ object AiDocReader {
     private suspend fun readOne(s: DocSession, page: Int) {
         try {
             // من النص المقروء فقط (أسرع)؛ الصورة فقط للصفحات التي بلا نص
-            if (AiPageReader.read(s, page, useImage = false, local = true) == null) {
-                AiPageReader.save(s.id, page, "\u200B")
+            if (AiPageReader.read(s, page, useImage = false) == null) {
+                AiPageReader.save(s, page, "\u200B")
             }
         } catch (e: CancellationException) {
             throw e
@@ -112,10 +112,10 @@ object AiDocReader {
     }
 
     /** سياق من المستند للشرح: قراءة الصفحة (والسابقة إن احتاج) بحدود حجم النموذج. */
-    fun context(docId: String, page: Int, max: Int): String {
+    fun context(s: DocSession, page: Int, max: Int): String {
         val parts = listOfNotNull(
-            AiPageReader.result(docId, page)?.takeIf { it.isNotBlank() },
-            AiPageReader.result(docId, page - 1)?.takeIf { it.isNotBlank() && page > 0 }
+            AiPageReader.result(s, page)?.takeIf { it.isNotBlank() },
+            AiPageReader.result(s, page - 1)?.takeIf { it.isNotBlank() && page > 0 }
         )
         val sb = StringBuilder()
         for (p in parts) {

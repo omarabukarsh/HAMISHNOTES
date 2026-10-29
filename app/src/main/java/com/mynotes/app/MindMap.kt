@@ -70,6 +70,32 @@ object MindMap {
         val id: String get() = "$level:$label"
     }
 
+    private fun copyNode(n: Node): Node = Node(n.label, n.level, n.children.map { copyNode(it) }.toMutableList(), n.branch)
+
+    /**
+     * يضيف ما اختاره المستخدم من نصوص (تحديد ← «إلى الخريطة الذهنية») إلى نسخة من الشجرة، تحت عنوانه وعنوانه الفرعي
+     * إن وُجدا في الشجرة، وإلا تحت فرع جديد. النص المضاف يُعرض كما هو (بلا تلخيص).
+     */
+    fun withNotes(root: Node, notes: List<MindNote>): Node {
+        if (notes.isEmpty()) return root
+        val out = copyNode(root)
+        for (n in notes) {
+            var parent = out
+            n.title?.let { t ->
+                val lab = shortLabel(t, 60)
+                parent = parent.children.firstOrNull { it.level == 1 && it.label == lab }
+                    ?: Node(lab, 1).also { out.children.add(it) }
+            }
+            n.sub?.let { sb ->
+                val lab = shortLabel(sb, 60)
+                parent = parent.children.firstOrNull { it.level == 2 && it.label == lab }
+                    ?: Node(lab, 2).also { parent.children.add(it) }
+            }
+            parent.children.add(Node(shortLabel(n.text, 140), 3))
+        }
+        return out
+    }
+
     /** نص قصير مقروء للعقدة. */
     fun shortLabel(s: String, max: Int = 90): String {
         val t = s.replace("**", "").replace(Regex("^[-•]\\s*"), "").trim()
@@ -492,7 +518,7 @@ Output only the lines."""
     suspend fun build(docId: String, title: String, summary: String, onlyCached: Boolean): MindMap.Node {
         val secs = sections(summary)
         val cache = withContext(Dispatchers.IO) { load(docId) }
-        val model = if (Ai.isCloud) CloudAi.label else Ai.selected.id
+        val model = Ai.selected.id
         val points = ArrayList<List<String>>()
         var changed = false
         secs.forEachIndexed { i, sec ->
@@ -545,17 +571,22 @@ Output only the lines."""
 
 /** نافذة الخريطة الذهنية: تكبير وتصغير، طيّ الفروع بالنقر، وحفظ PDF. */
 @Composable
-fun MindMapDialog(docId: String, title: String, summary: String, onDismiss: () -> Unit) {
+fun MindMapDialog(docId: String, title: String, summary: String, notes: List<MindNote> = emptyList(), onDismiss: () -> Unit) {
     val context = LocalContext.current
     var important by remember { mutableStateOf(true) }
     // «المهم فقط»: يختارها الذكاء (المحفوظ يظهر فورًا، والجديد يُكمل في الخلفية)
     var aiRoot by remember(summary) { mutableStateOf<MindMap.Node?>(null) }
     androidx.compose.runtime.LaunchedEffect(summary) {
+        if (summary.isBlank()) return@LaunchedEffect
         aiRoot = MindMapAi.build(docId, title, summary, onlyCached = true)
         aiRoot = MindMapAi.build(docId, title, summary, onlyCached = false)
     }
-    val root = if (important) (aiRoot ?: remember(summary) { MindMap.parse(title, summary, true) })
-        else remember(summary) { MindMap.parse(title, summary, false) }
+    val baseRoot = when {
+        summary.isBlank() -> remember(title) { MindMap.Node(MindMap.shortLabel(title, 60), 0) }
+        important -> aiRoot ?: remember(summary) { MindMap.parse(title, summary, true) }
+        else -> remember(summary) { MindMap.parse(title, summary, false) }
+    }
+    val root = remember(baseRoot, notes) { MindMap.withNotes(baseRoot, notes) }
     val collapsed = remember(summary) { mutableStateListOf<String>() }
     var zoom by remember { mutableStateOf(1f) }
     val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->

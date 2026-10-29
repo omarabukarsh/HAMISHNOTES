@@ -170,6 +170,9 @@ class DocSession(entry: DocEntry) {
     var starred by mutableStateOf<Set<String>>(emptySet())
     var bookmarks by mutableStateOf<Set<Int>>(emptySet())
 
+    /** نقاط أضافها المستخدم من تحديد نص إلى الخريطة الذهنية. */
+    var mindNotes by mutableStateOf<List<MindNote>>(emptyList())
+
     /** نص يُبحث عنه فور فتح المستند (من البحث في كل المكتبة). */
     var pendingQuery: String? = null
 
@@ -201,6 +204,25 @@ class DocSession(entry: DocEntry) {
         customCards = customCards + Card("u:" + UUID.randomUUID().toString(), f, b)
         persist()
         AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
+    }
+
+    /** يضيف نصًا محددًا إلى الخريطة الذهنية (بنقرة واحدة) مع عنوانه في المستند إن عُرف. */
+    fun addMindNote(page: Int, text: String, top: Float = 0.5f) {
+        val t = text.trim()
+        if (t.isEmpty()) return
+        if (mindNotes.any { it.page == page && it.text == t }) {
+            AppController.messages.tryEmit(L("النص موجود في الخريطة الذهنية", "Already in the mind map"))
+            return
+        }
+        val (title, sub) = AiStructure.headingFor(this, page, top)
+        mindNotes = mindNotes + MindNote("m:" + UUID.randomUUID().toString(), page, t, title, sub)
+        persist()
+        AppController.messages.tryEmit(L("أُضيف إلى الخريطة الذهنية", "Added to the mind map"))
+    }
+
+    fun deleteMindNote(id: String) {
+        mindNotes = mindNotes.filter { it.id != id }
+        persist()
     }
 
     /** MyNotes Pro: بطاقات مراجعة من الذكاء الاصطناعي (معرّفها يبدأ بـ ai:). replace = تُستبدل بطاقات الذكاء السابقة. */
@@ -379,6 +401,7 @@ class DocSession(entry: DocEntry) {
             customCards = loaded.second.cards
             starred = loaded.second.starred
             bookmarks = loaded.second.bookmarks
+            mindNotes = loaded.second.mindNotes
             ocr.putAll(loaded.third)
             status = SessionStatus.Ready
         } catch (e: FileNotFoundException) {
@@ -855,7 +878,7 @@ class DocSession(entry: DocEntry) {
         if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
 
         val pagesSnap = doc.pages
-        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes, mindNotes)
         val ocrSnap = ocr.toMap()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
@@ -873,7 +896,7 @@ class DocSession(entry: DocEntry) {
         val doc = pdf ?: return null
         val strokes = annotations[page] ?: emptyList()
         // الإصدار يشمل مصدر القراءة (طبقة النص)، فتُعاد قراءة الصفحات المحفوظة بالطريقة القديمة مرة واحدة
-        val ver = OcrEngine.versionOf(strokes) * 31 + 4
+        val ver = OcrEngine.versionOf(strokes) * 31 + 5
         val existing = ocr[page]
         if (existing != null && existing.version == ver) return existing
 
@@ -887,13 +910,24 @@ class DocSession(entry: DocEntry) {
                     emptyList()
                 }
                 val handwriting = strokes.any { it.tool != Tool.HIGHLIGHTER }
-                if (layerWords.size >= 3 && !handwriting) return@withContext OcrPage(layerWords, ver)
+                if (layerWords.size >= 3 && !handwriting) {
+                    // نص الملف الرقمي: الألوان والتسطير والخطوط المرسومة تُحلَّل من صورة الصفحة نفسها
+                    val img = try { doc.renderFresh(ref, 1400) } catch (t: Throwable) { null }
+                    if (img == null) return@withContext OcrPage(layerWords, ver)
+                    try {
+                        val (styled, shapes) = OcrStyle.analyze(img, layerWords)
+                        return@withContext OcrPage(styled, ver, shapes)
+                    } finally {
+                        img.recycle()
+                    }
+                }
                 // 2) القراءة الضوئية: للصفحات الممسوحة ضوئيًا، ولخط اليد فوق صفحة رقمية
                 val base = doc.renderFresh(ref, 1800) ?: return@withContext null
                 try {
                     val src = OcrEngine.compose(base, strokes)
                     try {
-                        val seen = OcrEngine.recognize(src)
+                        val rawSeen = OcrEngine.recognizeBest(src)
+                        val (seen, shapes) = OcrStyle.analyze(src, rawSeen)
                         if (layerWords.size >= 3) {
                             // نص الملف + ما قرأته القراءة الضوئية من خط اليد فقط (الكلمات التي لا تقع على نص الملف)
                             val offset = (layerWords.maxOfOrNull { it.line } ?: 0) + 1
@@ -902,9 +936,9 @@ class DocSession(entry: DocEntry) {
                                 val cy = (w.t + w.b) / 2f
                                 layerWords.none { o -> cx >= o.l && cx <= o.r && cy >= o.t && cy <= o.b }
                             }.map { it.copy(line = it.line + offset) }
-                            OcrPage(layerWords + extra, ver)
+                            OcrPage(layerWords + extra, ver, shapes)
                         } else {
-                            OcrPage(seen, ver)
+                            OcrPage(seen, ver, shapes)
                         }
                     } finally {
                         if (src !== base) src.recycle()
@@ -1317,7 +1351,7 @@ class DocSession(entry: DocEntry) {
     }
 
     private fun saveNow() {
-        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes, mindNotes)
         AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 

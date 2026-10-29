@@ -35,7 +35,9 @@ class DocData(
     /** الصفحات المعلَّمة (أرقام من 0). */
     val bookmarks: Set<Int> = emptySet(),
     /** الملاحظات اللاصقة لكل صفحة. */
-    val notes: Map<Int, List<StickyNote>> = emptyMap()
+    val notes: Map<Int, List<StickyNote>> = emptyMap(),
+    /** نقاط أضافها المستخدم إلى الخريطة الذهنية. */
+    val mindNotes: List<MindNote> = emptyList()
 )
 
 /**
@@ -551,7 +553,20 @@ class LibraryRepository(context: Context) {
                 }
                 all.groupBy { it.page }.forEach { (p, l) -> notes[p] = l }
             }
-            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes)
+            val mindNotes = root.optJSONArray("mind")?.let { a ->
+                (0 until a.length()).mapNotNull { i ->
+                    try {
+                        val o = a.getJSONObject(i)
+                        MindNote(
+                            o.getString("id"), o.getInt("p"), o.getString("t"),
+                            o.optString("h", "").ifEmpty { null }, o.optString("s", "").ifEmpty { null }
+                        )
+                    } catch (e: Throwable) {
+                        null
+                    }
+                }
+            } ?: emptyList()
+            DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes, mindNotes)
         } catch (e: Throwable) {
             try {
                 f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
@@ -659,6 +674,11 @@ class LibraryRepository(context: Context) {
                         .put("marks", marks).put("texts", texts).put("summary", editsJson(data.edits))
                         .put("cards", JSONArray().apply {
                             data.cards.forEach { c -> put(JSONObject().put("id", c.id).put("f", c.front).put("b", c.back)) }
+                        })
+                        .put("mind", JSONArray().apply {
+                            data.mindNotes.forEach { n ->
+                                put(JSONObject().put("id", n.id).put("p", n.page).put("t", n.text).put("h", n.title ?: "").put("s", n.sub ?: ""))
+                            }
                         })
                         .put("starred", JSONArray().apply { data.starred.forEach { put(it) } })
                         .put("bookmarks", JSONArray().apply { data.bookmarks.sorted().forEach { put(it) } })
@@ -912,11 +932,22 @@ class LibraryRepository(context: Context) {
                         .put(w.b.toDouble())
                         .put(w.line)
                         .put(if (w.bold) 1 else 0)
+                        .put(if (w.italic) 1 else 0)
+                        .put(if (w.underline) 1 else 0)
+                        .put(w.color)
+                        .put(w.conf.toDouble())
+                        .put(w.block)
+                )
+            }
+            val shapes = JSONArray()
+            data.shapes.forEach { sh ->
+                shapes.put(
+                    JSONArray().put(sh.kind).put(sh.l.toDouble()).put(sh.t.toDouble()).put(sh.r.toDouble()).put(sh.b.toDouble())
                 )
             }
             atomicWrite(
                 File(dir, "$page.json"),
-                JSONObject().put("v", data.version).put("w", arr).toString()
+                JSONObject().put("v", data.version).put("w", arr).put("s", shapes).toString()
             )
         } catch (e: Throwable) {
         }
@@ -941,11 +972,25 @@ class LibraryRepository(context: Context) {
                             a.getDouble(3).toFloat(),
                             a.getDouble(4).toFloat(),
                             a.getInt(5),
-                            a.optInt(6, 0) == 1
+                            a.optInt(6, 0) == 1,
+                            a.optInt(7, 0) == 1,
+                            a.optInt(8, 0) == 1,
+                            a.optInt(9, -1),
+                            a.optDouble(10, -1.0).toFloat(),
+                            a.optInt(11, 0)
                         )
                     )
                 }
-                out[page] = OcrPage(words, o.getInt("v"))
+                val shapes = ArrayList<OcrShape>()
+                o.optJSONArray("s")?.let { sa ->
+                    for (i in 0 until sa.length()) {
+                        val x = sa.getJSONArray(i)
+                        shapes.add(
+                            OcrShape(x.getInt(0), x.getDouble(1).toFloat(), x.getDouble(2).toFloat(), x.getDouble(3).toFloat(), x.getDouble(4).toFloat())
+                        )
+                    }
+                }
+                out[page] = OcrPage(words, o.getInt("v"), shapes)
             } catch (e: Throwable) {
             }
         }

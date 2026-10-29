@@ -78,20 +78,22 @@ object Palette {
  */
 object Lib {
     private val L get() = ThemeState.light
-    val bg: Color get() = if (L) Color(0xFFF8F1E3) else Color(0xFF000000)
-    val side: Color get() = if (L) Color(0xFFFFFCF5) else Color(0xFF0A0A0A)
+    val bg: Color get() = if (L) Color(0xFFFAF4E6) else Color(0xFF000000)
+    val side: Color get() = if (L) Color(0xFFFFFEFB) else Color(0xFF0A0A0A)
     val card: Color get() = if (L) Color.White else Color(0xFF141414)
     val text: Color get() = if (L) Color(0xFF1E2A44) else Color(0xFFF2F2F2)
     val muted: Color get() = if (L) Color(0xFF6B7280) else Color(0xFF9A9A9A)
     val line: Color get() = if (L) Color(0xFFEADFC8) else Color(0xFF262626)
     val accent = Color(0xFFF4C95D)
     val accentDeep = Color(0xFFB8860B)
-    val accentSoft: Color get() = if (L) Color(0xFFFBE5AE) else Color(0xFF2B2410)
+    val accentSoft: Color get() = if (L) Color(0xFFFCEBC2) else Color(0xFF2B2410)
     val resume: Color get() = if (L) Color(0xFFFCEBBE) else Color(0xFF17140A)
     /** الزر الرئيسي الداكن (في الوضع الداكن يصبح فاتحًا). */
     val strong: Color get() = if (L) Color(0xFF1E2A44) else Color(0xFFF2F2F2)
     val onStrong: Color get() = if (L) Color.White else Color(0xFF000000)
     val exam = Color(0xFFB0413E)
+    /** أيقونات القائمة الجانبية الملوّنة (الكتب والنجمة). */
+    val iconBlue: Color get() = if (L) Color(0xFF2F4B7C) else Color(0xFF8FA8D6)
     val study: Color get() = if (L) Color(0xFFEEF2F9) else Color(0xFF10141C)
     /** لون غلاف الدفتر الافتراضي. */
     val cover = Color(0xFF2F4B7C)

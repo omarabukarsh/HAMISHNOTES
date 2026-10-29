@@ -85,10 +85,12 @@ fun formatReading(ms: Long): String {
 
 /** شارة صغيرة: أيقونة المؤقت + الوقت. */
 @Composable
-fun ReadingTimeBadge(ms: Long, tint: Color = Palette.TextSecondary, fontSize: Int = 12) {
+fun ReadingTimeBadge(ms: Long, tint: Color = Palette.TextSecondary, fontSize: Int = 12, showIcon: Boolean = true) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        TimerGlyph(tint, (fontSize + 3).dp)
-        androidx.compose.foundation.layout.Spacer(Modifier.size(4.dp))
+        if (showIcon) {
+            TimerGlyph(tint, (fontSize + 3).dp)
+            androidx.compose.foundation.layout.Spacer(Modifier.size(4.dp))
+        }
         Text(formatReading(ms), fontSize = fontSize.sp, color = tint)
     }
 }

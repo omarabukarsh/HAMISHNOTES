@@ -227,20 +227,20 @@ private fun ReaderContent(s: DocSession) {
                 AnimatedVisibility(
                     visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive &&
                         (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
-                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
-                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                    enter = Motion.barEnter,
+                    exit = Motion.barExit
                 ) { PenBar() }
                 // شريط الأشكال
                 AnimatedVisibility(
                     visible = PenPrefs.shapeActive && !c.lassoActive,
-                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
-                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                    enter = Motion.barEnter,
+                    exit = Motion.barExit
                 ) { ShapeBar() }
                 // شريط الملاحظات اللاصقة
                 AnimatedVisibility(
                     visible = PenPrefs.stickyActive,
-                    enter = fadeIn(tween(160)) + expandVertically(tween(200)),
-                    exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                    enter = Motion.barEnter,
+                    exit = Motion.barExit
                 ) { StickyBar() }
               }
                 if (s.searchOpen) ReaderSearchBar(s)
@@ -384,7 +384,7 @@ internal fun TBtn(
         androidx.compose.animation.AnimatedVisibility(
             visible = selected,
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(tween(Motion.ENTER)) + androidx.compose.animation.scaleIn(tween(Motion.ENTER)),
+            enter = fadeIn(tween(Motion.ENTER)) + androidx.compose.animation.scaleIn(Motion.grow(), initialScale = 0.3f),
             exit = fadeOut(tween(Motion.EXIT))
         ) {
             Box(
@@ -1525,16 +1525,16 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         AnimatedVisibility(
             visible = s.drawerOpen,
             modifier = Modifier.align(Alignment.CenterStart),
-            enter = slideInHorizontally(tween(260)) { -it } + fadeIn(tween(200)),
-            exit = slideOutHorizontally(tween(220)) { -it } + fadeOut(tween(180))
+            enter = Motion.drawerEnter(fromStart = true),
+            exit = Motion.drawerExit(toStart = true)
         ) {
             PagesDrawer(s, pdf)
         }
         AnimatedVisibility(
             visible = s.summaryOpen && UiPrefs.summariesOn,
             modifier = Modifier.align(Alignment.CenterEnd),
-            enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
-            exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(180))
+            enter = Motion.drawerEnter(fromStart = false),
+            exit = Motion.drawerExit(toStart = false)
         ) {
             SummaryDrawer(
                 s = s,
@@ -1546,8 +1546,8 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         AnimatedVisibility(
             visible = s.pageMenuOpen,
             modifier = Modifier.align(Alignment.CenterEnd),
-            enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
-            exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(180))
+            enter = Motion.drawerEnter(fromStart = false),
+            exit = Motion.drawerExit(toStart = false)
         ) {
             PagePanel(s, pdf)
         }

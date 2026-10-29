@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -138,26 +139,38 @@ fun LibraryScreen() {
         Row(Modifier.fillMaxSize()) {
             if (wide) Spine()
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (selecting) {
-                    SelectionBar(
-                        count = selected.size,
-                        allSelected = docs.isNotEmpty() && docs.all { it.id in selected },
-                        onSelectAll = {
-                            if (docs.all { it.id in selected }) selected.clear()
-                            else docs.forEach { if (it.id !in selected) selected.add(it.id) }
-                        },
-                        onFavorite = {
-                            val list = c.library.filter { it.id in selected }
-                            val allFav = list.all { it.favorite }
-                            list.filter { it.favorite == allFav }.forEach { c.toggleFavorite(it.id) }
-                        },
-                        onDuplicate = { c.library.filter { it.id in selected }.forEach { c.duplicate(it) }; selected.clear(); selecting = false },
-                        onMove = { moveMany = true },
-                        onDelete = { deleteMany = true },
-                        onDone = { selected.clear(); selecting = false }
-                    )
-                } else {
-                    LibraryHeader(wide, docs.size, startImport, onSelect = { selecting = true }) { showNewNote = true }
+                androidx.compose.animation.AnimatedContent(
+                    targetState = selecting,
+                    transitionSpec = {
+                        (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                            androidx.compose.animation.slideInVertically(
+                                androidx.compose.animation.core.tween(Motion.ENTER, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                            ) { -it / 4 }) togetherWith
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140))
+                    },
+                    label = "libraryHeader"
+                ) { isSelecting ->
+                    if (isSelecting) {
+                        SelectionBar(
+                            count = selected.size,
+                            allSelected = docs.isNotEmpty() && docs.all { it.id in selected },
+                            onSelectAll = {
+                                if (docs.all { it.id in selected }) selected.clear()
+                                else docs.forEach { if (it.id !in selected) selected.add(it.id) }
+                            },
+                            onFavorite = {
+                                val list = c.library.filter { it.id in selected }
+                                val allFav = list.all { it.favorite }
+                                list.filter { it.favorite == allFav }.forEach { c.toggleFavorite(it.id) }
+                            },
+                            onDuplicate = { c.library.filter { it.id in selected }.forEach { c.duplicate(it) }; selected.clear(); selecting = false },
+                            onMove = { moveMany = true },
+                            onDelete = { deleteMany = true },
+                            onDone = { selected.clear(); selecting = false }
+                        )
+                    } else {
+                        LibraryHeader(wide, docs.size, startImport, onSelect = { selecting = true }) { showNewNote = true }
+                    }
                 }
                 if (!wide) FilterRow()
                 c.libraryFolder?.let { f -> ExamPlanCard(f) }
@@ -374,11 +387,11 @@ private fun Spine() {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.RECENT
         }
-        SpineItem(L("كل المستندات", "All documents"), R.drawable.ph_books, c.library.size, noFolder && c.libraryFilter == LibraryFilter.ALL) {
+        SpineItem(L("كل المستندات", "All documents"), R.drawable.ph_books, c.library.size, noFolder && c.libraryFilter == LibraryFilter.ALL, filled = true, tint = Lib.iconBlue) {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.ALL
         }
-        SpineItem(L("المفضلة", "Favorites"), R.drawable.ph_star, favCount, noFolder && c.libraryFilter == LibraryFilter.FAVORITES) {
+        SpineItem(L("المفضلة", "Favorites"), R.drawable.ph_star, favCount, noFolder && c.libraryFilter == LibraryFilter.FAVORITES, filled = true, tint = Lib.iconBlue) {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.FAVORITES
         }
@@ -406,6 +419,9 @@ private fun SpineItem(
     selected: Boolean,
     onLongClick: (() -> Unit)? = null,
     sub: String? = null,
+    filled: Boolean = false,
+    tint: Color = Lib.text,
+    folderIcon: Boolean = false,
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(14.dp)
@@ -419,7 +435,11 @@ private fun SpineItem(
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        PhIcon(if (selected) filledOf(icon) else icon, Lib.text, 20.dp)
+        if (folderIcon) {
+            Image(androidx.compose.ui.res.painterResource(R.drawable.ic_folder_yellow), null, Modifier.size(22.dp))
+        } else {
+            PhIcon(if (filled) filledOf(icon) else icon, tint, 20.dp)
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -569,7 +589,7 @@ private fun FolderSection() {
         Column {
             SpineItem(
                 f, R.drawable.ph_folder, c.library.count { it.folder == f }, c.libraryFolder == f,
-                onLongClick = { menu = true }, sub = c.daysToExam(f)?.let { examLabel(it) }
+                onLongClick = { menu = true }, sub = c.daysToExam(f)?.let { examLabel(it) }, folderIcon = true
             ) {
                 c.libraryFolder = f
                 c.libraryFilter = LibraryFilter.ALL
@@ -755,7 +775,7 @@ private fun StudyCard() {
             .clickable { open = true }.padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        GoalRing(38.dp, 4.dp, Lib.line)
+        GoalRing(40.dp, 4.dp, Lib.line, flame = true)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(L("اليوم ${formatReading(today)}", "Today ${formatReading(today)}"), color = Lib.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -1067,9 +1087,7 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, modifier: Modifier, onOpe
             .padding(horizontal = 22.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.width(if (wide) 104.dp else 72.dp).rotate(-6f)) {
-            NotebookCover(entry, Modifier.fillMaxWidth(), compact = true)
-        }
+        ResumeIllustration(Modifier.size(if (wide) 124.dp else 84.dp))
         Spacer(Modifier.width(22.dp))
         Column(Modifier.weight(1f)) {
             ScriptLabel(L("تابع من حيث توقفت", "continue where you left off"), Lib.accentDeep, 15)
@@ -1138,13 +1156,24 @@ private fun DocCard(
     ) {
         Box(Modifier.fillMaxWidth().padding(end = 6.dp).pressScale(0.96f)) {
             NotebookCover(entry, Modifier.fillMaxWidth())
-            if (selecting) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selecting,
+                modifier = Modifier.align(Alignment.TopStart),
+                enter = androidx.compose.animation.scaleIn(Motion.grow(), initialScale = 0.2f) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.scaleOut(targetScale = 0.2f) + androidx.compose.animation.fadeOut()
+            ) {
                 Box(
-                    Modifier.align(Alignment.TopStart).padding(8.dp).size(26.dp).clip(CircleShape)
+                    Modifier.padding(8.dp).size(26.dp).clip(CircleShape)
                         .background(if (selected) Lib.strong else Color.White.copy(alpha = 0.9f))
                         .border(2.dp, if (selected) Lib.accent else Lib.line, CircleShape),
                     contentAlignment = Alignment.Center
-                ) { if (selected) PhIcon(R.drawable.ph_check, Lib.onStrong, 15.dp) }
+                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = selected,
+                        enter = androidx.compose.animation.scaleIn(Motion.grow(), initialScale = 0.2f) + androidx.compose.animation.fadeIn(),
+                        exit = androidx.compose.animation.scaleOut(targetScale = 0.2f) + androidx.compose.animation.fadeOut()
+                    ) { PhIcon(R.drawable.ph_check, Lib.onStrong, 15.dp) }
+                }
             }
             if (entry.favorite) {
                 Box(
@@ -1218,7 +1247,7 @@ private fun DocCard(
                 formatSize(entry.sizeBytes), fontSize = 11.sp,
                 color = Lib.muted.copy(alpha = 0.8f), modifier = Modifier.weight(1f)
             )
-            if (entry.readMs >= 60_000L) ReadingTimeBadge(entry.readMs, Lib.accentDeep, 11)
+            if (entry.readMs >= 60_000L) ReadingTimeBadge(entry.readMs, Lib.accentDeep, 11, showIcon = false)
         }
     }
 }

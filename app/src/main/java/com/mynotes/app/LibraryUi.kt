@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,14 +42,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 
 /** ألوان أغلفة الدفاتر التي يختار منها المستخدم. */
 val CoverColors = listOf(
@@ -55,20 +60,16 @@ val CoverColors = listOf(
     0xFF2E2E2E, 0xFF3F6E3A, 0xFFB5651D, 0xFF9C2F2F, 0xFF486581
 ).map { it.toInt() }
 
-/** ملصقات الغلاف (رموز تعبيرية من نظام الجهاز). */
-val CoverStickers = listOf(
-    "💊", "🎗️", "🧠", "🫀", "🫁", "🧬", "🦠", "🦷", "🦴", "💉", "🩺", "🔬",
-    "🧪", "⚗️", "📚", "📝", "⭐", "❤️", "🌿", "⚡", "🎯", "🏆", "📐", "🌍"
-)
-
 fun DocEntry.coverColorOrDefault(): Color = if (coverColor != 0) Color(coverColor) else Lib.cover
 
-/** غلاف دفتر: كعب داكن، وملصق أبيض باسم المستند، وملصق اختياري، وأوراق خلفه. */
+/** غلاف دفتر: كعب داكن، وملصق أبيض باسم المستند، وملصق مرسوم اختياري، وأوراق خلفه. */
 @Composable
 fun NotebookCover(entry: DocEntry, modifier: Modifier = Modifier, compact: Boolean = false) {
     val col = entry.coverColorOrDefault()
     val locked = entry.locked && entry.id !in AppController.unlocked
-    Box(modifier.aspectRatio(0.8f)) {
+    BoxWithConstraints(modifier.aspectRatio(0.8f)) {
+        val w = maxWidth
+        val h = maxHeight
         // أوراق تطل من الجانب
         if (entry.pageCount > 1) {
             Box(
@@ -79,13 +80,12 @@ fun NotebookCover(entry: DocEntry, modifier: Modifier = Modifier, compact: Boole
         }
         Box(
             Modifier.fillMaxSize().shadow(5.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp)).background(col)
+                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
                 .drawBehind {
-                    // الكعب: شريط أغمق مع خط خياطة
-                    val sw = size.width * 0.1f
-                    drawRect(Color.Black.copy(alpha = 0.22f), size = Size(sw, size.height))
-                    drawLine(Color.White.copy(alpha = 0.18f), Offset(sw * 1.25f, 0f), Offset(sw * 1.25f, size.height), strokeWidth = 2f)
-                    // لمعة خفيفة
-                    drawRect(Color.White.copy(alpha = 0.05f), topLeft = Offset(size.width * 0.55f, 0f), size = Size(size.width * 0.45f, size.height))
+                    // الكعب: شريط أغمق مع خط خياطة رفيع (لون الغلاف موحّد بلا تظليل)
+                    val sw = size.width * 0.085f
+                    drawRect(Color.Black.copy(alpha = 0.24f), size = Size(sw, size.height))
+                    drawLine(Color.White.copy(alpha = 0.16f), Offset(sw * 1.3f, 0f), Offset(sw * 1.3f, size.height), strokeWidth = 2f)
                 }
         ) {
             // ملصق الاسم
@@ -102,9 +102,9 @@ fun NotebookCover(entry: DocEntry, modifier: Modifier = Modifier, compact: Boole
             }
             when {
                 locked -> PhIcon(R.drawable.ph_lock, Lib.accent, if (compact) 22.dp else 36.dp, modifier = Modifier.align(Alignment.Center).offset(x = 6.dp, y = 14.dp))
-                entry.sticker.isNotEmpty() -> Text(
-                    entry.sticker, fontSize = if (compact) 22.sp else 40.sp,
-                    modifier = Modifier.align(Alignment.Center).offset(x = 6.dp, y = if (compact) 10.dp else 22.dp)
+                entry.sticker.isNotEmpty() -> StickerIcon(
+                    entry.sticker, w * 0.5f,
+                    Modifier.align(Alignment.Center).offset(x = w * 0.05f, y = h * 0.15f)
                 )
             }
             if (entry.isNote) {
@@ -127,29 +127,34 @@ fun FolderTile(name: String, count: Int, selected: Boolean, modifier: Modifier =
             .clickable(onClick = onClick).padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(1.35f)) {
+        Canvas(Modifier.fillMaxWidth().aspectRatio(1.3f)) {
             val w = size.width
             val h = size.height
-            val back = Color(0xFFEFBE5A)
-            val front = Color(0xFFF7D27A)
-            // الظهر مع اللسان
+            val line = Color(0xFFC59A3C)
+            val back = Color(0xFFF1CE79)
+            val front = Color(0xFFF9DF94)
+            val sw = 2.2.dp.toPx()
+            // الظهر مع اللسان، بحد رفيع
             val tab = Path().apply {
-                moveTo(0f, h * 0.12f)
-                lineTo(w * 0.36f, h * 0.12f)
-                lineTo(w * 0.44f, h * 0.24f)
-                lineTo(w, h * 0.24f)
-                lineTo(w, h)
-                lineTo(0f, h)
+                moveTo(w * 0.04f, h * 0.14f)
+                lineTo(w * 0.36f, h * 0.14f)
+                lineTo(w * 0.44f, h * 0.26f)
+                lineTo(w * 0.96f, h * 0.26f)
+                lineTo(w * 0.96f, h * 0.96f)
+                lineTo(w * 0.04f, h * 0.96f)
                 close()
             }
             drawPath(tab, back)
+            drawPath(tab, line, style = Stroke(sw, join = StrokeJoin.Round))
             // ورقة بيضاء تطل
-            drawRoundRect(Color.White, Offset(w * 0.1f, h * 0.18f), Size(w * 0.8f, h * 0.5f), CornerRadius(6f))
+            drawRoundRect(Color.White, Offset(w * 0.14f, h * 0.2f), Size(w * 0.72f, h * 0.5f), CornerRadius(8f))
+            drawRoundRect(line.copy(alpha = 0.55f), Offset(w * 0.14f, h * 0.2f), Size(w * 0.72f, h * 0.5f), CornerRadius(8f), style = Stroke(sw * 0.7f))
             // الوجه الأمامي
-            drawRoundRect(front, Offset(0f, h * 0.34f), Size(w, h * 0.66f), CornerRadius(14f))
+            drawRoundRect(front, Offset(w * 0.04f, h * 0.36f), Size(w * 0.92f, h * 0.6f), CornerRadius(14f))
+            drawRoundRect(line, Offset(w * 0.04f, h * 0.36f), Size(w * 0.92f, h * 0.6f), CornerRadius(14f), style = Stroke(sw))
             // مقبض صغير
-            drawRoundRect(Color.White.copy(alpha = 0.9f), Offset(w * 0.32f, h * 0.58f), Size(w * 0.36f, h * 0.14f), CornerRadius(h * 0.07f))
-            drawRoundRect(back, Offset(w * 0.32f, h * 0.58f), Size(w * 0.36f, h * 0.14f), CornerRadius(h * 0.07f), style = Stroke(3f))
+            drawRoundRect(Color.White, Offset(w * 0.36f, h * 0.56f), Size(w * 0.28f, h * 0.14f), CornerRadius(h * 0.07f))
+            drawRoundRect(line, Offset(w * 0.36f, h * 0.56f), Size(w * 0.28f, h * 0.14f), CornerRadius(h * 0.07f), style = Stroke(sw * 0.8f))
         }
         Spacer(Modifier.height(6.dp))
         Text(name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -198,6 +203,7 @@ fun IconCircleButton(icon: Int, description: String, selected: Boolean = false, 
 @Composable
 fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit) {
     var open by remember { mutableStateOf(false) }
+    val caret by animateFloatAsState(if (open) 180f else 0f, Motion.grow(), label = "newCaret")
     Box {
         Row(
             Modifier.height(46.dp).pressScale(0.95f).clip(RoundedCornerShape(23.dp)).background(Lib.accent)
@@ -208,7 +214,7 @@ fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit) {
             Spacer(Modifier.width(6.dp))
             Text(L("جديد", "New"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E2A44))
             Spacer(Modifier.width(4.dp))
-            PhIcon(R.drawable.ph_caret_down, Color(0xFF1E2A44), 14.dp)
+            PhIcon(R.drawable.ph_caret_down, Color(0xFF1E2A44), 14.dp, modifier = Modifier.rotate(caret))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Lib.card) {
             DropdownMenuItem(
@@ -263,7 +269,7 @@ fun CoverDialog(entry: DocEntry, onDismiss: () -> Unit) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (st.isEmpty()) Text(L("بدون", "None"), fontSize = 10.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center)
-                                else Text(st, fontSize = 22.sp)
+                                else StickerIcon(st, 30.dp)
                             }
                         }
                         repeat(7 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -278,8 +284,14 @@ fun CoverDialog(entry: DocEntry, onDismiss: () -> Unit) {
     )
 }
 
-/** نص «تابع من حيث توقفت» المائل. */
+/** نص بخط يدوي (خط الكتابة المتصلة في الجهاز) مثل «تابع من حيث توقفت». */
 @Composable
 fun ScriptLabel(text: String, color: Color = Lib.accentDeep, size: Int = 16) {
-    Text(text, fontSize = size.sp, fontStyle = FontStyle.Italic, color = color, fontWeight = FontWeight.Medium)
+    Text(text, fontSize = (size + 4).sp, fontFamily = FontFamily.Cursive, color = color, fontWeight = FontWeight.Medium)
+}
+
+/** رسم دفتر بعلامة حمراء وقلم أزرق لبطاقة «تابع من حيث توقفت». */
+@Composable
+fun ResumeIllustration(modifier: Modifier = Modifier) {
+    Image(painterResource(R.drawable.ic_resume_notebook), null, modifier)
 }

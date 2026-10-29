@@ -92,6 +92,9 @@ fun GoalRing(size: Dp = 34.dp, stroke: Dp = 4.dp, track: Color = Palette.Divider
     }
 }
 
+/** لون النص الذهبي: داكن في الفاتح، فاتح في الداكن. */
+private fun goldText(): Color = if (ThemeState.light) Lib.accentDeep else Lib.accent
+
 /** تقرير مادة واحدة في شهر. */
 private class SubjectReport(
     val name: String,
@@ -148,40 +151,41 @@ fun StatsDialog(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             Modifier.fillMaxWidth(0.9f).heightIn(max = 760.dp),
-            shape = RoundedCornerShape(22.dp),
-            color = Palette.Ivory
+            shape = RoundedCornerShape(28.dp),
+            color = Lib.side,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Lib.line)
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(22.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         L("إحصاءات الدراسة", "Study stats"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
+                        fontSize = 22.sp, color = Lib.text, modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Lib.muted, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(14.dp))
 
                 // اليوم والهدف
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(contentAlignment = Alignment.Center) {
-                        GoalRing(96.dp, 9.dp)
+                        GoalRing(96.dp, 9.dp, track = Lib.line)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(formatReading(todayMs), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
-                            Text(L("اليوم", "today"), fontSize = 11.sp, color = Palette.TextSecondary)
+                            Text(formatReading(todayMs), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text)
+                            Text(L("اليوم", "today"), fontSize = 11.sp, color = Lib.muted)
                         }
                     }
                     Spacer(Modifier.width(20.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             if (todayMs >= goalMs) L("حققت هدف اليوم", "Today’s goal reached") else L("باقي ${formatReading(goalMs - todayMs)} لهدف اليوم", "${formatReading(goalMs - todayMs)} left for today’s goal"),
-                            fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text
                         )
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(L("هدفك اليومي: ${formatReading(goalMs)}", "Daily goal: ${formatReading(goalMs)}"), fontSize = 14.sp, color = Palette.TextPrimary)
+                            Text(L("هدفك اليومي: ${formatReading(goalMs)}", "Daily goal: ${formatReading(goalMs)}"), fontSize = 14.sp, color = Lib.text)
                             Spacer(Modifier.width(8.dp))
                             TextButton(onClick = { editGoal = true }) {
-                                Text(L("تغيير", "Change"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                                Text(L("تغيير", "Change"), color = goldText(), fontWeight = FontWeight.Bold)
                             }
                         }
                         val streak = studyStreak()
@@ -191,7 +195,7 @@ fun StatsDialog(onDismiss: () -> Unit) {
                                 "Study streak: $streak ${if (streak == 1) "day" else "days"} in a row"
                             )
                             else L("ابدأ سلسلة دراسة اليوم", "Start a study streak today"),
-                            fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold
+                            fontSize = 13.sp, color = goldText(), fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -199,16 +203,16 @@ fun StatsDialog(onDismiss: () -> Unit) {
                 // الشهر
                 Spacer(Modifier.height(22.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { month = month.minusMonths(1) }) { PhIcon(R.drawable.ph_caret_down, Palette.Navy, 20.dp, L("الشهر السابق", "Previous month"), Modifier.graphicsLayer { rotationZ = 90f }) }
+                    IconButton(onClick = { month = month.minusMonths(1) }) { PhIcon(R.drawable.ph_caret_down, Lib.text, 20.dp, L("الشهر السابق", "Previous month"), Modifier.graphicsLayer { rotationZ = 90f }) }
                     Text(
                         month.month.getDisplayName(TextStyle.FULL, if (I18n.english) Locale.ENGLISH else Locale("ar")) + " " + month.year,
-                        fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
+                        fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Lib.text,
                         modifier = Modifier.weight(1f), textAlign = TextAlign.Center
                     )
                     IconButton(
                         enabled = month.isBefore(today.withDayOfMonth(1)),
                         onClick = { month = month.plusMonths(1) }
-                    ) { PhIcon(R.drawable.ph_caret_down, Palette.Navy, 20.dp, L("الشهر التالي", "Next month"), Modifier.graphicsLayer { rotationZ = -90f }) }
+                    ) { PhIcon(R.drawable.ph_caret_down, Lib.text, 20.dp, L("الشهر التالي", "Next month"), Modifier.graphicsLayer { rotationZ = -90f }) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -219,34 +223,34 @@ fun StatsDialog(onDismiss: () -> Unit) {
                 }
                 if (pomos > 0) {
                     Spacer(Modifier.height(6.dp))
-                    Text(L("جلسات تركيز هذا الشهر: $pomos", "Focus sessions this month: $pomos"), fontSize = 13.sp, color = Palette.Navy)
+                    Text(L("جلسات تركيز هذا الشهر: $pomos", "Focus sessions this month: $pomos"), fontSize = 13.sp, color = Lib.text)
                 }
                 Spacer(Modifier.height(12.dp))
                 MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
 
                 // تقرير كل مادة
                 Spacer(Modifier.height(22.dp))
-                Text(L("تقرير المواد لهذا الشهر", "Subjects report this month"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                Text(L("تقرير المواد لهذا الشهر", "Subjects report this month"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text)
                 Spacer(Modifier.height(8.dp))
                 if (reports.isEmpty()) {
-                    Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 13.sp, color = Palette.TextSecondary)
+                    Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 13.sp, color = Lib.muted)
                 }
                 val maxTotal = reports.maxOfOrNull { it.total }?.coerceAtLeast(1L) ?: 1L
                 reports.forEach { r ->
-                    val shape = RoundedCornerShape(14.dp)
+                    val shape = RoundedCornerShape(18.dp)
                     Column(
-                        Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(shape).background(Color.White)
-                            .border(1.dp, Palette.Divider, shape).padding(14.dp)
+                        Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(shape).background(Lib.card)
+                            .border(1.dp, Lib.line, shape).padding(16.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(r.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy, modifier = Modifier.weight(1f))
-                            Text(formatReading(r.total), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep)
+                            Text(r.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text, modifier = Modifier.weight(1f))
+                            Text(formatReading(r.total), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = goldText())
                         }
                         Spacer(Modifier.height(6.dp))
-                        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Divider)) {
+                        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Lib.line)) {
                             Box(
                                 Modifier.fillMaxWidth((r.total.toFloat() / maxTotal).coerceIn(0.02f, 1f)).height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)).background(Palette.Gold)
+                                    .clip(RoundedCornerShape(3.dp)).background(Lib.accent)
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -257,12 +261,12 @@ fun StatsDialog(onDismiss: () -> Unit) {
                                 "$share% of the month, studied on ${r.days} ${if (r.days == 1) "day" else "days"}"
                             ) +
                                 (if (r.days > 0) L("، بمتوسط ${formatReading(r.total / r.days)} لليوم", ", avg ${formatReading(r.total / r.days)} per day") else ""),
-                            fontSize = 12.sp, color = Palette.TextSecondary
+                            fontSize = 12.sp, color = Lib.muted
                         )
                         r.docs.take(5).forEach { (name, ms) ->
                             Row(Modifier.padding(top = 4.dp)) {
-                                Text("• $name", fontSize = 13.sp, color = Palette.TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
-                                Text(formatReading(ms), fontSize = 12.sp, color = Palette.TextSecondary)
+                                Text("• $name", fontSize = 13.sp, color = Lib.text, maxLines = 1, modifier = Modifier.weight(1f))
+                                Text(formatReading(ms), fontSize = 12.sp, color = Lib.muted)
                             }
                         }
                     }
@@ -282,6 +286,9 @@ private fun GoalDialog(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Uni
     val total = (hours.toIntOrNull() ?: 0) * 60 + (minutes.toIntOrNull() ?: 0)
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Lib.side,
+        titleContentColor = Lib.text,
+        textContentColor = Lib.text,
         title = { Text(L("الهدف اليومي", "Daily goal")) },
         text = {
             Column {
@@ -301,24 +308,24 @@ private fun GoalDialog(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Uni
                 Spacer(Modifier.height(8.dp))
                 Text(
                     if (total in 5..1440) L("الهدف: ${formatReading(total * 60_000L)} يوميًا", "Goal: ${formatReading(total * 60_000L)} a day") else L("اختر بين 5 دقائق و24 ساعة", "Choose between 5 minutes and 24 hours"),
-                    fontSize = 13.sp, color = Palette.TextSecondary
+                    fontSize = 13.sp, color = Lib.muted
                 )
             }
         },
-        confirmButton = { TextButton(enabled = total in 5..1440, onClick = { onSave(total) }) { Text(L("حفظ", "Save")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        confirmButton = { TextButton(enabled = total in 5..1440, onClick = { onSave(total) }) { Text(L("حفظ", "Save"), color = goldText()) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel"), color = Lib.muted) } }
     )
 }
 
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(16.dp)
     Column(
-        modifier.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).padding(10.dp),
+        modifier.clip(shape).background(Lib.card).border(1.dp, Lib.line, shape).padding(vertical = 14.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.Navy, maxLines = 1)
-        Text(label, fontSize = 11.sp, color = Palette.TextSecondary, maxLines = 1)
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text, maxLines = 1)
+        Text(label, fontSize = 11.sp, color = Lib.muted, maxLines = 1)
     }
 }
 
@@ -333,27 +340,27 @@ private fun MonthBars(values: List<Long>, goalMs: Long, todayIndex: Int?) {
             val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(1f)
             values.forEachIndexed { i, v ->
                 val x = i * (bw + gap)
-                drawRoundRect(Palette.Divider, Offset(x, 0f), Size(bw, size.height), CornerRadius(3.dp.toPx()))
+                drawRoundRect(Lib.line, Offset(x, 0f), Size(bw, size.height), CornerRadius(3.dp.toPx()))
                 val h = size.height * (v.toFloat() / max)
                 if (h > 0f) {
                     drawRoundRect(
-                        if (v >= goalMs) Palette.Gold else Palette.Navy,
+                        if (v >= goalMs) Lib.accent else Lib.iconBlue,
                         Offset(x, size.height - h), Size(bw, h), CornerRadius(3.dp.toPx())
                     )
                 }
                 if (todayIndex == i + 1) {
-                    drawRect(Palette.GoldDeep, Offset(x, size.height - 2.dp.toPx()), Size(bw, 2.dp.toPx()))
+                    drawRect(goldText(), Offset(x, size.height - 2.dp.toPx()), Size(bw, 2.dp.toPx()))
                 }
             }
             val gy = size.height * (1f - goalMs.toFloat() / max)
-            drawLine(Palette.GoldDeep, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1.5f)
+            drawLine(goldText(), Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1.5f)
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth()) {
             values.indices.forEach { i ->
                 Text(
                     if ((i + 1) % 5 == 0 || i == 0) "${i + 1}" else "",
-                    fontSize = 10.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f),
+                    fontSize = 10.sp, color = Lib.muted, modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center, maxLines = 1
                 )
             }
@@ -365,14 +372,14 @@ private fun MonthBars(values: List<Long>, goalMs: Long, todayIndex: Int?) {
 private fun BarLine(label: String, ms: Long, max: Long) {
     Column(Modifier.padding(vertical = 4.dp)) {
         Row {
-            Text(label, fontSize = 13.sp, color = Palette.TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
-            Text(formatReading(ms), fontSize = 12.sp, color = Palette.TextSecondary)
+            Text(label, fontSize = 13.sp, color = Lib.text, maxLines = 1, modifier = Modifier.weight(1f))
+            Text(formatReading(ms), fontSize = 12.sp, color = Lib.muted)
         }
         Spacer(Modifier.height(4.dp))
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Divider)) {
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Lib.line)) {
             Box(
                 Modifier.fillMaxWidth((ms.toFloat() / max).coerceIn(0.02f, 1f)).height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)).background(Palette.Gold)
+                    .clip(RoundedCornerShape(3.dp)).background(Lib.accent)
             )
         }
     }

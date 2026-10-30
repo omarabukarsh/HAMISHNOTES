@@ -372,6 +372,7 @@ internal fun tintFor(selected: Boolean): Color = if (selected) Palette.Navy else
 internal fun TBtn(
     selected: Boolean = false,
     enabled: Boolean = true,
+    locked: Boolean = false,
     onClick: () -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -386,6 +387,8 @@ internal fun TBtn(
         contentAlignment = Alignment.Center
     ) {
         content()
+        // قفل ذهبي على الأدوات المدفوعة قبل الاشتراك
+        if (locked) PremiumBadge(Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 3.dp), 13.dp)
         // مؤشر ذهبي صغير أسفل الأداة المختارة
         androidx.compose.animation.AnimatedVisibility(
             visible = selected,
@@ -457,9 +460,17 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     .shadow(5.dp, CircleShape)
                     .background(if (s.summaryOpen) Palette.GoldSoft else Color.White, CircleShape)
                     .clip(CircleShape)
-                    .clickable { s.summaryOpen = !s.summaryOpen; if (s.summaryOpen) s.pageMenuOpen = false },
+                    .clickable {
+                        if (s.summaryOpen || Premium.require(PremiumFeature.SUMMARIES)) {
+                            s.summaryOpen = !s.summaryOpen
+                            if (s.summaryOpen) s.pageMenuOpen = false
+                        }
+                    },
                 contentAlignment = Alignment.Center
-            ) { SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold) }
+            ) {
+                SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold)
+                if (!Premium.active) PremiumBadge(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp), 13.dp)
+            }
             if (markCount > 0) {
                 Box(
                     Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape)
@@ -556,7 +567,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     )
                     // التقاط النص: اختصار سريع يظهر عند اختيار الهايلايتر (وموجود أيضًا في إعداداته)
                     if (c.tool == Tool.HIGHLIGHTER && v("snap")) {
-                        TBtn(selected = c.highlightSnap, onClick = { c.toggleHighlightSnap() }) {
+                        TBtn(selected = c.highlightSnap && Premium.active, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.SNAP)) c.toggleHighlightSnap() }) {
                             SnapGlyph(tintFor(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
                         }
                     }
@@ -632,13 +643,13 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
                 if (v("split")) {
                     val splitOn = c.splitId != null
-                    TBtn(selected = splitOn, onClick = { if (splitOn) c.closeSplit() else splitDialog = true }) {
+                    TBtn(selected = splitOn, locked = !Premium.active, onClick = { if (splitOn) c.closeSplit() else if (Premium.require(PremiumFeature.SPLIT)) splitDialog = true }) {
                         PhIcon(R.drawable.ph_split, tintFor(splitOn))
                     }
                 }
                 if (v("record")) {
                     val recHere = AudioNotes.recordingDoc == s.id
-                    TBtn(selected = recHere, onClick = { audioDialog = true }) {
+                    TBtn(selected = recHere, locked = !Premium.active && !recHere, onClick = { if (recHere || Premium.require(PremiumFeature.RECORD)) audioDialog = true }) {
                         if (recHere) {
                             Text(mmss(AudioNotes.recElapsed), color = Palette.Danger, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         } else PhIcon(R.drawable.ph_mic, Palette.TextSecondary)
@@ -651,8 +662,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
                 if (v("addpage")) TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.TextSecondary) }
                 if (v("ocr")) {
-                    TBtn(selected = s.ocrRunning, onClick = {
-                        if (s.ocrRunning) s.stopOcr() else s.startOcr()
+                    TBtn(selected = s.ocrRunning, locked = !Premium.active, onClick = {
+                        if (s.ocrRunning) s.stopOcr() else if (Premium.require(PremiumFeature.OCR)) s.startOcr()
                     }) { OcrGlyph(tintFor(s.ocrRunning)) }
                 }
                 if (v("search")) {
@@ -1668,11 +1679,11 @@ private fun SelectionBar(s: DocSession) {
             }
             TextButton(onClick = {
                 val text = s.selectionText()
-                if (text.isNotEmpty()) cardBack = TextTidy.clean(text)
+                if (text.isNotEmpty() && Premium.require(PremiumFeature.CARDS)) cardBack = TextTidy.clean(text)
             }) { Text(L("اجعله بطاقة", "Make it a card")) }
             TextButton(onClick = {
                 val text = s.selectionText()
-                if (text.isNotEmpty()) translateText = TextTidy.clean(text)
+                if (text.isNotEmpty() && Premium.require(PremiumFeature.TRANSLATE)) translateText = TextTidy.clean(text)
             }) { Text(L("ترجمة", "Translate")) }
             TextButton(onClick = {
                 val n = s.ocr[sel.page]?.words?.size ?: 0
@@ -1702,7 +1713,7 @@ private fun LassoBar(s: DocSession) {
                 }
             }
             TextButton(onClick = { s.lassoDuplicate() }) { Text(L("نسخ", "Duplicate")) }
-            TextButton(onClick = { toText = true }) { Text(L("إلى نص", "To text")) }
+            TextButton(onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }) { Text(L("إلى نص", "To text")) }
             // تشغيل التسجيل الصوتي من لحظة كتابة أول خط محدد
             val sel = s.lassoSel
             val firstT = sel?.strokes?.filter { it.t > 0 }?.minOfOrNull { it.t } ?: 0L
@@ -2516,7 +2527,7 @@ private fun PageView(
                                 var snapPts: List<Pt>? = null
                                 if (!erasing && livePts.isNotEmpty()) {
                                     val hlStraight = live.tool == Tool.HIGHLIGHTER && PenPrefs.hlStraight
-                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap && noteTarget == null) {
+                                    if (live.tool == Tool.HIGHLIGHTER && AppController.highlightSnap && Premium.active && noteTarget == null) {
                                         snapPts = if (hlStraight) PenPrefs.straighten(livePts.toList()) else livePts.toList()
                                     } else if (hlStraight) {
                                         val ink = Ink(PenPrefs.straighten(livePts.toList()), live.color, live.width, live.tool, System.currentTimeMillis())

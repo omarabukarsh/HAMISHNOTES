@@ -204,45 +204,54 @@ fun StatsDialog(onDismiss: () -> Unit) {
                         }
                     }
 
-                    // أعمدة الأيام
-                    Spacer(Modifier.height(16.dp))
-                    val chartShape = RoundedCornerShape(22.dp)
-                    Column(
-                        Modifier.fillMaxWidth().clip(chartShape).background(Lib.card).border(1.dp, Lib.line, chartShape)
-                            .padding(horizontal = 20.dp, vertical = 18.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                L("وقت الدراسة اليومي", "Daily study time"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp, color = Lib.text, modifier = Modifier.weight(1f)
-                            )
-                            LegendDot(Lib.accent, L("حققت الهدف", "Goal reached"))
-                            Spacer(Modifier.width(14.dp))
-                            LegendDot(Lib.iconBlue, L("دون الهدف", "Below goal"))
+                    if (!Premium.active) {
+                        // الخطة المجانية: اليوم والأرقام فقط، والمخطط والمواد في Premium
+                        Spacer(Modifier.height(16.dp))
+                        PremiumTeaser(
+                            L("افتح الإحصاءات الكاملة", "Unlock full study stats"),
+                            L("مخطط الشهر وتقرير وقتك في كل مادة.", "The monthly chart and a report of your time in each subject.")
+                        )
+                    } else {
+                        // أعمدة الأيام
+                        Spacer(Modifier.height(16.dp))
+                        val chartShape = RoundedCornerShape(22.dp)
+                        Column(
+                            Modifier.fillMaxWidth().clip(chartShape).background(Lib.card).border(1.dp, Lib.line, chartShape)
+                                .padding(horizontal = 20.dp, vertical = 18.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    L("وقت الدراسة اليومي", "Daily study time"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp, color = Lib.text, modifier = Modifier.weight(1f)
+                                )
+                                LegendDot(Lib.accent, L("حققت الهدف", "Goal reached"))
+                                Spacer(Modifier.width(14.dp))
+                                LegendDot(Lib.iconBlue, L("دون الهدف", "Below goal"))
+                            }
+                            Spacer(Modifier.height(14.dp))
+                            MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
                         }
-                        Spacer(Modifier.height(14.dp))
-                        MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
-                    }
 
-                    // تقرير كل مادة
-                    Spacer(Modifier.height(24.dp))
-                    Text(
-                        L("المواد هذا الشهر", "Subjects this month"), fontSize = 18.sp, fontFamily = Fonts.Display,
-                        fontWeight = FontWeight.Bold, color = Lib.text
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (reports.isEmpty()) {
-                        Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 14.sp, color = Lib.muted)
-                    }
-                    val maxTotal = reports.maxOfOrNull { it.total }?.coerceAtLeast(1L) ?: 1L
-                    val cols = if (wide) 2 else 1
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        reports.withIndex().chunked(cols).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                row.forEach { (i, r) ->
-                                    SubjectCard(r, SubjectColors[i % SubjectColors.size], maxTotal, monthTotal, Modifier.weight(1f))
+                        // تقرير كل مادة
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            L("المواد هذا الشهر", "Subjects this month"), fontSize = 18.sp, fontFamily = Fonts.Display,
+                            fontWeight = FontWeight.Bold, color = Lib.text
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        if (reports.isEmpty()) {
+                            Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 14.sp, color = Lib.muted)
+                        }
+                        val maxTotal = reports.maxOfOrNull { it.total }?.coerceAtLeast(1L) ?: 1L
+                        val cols = if (wide) 2 else 1
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            reports.withIndex().chunked(cols).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    row.forEach { (i, r) ->
+                                        SubjectCard(r, SubjectColors[i % SubjectColors.size], maxTotal, monthTotal, Modifier.weight(1f))
+                                    }
+                                    repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                                 }
-                                repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }

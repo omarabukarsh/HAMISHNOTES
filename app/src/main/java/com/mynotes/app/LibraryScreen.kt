@@ -402,6 +402,10 @@ private fun Spine() {
             FolderSection()
         }
 
+        if (!Premium.active) {
+            PremiumTeaser(L("هامش Premium", "Hamish Premium"), L("${Premium.TRIAL_DAYS} أيام مجانًا", "${Premium.TRIAL_DAYS} days free"))
+            Spacer(Modifier.height(10.dp))
+        }
         StudyCard()
         Spacer(Modifier.height(14.dp))
         Text(docsCount(c.library.size) + " · " + pagesCount(pages), color = Lib.muted, fontSize = 12.sp)

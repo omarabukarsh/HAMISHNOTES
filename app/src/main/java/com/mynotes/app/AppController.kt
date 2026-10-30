@@ -512,6 +512,8 @@ object AppController {
 
     fun toggleLock(id: String) {
         val e = library.firstOrNull { it.id == id } ?: return
+        // القفل من مزايا Premium، أما فك القفل فمتاح دائمًا
+        if (!e.locked && !Premium.require(PremiumFeature.LOCK)) return
         if (!e.locked && !hasPin()) {
             setPinFor = id
             return
@@ -1305,6 +1307,7 @@ object AppController {
     // ---------- الصفحات والملاحظات ----------
 
     fun createNote(name: String, choice: PaperChoice) {
+        if (!Premium.canAdd()) return
         scope.launch {
             try {
                 val (pw, ph) = choice.points()
@@ -1375,6 +1378,11 @@ object AppController {
 
     fun importDocuments(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        // الخطة المجانية: نستورد ما يتسع له الحد ونعرض نافذة الحد للباقي
+        val allowed = if (Premium.active) uris.size else minOf(uris.size, Premium.freeSlots())
+        if (allowed < uris.size) Premium.limitOpen = true
+        if (allowed == 0) return
+        val uris = uris.take(allowed)
         scope.launch {
             importing = true
             var ok = 0
@@ -1439,6 +1447,7 @@ object AppController {
             }
             // باوربوينت: نسخة مؤقتة تُرسل إلى أداة التحويل
             if (Presentations.isPresentation(realMime, info?.first)) {
+                if (!Premium.canAdd()) return@launch
                 val name = info?.first ?: "presentation.pptx"
                 try {
                     val f = withContext(Dispatchers.IO) {
@@ -1461,6 +1470,7 @@ object AppController {
                 openDocument(existing.id)
                 return@launch
             }
+            if (!Premium.canAdd()) return@launch
             importing = true
             try {
                 val e = withContext(Dispatchers.IO) { repo.importFile(uri) }
@@ -1497,6 +1507,7 @@ object AppController {
 
     fun duplicate(entry: DocEntry) {
         // المستند المفتوح قد يكون له حفظ منتظر: يُكتب أولًا حتى تشمله النسخة
+        if (!Premium.canAdd()) return
         tabs.firstOrNull { it.id == entry.id }?.flushPersist()
         scope.launch {
             try {

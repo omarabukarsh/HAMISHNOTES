@@ -75,6 +75,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)
+        Premium.init(applicationContext)
         requestHighRefreshRate()
         handleOpenIntent(intent)
         setContent {
@@ -228,6 +229,7 @@ fun MyNotesApp() {
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
     }
     if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
+    PremiumHost()
     // عرض باوربوينت فُتح من تطبيق آخر: تحويله إلى PDF
     PresentationConvertDialog()
     LockDialogs()

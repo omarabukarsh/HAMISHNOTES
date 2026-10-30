@@ -359,6 +359,33 @@ private fun SettingsPane(
                 SettingsPage.ACCOUNT -> {
                     GroupLabel(L("حسابك", "Your account"))
                     AccountRow()
+                    GroupLabel(L("الاشتراك", "Subscription"))
+                    SettingsGroup {
+                        if (Premium.active) {
+                            GroupRow(
+                                R.drawable.ph_star_fill, TileGold,
+                                L("هامش Premium", "Hamish Premium"),
+                                L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")
+                            ) {
+                                Text(
+                                    L("إنهاء التجربة", "End test"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
+                                    modifier = Modifier.clip(RoundedCornerShape(50)).clickable { Premium.endTest() }.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        } else {
+                            GroupRow(
+                                R.drawable.ph_star, TileGold,
+                                L("الخطة المجانية", "Free plan"),
+                                L("${c.library.size} من ${Premium.FREE_DOCS} مستندات", "${c.library.size} of ${Premium.FREE_DOCS} documents"),
+                                onClick = { Premium.paywallOpen = true }
+                            ) {
+                                Text(
+                                    L("اشترك", "Upgrade"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E2A44),
+                                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Lib.accent).padding(horizontal = 14.dp, vertical = 7.dp)
+                                )
+                            }
+                        }
+                    }
                     GroupLabel(L("البيانات", "Data"))
                     SettingsGroup {
                         GroupRow(

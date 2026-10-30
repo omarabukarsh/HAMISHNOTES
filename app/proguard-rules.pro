@@ -17,8 +17,20 @@
     public static ** valueOf(java.lang.String);
 }
 
-# أرقام الأسطر في تقارير الأعطال
+# أرقام الأسطر في تقارير الأعطال، دون أسماء الملفات الأصلية (لا تكشف أين يقع كود الاشتراك)
 -keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# صعوبة أكبر في قراءة الكود المفكوك: كل الأصناف في حزمة واحدة بأسماء قصيرة
+-repackageclasses ''
+-allowaccessmodification
+
+# لا رسائل تتبّع في نسخة الاستخدام
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}
 
 # Credential Manager (تسجيل الدخول بـ Google): حسب توصية توثيق androidx.credentials
 -if class androidx.credentials.CredentialManager

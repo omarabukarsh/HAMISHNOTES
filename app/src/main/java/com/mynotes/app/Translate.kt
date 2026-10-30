@@ -113,6 +113,10 @@ fun TranslateDialog(text: String, onDismiss: () -> Unit) {
             .addOnSuccessListener {
                 if (!alive) return@addOnSuccessListener
                 downloading = false
+                if (!Premium.confirm()) {
+                    error = L("الترجمة من مزايا Premium", "Translation is a Premium feature")
+                    return@addOnSuccessListener
+                }
                 Translate.translateAll(tr, Translate.prepare(text)) { r ->
                     if (alive) {
                         if (r != null) result = r else error = L("تعذرت الترجمة", "Translation failed")

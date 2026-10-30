@@ -87,7 +87,7 @@ object AudioNotes {
     // ---------- التسجيل ----------
 
     fun start(docId: String): Boolean {
-        if (recordingDoc != null) return false
+        if (recordingDoc != null || !Premium.confirm()) return false
         stopPlayback()
         recId = UUID.randomUUID().toString()
         val out = File(dir(docId), "$recId.m4a")

@@ -125,12 +125,15 @@ object AppController {
         accountName = name
         loginSeen = true
         prefs.edit().putString("acct_email", email).putString("acct_name", name).putBoolean("login_seen", true).apply()
+        Premium.onAccountChanged()
     }
 
     fun signOutAccount() {
         accountEmail = null
         accountName = null
         prefs.edit().remove("acct_email").remove("acct_name").apply()
+        Cloud.signOut()
+        Premium.onAccountChanged()
     }
 
     fun skipLogin() {
@@ -861,6 +864,7 @@ object AppController {
     var splitFrac by mutableStateOf(0.5f)
 
     fun openSplit(id: String) {
+        if (!Premium.confirm()) return
         val entry = library.firstOrNull { it.id == id } ?: return
         if (entry.locked && id !in unlocked) {
             messages.tryEmit(L("افتح قفل المستند أولًا", "Unlock the document first"))

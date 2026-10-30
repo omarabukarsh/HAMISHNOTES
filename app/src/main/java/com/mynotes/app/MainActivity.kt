@@ -158,6 +158,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onResume()
         requestHighRefreshRate()
         AppController.setVisible(true)
+        Premium.attach(this)
+        Premium.evaluate()
     }
 
     override fun onPause() {

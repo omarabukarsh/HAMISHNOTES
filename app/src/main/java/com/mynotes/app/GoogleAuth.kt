@@ -21,7 +21,10 @@ fun Context.findActivity(): Activity? {
     return null
 }
 
-/** تسجيل الدخول بحساب Google عبر Credential Manager. الحساب هنا للتعريف فقط (لا خادم بعد). */
+/**
+ * تسجيل الدخول بحساب Google عبر Credential Manager.
+ * في نسخة المتجر يُبدَّل رمز Google بجلسة Supabase، فيُربط الاشتراك بالحساب.
+ */
 object GoogleAuth {
     class NotConfigured : Exception()
 
@@ -39,6 +42,8 @@ object GoogleAuth {
             val cred = CredentialManager.create(activity).getCredential(activity, request).credential
             if (cred is CustomCredential && cred.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val g = GoogleIdTokenCredential.createFrom(cred.data)
+                // فشل الربط بالخادم لا يمنع الدخول: يُعاد عند الاشتراك
+                if (Cloud.configured) Cloud.signInWithGoogle(g.idToken)
                 Result.success(g.id to g.displayName)
             } else {
                 Result.failure(IllegalStateException("unsupported credential"))

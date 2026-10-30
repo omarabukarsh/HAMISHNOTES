@@ -1,5 +1,6 @@
 package com.mynotes.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.foundation.Image
@@ -27,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +47,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.io.IOException
+import java.lang.ref.WeakReference
+import kotlin.random.Random
 
 /** الخصائص المدفوعة في هامش Premium. */
 enum class PremiumFeature(val icon: Int) {
@@ -91,37 +100,111 @@ enum class PremiumFeature(val icon: Int) {
 }
 
 /**
- * حالة الاشتراك. الدفع الحقيقي (Google Play والدفع المحلي) لم يُربط بعد،
- * فزر الاشتراك يفعّل Premium في وضع تجريبي محفوظ على الجهاز.
+ * حالة الاشتراك.
+ *
+ * نسخة المتجر: Premium مفتوح فقط بقسيمة موقّعة من الخادم (Lic)، يصدرها بعد أن يتحقق من الشراء
+ * عند Google ومن أن التطبيق نسخة أصلية من Google Play (Play Integrity). القسيمة تعمل دون إنترنت
+ * 7 أيام ثم تتجدد بصمت.
+ *
+ * النسخة التجريبية (موقّعة بمفتاح التجربة، BuildConfig.TEST_PREMIUM): زر الاشتراك يفعّل وضعًا تجريبيًا
+ * محليًا. هذا الكود كله يُحذف من نسخة المتجر عند البناء.
  */
 object Premium {
     const val FREE_DOCS = 3
     const val TRIAL_DAYS = 7
     const val YEAR_PRICE = "$4"
+    private const val DAY = 24 * 60 * 60 * 1000L
+    /** فرق مسموح في ساعة الجهاز قبل أن نعدّها أُرجعت عمدًا. */
+    private const val CLOCK_SLACK = 2 * 60 * 60 * 1000L
 
     private var sp: SharedPreferences? = null
+    private var app: Context? = null
+    private var activity: WeakReference<Activity>? = null
+    private var testActive = false
 
     var active by mutableStateOf(false)
+        private set
+    /** القسيمة الصالحة الآن (نسخة المتجر)؛ null في المجاني أو الوضع التجريبي. */
+    internal var grant by mutableStateOf<Lic.Grant?>(null)
         private set
     /** خاصية مقفلة ضغطها المستخدم الآن: تظهر نافذة تشرحها. */
     var lockedFeature by mutableStateOf<PremiumFeature?>(null)
     var paywallOpen by mutableStateOf(false)
     var limitOpen by mutableStateOf(false)
 
+    val testMode: Boolean get() = BuildConfig.TEST_PREMIUM
+
     fun init(context: Context) {
-        val p = context.getSharedPreferences("premium", Context.MODE_PRIVATE)
+        val c = context.applicationContext
+        app = c
+        val p = c.getSharedPreferences("premium", Context.MODE_PRIVATE)
         sp = p
-        active = p.getBoolean("test_active", false)
+        Cloud.init(c)
+        if (BuildConfig.TEST_PREMIUM) testActive = p.getBoolean("test_active", false)
+        evaluate()
+        if (!BuildConfig.TEST_PREMIUM && Cloud.configured) {
+            PlayBilling.init(c)
+            // الفحص لا يحدث لحظة الفتح بل بعد وقت عشوائي، فيصعب تتبّعه
+            AppController.scope.launch {
+                delay(Random.nextLong(20_000, 75_000))
+                background()
+            }
+        }
+    }
+
+    /** النشاط الظاهر الآن: تحتاجه نوافذ Google (الدفع وإصلاح التثبيت). */
+    fun attach(a: Activity) {
+        activity = WeakReference(a)
     }
 
     fun activateTest() {
-        active = true
+        if (!BuildConfig.TEST_PREMIUM) return
+        testActive = true
         sp?.edit()?.putBoolean("test_active", true)?.apply()
+        evaluate()
     }
 
     fun endTest() {
-        active = false
+        if (!BuildConfig.TEST_PREMIUM) return
+        testActive = false
         sp?.edit()?.putBoolean("test_active", false)?.apply()
+        evaluate()
+    }
+
+    /** يقرر حالة الاشتراك من القسيمة المحفوظة، دون إنترنت. */
+    internal fun evaluate() {
+        val c = app ?: return
+        val p = sp ?: return
+        val now = System.currentTimeMillis()
+        val seen = p.getLong("seen", 0)
+        if (now > seen) p.edit().putLong("seen", now).apply()
+        val g = Lic.parse(p.getString("grant", null))
+        val ok = g != null && valid(c, g, now) && now + CLOCK_SLACK > seen
+        grant = if (ok) g else null
+        active = (BuildConfig.TEST_PREMIUM && testActive) || ok
+    }
+
+    internal fun valid(c: Context, g: Lic.Grant, now: Long): Boolean =
+        g.pkg == c.packageName && g.dev == Lic.device(c) && g.sub == Cloud.userId &&
+            now < g.until && now + CLOCK_SLACK > g.iat && Lic.signerOk(c)
+
+    /**
+     * فحص ثانٍ داخل الخصائص نفسها (لا في الواجهة فقط): يعيد قراءة القسيمة والتحقق منها،
+     * فلا يكفي تغيير قيمة واحدة لفتح كل شيء. إن لم تصح يعود التطبيق بهدوء إلى المجاني.
+     */
+    internal fun confirm(): Boolean {
+        if (BuildConfig.TEST_PREMIUM) return active
+        val c = app ?: return false
+        val g = Lic.parse(sp?.getString("grant", null))
+        val ok = g != null && valid(c, g, System.currentTimeMillis())
+        if (!ok && active) evaluate()
+        return ok
+    }
+
+    /** بعد الدخول أو الخروج من حساب Google: القسيمة مربوطة بالحساب. */
+    fun onAccountChanged() {
+        if (Cloud.userId == null) sp?.edit()?.remove("grant")?.apply()
+        evaluate()
     }
 
     /** true إن كانت الخاصية متاحة؛ وإلا تظهر نافذة الخاصية المقفلة. */
@@ -138,6 +221,141 @@ object Premium {
         if (active || AppController.library.size + n <= FREE_DOCS) return true
         limitOpen = true
         return false
+    }
+
+    // ---------- الشراء والتحقق (نسخة المتجر) ----------
+
+    private enum class Outcome { OK, NONE, UNLICENSED, DEVICE, OTHER_ACCOUNT, OFFLINE, SIGN_IN, FAILED }
+
+    /** زر الاشتراك في الشاشة. */
+    fun startPurchase(a: Activity, onDone: () -> Unit = {}) {
+        if (BuildConfig.TEST_PREMIUM) {
+            activateTest()
+            AppController.messages.tryEmit(L("فُعّل Premium (وضع تجريبي)", "Premium activated (test mode)"))
+            onDone()
+            return
+        }
+        AppController.scope.launch {
+            if (!Cloud.configured) {
+                AppController.messages.tryEmit(L("الاشتراك غير متاح في هذه النسخة", "Subscriptions aren’t available in this build"))
+                return@launch
+            }
+            val uid = Cloud.userId ?: signInForPurchase(a) ?: return@launch
+            if (!PlayBilling.buy(a, uid)) {
+                AppController.messages.tryEmit(L("Google Play غير متاح الآن، حاول لاحقًا", "Google Play isn’t available right now, try later"))
+            }
+            onDone()
+        }
+    }
+
+    /** الاشتراك يُربط بحسابك (فينتقل معك إلى أي جهاز): نطلب الدخول بـ Google إن لم يكن. */
+    private suspend fun signInForPurchase(a: Activity): String? {
+        AppController.messages.tryEmit(L("سجّل الدخول بحساب Google ليُربط اشتراكك به", "Sign in with Google so your subscription is linked to you"))
+        val r = GoogleAuth.signIn(a)
+        r.onSuccess { (email, name) -> AppController.setAccount(email, name) }
+            .onFailure { AppController.messages.tryEmit(GoogleAuth.messageFor(it)) }
+        return Cloud.userId
+    }
+
+    /** رمز شراء جديد من Google Play: يُرسل إلى الخادم ليتحقق منه ويصدر القسيمة. */
+    internal fun submitPurchase(purchaseToken: String, done: () -> Unit = {}) {
+        AppController.scope.launch {
+            val o = call("verify", purchaseToken)
+            report(o, success = L("مرحبًا بك في هامش Premium", "Welcome to Hamish Premium"))
+            if (o == Outcome.OK) paywallOpen = false
+            done()
+        }
+    }
+
+    /** «استعادة الشراء»، وأيضًا تلقائيًا بعد إعادة التثبيت أو على جهاز جديد. */
+    fun restore(quiet: Boolean) {
+        if (BuildConfig.TEST_PREMIUM) {
+            if (!quiet) AppController.messages.tryEmit(L("الاستعادة تعمل في نسخة المتجر", "Restore works in the store version"))
+            return
+        }
+        AppController.scope.launch {
+            if (Cloud.userId == null) {
+                if (!quiet) AppController.messages.tryEmit(L("سجّل الدخول بحساب Google الذي اشتركت به", "Sign in with the Google account you subscribed with"))
+                return@launch
+            }
+            val owned = PlayBilling.owned().firstOrNull()
+            val o = if (owned != null) call("verify", owned.purchaseToken) else call("refresh", null)
+            if (!quiet || o == Outcome.OK) report(o, success = L("استُعيد اشتراكك", "Your subscription is restored"))
+        }
+    }
+
+    /** يجدد القسيمة بصمت إن قدمت، ويكتشف اشتراكًا موجودًا إن لم توجد قسيمة. */
+    private suspend fun background() {
+        val now = System.currentTimeMillis()
+        val g = Lic.parse(sp?.getString("grant", null))
+        if (g != null) {
+            if (grant == null || now - g.iat > DAY || g.until - now < 2 * DAY) report(call("refresh", null), success = null)
+        } else if (Cloud.userId != null) {
+            PlayBilling.owned().firstOrNull()?.let { report(call("verify", it.purchaseToken), success = null) }
+        }
+        PlayBilling.load()
+    }
+
+    private suspend fun call(action: String, purchaseToken: String?): Outcome {
+        val c = app ?: return Outcome.FAILED
+        val uid = Cloud.userId ?: return Outcome.SIGN_IN
+        val dev = Lic.device(c)
+        val ts = System.currentTimeMillis()
+        // بصمة الطلب: رمز السلامة يصلح لهذا الطلب بعينه فقط، فلا يُعاد استخدامه
+        val hash = Lic.sha256(listOf(action, uid, dev, ts.toString(), purchaseToken.orEmpty()).joinToString("|"))
+        // تعذّر الحصول على رمز (لا إنترنت، أو خدمات Play غير متاحة): لا نعاقب، ونحاول لاحقًا
+        val integrity = try {
+            Integrity.token(c, hash)
+        } catch (e: Throwable) {
+            return Outcome.FAILED
+        }
+        val body = JSONObject().put("action", action).put("device", dev).put("ts", ts).put("integrity", integrity)
+        purchaseToken?.let { body.put("purchaseToken", it) }
+        return try {
+            val token = Cloud.function("license", body).getString("grant")
+            val g = Lic.parse(token)
+            if (g == null || !valid(c, g, System.currentTimeMillis())) return Outcome.FAILED
+            sp?.edit()?.putString("grant", token)?.apply()
+            evaluate()
+            Outcome.OK
+        } catch (e: Cloud.HttpError) {
+            when (e.body?.optString("error")) {
+                "unlicensed", "unrecognized" -> Outcome.UNLICENSED
+                "device" -> Outcome.DEVICE
+                "owned_by_other" -> Outcome.OTHER_ACCOUNT
+                "no_subscription" -> {
+                    sp?.edit()?.remove("grant")?.apply()
+                    evaluate()
+                    Outcome.NONE
+                }
+                else -> if (e.code == 401) Outcome.SIGN_IN else Outcome.FAILED
+            }
+        } catch (e: IOException) {
+            Outcome.OFFLINE
+        } catch (e: Throwable) {
+            Outcome.FAILED
+        }
+    }
+
+    /** ردود لطيفة: لا إغلاق ولا حذف لأي بيانات، فقط رسالة ونافذة Google عند الحاجة. */
+    private suspend fun report(o: Outcome, success: String?) {
+        val a = activity?.get()
+        when (o) {
+            Outcome.OK -> success?.let { AppController.messages.tryEmit(it) }
+            Outcome.NONE -> if (success != null) AppController.messages.tryEmit(L("لا يوجد اشتراك فعّال في هذا الحساب", "No active subscription on this account"))
+            Outcome.UNLICENSED -> {
+                AppController.messages.tryEmit(L("Premium يعمل مع نسخة هامش من Google Play فقط", "Premium works only with Hamish from Google Play"))
+                if (a != null) Integrity.showGetLicensed(a)
+            }
+            Outcome.DEVICE -> {
+                AppController.messages.tryEmit(L("تعذّر التحقق من سلامة هذا الجهاز", "This device couldn’t be verified"))
+                if (a != null) Integrity.showGetIntegrity(a)
+            }
+            Outcome.OTHER_ACCOUNT -> AppController.messages.tryEmit(L("هذا الاشتراك مربوط بحساب هامش آخر", "This subscription is linked to another Hamish account"))
+            Outcome.OFFLINE -> if (success != null) AppController.messages.tryEmit(L("تحقق من اتصالك بالإنترنت", "Check your internet connection"))
+            Outcome.SIGN_IN -> if (success != null) AppController.messages.tryEmit(L("سجّل الدخول بحساب Google أولًا", "Sign in with Google first"))
+            Outcome.FAILED -> if (success != null) AppController.messages.tryEmit(L("تعذّر التحقق من الاشتراك، حاول لاحقًا", "Couldn’t verify the subscription, try later"))
+        }
     }
 }
 
@@ -276,6 +494,7 @@ private fun QuietButton(label: String, onClick: () -> Unit) {
 fun PaywallDialog(onDismiss: () -> Unit) {
     var termsOpen by remember { mutableStateOf(false) }
     var privacyOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (!Premium.testMode && Cloud.configured) PlayBilling.load() }
     OriginDialog(onDismiss = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) { close ->
         Surface(
             Modifier.fillMaxWidth(0.94f).widthIn(max = 900.dp).fillMaxHeight(0.92f),
@@ -368,7 +587,8 @@ private fun PlanSide(modifier: Modifier, close: () -> Unit, onTerms: () -> Unit,
                 fontSize = 13.sp, color = PwMuted
             )
             Spacer(Modifier.height(20.dp))
-            // الخطة الوحيدة: سنوية
+            // الخطة الوحيدة: سنوية. السعر من Google Play بعملة المستخدم متى توفر
+            val price = PlayBilling.price ?: Premium.YEAR_PRICE
             val shape = RoundedCornerShape(18.dp)
             Box {
                 Row(
@@ -381,12 +601,12 @@ private fun PlanSide(modifier: Modifier, close: () -> Unit, onTerms: () -> Unit,
                     Column(Modifier.weight(1f)) {
                         Text(L("سنوي", "Yearly"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PwInk)
                         Text(
-                            L("${Premium.TRIAL_DAYS} أيام مجانًا، ثم ${Premium.YEAR_PRICE} في السنة", "${Premium.TRIAL_DAYS}-day free trial, then ${Premium.YEAR_PRICE}/year"),
+                            L("${Premium.TRIAL_DAYS} أيام مجانًا، ثم $price في السنة", "${Premium.TRIAL_DAYS}-day free trial, then $price/year"),
                             fontSize = 12.sp, color = PwMuted
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(Premium.YEAR_PRICE, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = PwInk)
+                        Text(price, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = PwInk)
                         Text(L("في السنة", "per year"), fontSize = 11.sp, color = PwMuted)
                     }
                 }
@@ -399,21 +619,26 @@ private fun PlanSide(modifier: Modifier, close: () -> Unit, onTerms: () -> Unit,
             Spacer(Modifier.height(16.dp))
             CompareTable()
             Spacer(Modifier.height(22.dp))
-            GoldButton(L("ابدأ ${Premium.TRIAL_DAYS} أيام مجانًا", "Start ${Premium.TRIAL_DAYS}-day free trial")) {
-                Premium.activateTest()
-                AppController.messages.tryEmit(L("فُعّل Premium (وضع تجريبي)", "Premium activated (test mode)"))
-                close()
+            val activity = LocalContext.current.findActivity()
+            val trial = Premium.testMode || PlayBilling.trialAvailable
+            GoldButton(
+                when {
+                    PlayBilling.busy -> L("جارٍ التحقق…", "Verifying…")
+                    trial -> L("ابدأ ${Premium.TRIAL_DAYS} أيام مجانًا", "Start ${Premium.TRIAL_DAYS}-day free trial")
+                    else -> L("اشترك الآن", "Subscribe now")
+                }
+            ) {
+                if (activity != null && !PlayBilling.busy) Premium.startPurchase(activity) { if (Premium.active) close() }
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                L("وضع تجريبي: الدفع غير مربوط بعد، ولن يُخصم أي مبلغ.", "Test mode: payment isn’t connected yet, nothing will be charged."),
+                if (Premium.testMode) L("وضع تجريبي: الدفع غير مربوط بعد، ولن يُخصم أي مبلغ.", "Test mode: payment isn’t connected yet, nothing will be charged.")
+                else L("يتجدد سنويًا عبر Google Play، وتلغيه متى شئت من حسابك في Play.", "Renews yearly through Google Play. Cancel anytime in your Play account."),
                 fontSize = 11.5.sp, color = PwMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                LinkText(L("استعادة الشراء", "Restore purchase")) {
-                    AppController.messages.tryEmit(L("استعادة الشراء تعمل بعد ربط الدفع", "Restore will work once payment is connected"))
-                }
+                LinkText(L("استعادة الشراء", "Restore purchase")) { Premium.restore(quiet = false) }
                 Spacer(Modifier.width(16.dp))
                 LinkText(L("الشروط", "Terms"), onTerms)
                 Spacer(Modifier.width(16.dp))

@@ -361,7 +361,7 @@ private fun SettingsPane(
                     AccountRow()
                     GroupLabel(L("الاشتراك", "Subscription"))
                     SettingsGroup {
-                        if (Premium.active) {
+                        if (Premium.active && Premium.testMode) {
                             GroupRow(
                                 R.drawable.ph_star_fill, TileGold,
                                 L("هامش Premium", "Hamish Premium"),
@@ -370,6 +370,29 @@ private fun SettingsPane(
                                 Text(
                                     L("إنهاء التجربة", "End test"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
                                     modifier = Modifier.clip(RoundedCornerShape(50)).clickable { Premium.endTest() }.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        } else if (Premium.active) {
+                            val g = Premium.grant
+                            val ctx = LocalContext.current
+                            val end = g?.let { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale(if (I18n.english) "en" else "ar")).format(java.util.Date(it.exp)) }
+                            GroupRow(
+                                R.drawable.ph_star_fill, TileGold,
+                                L("هامش Premium", "Hamish Premium"),
+                                when {
+                                    end == null -> L("كل المزايا مفتوحة", "Every feature unlocked")
+                                    g?.trial == true -> L("فترة تجربة · تنتهي $end", "Free trial · ends $end")
+                                    g?.renewing == true -> L("يتجدد في $end", "Renews on $end")
+                                    else -> L("ينتهي في $end", "Ends on $end")
+                                }
+                            ) {
+                                Text(
+                                    L("إدارة", "Manage"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
+                                    modifier = Modifier.clip(RoundedCornerShape(50)).clickable {
+                                        // صفحة الاشتراكات في Google Play: الإلغاء والتعديل من هناك
+                                        val uri = android.net.Uri.parse("https://play.google.com/store/account/subscriptions?sku=${BuildConfig.PREMIUM_PRODUCT}&package=${ctx.packageName}")
+                                        runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+                                    }.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         } else {

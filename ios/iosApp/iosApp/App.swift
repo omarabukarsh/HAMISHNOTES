@@ -1,11 +1,13 @@
 import SwiftUI
+import UIKit
 import Shared
 
 /// نسخة iPad من «هامش»: التطبيق كله مكتوب بـ Kotlin + Compose (ios/shared)، وهنا يُعرض ملء الشاشة.
+/// أسماء SwiftUI مكتوبة كاملة لأن إطار Kotlin يصدّر أصنافًا بأسماء مثل Context و Color.
 @main
-struct HamishApp: App {
-    var body: some Scene {
-        WindowGroup {
+struct HamishApp: SwiftUI.App {
+    var body: some SwiftUI.Scene {
+        SwiftUI.WindowGroup {
             ComposeView()
                 .ignoresSafeArea(.all)
                 // ملف PDF فُتح بالتطبيق من «الملفات» أو من المشاركة
@@ -18,10 +20,12 @@ struct HamishApp: App {
     }
 }
 
-struct ComposeView: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
+struct ComposeView: SwiftUI.UIViewControllerRepresentable {
+    typealias UIViewControllerType = UIKit.UIViewController
+
+    func makeUIViewController(context: SwiftUI.UIViewControllerRepresentableContext<ComposeView>) -> UIKit.UIViewController {
         MainActivityKt.MainViewController()
     }
 
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIKit.UIViewController, context: SwiftUI.UIViewControllerRepresentableContext<ComposeView>) {}
 }

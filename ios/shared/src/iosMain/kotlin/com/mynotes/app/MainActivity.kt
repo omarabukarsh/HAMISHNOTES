@@ -4,6 +4,7 @@ import android.content.AppContext
 import androidx.compose.ui.window.ComposeUIViewController
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSProcessInfo
 import platform.UIKit.UIApplicationDidBecomeActiveNotification
 import platform.UIKit.UIApplicationDidEnterBackgroundNotification
 import platform.UIKit.UIApplicationWillResignActiveNotification
@@ -89,6 +90,10 @@ fun MainViewController(): UIViewController {
         }
     }
     IosApp.attachPencil(vc)
+    // لقطات الشاشة على المحاكي (ios-preview.yml): يُفتح ملف تجريبي عند التشغيل
+    val args = NSProcessInfo.processInfo.arguments.map { it.toString() }
+    val demo = args.indexOf("-hamishDemo")
+    if (demo >= 0 && demo + 1 < args.size) IosApp.openFile(args[demo + 1])
     return vc
 }
 

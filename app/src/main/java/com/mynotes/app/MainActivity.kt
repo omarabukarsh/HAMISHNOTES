@@ -3,6 +3,7 @@ package com.mynotes.app
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -65,6 +66,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
+    /** نحفظ مكان كل لمسة لتخرج النافذة التي تفتحها منه. */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) TouchOrigin.record(ev.rawX, ev.rawY)
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppController.initialize(applicationContext)

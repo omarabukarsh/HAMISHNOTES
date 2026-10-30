@@ -38,12 +38,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -95,6 +104,79 @@ fun Modifier.appear(durationMs: Int = Motion.ENTER, fromScale: Float = 0.94f): M
         val s = fromScale + (1f - fromScale) * a.value
         scaleX = s
         scaleY = s
+    }
+}
+
+/** آخر لمسة على الشاشة (بإحداثيات الشاشة)، تسجّلها MainActivity. */
+object TouchOrigin {
+    private var x = 0f
+    private var y = 0f
+    private var at = 0L
+
+    fun record(x: Float, y: Float) {
+        this.x = x
+        this.y = y
+        at = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** مكان اللمسة إن كانت حديثة؛ وإلا تخرج النافذة من وسطها. */
+    fun recent(): Offset? = if (android.os.SystemClock.uptimeMillis() - at < 1500L) Offset(x, y) else null
+}
+
+/**
+ * نافذة تخرج من الزر الذي فُتحت منه (مكان اللمسة) وتكبر بنابض، وتنكمش إليه عند الإغلاق.
+ * تمرّر للمحتوى close ليغلقها بالحركة نفسها.
+ */
+@Composable
+fun OriginDialog(
+    onDismiss: () -> Unit,
+    properties: DialogProperties = DialogProperties(),
+    content: @Composable (close: () -> Unit) -> Unit
+) {
+    val origin = remember { TouchOrigin.recent() }
+    val a = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
+    var bounds by remember { mutableStateOf<Rect?>(null) }
+    LaunchedEffect(Unit) { a.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 320f)) }
+    val close: () -> Unit = {
+        if (!closing) {
+            closing = true
+            scope.launch {
+                a.animateTo(0f, tween(Motion.EXIT + 40, easing = FastOutLinearInEasing))
+                onDismiss()
+            }
+        }
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = close, properties = properties) {
+        Box(
+            Modifier
+                .onGloballyPositioned { bounds = Rect(it.positionOnScreen(), it.size.toSize()) }
+                // لمسات داخل النافذة لا تمر بـ MainActivity، فنسجّلها هنا لتخرج النوافذ الفرعية منها
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val e = awaitPointerEvent(PointerEventPass.Initial)
+                            val b = bounds ?: continue
+                            e.changes.firstOrNull { it.changedToDown() }?.let { TouchOrigin.record(b.left + it.position.x, b.top + it.position.y) }
+                        }
+                    }
+                }
+                .graphicsLayer {
+                    val v = a.value
+                    val from = if (origin != null) 0.06f else 0.86f
+                    val s = from + (1f - from) * v
+                    scaleX = s
+                    scaleY = s
+                    alpha = (v * 2.2f).coerceIn(0f, 1f)
+                    val b = bounds
+                    transformOrigin = if (origin != null && b != null && b.width > 0f && b.height > 0f) {
+                        TransformOrigin((origin.x - b.left) / b.width, (origin.y - b.top) / b.height)
+                    } else {
+                        TransformOrigin.Center
+                    }
+                }
+        ) { content(close) }
     }
 }
 

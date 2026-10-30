@@ -1,5 +1,6 @@
 package com.mynotes.app
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
@@ -26,8 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,19 +52,27 @@ fun SignInScreen() {
             Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            PhIcon(R.drawable.ic_logo, Lib.text, 84.dp)
-            Spacer(Modifier.height(20.dp))
+            // الشعار بألوانه الأصلية داخل مربع فاتح بظل خفيف
+            val tile = RoundedCornerShape(28.dp)
+            Box(
+                Modifier.size(112.dp).shadow(14.dp, tile, ambientColor = Lib.text, spotColor = Lib.text)
+                    .clip(tile).background(Color(0xFFFFFDF7)).border(1.dp, Lib.line, tile),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(painterResource(R.drawable.logo_app), null, Modifier.size(96.dp).clip(RoundedCornerShape(22.dp)))
+            }
+            Spacer(Modifier.height(22.dp))
             UnderlinedTitle(L("هامش", "Hamish"), size = 44)
             Spacer(Modifier.height(16.dp))
             Text(
-                L("سجّل الدخول لربط حسابك. يمكنك التخطي واستخدام التطبيق مباشرة.", "Sign in to link your account. You can skip and use the app right away."),
+                L("ملاحظاتك وملفات PDF وأدوات المذاكرة في مكان واحد.\nسجّل الدخول لربط حسابك، أو تخطَّ وابدأ مباشرة.", "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."),
                 fontSize = 15.sp, lineHeight = 22.sp, color = Lib.muted, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(36.dp))
 
             val shape = RoundedCornerShape(50)
             Row(
-                Modifier.fillMaxWidth().clip(shape).background(Lib.card).border(1.dp, Lib.line, shape)
+                Modifier.fillMaxWidth().shadow(2.dp, shape).clip(shape).background(Color.White).border(1.dp, Color(0xFFDADCE0), shape)
                     .clickable(enabled = !busy) {
                         if (activity == null) return@clickable
                         busy = true
@@ -75,11 +87,11 @@ fun SignInScreen() {
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("G", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4285F4))
+                Image(painterResource(R.drawable.ic_google), "Google", Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Text(
                     if (busy) L("جارٍ الدخول…", "Signing in…") else L("المتابعة باستخدام Google", "Continue with Google"),
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E2A44)
                 )
             }
             if (error != null) {
@@ -94,5 +106,10 @@ fun SignInScreen() {
                 Text(L("ليس الآن", "Not now"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.muted)
             }
         }
+        Text(
+            L("ملاحظاتك تبقى على جهازك. نستخدم اسمك وبريدك فقط.", "Your notes stay on your device. We only use your name and email."),
+            fontSize = 12.sp, color = Lib.muted, textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 28.dp, vertical = 20.dp)
+        )
     }
 }

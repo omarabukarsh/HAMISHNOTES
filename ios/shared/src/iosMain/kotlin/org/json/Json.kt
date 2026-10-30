@@ -169,6 +169,9 @@ class JSONObject() {
     override fun toString(): String = StringBuilder().also { writeTo(it) }.toString()
 
     companion object {
+        // مخفي عن Objective-C: الاسم NULL ماكرو في C ويكسر ترويسة الإطار
+        @OptIn(kotlin.experimental.ExperimentalObjCRefinement::class)
+        @kotlin.native.HiddenFromObjC
         val NULL: Any = object {
             override fun toString() = "null"
             override fun equals(other: Any?) = other == null || other === this

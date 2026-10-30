@@ -189,6 +189,8 @@ object BuildConfig {
         get() = (platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String) ?: "1.0"
     /** تسجيل الدخول بحساب Google غير متاح بعد في نسخة iPad. */
     const val GOOGLE_WEB_CLIENT_ID = ""
+    @OptIn(kotlin.experimental.ExperimentalObjCRefinement::class)
+    @kotlin.native.HiddenFromObjC
     const val DEBUG = false
 }
 

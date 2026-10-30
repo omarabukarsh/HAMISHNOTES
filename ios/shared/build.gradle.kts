@@ -11,6 +11,7 @@ kotlin {
             baseName = "Shared"
             // إطار ديناميكي: يربط Kotlin كل مكتبات النظام بنفسه، ويُضمَّن داخل التطبيق
             isStatic = false
+            binaryOption("bundleId", "com.omarabukarsh.hamish.shared")
         }
     }
     sourceSets {

@@ -31,7 +31,6 @@ private val ossItems = listOf(
     OssItem("Kotlin, kotlinx.coroutines", "JetBrains s.r.o.", "Apache License 2.0", "apache-2.0.txt"),
     OssItem("PdfBox-Android (based on Apache PDFBox)", "Tom Roush; The Apache Software Foundation", "Apache License 2.0", "apache-2.0.txt"),
     OssItem("Almarai font", "Boutros Fonts", "SIL Open Font License 1.1", "ofl-1.1.txt"),
-    OssItem("Marhey font", "The Marhey Project Authors", "SIL Open Font License 1.1", "ofl-marhey.txt"),
     OssItem("Caveat font", "The Caveat Project Authors", "SIL Open Font License 1.1", "ofl-caveat.txt"),
     OssItem("Phosphor Icons", "Phosphor Icons", "MIT License", "mit-phosphor.txt"),
     OssItem(

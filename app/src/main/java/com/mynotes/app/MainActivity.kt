@@ -76,7 +76,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             // حجم الكتابة في التطبيق (من الإعدادات)
             val d = androidx.compose.ui.platform.LocalDensity.current
             androidx.compose.runtime.CompositionLocalProvider(
-                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, d.fontScale * UiPrefs.textScale)
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, d.fontScale * UiPrefs.textScale * (if (I18n.english) 1.15f else 1f))
             ) {
                 MyNotesTheme { MyNotesApp() }
             }

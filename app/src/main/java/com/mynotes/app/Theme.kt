@@ -100,22 +100,32 @@ object Lib {
 }
 
 /**
- * الخط: Almarai لكل التطبيق (عربي ولاتيني بتصميم واحد).
- * Display = نفس العائلة بوزن أثقل للعناوين وأسماء المستندات.
+ * الخط: Marhey للواجهة العربية، وCaveat للإنجليزية.
  */
 object Fonts {
-    val Sans = FontFamily(
-        Font(R.font.almarai_light, FontWeight.Light),
-        Font(R.font.almarai_regular, FontWeight.Normal),
-        Font(R.font.almarai_bold, FontWeight.Bold),
-        Font(R.font.almarai_extrabold, FontWeight.ExtraBold)
+    /** Marhey: عربي (ويشمل اللاتيني) للواجهة العربية. */
+    private val Marhey = FontFamily(
+        Font(R.font.marhey_light, FontWeight.Light),
+        Font(R.font.marhey_regular, FontWeight.Normal),
+        Font(R.font.marhey_medium, FontWeight.Medium),
+        Font(R.font.marhey_semibold, FontWeight.SemiBold),
+        Font(R.font.marhey_bold, FontWeight.Bold),
+        Font(R.font.marhey_bold, FontWeight.ExtraBold)
     )
+    /** Caveat: للواجهة الإنجليزية (لا يدعم العربية). */
+    private val CaveatAll = FontFamily(
+        Font(R.font.caveat_regular, FontWeight.Light),
+        Font(R.font.caveat_regular, FontWeight.Normal),
+        Font(R.font.caveat_medium, FontWeight.Medium),
+        Font(R.font.caveat_semibold, FontWeight.SemiBold),
+        Font(R.font.caveat_bold, FontWeight.Bold),
+        Font(R.font.caveat_bold, FontWeight.ExtraBold)
+    )
+    /** خط الواجهة حسب اللغة. */
+    val Sans: FontFamily get() = if (I18n.english) CaveatAll else Marhey
+    val Display: FontFamily get() = Sans
     /** خط يدوي للنصوص الصغيرة المائلة (Caveat). */
     val Script = FontFamily(Font(R.font.caveat_medium, FontWeight.Medium))
-    val Display = FontFamily(
-        Font(R.font.almarai_bold, FontWeight.Normal),
-        Font(R.font.almarai_extrabold, FontWeight.Bold)
-    )
 }
 
 private val AppColors = lightColorScheme(
@@ -149,7 +159,7 @@ private fun serif(size: Int, line: Int, weight: FontWeight = FontWeight.Bold) =
     TextStyle(fontFamily = Fonts.Display, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
 
 /** مقياس الخطوط: العربية تحتاج ارتفاع سطر أكبر من اللاتينية. */
-private val AppType = Typography(
+private fun appType() = Typography(
     displayLarge = serif(48, 64),
     displayMedium = serif(40, 54),
     displaySmall = serif(34, 46),
@@ -179,5 +189,7 @@ private val AppShapes = Shapes(
 fun MyNotesTheme(content: @Composable () -> Unit) {
     val theme = ThemeState.theme
     val scheme = remember(theme) { AppColors.copy(background = Palette.Background) }
-    MaterialTheme(colorScheme = scheme, typography = AppType, shapes = AppShapes, content = content)
+    val english = I18n.english
+    val type = remember(english) { appType() }
+    MaterialTheme(colorScheme = scheme, typography = type, shapes = AppShapes, content = content)
 }

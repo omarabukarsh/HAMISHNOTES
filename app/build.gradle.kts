@@ -15,6 +15,9 @@ android {
         val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = 100 + run
         versionName = "1.0.$run"
+        // معرّف عميل Google (من نوع Web) لتسجيل الدخول: من gradle.properties أو متغير بيئة GOOGLE_WEB_CLIENT_ID
+        val googleClientId = (project.findProperty("GOOGLE_WEB_CLIENT_ID") as String?) ?: System.getenv("GOOGLE_WEB_CLIENT_ID") ?: ""
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // مفتاح توقيع ثابت (keystore/mynotes.jks) بدل مفتاح debug العشوائي الذي يتغير في كل بناء
@@ -45,7 +48,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     // حالات الاختبار المرجعية (ملف PDF المرفق) مشتركة بين اختبارات JVM واختبارات الجهاز
     sourceSets {
         getByName("test").java.srcDir("src/sharedTest/java")
@@ -69,6 +75,10 @@ dependencies {
     // تحويل الخط اليدوي إلى نص (حزمة لغة تُنزَّل مرة واحدة)
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
     implementation("androidx.core:core-ktx:1.13.1")
+    // تسجيل الدخول بحساب Google (Credential Manager)
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     // فتح المستندات المقفلة بالبصمة
     implementation("androidx.biometric:biometric:1.1.0")
     // قراءة النص الرقمي داخل PDF (يدعم العربية) والكتابة على PDF عند الحفظ

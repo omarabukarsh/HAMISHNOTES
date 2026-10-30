@@ -111,6 +111,33 @@ object AppController {
     var goalMinutes by mutableStateOf(60)
         private set
 
+    // ---------- حساب Google (اختياري) ----------
+    var accountEmail by mutableStateOf<String?>(null)
+        private set
+    var accountName by mutableStateOf<String?>(null)
+        private set
+    /** هل ظهرت صفحة تسجيل الدخول الأولى (دخل المستخدم أو تخطّاها). */
+    var loginSeen by mutableStateOf(true)
+        private set
+
+    fun setAccount(email: String, name: String?) {
+        accountEmail = email
+        accountName = name
+        loginSeen = true
+        prefs.edit().putString("acct_email", email).putString("acct_name", name).putBoolean("login_seen", true).apply()
+    }
+
+    fun signOutAccount() {
+        accountEmail = null
+        accountName = null
+        prefs.edit().remove("acct_email").remove("acct_name").apply()
+    }
+
+    fun skipLogin() {
+        loginSeen = true
+        prefs.edit().putBoolean("login_seen", true).apply()
+    }
+
     fun setGoal(minutes: Int) {
         goalMinutes = minutes.coerceIn(5, 24 * 60)
         prefs.edit().putInt("goal_min", goalMinutes).apply()
@@ -745,6 +772,9 @@ object AppController {
         } catch (e: Throwable) {
         }
         goalMinutes = prefs.getInt("goal_min", 60)
+        accountEmail = prefs.getString("acct_email", null)
+        accountName = prefs.getString("acct_name", null)
+        loginSeen = prefs.getBoolean("login_seen", false)
         try {
             val arr = org.json.JSONArray(prefs.getString("folders", "[]") ?: "[]")
             for (i in 0 until arr.length()) folders.add(arr.getString(i))

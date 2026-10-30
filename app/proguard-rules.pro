@@ -19,3 +19,9 @@
 
 # أرقام الأسطر في تقارير الأعطال
 -keepattributes SourceFile,LineNumberTable
+
+# Credential Manager (تسجيل الدخول بـ Google): حسب توصية توثيق androidx.credentials
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** {
+  *;
+}

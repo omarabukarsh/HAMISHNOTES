@@ -177,6 +177,12 @@ fun MyNotesApp() {
     // في وضع التركيز: الرجوع يخرج من الوضع أولًا
     BackHandler(enabled = c.focusMode) { c.focusMode = false }
 
+    // أول فتح للتطبيق: صفحة تسجيل الدخول (يمكن تخطيها)
+    if (!c.loginSeen) {
+        SignInScreen()
+        return
+    }
+
     Box(
         Modifier.fillMaxSize().background(Palette.Background).systemBarsPadding()
             // أي لمسة تعني أن المستخدم حاضر (لعداد القراءة)، دون التأثير على اللمس نفسه

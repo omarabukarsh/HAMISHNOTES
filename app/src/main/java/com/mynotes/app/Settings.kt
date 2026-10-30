@@ -32,6 +32,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -180,6 +181,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    item { SectionTitle(L("الحساب", "Account")) }
+                    item { AccountRow() }
                     item { SectionTitle(L("إعدادات المستندات", "Document settings")) }
                     item {
                         SettingSwitch(
@@ -450,6 +453,37 @@ private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
                         }
                     }
 
+                }
+            }
+        }
+    }
+}
+
+/** حساب Google: تسجيل الدخول أو الخروج. */
+@Composable
+private fun AccountRow() {
+    val c = AppController
+    val activity = LocalContext.current.findActivity()
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val email = c.accountEmail
+    Column {
+        NavRow(
+            if (email != null) (c.accountName ?: email) else L("تسجيل الدخول بحساب Google", "Sign in with Google"),
+            if (email != null) email + " · " + L("اضغط لتسجيل الخروج", "tap to sign out")
+            else (error ?: L("اختياري، لربط حسابك", "Optional, to link your account")),
+            R.drawable.ph_lock
+        ) {
+            if (busy) return@NavRow
+            if (email != null) {
+                scope.launch { GoogleAuth.signOut(activity); c.signOutAccount() }
+            } else if (activity != null) {
+                busy = true
+                scope.launch {
+                    GoogleAuth.signIn(activity).onSuccess { (e, n) -> c.setAccount(e, n); error = null }
+                        .onFailure { error = GoogleAuth.messageFor(it) }
+                    busy = false
                 }
             }
         }

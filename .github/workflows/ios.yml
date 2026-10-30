@@ -40,7 +40,8 @@ jobs:
       - name: Report Kotlin errors
         if: failure()
         shell: bash
-        run: grep -E '^e: |What went wrong|error:' -A2 ios/kotlin.log | head -60 | sed 's/^/::error::/' || true
+        run: |
+          grep -E '^e: |What went wrong|error:' -A2 ios/kotlin.log | head -60 | sed 's/^/::error::/' || true
       - name: Generate Xcode project
         working-directory: ios/iosApp
         run: |
@@ -60,7 +61,8 @@ jobs:
       - name: Report Xcode errors
         if: failure()
         shell: bash
-        run: grep -E 'error:' -A3 ios/iosApp/xcode.log | head -60 | sed 's/^/::error::/' || true
+        run: |
+          grep -E 'error:' -A3 ios/iosApp/xcode.log | head -60 | sed 's/^/::error::/' || true
       - name: Package IPA
         shell: bash
         run: |

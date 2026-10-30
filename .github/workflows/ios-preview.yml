@@ -59,26 +59,30 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
           APP=$(find ios/iosApp/build/Debug-iphonesimulator -maxdepth 1 -name "*.app" | head -1)
+          # المحاكي يرفض تشغيل تطبيق بلا توقيع: توقيع محلي (ad-hoc) يكفي
+          codesign --force --sign - "$APP/Frameworks/Shared.framework"
+          codesign --force --sign - "$APP"
           xcrun simctl install "$UDID" "$APP"
           BID=com.omarabukarsh.hamish
           # 1) أول فتح: المكتبة
-          xcrun simctl launch --stdout=shots/run1.log --stderr=shots/run1.log "$UDID" $BID
+          xcrun simctl launch --stdout="$PWD/shots/run1.log" --stderr="$PWD/shots/run1.log" "$UDID" $BID || echo "launch 1 failed"
           sleep 20
           xcrun simctl io "$UDID" screenshot shots/1-library.png
           # 2) فتح ملف PDF تجريبي في القارئ
           DATA=$(xcrun simctl get_app_container "$UDID" $BID data)
           cp app/src/sharedTest/assets/antibiotics.pdf "$DATA/Documents/demo.pdf"
           xcrun simctl terminate "$UDID" $BID || true
-          xcrun simctl launch --stdout=shots/run2.log --stderr=shots/run2.log "$UDID" $BID -hamishDemo "$DATA/Documents/demo.pdf"
+          xcrun simctl launch --stdout="$PWD/shots/run2.log" --stderr="$PWD/shots/run2.log" "$UDID" $BID -hamishDemo "$DATA/Documents/demo.pdf" || echo "launch 2 failed"
           sleep 25
           xcrun simctl io "$UDID" screenshot shots/2-reader.png
           # 3) العودة: المكتبة وفيها الملف
           xcrun simctl terminate "$UDID" $BID || true
-          xcrun simctl launch --stdout=shots/run3.log --stderr=shots/run3.log "$UDID" $BID
+          xcrun simctl launch --stdout="$PWD/shots/run3.log" --stderr="$PWD/shots/run3.log" "$UDID" $BID || echo "launch 3 failed"
           sleep 15
           xcrun simctl io "$UDID" screenshot shots/3-library-with-doc.png
           # تقارير الانهيار إن وُجدت
           cp ~/Library/Logs/DiagnosticReports/*Hamish* shots/ 2>/dev/null || true
+          xcrun simctl spawn "$UDID" log show --last 5m --predicate 'process == "Hamish"' --style compact > shots/system.log 2>&1 || true
           ls -la shots
       - uses: actions/upload-artifact@v4
         if: always()

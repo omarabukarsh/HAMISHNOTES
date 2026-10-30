@@ -80,8 +80,9 @@ internal object Cloud {
             c.readTimeout = 30_000
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
+            // apikey يكفي لطلبات الدخول؛ Authorization لرمز المستخدم فقط (فيعمل المفتاح القديم anon والجديد publishable)
             c.setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
-            c.setRequestProperty("Authorization", "Bearer " + (bearer ?: BuildConfig.SUPABASE_ANON_KEY))
+            if (bearer != null) c.setRequestProperty("Authorization", "Bearer $bearer")
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = c.responseCode
             val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()

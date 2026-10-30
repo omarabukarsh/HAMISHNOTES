@@ -44,10 +44,14 @@ android {
         // معرّف عميل Google (من نوع Web) لتسجيل الدخول: من gradle.properties أو متغير بيئة GOOGLE_WEB_CLIENT_ID
         val googleClientId = (project.findProperty("GOOGLE_WEB_CLIENT_ID") as String?) ?: System.getenv("GOOGLE_WEB_CLIENT_ID") ?: ""
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
-        // Supabase: الرابط والمفتاح العام (anon/publishable) فقط؛ لا مفاتيح سرية في التطبيق
+        // Supabase: الرابط والمفتاح العام (anon) فقط، وكلاهما ليس سرًا؛ لا مفاتيح سرية في التطبيق.
+        // قيم افتراضية هنا كي يعمل البناء المحلي و GitHub Actions دون متغيرات إضافية.
         val supabaseUrl = setting("SUPABASE_URL").ifEmpty { "https://nuwbcgpsyrdqaqzablis.supabase.co" }
+        val supabaseAnon = setting("SUPABASE_ANON_KEY").ifEmpty {
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51d2JjZ3BzeXJkcWFxemFibGlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNjQ2ODgsImV4cCI6MjEwODk0MDY4OH0.7umRZmCBShbped48zBM_r_5RX6qBsWg165VHcnKWeO4"
+        }
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${setting("SUPABASE_ANON_KEY")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnon\"")
         // رقم مشروع Google Cloud لـ Play Integrity (مشروع hamish)
         buildConfigField("long", "CLOUD_PROJECT_NUMBER", setting("CLOUD_PROJECT_NUMBER").ifEmpty { "769777388576" } + "L")
         buildConfigField("String", "PREMIUM_PRODUCT", "\"${setting("PREMIUM_PRODUCT").ifEmpty { "hamish_premium" }}\"")

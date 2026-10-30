@@ -242,7 +242,8 @@ object Premium {
             }
             val uid = Cloud.userId ?: signInForPurchase(a) ?: return@launch
             if (!PlayBilling.buy(a, uid)) {
-                AppController.messages.tryEmit(L("Google Play غير متاح الآن، حاول لاحقًا", "Google Play isn’t available right now, try later"))
+                // أجهزة بلا خدمات Google (مثل هواوي الحديثة): المجاني يبقى كما هو، والاشتراك يحتاج Google Play
+                AppController.messages.tryEmit(L("الاشتراك يحتاج Google Play على هذا الجهاز", "Subscribing needs Google Play on this device"))
             }
             onDone()
         }

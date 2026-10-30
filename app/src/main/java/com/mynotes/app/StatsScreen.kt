@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -150,110 +153,156 @@ fun StatsDialog(onDismiss: () -> Unit) {
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            Modifier.fillMaxWidth(0.9f).heightIn(max = 760.dp),
+            Modifier.fillMaxWidth(0.92f).widthIn(max = 860.dp).heightIn(max = 780.dp),
             shape = RoundedCornerShape(28.dp),
             color = Lib.side,
             border = androidx.compose.foundation.BorderStroke(1.dp, Lib.line)
         ) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp)) {
+                // العنوان وزر الإغلاق
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        L("إحصاءات الدراسة", "Study stats"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp, color = Lib.text, modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Lib.muted, 20.dp, L("إغلاق", "Close")) }
+                    Box(Modifier.weight(1f)) { UnderlinedTitle(L("إحصاءات الدراسة", "Study stats"), size = 30) }
+                    Spacer(Modifier.width(12.dp))
+                    IconCircleButton(R.drawable.ph_close, L("إغلاق", "Close"), onClick = onDismiss)
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
-                // اليوم والهدف
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // اليوم والهدف: بطاقة بلون بطاقة «تابع من حيث توقفت»
+                val cardShape = RoundedCornerShape(24.dp)
+                Row(
+                    Modifier.fillMaxWidth().clip(cardShape).background(Lib.resume).padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(contentAlignment = Alignment.Center) {
-                        GoalRing(96.dp, 9.dp, track = Lib.line)
+                        GoalRing(104.dp, 10.dp, track = Lib.line)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(formatReading(todayMs), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text)
-                            Text(L("اليوم", "today"), fontSize = 11.sp, color = Lib.muted)
+                            Text(formatReading(todayMs), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text, maxLines = 1)
+                            Text(L("اليوم", "today"), fontSize = 12.sp, color = Lib.muted, maxLines = 1)
                         }
                     }
                     Spacer(Modifier.width(20.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             if (todayMs >= goalMs) L("حققت هدف اليوم", "Today’s goal reached") else L("باقي ${formatReading(goalMs - todayMs)} لهدف اليوم", "${formatReading(goalMs - todayMs)} left for today’s goal"),
-                            fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text
+                            fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Lib.text
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(10.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(L("هدفك اليومي: ${formatReading(goalMs)}", "Daily goal: ${formatReading(goalMs)}"), fontSize = 14.sp, color = Lib.text)
-                            Spacer(Modifier.width(8.dp))
-                            TextButton(onClick = { editGoal = true }) {
-                                Text(L("تغيير", "Change"), color = goldText(), fontWeight = FontWeight.Bold)
-                            }
+                            Text(
+                                L("هدفك اليومي: ${formatReading(goalMs)}", "Daily goal: ${formatReading(goalMs)}"),
+                                fontSize = 14.sp, color = Lib.muted, modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Box(
+                                Modifier.clip(RoundedCornerShape(50)).background(Lib.card)
+                                    .border(1.dp, Lib.line, RoundedCornerShape(50))
+                                    .clickable { editGoal = true }.padding(horizontal = 14.dp, vertical = 6.dp)
+                            ) { Text(L("تغيير", "Change"), fontSize = 13.sp, color = goldText(), fontWeight = FontWeight.Bold, maxLines = 1) }
                         }
                         val streak = studyStreak()
-                        Text(
-                            if (streak > 0) L(
-                                "سلسلة الدراسة: $streak ${if (streak == 1) "يوم" else "أيام"} متتالية",
-                                "Study streak: $streak ${if (streak == 1) "day" else "days"} in a row"
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color(0xFFE8864A)))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (streak > 0) L(
+                                    "سلسلة الدراسة: $streak ${if (streak == 1) "يوم" else "أيام"} متتالية",
+                                    "Study streak: $streak ${if (streak == 1) "day" else "days"} in a row"
+                                ) else L("ابدأ سلسلة دراسة اليوم", "Start a study streak today"),
+                                fontSize = 14.sp, color = Lib.text, fontWeight = FontWeight.Bold
                             )
-                            else L("ابدأ سلسلة دراسة اليوم", "Start a study streak today"),
-                            fontSize = 13.sp, color = goldText(), fontWeight = FontWeight.Bold
-                        )
+                        }
                     }
                 }
 
                 // الشهر
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(24.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { month = month.minusMonths(1) }) { PhIcon(R.drawable.ph_caret_down, Lib.text, 20.dp, L("الشهر السابق", "Previous month"), Modifier.graphicsLayer { rotationZ = 90f }) }
+                    MonthArrow(R.drawable.ph_caret_down, 90f, L("الشهر السابق", "Previous month"), true) { month = month.minusMonths(1) }
                     Text(
                         month.month.getDisplayName(TextStyle.FULL, if (I18n.english) Locale.ENGLISH else Locale("ar")) + " " + month.year,
-                        fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Lib.text,
-                        modifier = Modifier.weight(1f), textAlign = TextAlign.Center
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = Fonts.Display, color = Lib.text,
+                        modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1
                     )
-                    IconButton(
-                        enabled = month.isBefore(today.withDayOfMonth(1)),
-                        onClick = { month = month.plusMonths(1) }
-                    ) { PhIcon(R.drawable.ph_caret_down, Lib.text, 20.dp, L("الشهر التالي", "Next month"), Modifier.graphicsLayer { rotationZ = -90f }) }
+                    MonthArrow(R.drawable.ph_caret_down, -90f, L("الشهر التالي", "Next month"), month.isBefore(today.withDayOfMonth(1))) { month = month.plusMonths(1) }
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatTile(L("المجموع", "Total"), formatReading(monthTotal), Modifier.weight(1f))
-                    StatTile(L("أيام الدراسة", "Study days"), "$studied", Modifier.weight(1f))
-                    StatTile(L("حققت الهدف", "Goal reached"), L("$goalDays يوم", "$goalDays days"), Modifier.weight(1f))
-                    StatTile(L("متوسط يوم الدراسة", "Avg study day"), if (studied > 0) formatReading(monthTotal / studied) else "—", Modifier.weight(1f))
+                Spacer(Modifier.height(14.dp))
+                val tiles = listOf(
+                    L("المجموع", "Total") to formatReading(monthTotal),
+                    L("أيام الدراسة", "Study days") to "$studied",
+                    L("حققت الهدف", "Goal reached") to L("$goalDays يوم", "$goalDays days"),
+                    L("متوسط يوم الدراسة", "Avg study day") to (if (studied > 0) formatReading(monthTotal / studied) else "—")
+                )
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    if (maxWidth >= 560.dp) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            tiles.forEach { (l, v) -> StatTile(l, v, Modifier.weight(1f)) }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            tiles.chunked(2).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    row.forEach { (l, v) -> StatTile(l, v, Modifier.weight(1f)) }
+                                }
+                            }
+                        }
+                    }
                 }
                 if (pomos > 0) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(L("جلسات تركيز هذا الشهر: $pomos", "Focus sessions this month: $pomos"), fontSize = 13.sp, color = Lib.text)
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        Modifier.clip(RoundedCornerShape(50)).background(Lib.accentSoft).padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PhIcon(R.drawable.ph_timer, goldText(), 16.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(L("جلسات تركيز هذا الشهر: $pomos", "Focus sessions this month: $pomos"), fontSize = 13.sp, color = Lib.text)
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
-                MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
+
+                // أعمدة الأيام
+                Spacer(Modifier.height(16.dp))
+                val chartShape = RoundedCornerShape(20.dp)
+                Column(Modifier.fillMaxWidth().clip(chartShape).background(Lib.card).border(1.dp, Lib.line, chartShape).padding(16.dp)) {
+                    MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LegendDot(Lib.accent, L("حققت الهدف", "Goal reached"))
+                        Spacer(Modifier.width(18.dp))
+                        LegendDot(Lib.iconBlue, L("دون الهدف", "Below goal"))
+                    }
+                }
 
                 // تقرير كل مادة
-                Spacer(Modifier.height(22.dp))
-                Text(L("تقرير المواد لهذا الشهر", "Subjects report this month"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(26.dp))
+                Text(L("تقرير المواد لهذا الشهر", "Subjects report this month"), fontSize = 18.sp, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = Lib.text)
+                Spacer(Modifier.height(10.dp))
                 if (reports.isEmpty()) {
-                    Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 13.sp, color = Lib.muted)
+                    Text(L("لا توجد قراءة مسجلة في هذا الشهر.", "No reading recorded this month."), fontSize = 14.sp, color = Lib.muted)
                 }
                 val maxTotal = reports.maxOfOrNull { it.total }?.coerceAtLeast(1L) ?: 1L
                 reports.forEach { r ->
-                    val shape = RoundedCornerShape(18.dp)
+                    val shape = RoundedCornerShape(20.dp)
                     Column(
-                        Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(shape).background(Lib.card)
-                            .border(1.dp, Lib.line, shape).padding(16.dp)
+                        Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(shape).background(Lib.card)
+                            .border(1.dp, Lib.line, shape).padding(18.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(r.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text, modifier = Modifier.weight(1f))
-                            Text(formatReading(r.total), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = goldText())
+                            Text(
+                                r.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(formatReading(r.total), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = goldText(), maxLines = 1)
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Lib.line)) {
+                        Spacer(Modifier.height(10.dp))
+                        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Lib.line)) {
                             Box(
-                                Modifier.fillMaxWidth((r.total.toFloat() / maxTotal).coerceIn(0.02f, 1f)).height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)).background(Lib.accent)
+                                Modifier.fillMaxWidth((r.total.toFloat() / maxTotal).coerceIn(0.02f, 1f)).height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp)).background(Lib.accent)
                             )
                         }
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(10.dp))
                         val share = if (monthTotal > 0) (r.total * 100 / monthTotal) else 0
                         Text(
                             L(
@@ -261,12 +310,19 @@ fun StatsDialog(onDismiss: () -> Unit) {
                                 "$share% of the month, studied on ${r.days} ${if (r.days == 1) "day" else "days"}"
                             ) +
                                 (if (r.days > 0) L("، بمتوسط ${formatReading(r.total / r.days)} لليوم", ", avg ${formatReading(r.total / r.days)} per day") else ""),
-                            fontSize = 12.sp, color = Lib.muted
+                            fontSize = 13.sp, color = Lib.muted
                         )
+                        if (r.docs.isNotEmpty()) Spacer(Modifier.height(6.dp))
                         r.docs.take(5).forEach { (name, ms) ->
-                            Row(Modifier.padding(top = 4.dp)) {
-                                Text("• $name", fontSize = 13.sp, color = Lib.text, maxLines = 1, modifier = Modifier.weight(1f))
-                                Text(formatReading(ms), fontSize = 12.sp, color = Lib.muted)
+                            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Lib.accent))
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    name, fontSize = 14.sp, color = Lib.text, maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(formatReading(ms), fontSize = 13.sp, color = Lib.muted, maxLines = 1)
                             }
                         }
                     }
@@ -319,13 +375,36 @@ private fun GoalDialog(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Uni
 
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
     Column(
-        modifier.clip(shape).background(Lib.card).border(1.dp, Lib.line, shape).padding(vertical = 14.dp, horizontal = 8.dp),
+        modifier.clip(shape).background(Lib.card).border(1.dp, Lib.line, shape).padding(vertical = 16.dp, horizontal = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Lib.text, maxLines = 1)
-        Text(label, fontSize = 11.sp, color = Lib.muted, maxLines = 1)
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Lib.text, maxLines = 1, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(4.dp))
+        Text(label, fontSize = 12.sp, color = Lib.muted, maxLines = 2, textAlign = TextAlign.Center, lineHeight = 16.sp)
+    }
+}
+
+/** سهم الشهر السابق/التالي: زر دائري صغير. */
+@Composable
+private fun MonthArrow(icon: Int, rotate: Float, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+            .background(Lib.card).border(1.dp, Lib.line, androidx.compose.foundation.shape.CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        PhIcon(icon, if (enabled) Lib.text else Lib.line, 18.dp, description, Modifier.graphicsLayer { rotationZ = rotate })
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.width(6.dp))
+        Text(label, fontSize = 12.sp, color = Lib.muted, maxLines = 1)
     }
 }
 
@@ -358,11 +437,14 @@ private fun MonthBars(values: List<Long>, goalMs: Long, todayIndex: Int?) {
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth()) {
             values.indices.forEach { i ->
-                Text(
-                    if ((i + 1) % 5 == 0 || i == 0) "${i + 1}" else "",
-                    fontSize = 10.sp, color = Lib.muted, modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center, maxLines = 1
-                )
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    if ((i + 1) % 5 == 0 || i == 0) {
+                        Text(
+                            "${i + 1}", fontSize = 11.sp, color = Lib.muted, softWrap = false, maxLines = 1,
+                            modifier = Modifier.wrapContentWidth(unbounded = true)
+                        )
+                    }
+                }
             }
         }
     }

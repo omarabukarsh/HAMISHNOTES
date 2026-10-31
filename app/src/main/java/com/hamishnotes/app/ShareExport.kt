@@ -44,11 +44,15 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val entry = c.library.firstOrNull { it.id == docId } ?: return
     var editable by remember { mutableStateOf(true) }
+    // النافذة تبقى مفتوحة حتى يعود اختيار مكان الحفظ: إغلاقها قبل ذلك يُلغي استقبال النتيجة
+    // فيُنشأ الملف فارغًا (0 بايت) دون أن يُكتب فيه
     val docSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
         if (uri != null) c.shareOrSaveDoc(ctx, docId, editable, uri)
+        onDismiss()
     }
     val sumSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
         if (uri != null) c.shareOrSaveSummary(ctx, docId, uri)
+        onDismiss()
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -85,7 +89,6 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
                     }
                     OutlinedButton(
                         onClick = {
-                            onDismiss()
                             docSaver.launch(entry.name + if (editable) ".pdf" else L(" - نهائي.pdf", " - final.pdf"))
                         },
                         modifier = Modifier.weight(1f)
@@ -102,7 +105,7 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
                         TextButton(onClick = { onDismiss(); c.shareOrSaveSummary(ctx, docId, null) }) {
                             Text(L("مشاركة الملخصات", "Share summaries"), color = Palette.Navy)
                         }
-                        TextButton(onClick = { onDismiss(); sumSaver.launch(L("ملخص ", "Summary ") + entry.name + ".pdf") }) {
+                        TextButton(onClick = { sumSaver.launch(L("ملخص ", "Summary ") + entry.name + ".pdf") }) {
                             Text(L("حفظ الملخصات", "Save summaries"), color = Palette.Navy)
                         }
                     }

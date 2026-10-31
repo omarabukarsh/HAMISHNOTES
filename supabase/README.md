@@ -13,6 +13,7 @@
 Google Play ──(تجديد / إلغاء / استرداد)──▶ Pub/Sub ──▶ play-rtdn ──▶ جدول subscriptions
 ```
 
+- **delete-account**: حذف الحساب من داخل التطبيق. يلغي تجديد الاشتراك في Google Play أولًا، ثم يحذف المستخدم مع صفوفه. إن فشل الإلغاء لا يُحذف شيء.
 - **subscriptions**: جدول الاشتراكات. لا يكتب فيه إلا الخادم، والمستخدم يقرأ صفه فقط (RLS).
 - **integrity_failures**: كل محاولة رُفضت (نسخة معدّلة، أو من خارج المتجر، أو جهاز مخترق، أو رمز شراء لحساب آخر). راجعه لترى حجم القرصنة.
 - **has_premium(uid)**: دالة جاهزة لسياسات RLS لاحقًا (مثل مزامنة سحابية للمشتركين فقط).
@@ -68,6 +69,9 @@ supabase functions deploy license --no-verify-jwt
 ```
 ```bash
 supabase functions deploy play-rtdn --no-verify-jwt
+```
+```bash
+supabase functions deploy delete-account --no-verify-jwt
 ```
 
 ### 6. بناء نسخة المتجر

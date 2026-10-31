@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>حذف حساب هامش · Delete your Hamish account</title>
+<meta name="description" content="How to delete your Hamish Notes account and the data stored on our servers.">
+<link rel="icon" href="../logo.png">
+<style>
+@font-face{font-family:Alm;src:url(../almarai_regular.ttf);font-weight:400}
+@font-face{font-family:Alm;src:url(../almarai_bold.ttf);font-weight:700}
+@font-face{font-family:AlmX;src:url(../almarai_extrabold.ttf);font-weight:800}
+:root{--bg:#FAF4E6;--card:#fff;--line:#EADFC8;--text:#1E2A44;--muted:#667085;--red:#B0413E;--green:#2E9D6B;--navy:#1B365D}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Alm,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+main{max-width:760px;margin:0 auto;padding:32px 16px 48px}
+header{display:flex;align-items:center;gap:14px}
+header img{width:56px;height:56px;border-radius:16px;background:#FFFDF7;border:1px solid var(--line)}
+.brand{font-family:AlmX;font-weight:800;font-size:24px;line-height:1.2}
+.sub{font-size:12px;color:var(--muted)}
+.lang{margin-inline-start:auto;font:700 13px Alm;color:var(--navy);background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 12px;cursor:pointer}
+h1{font-family:AlmX;font-weight:800;font-size:34px;line-height:1.25;margin-top:28px}
+.lead{color:var(--muted);margin-top:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 22px;margin-top:14px}
+h2{font-size:17px}
+.btn{display:inline-block;margin-top:14px;background:var(--text);color:#fff;font-weight:700;padding:11px 22px;border-radius:24px;text-decoration:none}
+.cols{display:flex;gap:14px;flex-wrap:wrap}
+.cols .card{flex:1 1 260px}
+ul{padding-inline-start:20px;margin-top:6px;font-size:14px}
+.red{color:var(--red)}.green{color:var(--green)}
+footer{font-size:12px;color:var(--muted);margin-top:22px}
+[data-lang]{display:none}
+html[lang=ar] [data-lang=ar],html[lang=en] [data-lang=en]{display:block}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <img src="../logo.png" alt="">
+  <div><div class="brand"><span data-lang="ar">هامش</span><span data-lang="en">Hamish</span></div><div class="sub">Hamish Notes · com.hamishnotes.app</div></div>
+  <button class="lang" id="lang" type="button">English</button>
+</header>
+
+<section data-lang="ar">
+  <h1>حذف حساب هامش</h1>
+  <p class="lead">يمكنك حذف حسابك وكل بياناته المحفوظة على خوادمنا في أي وقت، من التطبيق أو من هذه الصفحة.</p>
+  <div class="card"><h2>من داخل التطبيق (الأسرع)</h2>
+    <p>افتح هامش ← <b>الإعدادات</b> ← <b>الحساب</b> ← <b class="red">حذف حسابي</b>، ثم أكّد. يُحذف الحساب فورًا.</p></div>
+  <div class="card"><h2>بدون التطبيق</h2>
+    <p>أرسل رسالة من <b>البريد المرتبط بحسابك</b> إلى <b>noteshamish@gmail.com</b> بعنوان «حذف حسابي». نحذف الحساب خلال 7 أيام ونرسل لك تأكيدًا.</p>
+    <a class="btn" href="mailto:noteshamish@gmail.com?subject=%D8%AD%D8%B0%D9%81%20%D8%AD%D8%B3%D8%A7%D8%A8%D9%8A%20%2F%20Delete%20my%20account">إرسال طلب الحذف بالبريد</a></div>
+  <div class="cols">
+    <div class="card"><h2 class="red">ما يُحذف</h2><ul>
+      <li>حسابك (البريد الإلكتروني والاسم)</li>
+      <li>سجل اشتراكك وبيانات التحقق من الشراء</li>
+      <li>سجلات فحص سلامة التطبيق المرتبطة بك</li></ul></div>
+    <div class="card"><h2 class="green">ما لا يُحذف</h2><ul>
+      <li>مستنداتك وملاحظاتك: على جهازك فقط، ولم تُرفع إلينا أصلًا</li>
+      <li>فواتير الشراء: تحتفظ بها Google Play حسب سياستها</li></ul></div>
+  </div>
+  <footer>عند حذف الحساب نلغي تجديد اشتراكك في Google Play تلقائيًا، فلا تُخصم منك مبالغ جديدة.</footer>
+</section>
+
+<section data-lang="en" dir="ltr">
+  <h1>Delete your Hamish account</h1>
+  <p class="lead">You can delete your account and all of its data stored on our servers at any time, from the app or from this page.</p>
+  <div class="card"><h2>In the app (fastest)</h2>
+    <p>Open Hamish → <b>Settings</b> → <b>Account</b> → <b class="red">Delete my account</b>, then confirm. The account is deleted right away.</p></div>
+  <div class="card"><h2>Without the app</h2>
+    <p>Email <b>noteshamish@gmail.com</b> from <b>the address linked to your account</b> with the subject “Delete my account”. We delete the account within 7 days and send you a confirmation.</p>
+    <a class="btn" href="mailto:noteshamish@gmail.com?subject=Delete%20my%20account">Email a deletion request</a></div>
+  <div class="cols">
+    <div class="card"><h2 class="red">What is deleted</h2><ul>
+      <li>Your account (email address and name)</li>
+      <li>Your subscription record and purchase verification data</li>
+      <li>App integrity check records linked to you</li></ul></div>
+    <div class="card"><h2 class="green">What is not deleted</h2><ul>
+      <li>Your documents and notes: they live only on your device and were never uploaded to us</li>
+      <li>Purchase receipts: kept by Google Play under its own policy</li></ul></div>
+  </div>
+  <footer>When you delete your account we cancel your Google Play subscription renewal automatically, so you won’t be charged again.</footer>
+</section>
+</main>
+<script>
+const root = document.documentElement, btn = document.getElementById('lang');
+function set(l){ root.lang = l; root.dir = l === 'ar' ? 'rtl' : 'ltr'; btn.textContent = l === 'ar' ? 'English' : 'العربية'; }
+set(new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ar');
+btn.onclick = () => set(root.lang === 'ar' ? 'en' : 'ar');
+</script>
+</body>
+</html>

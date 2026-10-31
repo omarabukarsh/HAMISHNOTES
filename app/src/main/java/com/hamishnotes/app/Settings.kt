@@ -416,6 +416,10 @@ private fun SettingsPane(
                             L("أين تُحفظ ملاحظاتك", "Where your notes are stored"),
                             L("على هذا الجهاز فقط", "On this device only")
                         )
+                        if (c.accountEmail != null) {
+                            GroupDivider()
+                            DeleteAccountRow()
+                        }
                     }
                 }
                 SettingsPage.GENERAL -> {

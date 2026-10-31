@@ -1,7 +1,10 @@
 project_id = "nuwbcgpsyrdqaqzablis"
 
-# الدالتان تتحققان بنفسيهما: license من رمز دخول المستخدم، و play-rtdn من السر في الرابط
+# كل دالة تتحقق بنفسها: license و delete-account من رمز دخول المستخدم، و play-rtdn من السر في الرابط
 [functions.license]
+verify_jwt = false
+
+[functions.delete-account]
 verify_jwt = false
 
 [functions.play-rtdn]

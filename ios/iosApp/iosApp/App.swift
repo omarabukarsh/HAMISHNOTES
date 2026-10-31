@@ -1,31 +1,27 @@
-import SwiftUI
 import UIKit
 import Shared
 
 /// نسخة iPad من «هامش»: التطبيق كله مكتوب بـ Kotlin + Compose (ios/shared)، وهنا يُعرض ملء الشاشة.
-/// أسماء SwiftUI مكتوبة كاملة لأن إطار Kotlin يصدّر أصنافًا بأسماء مثل Context و Color.
+/// شاشة Compose هي الشاشة الجذرية مباشرة، فتتحكم بلون شريط الحالة حسب الثيم.
 @main
-struct HamishApp: SwiftUI.App {
-    var body: some SwiftUI.Scene {
-        SwiftUI.WindowGroup {
-            ComposeView()
-                .ignoresSafeArea(.all)
-                // ملف PDF فُتح بالتطبيق من «الملفات» أو من المشاركة
-                .onOpenURL { url in
-                    let scoped = url.startAccessingSecurityScopedResource()
-                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    IosApp.shared.openFile(path: url.path)
-                }
-        }
-    }
-}
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    var window: UIWindow?
 
-struct ComposeView: SwiftUI.UIViewControllerRepresentable {
-    typealias UIViewControllerType = UIKit.UIViewController
-
-    func makeUIViewController(context: SwiftUI.UIViewControllerRepresentableContext<ComposeView>) -> UIKit.UIViewController {
-        MainActivityKt.MainViewController()
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        let w = UIWindow(frame: UIScreen.main.bounds)
+        w.rootViewController = MainActivityKt.MainViewController()
+        w.makeKeyAndVisible()
+        window = w
+        return true
     }
 
-    func updateUIViewController(_ uiViewController: UIKit.UIViewController, context: SwiftUI.UIViewControllerRepresentableContext<ComposeView>) {}
+    /// ملف PDF فُتح بالتطبيق من «الملفات» أو من المشاركة
+    func application(_ app: UIApplication, open url: URL,
+                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        IosApp.shared.openFile(path: url.path)
+        return true
+    }
 }

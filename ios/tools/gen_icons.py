@@ -2,14 +2,14 @@
 """يحوّل أيقونات أندرويد (res/drawable/*.xml) إلى كود Kotlin (ImageVector) لنسخة iPad.
 
 التشغيل من جذر المستودع:  python3 ios/tools/gen_icons.py
-يكتب ios/shared/src/iosMain/kotlin/com/mynotes/app/R.kt و Drawables.kt
+يكتب ios/shared/src/iosMain/kotlin/com/hamishnotes/app/R.kt و Drawables.kt
 """
 import os
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RES = os.path.join(ROOT, "app/src/main/res")
-OUT = os.path.join(ROOT, "ios/shared/src/iosMain/kotlin/com/mynotes/app")
+OUT = os.path.join(ROOT, "ios/shared/src/iosMain/kotlin/com/hamishnotes/app")
 A = "{http://schemas.android.com/apk/res/android}"
 
 
@@ -87,7 +87,7 @@ def main():
 
     with open(os.path.join(OUT, "R.kt"), "w") as o:
         o.write("// مولَّد بواسطة ios/tools/gen_icons.py من res/ في تطبيق أندرويد. لا تعدّله يدويًا.\n")
-        o.write("@file:Suppress(\"ClassName\", \"ObjectPropertyName\")\n\npackage com.mynotes.app\n\n")
+        o.write("@file:Suppress(\"ClassName\", \"ObjectPropertyName\")\n\npackage com.hamishnotes.app\n\n")
         o.write("/** نفس أسماء موارد أندرويد، فيبقى الكود المشترك كما هو (R.drawable.ph_pen ...). */\nobject R {\n")
         o.write("    object drawable {\n")
         for i, n in enumerate(names):
@@ -102,7 +102,7 @@ def main():
 
     with open(os.path.join(OUT, "Drawables.kt"), "w") as o:
         o.write("// مولَّد بواسطة ios/tools/gen_icons.py من res/drawable في تطبيق أندرويد. لا تعدّله يدويًا.\n")
-        o.write("package com.mynotes.app\n\n")
+        o.write("package com.hamishnotes.app\n\n")
         for imp in ["androidx.compose.ui.graphics.Color", "androidx.compose.ui.graphics.PathFillType",
                     "androidx.compose.ui.graphics.SolidColor", "androidx.compose.ui.graphics.StrokeCap",
                     "androidx.compose.ui.graphics.StrokeJoin", "androidx.compose.ui.graphics.vector.ImageVector",

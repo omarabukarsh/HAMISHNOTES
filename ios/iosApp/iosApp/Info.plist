@@ -34,11 +34,6 @@
 	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-	</dict>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -46,8 +41,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- لون أيقونات شريط الحالة يحدده التطبيق حسب الثيم (MainViewController) -->
 	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleDarkContent</string>
+	<string>UIStatusBarStyleLightContent</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>لتسجيل صوت المحاضرة وربطه بما تكتبه.</string>
 	<key>NSFaceIDUsageDescription</key>

@@ -1,7 +1,7 @@
 package androidx.compose.ui.text.font
 
-import com.mynotes.app.bundleBytes
-import com.mynotes.app.fontFiles
+import com.hamishnotes.app.bundleBytes
+import com.hamishnotes.app.fontFiles
 
 /** نفس Font(R.font.x) في أندرويد: الخط يُقرأ من مجلد font/ داخل حزمة التطبيق. */
 fun Font(resId: Int, weight: FontWeight = FontWeight.Normal, style: FontStyle = FontStyle.Normal): Font {

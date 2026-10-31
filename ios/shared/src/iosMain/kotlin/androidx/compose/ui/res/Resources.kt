@@ -8,9 +8,9 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import com.mynotes.app.R
-import com.mynotes.app.bundleBytes
-import com.mynotes.app.buildVector
+import com.hamishnotes.app.R
+import com.hamishnotes.app.bundleBytes
+import com.hamishnotes.app.buildVector
 
 /** نفس painterResource في أندرويد: الأيقونات مولَّدة من res/drawable (Drawables.kt)، والصور من حزمة التطبيق. */
 @Composable

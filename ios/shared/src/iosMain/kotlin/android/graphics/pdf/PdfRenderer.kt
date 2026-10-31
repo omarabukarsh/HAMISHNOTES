@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.os.ParcelFileDescriptor
-import com.mynotes.app.IosPdf
+import com.hamishnotes.app.IosPdf
 import java.io.IOException
 import platform.CoreGraphics.CGPDFDocumentRef
 import platform.CoreGraphics.CGPDFDocumentRelease

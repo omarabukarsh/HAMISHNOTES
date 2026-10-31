@@ -52,7 +52,7 @@
 
 ## للمطوّر
 
-- `shared/`: كود التطبيق. الملفات في `com/mynotes/app` منسوخة من `app/src/main/java`، ومعدّلة فقط حيث يختلف iOS.
+- `shared/`: كود التطبيق. الملفات في `com/hamishnotes/app` منسوخة من `app/src/main/java`، ومعدّلة فقط حيث يختلف iOS.
   - المجلدات `android/` و`java/` و`org/json/` و`androidx/` بدائل صغيرة لواجهات أندرويد وJava، حتى يبقى الكود المشترك مطابقًا.
   - الملفات التي تبدأ بـ `Ios` فيها كود iPad نفسه: PDF، النص، الملفات، المشاركة.
 - `tools/gen_icons.py`: يولّد `R.kt` و`Drawables.kt` من أيقونات `app/src/main/res/drawable`. شغّله بعد إضافة أيقونة.

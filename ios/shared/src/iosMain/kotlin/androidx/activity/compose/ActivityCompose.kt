@@ -7,8 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import com.mynotes.app.IosFiles
-import com.mynotes.app.runOnMain
+import com.hamishnotes.app.IosFiles
+import com.hamishnotes.app.runOnMain
 import platform.AVFAudio.AVAudioSession
 import platform.UserNotifications.UNAuthorizationOptionAlert
 import platform.UserNotifications.UNAuthorizationOptionBadge

@@ -20,7 +20,7 @@ open class Context {
         File(NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, true).first().toString()).also { it.mkdirs() }
     }
     val applicationContext: Context get() = this
-    val packageName: String get() = "com.mynotes.app"
+    val packageName: String get() = "com.hamishnotes.app"
 
     private val prefs = HashMap<String, SharedPreferences>()
 
@@ -64,7 +64,7 @@ object ClipboardManager {
 object AppContext : Context()
 
 class SharedPreferences internal constructor(name: String) {
-    private val d = NSUserDefaults(suiteName = "com.mynotes.app.$name")
+    private val d = NSUserDefaults(suiteName = "com.hamishnotes.app.$name")
 
     fun getString(key: String, def: String?): String? = d.stringForKey(key) ?: def
     fun getInt(key: String, def: Int): Int = if (d.objectForKey(key) != null) d.integerForKey(key).toInt() else def

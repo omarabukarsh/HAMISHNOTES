@@ -31,12 +31,11 @@ fun certSha256(file: File, password: String, alias: String): String {
 }
 
 android {
-    namespace = "com.mynotes.app"
+    namespace = "com.hamishnotes.app"
     compileSdk = 36
     defaultConfig {
-        // اسم المتجر النهائي (لا يتغير بعد أول رفع). نسخ التجربة تبقى com.mynotes.app
-        // فتُثبَّت كتحديث فوق النسخة الحالية على جهازك ويستمر فيها الدخول بـ Google.
-        applicationId = if (storeBuild) "com.hamishnotes.app" else "com.mynotes.app"
+        // اسم التطبيق في المتجر (لا يتغير بعد أول رفع)، وهو نفسه لنسخ التجربة
+        applicationId = "com.hamishnotes.app"
         minSdk = 26
         // شرط Google Play للتطبيقات الجديدة والتحديثات منذ أغسطس 2026
         targetSdk = 36

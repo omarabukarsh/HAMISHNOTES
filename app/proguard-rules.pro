@@ -12,7 +12,7 @@
 -dontwarn com.google.mlkit.**
 
 # أسماء التعدادات تُحفظ في الإعدادات وتُقرأ بـ valueOf
--keepclassmembers enum com.mynotes.app.** {
+-keepclassmembers enum com.hamishnotes.app.** {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }

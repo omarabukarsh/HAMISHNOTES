@@ -90,11 +90,11 @@ GITHUB_RUN_NUMBER=<الرقم> gradle bundleRelease
 كل عميل Android في Google Cloud يقبل بصمة SHA-1 واحدة فقط. لذلك أنشئ عميلًا منفصلًا لكل بصمة، وكلها باسم الحزمة `com.hamishnotes.app`:
 - عميل لمفتاح الرفع الجديد (`C8:03:A4:…`).
 - عميل لمفتاح Google (من صفحة App signing).
-- العميل الحالي (مفتاح التجربة مع `com.mynotes.app`) يبقى لنسخ التجربة.
+- عميل لمفتاح التجربة (`2A:AD:09:…`) لنسخ التجربة التي تُثبَّت يدويًا. العميل القديم (`com.mynotes.app`) لم يعد مستخدمًا.
 
 لا نمرّر nonce إلى `GetGoogleIdOption`، فلا يحتاج Supabase إليه. إن أُضيف لاحقًا: النسخة المشفّرة SHA-256 تذهب إلى Google، والنسخة الخام إلى Supabase.
 
 ## تحذيرات
-- **اسم الحزمة:** نسخة المتجر `com.hamishnotes.app` (يُبنى تلقائيًا بهذا الاسم مع مفتاح الرفع). أول رفع يثبّته للأبد، وترتبط به Play Integrity و Automatic protection والمنتج `hamish_premium`. نسخ التجربة تبقى `com.mynotes.app`.
+- **اسم الحزمة:** نسخة المتجر `com.hamishnotes.app` (ونسخ التجربة بنفس الاسم). أول رفع يثبّته للأبد، وترتبط به Play Integrity و Automatic protection والمنتج `hamish_premium`.
 - **البناء:** نسخة المتجر تُبنى محليًا فقط، لأنها تحتاج مفتاح الرفع. ملف GitHub Actions (`build.yml`) يبني نسخ التجربة كما هو، وقيمتا Supabase العامتان لهما قيم افتراضية في `app/build.gradle.kts`.
 - **الأجهزة بلا خدمات Google:** لا يعمل فيها Play Integrity ولا الشراء. المجاني يعمل فيها دون رسائل خطأ، والرسالة تظهر فقط إذا ضغط المستخدم زر الاشتراك.

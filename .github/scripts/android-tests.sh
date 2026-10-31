@@ -6,7 +6,7 @@ mkdir -p "$OUT"
 adb logcat -c || true
 ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true
 status=$?
-adb pull /sdcard/Android/data/com.mynotes.app/files/test-reports "$OUT/" || true
+adb pull /sdcard/Android/data/com.hamishnotes.app/files/test-reports "$OUT/" || true
 adb logcat -d > "$OUT/logcat.txt" || true
 adb exec-out screencap -p > "$OUT/final-screen.png" || true
 exit $status

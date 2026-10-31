@@ -80,10 +80,16 @@ jobs:
           xcrun simctl launch --stdout="$PWD/shots/run3.log" --stderr="$PWD/shots/run3.log" "$UDID" $BID || echo "launch 3 failed"
           sleep 15
           xcrun simctl io "$UDID" screenshot shots/3-library-with-doc.png
-          # 4) بالعرض: المكتبة ثم القارئ
+          # 4) بالعرض: يُدار جهاز المحاكي نفسه (⌘→ في تطبيق Simulator)، ثم القارئ والمكتبة
+          open -a Simulator --args -CurrentDeviceUDID "$UDID"
+          sleep 10
+          osascript -e 'tell application "Simulator" to activate' \
+            -e 'delay 1' \
+            -e 'tell application "System Events" to key code 124 using command down' || echo "rotate failed"
+          sleep 5
           xcrun simctl terminate "$UDID" $BID || true
-          xcrun simctl launch --stdout="$PWD/shots/run4.log" --stderr="$PWD/shots/run4.log" "$UDID" $BID -hamishLandscape || echo "launch 4 failed"
-          sleep 15
+          xcrun simctl launch --stdout="$PWD/shots/run4.log" --stderr="$PWD/shots/run4.log" "$UDID" $BID -hamishDemo "$DATA/Documents/demo.pdf" || echo "launch 4 failed"
+          sleep 20
           xcrun simctl io "$UDID" screenshot shots/4-landscape-reader.png
           # تقارير الانهيار إن وُجدت
           cp ~/Library/Logs/DiagnosticReports/*Hamish* shots/ 2>/dev/null || true

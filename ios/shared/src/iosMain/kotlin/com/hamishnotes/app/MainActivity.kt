@@ -111,7 +111,6 @@ fun MainViewController(): UIViewController {
     val args = NSProcessInfo.processInfo.arguments.map { it.toString() }
     val demo = args.indexOf("-hamishDemo")
     if (demo >= 0 && demo + 1 < args.size) IosApp.openFile(args[demo + 1])
-    if ("-hamishLandscape" in args) IosApp.rotateLandscape()
     return vc
 }
 
@@ -133,21 +132,6 @@ object IosApp {
         }
         nc.addObserverForName(UIApplicationDidEnterBackgroundNotification, null, NSOperationQueue.mainQueue) { _ ->
             AppController.flush()
-        }
-    }
-
-    /** لقطات الشاشة بالعرض على المحاكي: يدير الواجهة بعد ظهور النافذة (iPadOS 16+). */
-    fun rotateLandscape() {
-        platform.darwin.dispatch_after(
-            platform.darwin.dispatch_time(platform.darwin.DISPATCH_TIME_NOW, 1_500_000_000L),
-            platform.darwin.dispatch_get_main_queue()
-        ) {
-            val scene = platform.UIKit.UIApplication.sharedApplication.connectedScenes
-                .firstOrNull { it is platform.UIKit.UIWindowScene } as? platform.UIKit.UIWindowScene ?: return@dispatch_after
-            scene.requestGeometryUpdateWithPreferences(
-                platform.UIKit.UIWindowSceneGeometryPreferencesIOS(platform.UIKit.UIInterfaceOrientationMaskLandscapeRight),
-                errorHandler = null
-            )
         }
     }
 

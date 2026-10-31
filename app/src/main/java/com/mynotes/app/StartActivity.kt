@@ -18,6 +18,8 @@ class StartActivity : Activity() {
             tv.textSize = 12f
             tv.setPadding(24, 80, 24, 24)
             val sv = ScrollView(this)
+            // edge-to-edge: النص لا يختفي تحت شريطي النظام
+            sv.fitsSystemWindows = true
             sv.addView(tv)
             setContentView(sv)
             f.delete()

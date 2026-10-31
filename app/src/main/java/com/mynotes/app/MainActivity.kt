@@ -6,6 +6,8 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -91,18 +93,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
-    /** شريطا النظام بلون شريط التبويبات: كحلي بأيقونات فاتحة، أو رمادي فاتح بأيقونات داكنة. */
-    @Suppress("DEPRECATION")
+    /**
+     * من Android 15 يُرسم التطبيق خلف شريطي النظام إلزاميًا (edge-to-edge) ولا يُقبل تلوينهما:
+     * نجعلهما شفافين ونرسم لونهما بأنفسنا (systemBarColor)، مع أيقونات داكنة أو فاتحة حسب الوضع.
+     */
     private fun applySystemBars(light: Boolean) {
-        val bar = (if (light) Color(0xFFE4E9F0) else Color(0xFF13233B)).toArgb()
-        window.statusBarColor = bar
-        window.navigationBarColor = bar
-        var flags = window.decorView.systemUiVisibility
-        flags = if (light) flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        else flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
-        flags = if (light) flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        else flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
-        window.decorView.systemUiVisibility = flags
+        val transparent = android.graphics.Color.TRANSPARENT
+        val style = if (light) SystemBarStyle.light(transparent, transparent) else SystemBarStyle.dark(transparent)
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
     /**
@@ -194,7 +192,7 @@ fun MyNotesApp() {
     }
 
     Box(
-        Modifier.fillMaxSize().background(Palette.Background).systemBarsPadding()
+        Modifier.fillMaxSize().background(systemBarColor(ThemeState.light)).systemBarsPadding().background(Palette.Background)
             // أي لمسة تعني أن المستخدم حاضر (لعداد القراءة)، دون التأثير على اللمس نفسه
             .pointerInput(Unit) {
                 awaitPointerEventScope {
@@ -367,3 +365,6 @@ private fun TabItem(
         }
     }
 }
+
+/** لون شريطي النظام (يُرسم خلفهما): بلون شريط التبويبات، كحلي أو رمادي فاتح. */
+fun systemBarColor(light: Boolean): Color = if (light) Color(0xFFE4E9F0) else Color(0xFF13233B)

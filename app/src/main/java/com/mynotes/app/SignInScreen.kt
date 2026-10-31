@@ -47,7 +47,10 @@ fun SignInScreen() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Box(Modifier.fillMaxSize().background(Lib.bg).systemBarsPadding(), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxSize().background(systemBarColor(ThemeState.light)).systemBarsPadding().background(Lib.bg),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally

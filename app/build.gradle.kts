@@ -32,11 +32,14 @@ fun certSha256(file: File, password: String, alias: String): String {
 
 android {
     namespace = "com.mynotes.app"
-    compileSdk = 34
+    compileSdk = 36
     defaultConfig {
-        applicationId = "com.mynotes.app"
+        // اسم المتجر النهائي (لا يتغير بعد أول رفع). نسخ التجربة تبقى com.mynotes.app
+        // فتُثبَّت كتحديث فوق النسخة الحالية على جهازك ويستمر فيها الدخول بـ Google.
+        applicationId = if (storeBuild) "com.hamishnotes.app" else "com.mynotes.app"
         minSdk = 26
-        targetSdk = 34
+        // شرط Google Play للتطبيقات الجديدة والتحديثات منذ أغسطس 2026
+        targetSdk = 36
         // رقم يزيد مع كل بناء على GitHub Actions، فيُثبَّت كل APK جديد كتحديث فوق القديم
         val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = 100 + run
@@ -126,7 +129,8 @@ dependencies {
     // ترجمة مصطلح بالضغط المطول (حزمة لغة تُنزَّل مرة واحدة ثم تعمل دون إنترنت)
     implementation("com.google.mlkit:translate:17.0.3")
     // تحويل الخط اليدوي إلى نص (حزمة لغة تُنزَّل مرة واحدة)
-    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+    // 19.0.0: مكتبتها الأصلية تدعم صفحات الذاكرة 16 KB (شرط Google Play)
+    implementation("com.google.mlkit:digital-ink-recognition:19.0.0")
     implementation("androidx.core:core-ktx:1.13.1")
     // تسجيل الدخول بحساب Google (Credential Manager)
     implementation("androidx.credentials:credentials:1.3.0")

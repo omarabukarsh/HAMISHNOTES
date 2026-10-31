@@ -25,7 +25,7 @@ Google Play ──(تجديد / إلغاء / استرداد)──▶ Pub/Sub �
 |---|---|
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | ملف JSON لحساب الخدمة كاملًا (الخطوة 2 أدناه) |
 | `ENTITLEMENT_PRIVATE_KEY` | المفتاح الخاص لتوقيع القسائم (من ملف الأسرار المرسل إليك) |
-| `ANDROID_PACKAGE` | اسم الحزمة النهائي، مثل `com.hamish.app` |
+| `ANDROID_PACKAGE` | `com.hamishnotes.app` |
 | `PREMIUM_PRODUCT` | `hamish_premium` |
 | `RTDN_SECRET` | سلسلة عشوائية طويلة تضعها أيضًا في رابط Pub/Sub |
 | `DEVICE_INTEGRITY` | اختياري: `device` (الافتراضي)، أو `basic` (أكثر تساهلًا)، أو `strong` |
@@ -87,7 +87,7 @@ GITHUB_RUN_NUMBER=<الرقم> gradle bundleRelease
 ```
 
 ### 7. تسجيل الدخول بـ Google في نسخة المتجر
-كل عميل Android في Google Cloud يقبل بصمة SHA-1 واحدة فقط. لذلك أنشئ عميلًا منفصلًا لكل بصمة، وكلها باسم الحزمة النهائي:
+كل عميل Android في Google Cloud يقبل بصمة SHA-1 واحدة فقط. لذلك أنشئ عميلًا منفصلًا لكل بصمة، وكلها باسم الحزمة `com.hamishnotes.app`:
 - عميل لمفتاح الرفع الجديد (`C8:03:A4:…`).
 - عميل لمفتاح Google (من صفحة App signing).
 - العميل الحالي (مفتاح التجربة مع `com.mynotes.app`) يبقى لنسخ التجربة.
@@ -95,6 +95,6 @@ GITHUB_RUN_NUMBER=<الرقم> gradle bundleRelease
 لا نمرّر nonce إلى `GetGoogleIdOption`، فلا يحتاج Supabase إليه. إن أُضيف لاحقًا: النسخة المشفّرة SHA-256 تذهب إلى Google، والنسخة الخام إلى Supabase.
 
 ## تحذيرات
-- **اسم الحزمة:** لا ترفع أي AAB قبل تغيير `com.mynotes.app` إلى الاسم النهائي. أول رفع يثبّت الاسم للأبد، وترتبط به Play Integrity و Automatic protection والمنتج `hamish_premium`.
+- **اسم الحزمة:** نسخة المتجر `com.hamishnotes.app` (يُبنى تلقائيًا بهذا الاسم مع مفتاح الرفع). أول رفع يثبّته للأبد، وترتبط به Play Integrity و Automatic protection والمنتج `hamish_premium`. نسخ التجربة تبقى `com.mynotes.app`.
 - **البناء:** نسخة المتجر تُبنى محليًا فقط، لأنها تحتاج مفتاح الرفع. ملف GitHub Actions (`build.yml`) يبني نسخ التجربة كما هو، وقيمتا Supabase العامتان لهما قيم افتراضية في `app/build.gradle.kts`.
 - **الأجهزة بلا خدمات Google:** لا يعمل فيها Play Integrity ولا الشراء. المجاني يعمل فيها دون رسائل خطأ، والرسالة تظهر فقط إذا ضغط المستخدم زر الاشتراك.

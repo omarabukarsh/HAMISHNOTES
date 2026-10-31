@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { acknowledge, getSubscription, type PlaySubscription } from "./google.ts";
 
-export const PKG = Deno.env.get("ANDROID_PACKAGE") ?? "com.mynotes.app";
+export const PKG = Deno.env.get("ANDROID_PACKAGE") ?? "com.hamishnotes.app";
 export const PRODUCT = Deno.env.get("PREMIUM_PRODUCT") ?? "hamish_premium";
 
 /** حالات Google التي يبقى فيها الاشتراك مفتوحًا حتى تاريخ انتهائه. */

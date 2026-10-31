@@ -284,8 +284,8 @@ object ShapeBuilder {
         val out = arrayListOf(body)
         if (kind == ShapeKind.LINE || kind == ShapeKind.ELBOW || kind == ShapeKind.CURVE) {
             if (body.size >= 2) {
-                if (end != ArrowHead.NONE) out.add(head(body[body.size - 2], body.last(), end, width))
-                if (start != ArrowHead.NONE) out.add(head(body[1], body[0], start, width))
+                if (end != ArrowHead.NONE) out.add(head(body[body.size - 2], body.last(), end, width, rounded))
+                if (start != ArrowHead.NONE) out.add(head(body[1], body[0], start, width, rounded))
             }
         }
         return out
@@ -319,12 +319,13 @@ object ShapeBuilder {
         return out
     }
 
-    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float): List<Pt> {
+    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float, rounded: Boolean): List<Pt> {
         val ang = atan2(tip.y - from.y, tip.x - from.x)
         val len = (0.018f + width * 3f)
         val spread = 0.45f
         val l = p(tip.x - len * cos(ang - spread), tip.y - len * sin(ang - spread))
         val r = p(tip.x - len * cos(ang + spread), tip.y - len * sin(ang + spread))
-        return if (kind == ArrowHead.CLOSED) listOf(l, p(tip.x, tip.y), r, l) else listOf(l, p(tip.x, tip.y), r)
+        return if (kind == ArrowHead.CLOSED) closed(listOf(l, p(tip.x, tip.y), r), rounded)
+        else listOf(l, p(tip.x, tip.y), r).let { if (rounded) roundCorners(it, false) else it }
     }
 }

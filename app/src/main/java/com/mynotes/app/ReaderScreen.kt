@@ -2251,7 +2251,8 @@ private fun PageView(
                         while (true) {
                             val ev = awaitPointerEvent()
 
-                            if (toolNow == Tool.LASER) {
+                            // التحديد والأشكال والملاحظات تتقدم على الليزر (الأداة تبقى ليزرًا عند تفعيلها)
+                            if (toolNow == Tool.LASER && !lassoNow && !PenPrefs.shapeActive && !PenPrefs.stickyActive) {
                                 val lc = ev.changes.firstOrNull {
                                     it.type == PointerType.Stylus || it.type == PointerType.Mouse
                                 }

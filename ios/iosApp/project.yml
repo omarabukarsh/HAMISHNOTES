@@ -1,0 +1,46 @@
+# مشروع Xcode لنسخة iPad (يولَّد بأداة XcodeGen: xcodegen generate)
+# الكود كله في إطار Kotlin (ios/shared)؛ هذا التطبيق يعرضه فقط.
+name: Hamish
+options:
+  bundleIdPrefix: com.omarabukarsh
+  deploymentTarget:
+    iOS: "15.0"
+  developmentLanguage: ar
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Hamish:
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+      # موارد تطبيق أندرويد نفسها: الخطوط وشعار التطبيق ونصوص الرخص
+      - path: ../../app/src/main/res/font
+        type: folder
+        buildPhase: resources
+      - path: ../../app/src/main/res/drawable-nodpi
+        type: folder
+        buildPhase: resources
+      - path: ../../app/src/main/assets/licenses
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - framework: ../shared/build/bin/iosArm64/releaseFramework/Shared.framework
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: Hamish
+        PRODUCT_BUNDLE_IDENTIFIER: com.omarabukarsh.hamish
+        INFOPLIST_FILE: iosApp/Info.plist
+        TARGETED_DEVICE_FAMILY: "2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.0"
+        ENABLE_BITCODE: NO
+        FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../shared/build/bin/iosArm64/releaseFramework
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""

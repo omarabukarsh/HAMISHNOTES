@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- مؤشر ليزر (ممتلئ للأداة المختارة) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="256" android:viewportHeight="256">
+    <group android:rotation="-45" android:pivotX="128" android:pivotY="128">
+        <path android:fillColor="#FF000000"
+            android:pathData="M42,104 H136 A24,24 0 0 1 160,128 A24,24 0 0 1 136,152 H42 A24,24 0 0 1 18,128 A24,24 0 0 1 42,104 Z"/>
+        <path android:strokeColor="#FF000000" android:strokeWidth="16" android:strokeLineCap="round"
+            android:pathData="M160,128 H172"/>
+    </group>
+    <path android:strokeColor="#FF000000" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M172,84 L180,76"/>
+    <path android:fillColor="#FF000000"
+        android:pathData="M196,60 m-20,0 a20,20 0 1 1 40,0 a20,20 0 1 1 -40,0"/>
+    <path android:strokeColor="#FF000000" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M234,60 H246 M196,22 V10 M223,33 L232,24 M223,87 L232,96 M169,33 L160,24"/>
+</vector>

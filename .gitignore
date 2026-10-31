@@ -1,0 +1,17 @@
+.gradle/
+build/
+/local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.kotlin/
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+# مفاتيح المتجر لا تدخل المستودع أبدًا
+*.jks
+!keystore/mynotes.jks
+*.keystore
+signing.properties

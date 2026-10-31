@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- خلفية النافذة بلون الورق، وشريطا النظام بلون كعب المجلد الكحلي -->
+    <style name="Theme.MyNotes" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/mn_background</item>
+        <item name="android:statusBarColor">@color/mn_ink</item>
+        <item name="android:navigationBarColor">@color/mn_ink</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">@color/mn_ink</item>
+    </style>
+</resources>

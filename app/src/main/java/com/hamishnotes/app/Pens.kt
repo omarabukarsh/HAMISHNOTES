@@ -448,3 +448,31 @@ object PenInput {
         return (((raw - p.lo) / (p.hi - p.lo)).coerceIn(0f, 1f) * 100).toInt()
     }
 }
+
+/**
+ * النوافذ المنبثقة (مثل الإعدادات) نوافذ مستقلة لا تمر أحداثها بالنشاط:
+ * نراقب أحداث القلم فيها أيضًا ما دامت مفتوحة.
+ */
+@androidx.compose.runtime.Composable
+fun PenWindowObserver() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(view) {
+        val window = generateSequence(view as android.view.View?) { it.parent as? android.view.View }
+            .firstNotNullOfOrNull { (it as? androidx.compose.ui.window.DialogWindowProvider)?.window }
+        val orig = window?.callback
+        if (window == null || orig == null) return@DisposableEffect onDispose {}
+        val wrapper = object : android.view.Window.Callback by orig {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                PenInput.observe(event)
+                return orig.dispatchTouchEvent(event)
+            }
+
+            override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+                PenInput.observe(event)
+                return orig.dispatchGenericMotionEvent(event)
+            }
+        }
+        window.callback = wrapper
+        onDispose { if (window.callback === wrapper) window.callback = orig }
+    }
+}

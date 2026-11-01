@@ -80,7 +80,16 @@ android {
     // الشهادات المسموح بها: مفتاح هذا البناء، ومفتاح Google Play (من Play Console ← App signing).
     // نسخة المتجر يوقّعها Google بمفتاحه، فبدون بصمته يتوقف الفحص (وإلا رُفضت النسخة الأصلية نفسها).
     val playSigners = setting("PLAY_SIGNING_SHA256").split(',').map { it.replace(":", "").trim().lowercase() }.filter { it.isNotEmpty() }
-    if (storeBuild && playSigners.isEmpty()) logger.warn("PLAY_SIGNING_SHA256 غير مضبوط: فحص التوقيع وقت التشغيل معطّل في هذا البناء")
+    // نسخة المتجر يوقّعها Google بمفتاحه، فبدون بصمته (من Play Console ← App signing) يتعطّل فحص التوقيع
+    // وقت التشغيل كليًا. لا نسمح بذلك صامتًا في نسخة متجر: نفشل البناء إلا بتصريح صريح للتجربة.
+    val allowUnverified = setting("ALLOW_UNVERIFIED_SIGNER").equals("true", ignoreCase = true)
+    if (storeBuild && playSigners.isEmpty() && !allowUnverified) {
+        throw GradleException(
+            "PLAY_SIGNING_SHA256 غير مضبوط لنسخة المتجر: فحص التوقيع وقت التشغيل سيتعطّل. " +
+                "ضع بصمة مفتاح Google من Play Console ← App signing، أو مرّر ALLOW_UNVERIFIED_SIGNER=true للتجربة فقط."
+        )
+    }
+    if (storeBuild && playSigners.isEmpty()) logger.warn("ALLOW_UNVERIFIED_SIGNER: فحص التوقيع وقت التشغيل معطّل في هذا البناء (للتجربة فقط)")
     val signers = if (storeBuild && playSigners.isEmpty()) ""
     else (listOf(certSha256(signer.storeFile!!, signer.storePassword!!, signer.keyAlias!!)) + playSigners).joinToString(",")
     defaultConfig.buildConfigField("String", "SIGNERS", "\"$signers\"")

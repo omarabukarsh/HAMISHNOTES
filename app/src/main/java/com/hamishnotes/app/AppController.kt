@@ -515,8 +515,8 @@ object AppController {
 
     fun toggleLock(id: String) {
         val e = library.firstOrNull { it.id == id } ?: return
-        // القفل من مزايا Premium، أما فك القفل فمتاح دائمًا
-        if (!e.locked && !Premium.require(PremiumFeature.LOCK)) return
+        // القفل من مزايا Premium، أما فك القفل فمتاح دائمًا. فحص مستقل إضافي داخل الخاصية
+        if (!e.locked && (!Premium.require(PremiumFeature.LOCK) || !Premium.confirm())) return
         if (!e.locked && !hasPin()) {
             setPinFor = id
             return

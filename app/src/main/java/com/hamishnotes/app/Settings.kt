@@ -1164,6 +1164,14 @@ private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, on
                     "You'll be signed out of $email.\nYour notes stay on this device, and you can sign in again anytime."),
                 fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
             )
+            if (Premium.grant != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    L("Premium مرتبط بحسابك، وسيتوقف على هذا الجهاز حتى تسجّل الدخول به مجددًا.",
+                        "Premium is tied to your account and pauses on this device until you sign back in with it."),
+                    fontSize = 12.5.sp, lineHeight = 19.sp, color = Palette.GoldDeep, textAlign = TextAlign.Center
+                )
+            }
             Spacer(Modifier.height(22.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val pill = RoundedCornerShape(50)

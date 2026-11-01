@@ -175,15 +175,19 @@ object Premium {
     internal fun evaluate() {
         val c = app ?: return
         val p = sp ?: return
-        val now = System.currentTimeMillis()
-        val seen = p.getLong("seen", 0)
-        if (now > seen) p.edit().putLong("seen", now).apply()
         val g = Lic.parse(p.getString("grant", null))
-        val ok = g != null && valid(c, g, now) && now + CLOCK_SLACK > seen
+        val ok = g != null && valid(c, g, System.currentTimeMillis())
         grant = if (ok) g else null
         active = (BuildConfig.TEST_PREMIUM && testActive) || ok
     }
 
+    /**
+     * صلاحية القسيمة دون إنترنت.
+     * - الحساب: Premium يتبع الحساب، فيتوقف عند تسجيل الخروج (uid=null). لكن القسيمة لا تُحذف
+     *   (انظر onAccountChanged)، فيعود فورًا ودون إنترنت عند الدخول بنفس الحساب.
+     * - حارس إرجاع الساعة يعتمد على وقت إصدار القسيمة من الخادم (iat)، وهو وقت موثوق لا يتحكم به
+     *   الجهاز. لا نعتمد على وقت محفوظ محليًا (كان يقفل مستخدمًا ساعته متقدمة ثم صُحّحت).
+     */
     internal fun valid(c: Context, g: Lic.Grant, now: Long): Boolean =
         g.pkg == c.packageName && g.dev == Lic.device(c) && g.sub == Cloud.userId &&
             now < g.until && now + CLOCK_SLACK > g.iat && Lic.signerOk(c)
@@ -201,9 +205,15 @@ object Premium {
         return ok
     }
 
-    /** بعد الدخول أو الخروج من حساب Google: القسيمة مربوطة بالحساب. */
+    /**
+     * بعد الدخول أو الخروج من حساب Google.
+     * تسجيل الخروج لا يحذف القسيمة (تبقى مربوطة بالجهاز فيعود Premium عند الدخول بنفس الحساب دون إنترنت).
+     * الدخول بحساب مختلف عن صاحب القسيمة يحذفها، فلا تنتقل من حساب إلى آخر.
+     */
     fun onAccountChanged() {
-        if (Cloud.userId == null) sp?.edit()?.remove("grant")?.apply()
+        val uid = Cloud.userId
+        val g = Lic.parse(sp?.getString("grant", null))
+        if (uid != null && g != null && g.sub != uid) sp?.edit()?.remove("grant")?.apply()
         evaluate()
     }
 

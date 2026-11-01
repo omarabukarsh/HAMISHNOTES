@@ -1679,7 +1679,7 @@ private fun SelectionBar(s: DocSession) {
             }
             TextButton(onClick = {
                 val text = s.selectionText()
-                if (text.isNotEmpty() && Premium.require(PremiumFeature.CARDS)) cardBack = TextTidy.clean(text)
+                if (text.isNotEmpty() && Premium.require(PremiumFeature.CARDS) && Premium.confirm()) cardBack = TextTidy.clean(text)
             }) { Text(L("اجعله بطاقة", "Make it a card")) }
             TextButton(onClick = {
                 val text = s.selectionText()

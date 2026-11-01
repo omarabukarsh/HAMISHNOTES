@@ -90,14 +90,18 @@ internal object Lic {
         return sha256("hamish|$id|${context.packageName}").take(32)
     }
 
+    // لا نحفظ النتيجة للأبد: نعيد الفحص بعد مدة، فلا تكفي ضربة واحدة من أداة حقن لتعطيله دائمًا
     private var signerCache: Boolean? = null
+    private var signerCacheAt = 0L
+    private const val SIGNER_TTL = 5 * 60 * 1000L
 
     /**
      * هل وُقّع التطبيق بمفتاحنا (مفتاح Google Play أو مفتاح الرفع)؟
      * النسخة المعدّلة يعاد توقيعها بمفتاح آخر، فتفشل هنا.
      */
     fun signerOk(context: Context): Boolean {
-        signerCache?.let { return it }
+        val now = android.os.SystemClock.elapsedRealtime()
+        signerCache?.let { if (now - signerCacheAt < SIGNER_TTL) return it }
         val allowed = BuildConfig.SIGNERS.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         if (allowed.isEmpty()) return true
         val ok = try {
@@ -106,6 +110,7 @@ internal object Lic {
             false
         }
         signerCache = ok
+        signerCacheAt = now
         return ok
     }
 

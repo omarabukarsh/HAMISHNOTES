@@ -899,6 +899,8 @@ class DocSession(entry: DocEntry) {
     /** يقرأ كل الصفحات غير المقروءة في الخلفية، ويتوقف مؤقتًا أثناء الكتابة بالقلم. */
     fun startOcr(): Job? {
         if (ocrJob?.isActive == true) return ocrJob
+        // فحص مستقل داخل الخاصية نفسها (لا في الواجهة فقط)، فلا يكفي تعديل بوّابة واحدة لفتحها
+        if (!Premium.confirm()) return null
         val doc = pdf ?: return null
         val job = AppController.scope.launch {
             ocrRunning = true

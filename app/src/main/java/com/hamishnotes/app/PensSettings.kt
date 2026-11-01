@@ -60,7 +60,6 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.LayoutDirection
@@ -198,7 +197,6 @@ internal fun DrawScope.drawPenArt(
 /** قسم «الأقلام» في إعدادات القلم: القلم المكتشف، وضع الكتابة، وجرّب قلمك. */
 @Composable
 fun PensSection() {
-    val ctx = LocalContext.current
     DisposableEffect(Unit) {
         PenInput.monitoring++
         onDispose { PenInput.monitoring-- }
@@ -218,7 +216,7 @@ fun PensSection() {
     val showingActive = active && pen != null && PenInput.liveKey == pen.key
 
     PenLabel(L("قلمك", "Your pen"))
-    PenHeroCard(pen, showingActive, PenInput.deviceLabel(ctx))
+    PenHeroCard(pen, showingActive)
 
     if (pen != null) {
         // لون الرسم: لا يمكن معرفة لون القلم، فيختاره المستخدم
@@ -352,7 +350,7 @@ fun PensSection() {
 /** البطاقة الرئيسية: رسم القلم مع اسمه وقدراته، أو دعوة لتجربة القلم إن لم يُكتشف. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PenHeroCard(pen: PenInfo?, active: Boolean, device: String) {
+private fun PenHeroCard(pen: PenInfo?, active: Boolean) {
     val shape = RoundedCornerShape(24.dp)
     val inf = rememberInfiniteTransition(label = "pen")
     val float by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(3200, easing = LinearEasing), RepeatMode.Reverse), label = "float")
@@ -425,7 +423,8 @@ private fun PenHeroCard(pen: PenInfo?, active: Boolean, device: String) {
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(pen.displayName, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 32.sp, color = Color.White, maxLines = 1)
-                Text(pen.family.maker() + " · " + device, fontSize = 13.sp, color = Color(0xFFC9D4E6), maxLines = 1)
+                // العائلة فقط، دون اسم موديل القلم أو الجهاز
+                Text(pen.family.maker(), fontSize = 13.sp, color = Color(0xFFC9D4E6), maxLines = 1)
                 Spacer(Modifier.height(14.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     CapChip(L("الضغط", "Pressure"), if (pen.flatPressure || !pen.hasPressure) Cap.NO else Cap.YES)

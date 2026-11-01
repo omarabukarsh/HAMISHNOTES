@@ -440,11 +440,6 @@ object PenInput {
         }
     }
 
-    /** اسم الجهاز كما يعرفه المستخدم (مثل Galaxy Tab S9) أو الموديل. */
-    fun deviceLabel(ctx: Context): String = runCatching {
-        android.provider.Settings.Global.getString(ctx.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
-    }.getOrNull()?.takeIf { it.isNotBlank() } ?: Build.MODEL
-
     /** الضغط الخام بنسبة مئوية بعد المعايرة (لشاشة «جرّب قلمك»). */
     fun calibratedPercent(raw: Float): Int {
         val p = current() ?: return (raw * 100).toInt()

@@ -197,6 +197,8 @@ internal fun DrawScope.drawPenArt(
 /** قسم «الأقلام» في إعدادات القلم: القلم المكتشف، وضع الكتابة، وجرّب قلمك. */
 @Composable
 fun PensSection() {
+    // الإعدادات نافذة مستقلة: نراقب القلم فيها أيضًا
+    PenWindowObserver()
     DisposableEffect(Unit) {
         PenInput.monitoring++
         onDispose { PenInput.monitoring-- }

@@ -69,7 +69,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     /** نحفظ مكان كل لمسة لتخرج النافذة التي تفتحها منه. */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) TouchOrigin.record(ev.rawX, ev.rawY)
+        // التعرّف على القلم ومعايرته قبل أن يصل الحدث إلى الواجهة
+        PenInput.observe(ev)
         return super.dispatchTouchEvent(ev)
+    }
+
+    /** أحداث تحويم القلم فوق الشاشة. */
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        PenInput.observe(ev)
+        return super.dispatchGenericMotionEvent(ev)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -162,6 +170,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onPause() {
         super.onPause()
         AppController.setVisible(false)
+        PenInput.flush()
     }
 
     override fun onStop() {

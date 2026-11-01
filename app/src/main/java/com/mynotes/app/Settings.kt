@@ -158,7 +158,7 @@ private fun SettingsPage.title(): String = when (this) {
 private fun SettingsPage.lead(): String = when (this) {
     SettingsPage.AI -> L("ذكاء اصطناعي على جهازك دون إنترنت، ومحفزاته التلقائية.", "On-device AI, offline, and its automatic triggers.")
     SettingsPage.GENERAL -> L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
-    SettingsPage.PEN -> L("القلم والأصابع وشريط الأدوات.", "Your pen, finger gestures and the toolbar.")
+    SettingsPage.PEN -> L("قلمك، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Your pen, pen or finger writing, and the toolbar.")
     SettingsPage.HIGHLIGHTS -> L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
     SettingsPage.STUDY -> L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
     SettingsPage.APPEARANCE -> L("اجعل هامش يبدو كما تحب.", "Make Hamish look and feel the way you like.")
@@ -376,6 +376,8 @@ private fun SettingsPane(
                     }
                 }
                 SettingsPage.PEN -> {
+                    // القلم المكتشف، وضع الكتابة بالقلم أو الإصبع، وجرّب قلمك
+                    PensSection()
                     GroupLabel(L("القلم", "Pen"))
                     SettingsGroup {
                         SwitchRow(

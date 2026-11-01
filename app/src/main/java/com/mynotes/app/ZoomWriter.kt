@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -104,7 +105,9 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                             val ev = awaitPointerEvent()
                             val down = ev.changes.firstOrNull {
                                 it.changedToDown() && (
-                                    it.type == PointerType.Stylus || it.type == PointerType.Eraser || it.type == PointerType.Mouse
+                                    it.type == PointerType.Stylus || it.type == PointerType.Eraser || it.type == PointerType.Mouse ||
+                                        // وضع «القلم والإصبع»: الإصبع يكتب في النافذة أيضًا (ما لم يكن القلم قريبًا)
+                                        (it.type == PointerType.Touch && PenInput.fingerWrites && !PenInput.stylusActiveRecently())
                                     )
                             } ?: continue
                             val b = boxNow
@@ -123,7 +126,10 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                                 if (erasing) s.eraseAt(b.page, Offset(pt.x, pt.y), radius)
                                 else live.add(Pt(pt.x, pt.y, p))
                             }
-                            add(down.position, if (down.pressure > 0f) down.pressure else 0.5f)
+                            val speedW = SpeedWidth()
+                            fun pressureAt(ch: PointerInputChange): Float =
+                                PenInput.pressureFor(ch.type, ch.pressure, tool, speedW, ch.position.x, ch.position.y, ch.uptimeMillis, size.width.toFloat())
+                            add(down.position, pressureAt(down))
                             down.consume()
                             tick++
                             try {
@@ -131,7 +137,7 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                                     val e = awaitPointerEvent()
                                     val ch = e.changes.firstOrNull { it.id == down.id } ?: break
                                     if (!ch.pressed) break
-                                    val pr = if (ch.pressure > 0f) ch.pressure else 0.5f
+                                    val pr = pressureAt(ch)
                                     for (h in ch.historical) add(h.position, pr)
                                     add(ch.position, pr)
                                     ch.consume()

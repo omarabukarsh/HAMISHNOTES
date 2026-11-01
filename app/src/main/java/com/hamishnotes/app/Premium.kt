@@ -140,6 +140,14 @@ object Premium {
         val p = c.getSharedPreferences("premium", Context.MODE_PRIVATE)
         sp = p
         Cloud.init(c)
+        Cloud.onSessionExpired = {
+            AppController.scope.launch {
+                if (AppController.accountEmail != null) {
+                    AppController.signOutAccount()
+                    AppController.messages.tryEmit(L("انتهت جلستك، سجّل الدخول بحساب Google مجددًا", "Your session ended, please sign in with Google again"))
+                }
+            }
+        }
         if (BuildConfig.TEST_PREMIUM) testActive = p.getBoolean("test_active", false)
         evaluate()
         if (!BuildConfig.TEST_PREMIUM && Cloud.configured) {
@@ -171,22 +179,30 @@ object Premium {
         evaluate()
     }
 
-    /** يقرر حالة الاشتراك من القسيمة المحفوظة، دون إنترنت. */
+    /**
+     * يقرر حالة الاشتراك من القسيمة المحفوظة، دون إنترنت.
+     *
+     * حارس إرجاع الساعة: نحفظ أكبر وقت رآه الجهاز (seen). إن رجعت الساعة إلى الوراء أكثر من المهلة
+     * فالقسيمة لا تُقبل، فلا يمكن إطالة القسيمة بضبط الساعة على تاريخ قديم مع قطع الإنترنت.
+     * وإن كانت الساعة متقدمة خطأً ثم صُحّحت، يُشفى المستخدم عند أول قسيمة جديدة من الخادم،
+     * لأن seen يُضبط حينها على وقت الإصدار (iat)، وهو وقت الخادم الموثوق.
+     */
     internal fun evaluate() {
         val c = app ?: return
         val p = sp ?: return
+        val now = System.currentTimeMillis()
+        val seen = p.getLong("seen", 0)
+        if (now > seen) p.edit().putLong("seen", now).apply()
         val g = Lic.parse(p.getString("grant", null))
-        val ok = g != null && valid(c, g, System.currentTimeMillis())
+        val ok = g != null && valid(c, g, now) && now + CLOCK_SLACK > seen
         grant = if (ok) g else null
         active = (BuildConfig.TEST_PREMIUM && testActive) || ok
     }
 
     /**
-     * صلاحية القسيمة دون إنترنت.
-     * - الحساب: Premium يتبع الحساب، فيتوقف عند تسجيل الخروج (uid=null). لكن القسيمة لا تُحذف
-     *   (انظر onAccountChanged)، فيعود فورًا ودون إنترنت عند الدخول بنفس الحساب.
-     * - حارس إرجاع الساعة يعتمد على وقت إصدار القسيمة من الخادم (iat)، وهو وقت موثوق لا يتحكم به
-     *   الجهاز. لا نعتمد على وقت محفوظ محليًا (كان يقفل مستخدمًا ساعته متقدمة ثم صُحّحت).
+     * صلاحية القسيمة دون إنترنت: نفس الحزمة والجهاز والحساب، وضمن مدتها، والساعة ليست قبل وقت إصدارها.
+     * Premium يتبع الحساب، فيتوقف عند تسجيل الخروج (uid=null). القسيمة لا تُحذف (انظر onAccountChanged)،
+     * فيعود Premium فور الدخول بنفس الحساب، دون انتظار التحقق الخلفي من الخادم.
      */
     internal fun valid(c: Context, g: Lic.Grant, now: Long): Boolean =
         g.pkg == c.packageName && g.dev == Lic.device(c) && g.sub == Cloud.userId &&
@@ -207,7 +223,7 @@ object Premium {
 
     /**
      * بعد الدخول أو الخروج من حساب Google.
-     * تسجيل الخروج لا يحذف القسيمة (تبقى مربوطة بالجهاز فيعود Premium عند الدخول بنفس الحساب دون إنترنت).
+     * تسجيل الخروج لا يحذف القسيمة (تبقى مربوطة بالجهاز فيعود Premium فور الدخول بنفس الحساب).
      * الدخول بحساب مختلف عن صاحب القسيمة يحذفها، فلا تنتقل من حساب إلى آخر.
      */
     fun onAccountChanged() {
@@ -326,7 +342,8 @@ object Premium {
             val token = Cloud.function("license", body).getString("grant")
             val g = Lic.parse(token)
             if (g == null || !valid(c, g, System.currentTimeMillis())) return Outcome.FAILED
-            sp?.edit()?.putString("grant", token)?.apply()
+            // قسيمة جديدة من الخادم: وقت إصدارها موثوق، فنصحح به حارس الساعة (يشفي ساعة كانت متقدمة ثم صُحّحت)
+            sp?.edit()?.putString("grant", token)?.putLong("seen", g.iat)?.apply()
             evaluate()
             Outcome.OK
         } catch (e: Cloud.HttpError) {

@@ -18,6 +18,9 @@ internal object Cloud {
 
     private var sp: SharedPreferences? = null
 
+    /** يُستدعى عندما يرفض الخادم تجديد الجلسة (أُبطلت أو حُذف الحساب)، ليُحدَّث الحساب ويُبلَّغ المستخدم. */
+    var onSessionExpired: (() -> Unit)? = null
+
     val configured: Boolean get() = BuildConfig.SUPABASE_URL.isNotBlank() && BuildConfig.SUPABASE_ANON_KEY.isNotBlank()
 
     /** معرّف المستخدم في Supabase، أو null إن لم تُربط الجلسة بعد. */
@@ -60,8 +63,12 @@ internal object Cloud {
             save(r)
             r.getString("access_token")
         } catch (e: HttpError) {
-            // رمز التحديث أُبطل (خروج من جهاز آخر أو حذف الحساب): نبدأ جلسة جديدة عند الدخول التالي
-            if (e.code in 400..499) signOut()
+            // رمز التحديث أُبطل (خروج من جهاز آخر أو حذف الحساب): نبدأ جلسة جديدة عند الدخول التالي،
+            // ونبلغ التطبيق بدل فقدان الجلسة بصمت بينما الإعدادات ما زالت تُظهر الحساب مسجّلًا
+            if (e.code in 400..499) {
+                signOut()
+                onSessionExpired?.invoke()
+            }
             null
         }
     }

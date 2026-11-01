@@ -109,6 +109,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
@@ -615,6 +616,22 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             PenPrefs.shapeActive = true
                         }
                     }) { PhIcon(R.drawable.ph_shapes, tintFor(PenPrefs.shapeActive && !c.lassoActive)) }
+                }
+                // التبديل بين الكتابة بالقلم فقط، والكتابة بالقلم والإصبع
+                if (PenInput.showToggle) {
+                    TBtn(selected = PenInput.fingerWrites, onClick = {
+                        val on = !PenInput.fingerWrites
+                        PenInput.chooseFingerWrites(on)
+                        c.messages.tryEmit(
+                            if (on) L("صار الإصبع يكتب · اسحب بإصبعين للتمرير", "Your finger now writes · drag with two fingers to scroll")
+                            else L("القلم يكتب، والإصبع للتمرير", "The pen writes; your finger scrolls")
+                        )
+                    }) {
+                        PhIcon(
+                            if (PenInput.fingerWrites) R.drawable.ph_hand_pointing_fill else R.drawable.ph_hand_pointing,
+                            if (PenInput.fingerWrites) Palette.GoldDeep else Palette.TextSecondary
+                        )
+                    }
                 }
 
                 // صورة / نص / إضافة صفحة / قراءة النص / بحث / حفظ
@@ -1449,7 +1466,8 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         }
         fun endPinch() {
             val k = pinchK
-            if (abs(k - 1f) > 0.001f) {
+            // تكبير، أو سحب بإصبعين بلا تكبير (التمرير في وضع «القلم والإصبع»)
+            if (abs(k - 1f) > 0.001f || abs(pinchTx) > 1f || abs(pinchTy) > 1f) {
                 // نقطة المحتوى الظاهرة في وسط الشاشة تبقى في وسطها بعد التطبيق
                 val c = Offset(vw / 2f, vh / 2f)
                 val src = Offset((c.x - pinchTx) / k, (c.y - pinchTy) / k)
@@ -1839,7 +1857,6 @@ private class LaserState {
     var present: Boolean = false
 }
 
-private fun pressureOf(c: PointerInputChange): Float = PenPrefs.applyPressure(if (c.pressure > 0f) c.pressure else 0.5f)
 
 private fun nearestWord(words: List<OcrWord>, x: Float, y: Float, maxDist: Float): Int {
     var best = -1
@@ -2224,15 +2241,23 @@ private fun PageView(
                     false
                 }
                 .pointerInput(Unit) {
-                    // ---------- القلم ----------
+                    // ---------- القلم (والإصبع في وضع «القلم والإصبع») ----------
                     awaitPointerEventScope {
+                        /** حدث نزل فيه القلم أثناء لمسة إصبع ألغيناها (راحة اليد): يُعالَج كبداية جديدة. */
+                        var carry: PointerEvent? = null
+                        /** الإصبع يكتب هنا: الوضع مفعّل، ولا نافذة كتابة مكبّرة، والقلم ليس قريبًا (راحة اليد). */
+                        fun fingerInk(e: PointerEvent): Boolean =
+                            PenInput.fingerWrites && session.zoomBox == null && !PenInput.stylusActiveRecently() &&
+                                e.changes.count { it.pressed && it.type == PointerType.Touch } == 1
                         while (true) {
-                            val ev = awaitPointerEvent()
+                            val ev = carry ?: awaitPointerEvent()
+                            carry = null
 
                             // التحديد والأشكال والملاحظات تتقدم على الليزر (الأداة تبقى ليزرًا عند تفعيلها)
                             if (toolNow == Tool.LASER && !lassoNow && !PenPrefs.shapeActive && !PenPrefs.stickyActive) {
                                 val lc = ev.changes.firstOrNull {
-                                    it.type == PointerType.Stylus || it.type == PointerType.Mouse
+                                    it.type == PointerType.Stylus || it.type == PointerType.Mouse ||
+                                        (it.type == PointerType.Touch && it.pressed && fingerInk(ev))
                                 }
                                 if (lc != null && size.width > 0) {
                                     if (ev.type == PointerEventType.Exit) {
@@ -2287,9 +2312,16 @@ private fun PageView(
                                 it.changedToDown() && (
                                     it.type == PointerType.Stylus ||
                                         it.type == PointerType.Eraser ||
-                                        it.type == PointerType.Mouse
+                                        it.type == PointerType.Mouse ||
+                                        (it.type == PointerType.Touch && fingerInk(ev))
                                     )
                             } ?: continue
+                            val byFinger = down.type == PointerType.Touch
+                            /** إصبع ثانٍ (تمرير/تكبير) أو قلم نزل أثناء لمسة الإصبع. */
+                            fun fingerInterrupted(e: PointerEvent): Boolean = byFinger && (
+                                e.changes.count { it.pressed && it.type == PointerType.Touch } >= 2 ||
+                                    e.changes.any { it.pressed && (it.type == PointerType.Stylus || it.type == PointerType.Eraser) }
+                                )
                             val w = size.width.toFloat()
                             if (w <= 0f) continue
                             val id = down.id
@@ -2408,14 +2440,20 @@ private fun PageView(
                             if (session.selection != null) session.selection = null
                             session.beginEdit()
                             livePts.clear()
+                            // عرض الخط: ضغط القلم بعد المعايرة، أو السرعة للإصبع والأقلام بلا ضغط
+                            val speedW = SpeedWidth()
+                            fun pressureAt(c: PointerInputChange): Float =
+                                PenInput.pressureFor(c.type, c.pressure, live.tool, speedW, c.position.x, c.position.y, c.uptimeMillis, w)
+                            // الممحاة بالإصبع تبدأ بعد حركة واضحة (حتى لا تمسح لمسة بداية تمرير بإصبعين)
+                            var eraseArmed = !byFinger
                             if (erasing) {
-                                session.eraseAt(index, Offset(down.position.x / w, down.position.y / w), eraseR)
+                                if (eraseArmed) session.eraseAt(index, Offset(down.position.x / w, down.position.y / w), eraseR)
                                 eraserCursor[0] = down.position
                                 eraserR[0] = eraseR
                                 tick++
                             } else {
                                 liveGen[0]++
-                                livePts.add(Pt(down.position.x / w, down.position.y / w, pressureOf(down)))
+                                livePts.add(Pt(down.position.x / w, down.position.y / w, pressureAt(down)))
                                 tick++
                             }
                             down.consume()
@@ -2462,6 +2500,8 @@ private fun PageView(
                                 live.sharp = true
                                 tick++
                             }
+                            /** خط الإصبع أُلغي: بداية تمرير بإصبعين أو راحة يد قبل نزول القلم. */
+                            var aborted = false
                             try {
                                 while (true) {
                                     val e = withTimeoutOrNull(480L) { awaitPointerEvent() }
@@ -2474,8 +2514,22 @@ private fun PageView(
                                         ch.consume()
                                         break
                                     }
+                                    if (fingerInterrupted(e)) {
+                                        val stylus = e.changes.any { it.pressed && (it.type == PointerType.Stylus || it.type == PointerType.Eraser) }
+                                        var len = 0f
+                                        for (k in 1 until livePts.size) len += hypot(livePts[k].x - livePts[k - 1].x, livePts[k].y - livePts[k - 1].y)
+                                        // نزل القلم: لمسة الإصبع كانت راحة اليد. إصبع ثانٍ مبكرًا أو بعد خط قصير: تمرير لا كتابة
+                                        aborted = stylus || ch.uptimeMillis - down.uptimeMillis < 300L || len < 0.012f
+                                        if (stylus) carry = e
+                                        break
+                                    }
+                                    if (erasing && !eraseArmed) {
+                                        if ((ch.position - down.position).getDistance() > viewConfiguration.touchSlop ||
+                                            ch.uptimeMillis - down.uptimeMillis > 120L
+                                        ) eraseArmed = true else { ch.consume(); continue }
+                                    }
                                     AppController.lastInkAt = System.currentTimeMillis()
-                                    val pr = pressureOf(ch)
+                                    val pr = pressureAt(ch)
                                     if (snappedLive != null) {
                                         // بعد التحول إلى شكل: لا تُضاف نقاط حتى رفع القلم
                                         ch.consume()
@@ -2525,6 +2579,10 @@ private fun PageView(
                                 val backToPen = erasing && toolNow == Tool.ERASER && PenPrefs.autoDeselect
                                 // «ارسم وأبقِ»: القلم بقي ثابتًا لحظة قبل الرفع
                                 val held = System.currentTimeMillis() - lastMoveAt >= 450L
+                                if (aborted) {
+                                    livePts.clear()
+                                    snappedLive = null
+                                }
                                 var snapPts: List<Pt>? = null
                                 if (!erasing && livePts.isNotEmpty()) {
                                     val hlStraight = live.tool == Tool.HIGHLIGHTER && PenPrefs.hlStraight
@@ -2672,6 +2730,9 @@ private fun PageView(
                                 return@awaitEachGesture
                             }
                         }
+
+                        // وضع «القلم والإصبع»: الإصبع يكتب (يعالجه مستقبل القلم)، فلا تحديد نص بالضغط المطوّل
+                        if (PenInput.fingerWrites && session.zoomBox == null && !PenInput.stylusActiveRecently()) return@awaitEachGesture
 
                         // نقر قصير أو ضغط مطوّل
                         try {

@@ -716,6 +716,7 @@ object AppController {
         repo = LibraryRepository(app)
         AudioNotes.init(app)
         PenPrefs.init(app)
+        PenInput.init(app)
         UiPrefs.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)

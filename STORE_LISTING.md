@@ -43,7 +43,9 @@ Hamish turns your PDF lectures into a study notebook.
 
 ## Data safety form (matches the code as of November 2026; you are responsible for the final answers)
 
-Privacy policy URL: the published `site/privacy/` page. Account deletion URL: the published `site/delete/` page.
+Privacy policy URL: https://omarabukarsh.github.io/hamishnotes-site/privacy/
+Account deletion URL: https://omarabukarsh.github.io/hamishnotes-site/delete/
+(Source: `site/`, published from the public repo omarabukarsh/hamishnotes-site via GitHub Pages.)
 
 **Does the app collect or share user data? Yes (collects). Shared with third parties: No** (Supabase and Google act as service providers, which Play does not count as sharing).
 **Encrypted in transit: Yes. Users can request deletion: Yes** (in the app, and via the deletion URL).
@@ -74,7 +76,7 @@ ML Kit disclosure reference: https://developers.google.com/ml-kit/android-data-d
 
 1. Create a Google Play developer account (one-time USD 25 fee) and verify your identity. Libya supports developer and merchant registration (default currency USD) — check the official list again before you start: https://support.google.com/googleplay/android-developer/answer/9306917
 2. If you will sell the app or add in-app purchases: create a payments profile (merchant account). Payouts require a bank account that can receive international transfers in USD.
-3. Publish `site/` (privacy policy and account deletion pages) at a public URL. Contact email noteshamish@gmail.com is already in the policy, terms and the app.
+3. ~~Publish `site/` at a public URL~~ Done: https://omarabukarsh.github.io/hamishnotes-site/ (privacy/ and delete/). Contact email noteshamish@gmail.com is already in the policy, terms and the app.
 4. Create a new **upload key** (keystore) outside the repository, keep two backups, and enroll in **Play App Signing**. Do not commit it. (The current committed keystore is for test builds only.)
 5. Build an Android App Bundle (.aab) with the upload key and upload it to the Internal testing track first.
 6. Fill in: store listing (texts above), screenshots of your own app only, app icon 512×512, feature graphic 1024×500, content rating, target audience, data safety, privacy policy URL, ads = no.

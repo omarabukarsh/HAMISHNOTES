@@ -473,6 +473,19 @@ private fun SettingsPane(
                             L("ارسم ثم أبقِ القلم ثابتًا لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"),
                             PenPrefs.drawAndHold
                         ) { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }
+                        GroupDivider()
+                        // تُقرأ كتابتك بهذه اللغة لتلتقطها بالهايلايتر وتبحث فيها
+                        GroupRow(
+                            R.drawable.ph_text_scan, TileBlue,
+                            L("لغة خط يدك", "Handwriting language"),
+                            L("تُقرأ كتابتك بها لتلتقطها بالهايلايتر وتبحث فيها", "Your writing is read in it, so you can highlight and search it")
+                        ) {
+                            val opts = listOf(HwLang.BOTH, HwLang.ARABIC, HwLang.ENGLISH)
+                            Segmented(
+                                listOf(L("الاثنان", "Both"), "عربي", "English"),
+                                opts.indexOf(PenPrefs.hwLang).coerceAtLeast(0)
+                            ) { PenPrefs.changeHwLang(opts[it]) }
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     PenKeyLearnRow()

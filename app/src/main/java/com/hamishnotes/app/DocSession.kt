@@ -827,6 +827,7 @@ class DocSession(entry: DocEntry) {
         val pagesSnap = doc.pages
         val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
         val ocrSnap = ocr.toMap()
+        baseWords.clear()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
             AppController.repo.savePages(id, pagesSnap)
@@ -838,14 +839,30 @@ class DocSession(entry: DocEntry) {
 
     // ---------- القراءة الضوئية ----------
 
+    /** إصدار قراءة الصفحة: يتغيّر مع كتابة المستخدم ولغة خط اليد ومصدر القراءة. */
+    private fun ocrVersion(strokes: List<Ink>): Int = (OcrEngine.versionOf(strokes) * 31 + 3) * 4 + PenPrefs.hwLang
+
+    /** إصدار القراءة الاحتياطية (خط اليد داخل الصورة) حين لا تكون حزمة اللغة جاهزة. */
+    private fun fallbackVersion(ver: Int): Int = ver xor 0x20000000
+
+    /** القراءة المحفوظة للصفحة ما زالت صالحة لكتابتها الحالية. */
+    private fun isFresh(existing: OcrPage, strokes: List<Ink>): Boolean {
+        val ver = ocrVersion(strokes)
+        return existing.version == ver ||
+            (existing.version == fallbackVersion(ver) && !HandwritingReader.isReady(PenPrefs.hwLang))
+    }
+
+    /** قراءة الصورة دون خط اليد (للصفحات الممسوحة)؛ لا تتغيّر بالكتابة فتُحفظ مؤقتًا. */
+    private val baseWords = java.util.concurrent.ConcurrentHashMap<Int, List<OcrWord>>()
+
     /** يقرأ صفحة واحدة (إن لم تكن مقروءة أو تغيّرت كتابة المستخدم عليها). */
     suspend fun ocrPage(page: Int): OcrPage? {
         val doc = pdf ?: return null
         val strokes = annotations[page] ?: emptyList()
-        // الإصدار يشمل مصدر القراءة (طبقة النص)، فتُعاد قراءة الصفحات المحفوظة بالطريقة القديمة مرة واحدة
-        val ver = OcrEngine.versionOf(strokes) * 31 + 2
+        val ver = ocrVersion(strokes)
         val existing = ocr[page]
-        if (existing != null && existing.version == ver) return existing
+        if (existing != null && isFresh(existing, strokes)) return existing
+        val lang = PenPrefs.hwLang
 
         val result: OcrPage? = try {
             withContext(Dispatchers.Default) {
@@ -856,9 +873,37 @@ class DocSession(entry: DocEntry) {
                 } catch (t: Throwable) {
                     emptyList()
                 }
+                fun withHand(base: List<OcrWord>, hand: List<OcrWord>): List<OcrWord> {
+                    if (hand.isEmpty()) return base
+                    // كلمات خط اليد تُضاف دائمًا، ولو كانت فوق نص الملف أو بين سطوره
+                    val offset = (base.maxOfOrNull { it.line } ?: -1) + 1
+                    return base + hand.map { it.copy(line = it.line + offset) }
+                }
+                // 2) خط اليد: يُقرأ من خطوط القلم نفسها بالعربية والإنجليزية (null = حزمة اللغة غير جاهزة)
+                val hand: List<OcrWord>? = try {
+                    HandwritingReader.read(strokes, lang, 0)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    null
+                }
+                if (hand != null) {
+                    if (layerWords.size >= 3) return@withContext OcrPage(withHand(layerWords, hand), ver)
+                    // صفحة ممسوحة: القراءة الضوئية للصورة وحدها، ثم كلمات خط اليد
+                    val seen = baseWords[page] ?: run {
+                        val base = doc.renderFresh(ref, 1800) ?: return@withContext null
+                        try {
+                            OcrEngine.recognize(base)
+                        } finally {
+                            base.recycle()
+                        }
+                    }.also { baseWords[page] = it }
+                    return@withContext OcrPage(withHand(seen, hand), ver)
+                }
+
+                // 3) احتياطي: الطريقة القديمة (خط اليد داخل صورة الصفحة)
                 val handwriting = strokes.any { it.tool != Tool.HIGHLIGHTER }
                 if (layerWords.size >= 3 && !handwriting) return@withContext OcrPage(layerWords, ver)
-                // 2) القراءة الضوئية: للصفحات الممسوحة ضوئيًا، ولخط اليد فوق صفحة رقمية
                 val base = doc.renderFresh(ref, 1800) ?: return@withContext null
                 try {
                     val src = OcrEngine.compose(base, strokes)
@@ -872,9 +917,9 @@ class DocSession(entry: DocEntry) {
                                 val cy = (w.t + w.b) / 2f
                                 layerWords.none { o -> cx >= o.l && cx <= o.r && cy >= o.t && cy <= o.b }
                             }.map { it.copy(line = it.line + offset) }
-                            OcrPage(layerWords + extra, ver)
+                            OcrPage(layerWords + extra, fallbackVersion(ver))
                         } else {
-                            OcrPage(seen, ver)
+                            OcrPage(seen, fallbackVersion(ver))
                         }
                     } finally {
                         if (src !== base) src.recycle()
@@ -896,11 +941,36 @@ class DocSession(entry: DocEntry) {
         return result
     }
 
+    private var inkReadJob: Job? = null
+
+    /**
+     * بعد ثانية ونصف من التوقف عن الكتابة: تُقرأ الصفحة الحالية، وكل صفحة مقروءة تغيّرت كتابتها،
+     * فيجد الهايلايتر والبحث ما كُتب للتو. القراءة وحدها لا تضيف شيئًا إلى الملخصات.
+     */
+    private fun scheduleInkRead() {
+        if (disposed || pdf == null) return
+        inkReadJob?.cancel()
+        inkReadJob = AppController.scope.launch {
+            delay(1500)
+            while (isActive && System.currentTimeMillis() - AppController.lastInkAt < 1500L) delay(250)
+            val cur = listState.firstVisibleItemIndex
+            val pages = (listOf(cur) + ocr.keys.sorted()).distinct()
+            for (p in pages) {
+                if (!isActive || disposed) break
+                val e = ocr[p]
+                if (e == null && p != cur) continue
+                if (e == null || !isFresh(e, annotations[p] ?: emptyList())) ocrPage(p)
+            }
+        }
+    }
+
     /** يقرأ كل الصفحات غير المقروءة في الخلفية، ويتوقف مؤقتًا أثناء الكتابة بالقلم. */
     fun startOcr(): Job? {
         if (ocrJob?.isActive == true) return ocrJob
         // القراءة التلقائية مجانية للجميع (للبحث في الملفات الممسوحة)؛ Premium يقفل الزر اليدوي والتقاط النص فقط
         val doc = pdf ?: return null
+        // حزم لغة خط اليد تُنزَّل في الخلفية أول مرة، ثم تعمل دون إنترنت
+        HandwritingReader.prefetch(PenPrefs.hwLang)
         val job = AppController.scope.launch {
             ocrRunning = true
             ocrTotal = doc.count
@@ -995,7 +1065,8 @@ class DocSession(entry: DocEntry) {
                 AppController.messages.tryEmit(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
             }
         }
-        val ready = ocr[page]?.words
+        // القراءة المحفوظة قد تسبق ما كُتب بعدها؛ تُعاد قراءتها حينئذ (الأسطر الجديدة فقط تُقرأ فعلًا)
+        val ready = ocr[page]?.takeIf { isFresh(it, annotations[page] ?: emptyList()) }?.words
         if (ready != null) {
             applyTo(ready)
             return
@@ -1296,6 +1367,7 @@ class DocSession(entry: DocEntry) {
      * إلى JSON أثناء الكتابة. الحفظ فوري عند إغلاق المستند وعند خروج التطبيق للخلفية (flushPersist).
      */
     fun persist() {
+        scheduleInkRead()
         saveJob?.cancel()
         saveJob = AppController.scope.launch {
             delay(1500)
@@ -1327,6 +1399,7 @@ class DocSession(entry: DocEntry) {
         flushPersist()
         disposed = true
         ocrJob?.cancel()
+        inkReadJob?.cancel()
         textLayer?.close()
         textLayer = null
         pdf?.close()

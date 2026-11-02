@@ -28,6 +28,8 @@ object PenPrefs {
     var stabilize by mutableStateOf(0f); private set
     /** ارسم ثم أبقِ القلم ثابتًا لحظة: يتحول الرسم إلى شكل مرتب. */
     var drawAndHold by mutableStateOf(true); private set
+    /** لغة خط اليد التي يُقرأ بها (HwLang): الاثنان، أو عربي، أو إنجليزي. */
+    var hwLang by mutableStateOf(HwLang.BOTH); private set
 
     // ---- الهايلايتر ----
     var hlStabilize by mutableStateOf(0.3f); private set
@@ -93,6 +95,7 @@ object PenPrefs {
         pressure = sp.getFloat("pressure", 0.5f)
         stabilize = sp.getFloat("stabilize", 0f)
         drawAndHold = sp.getBoolean("draw_hold", true)
+        hwLang = sp.getInt("hw_lang", HwLang.BOTH).coerceIn(0, 2)
         hlStabilize = sp.getFloat("hl_stabilize", 0.3f)
         hlStraight = sp.getBoolean("hl_straight", true)
         erasePen = sp.getBoolean("er_pen", true)
@@ -133,6 +136,11 @@ object PenPrefs {
     fun changePressure(v: Float) { pressure = v; put("pressure", v) }
     fun changeStabilize(v: Float) { stabilize = v; put("stabilize", v) }
     fun changeDrawAndHold(v: Boolean) { drawAndHold = v; put("draw_hold", v) }
+    fun changeHwLang(v: Int) {
+        hwLang = v.coerceIn(0, 2)
+        put("hw_lang", hwLang)
+        HandwritingReader.prefetch(hwLang)
+    }
     fun resetPen() {
         changeLineStyle(0); changeSharpness(0.25f); changePressure(0.5f); changeStabilize(0f)
     }

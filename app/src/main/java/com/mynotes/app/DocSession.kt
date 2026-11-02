@@ -1290,32 +1290,19 @@ class DocSession(entry: DocEntry) {
         persist()
     }
 
-    fun mapMakeBranch(keys: List<String>) = changeMap { m ->
-        m.copy(nodes = m.nodes + keys.associateWith { MapNodeEdit(MapRole.BRANCH) }, started = true)
-    }
+    private fun mapItems() = MindMap.items(allMarks())
 
-    fun mapMakePoints(keys: List<String>, parent: String) = changeMap { m ->
-        m.copy(nodes = m.nodes + keys.filter { it != parent }.associateWith { MapNodeEdit(MapRole.POINT, parent) }, started = true)
-    }
+    /** يضع النصوص (بترتيبها) في المكان المختار على الخريطة. */
+    fun mapPlace(keys: List<String>, target: MapTarget) = changeMap { MindMap.place(it, mapItems(), keys, target) }
 
-    /** الأول فرع، والباقي نقاط تحته. */
-    fun mapFirstBranch(keys: List<String>) {
-        val first = keys.firstOrNull() ?: return
-        changeMap { m ->
-            m.copy(
-                nodes = m.nodes + (first to MapNodeEdit(MapRole.BRANCH)) +
-                    keys.drop(1).associateWith { MapNodeEdit(MapRole.POINT, first) },
-                started = true
-            )
-        }
-    }
+    /** يحرك النص خطوة بين إخوته في الخريطة. */
+    fun mapMove(key: String, delta: Int) = changeMap { MindMap.move(it, mapItems(), key, delta) }
 
-    fun mapHide(keys: List<String>) = changeMap { m ->
-        m.copy(nodes = m.nodes + keys.associateWith { MapNodeEdit(MapRole.HIDDEN) }, started = true)
-    }
-
-    fun mapRename(key: String, label: String?) = changeMap { m ->
-        m.copy(labels = if (label.isNullOrBlank()) m.labels - key else m.labels + (key to label.trim().take(80)))
+    /** يزيل النص وما تحته من الخريطة؛ يعيد عدد ما أُزيل. */
+    fun mapRemove(key: String): Int {
+        var n = 0
+        changeMap { e -> MindMap.remove(e, mapItems(), key).also { n = it.second }.first }
+        return n
     }
 
     fun mapToggleCollapsed(key: String) = changeMapQuiet { m ->
@@ -1323,12 +1310,6 @@ class DocSession(entry: DocEntry) {
     }
 
     fun mapSetCollapsed(keys: Set<String>) = changeMapQuiet { it.copy(collapsed = keys) }
-
-    /** شريط المسودة: «ابدأ التصحيح» أو «ابدأ من فارغ». */
-    fun mapStart(blank: Boolean) = if (blank) changeMap { it.copy(started = true, blank = true) } else changeMapQuiet { it.copy(started = true) }
-
-    /** يعيد الخريطة إلى المسودة التلقائية. */
-    fun mapReset() = changeMap { MapEdits(started = true) }
 
     // ---------- مربعات النص ----------
 

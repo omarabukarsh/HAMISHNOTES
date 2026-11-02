@@ -103,10 +103,8 @@ fun SummaryDrawer(
     // الخريطة الذهنية: تُبنى من «كما التُقط»
     var mapOpen by remember { mutableStateOf(false) }
     var selectForMap by remember { mutableStateOf(false) }
-    var pickFor by remember { mutableStateOf<List<String>?>(null) }
-    val mapModel = remember(all, edits.map) { MindMap.build(s.title, all, edits.map, false) { c.labelOf(it) } }
-    val mapItems = remember(all) { MindMap.items(all) }
-    val mapTags = remember(mapModel) { mapTagsOf(mapModel) }
+    // نصوص تُوضع الآن: تفتح الخريطة لاختيار مكانها
+    var placeKeys by remember { mutableStateOf<List<String>?>(null) }
 
     Surface(
         modifier.fillMaxHeight().width(420.dp),
@@ -206,11 +204,7 @@ fun SummaryDrawer(
             if (selecting && selectForMap) {
                 MapSelectBar(
                     count = selected.size,
-                    onFirstBranch = {
-                        s.mapFirstBranch(selected.mapNotNull { MindMap.nodeKey(it) })
-                        selecting = false; selectForMap = false; selected = emptyList()
-                    },
-                    onToBranch = { pickFor = selected.mapNotNull { MindMap.nodeKey(it) } },
+                    onPlace = { placeKeys = selected.mapNotNull { MindMap.nodeKey(it) } },
                     onCancel = { selecting = false; selectForMap = false; selected = emptyList() }
                 )
             }
@@ -315,10 +309,7 @@ fun SummaryDrawer(
                                     },
                                     selectable = !(selecting && b.key == tableTarget) && !(selecting && selectForMap && MindMap.nodeKey(b.key) == null),
                                     mapKey = if (tidy) null else MindMap.nodeKey(b.key),
-                                    mapTag = if (tidy) null else MindMap.nodeKey(b.key)?.let { mapTags[it] },
-                                    onMapBranch = { k -> s.mapMakeBranch(listOf(k)) },
-                                    onMapPoint = { k -> pickFor = listOf(k) },
-                                    onMapHide = { k -> s.mapHide(listOf(k)) },
+                                    onMapPlace = { k -> placeKeys = listOf(k) },
                                     onMapSelect = {
                                         selecting = true
                                         selectForMap = true
@@ -361,21 +352,14 @@ fun SummaryDrawer(
 
     if (mapOpen) MindMapDialog(s, onJump = { m -> mapOpen = false; onJump(m) }, onDismiss = { mapOpen = false })
 
-    val pf = pickFor
-    if (pf != null && pf.isNotEmpty()) {
-        MapBranchPicker(
-            model = mapModel,
-            items = mapItems,
-            keys = pf,
-            onDismiss = { pickFor = null },
-            onAdd = { parent ->
-                s.mapMakePoints(pf, parent)
-                pickFor = null; selecting = false; selectForMap = false; selected = emptyList()
-            },
-            onMakeBranch = {
-                if (pf.size == 1) s.mapMakeBranch(pf) else s.mapFirstBranch(pf)
-                pickFor = null; selecting = false; selectForMap = false; selected = emptyList()
-            }
+    val pk = placeKeys
+    if (pk != null && pk.isNotEmpty()) {
+        MindMapDialog(
+            s,
+            onJump = { m -> placeKeys = null; onJump(m) },
+            onDismiss = { placeKeys = null },
+            placing = pk,
+            onPlaced = { placeKeys = null; selecting = false; selectForMap = false; selected = emptyList() }
         )
     }
 
@@ -450,10 +434,7 @@ private fun BlockView(
     onJump: (TextMark) -> Unit,
     onEdit: (TextMark) -> Unit,
     mapKey: String? = null,
-    mapTag: MapTag? = null,
-    onMapBranch: (String) -> Unit = {},
-    onMapPoint: (String) -> Unit = {},
-    onMapHide: (String) -> Unit = {},
+    onMapPlace: (String) -> Unit = {},
     onMapSelect: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -473,7 +454,6 @@ private fun BlockView(
                 )
                 .padding(vertical = 5.dp)
         ) {
-            if (mapTag != null && !selecting) MapTagChip(mapTag)
             if (selecting && selectionIndex >= 0) {
                 Text(
                     "${selectionIndex + 1}", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
@@ -504,12 +484,8 @@ private fun BlockView(
                     L("الخريطة الذهنية", "Mind map"), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
-                MenuRow(L("فرع جديد", "New branch"), R.drawable.ph_mindmap) { menu = false; onMapBranch(mapKey) }
-                MenuRow(L("نقطة في فرع…", "Point in a branch…"), R.drawable.ph_plus) { menu = false; onMapPoint(mapKey) }
+                MenuRow(L("ضعه في الخريطة…", "Place on the map…"), R.drawable.ph_mindmap) { menu = false; onMapPlace(mapKey) }
                 MenuRow(L("اختيار عدة نصوص…", "Select several texts…"), R.drawable.ph_pages) { menu = false; onMapSelect() }
-                if (mapTag != null) {
-                    MenuRow(L("إزالة من الخريطة", "Remove from map"), R.drawable.ph_close) { menu = false; onMapHide(mapKey) }
-                }
                 Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Palette.Divider))
             }
             when (b) {
@@ -549,33 +525,6 @@ private fun BlockView(
                 menu = false
                 b.marks.forEach { s.deleteMark(it.id) }
             }
-        }
-    }
-}
-
-@Composable
-private fun MapTagChip(t: MapTag) {
-    val shape = RoundedCornerShape(9.dp)
-    Row(Modifier.padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (t.branch) {
-            Text(
-                "◆ " + L("فرع", "Branch"), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                modifier = Modifier.clip(shape).background(mapInk(t.color)).padding(horizontal = 7.dp, vertical = 1.dp)
-            )
-        } else {
-            Row(
-                Modifier.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
-                    .padding(horizontal = 7.dp, vertical = 1.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(mapInk(t.color)))
-                Spacer(Modifier.width(4.dp))
-                Text("↳ " + (t.parent ?: ""), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Palette.TextSecondary, maxLines = 1)
-            }
-        }
-        if (t.auto) {
-            Spacer(Modifier.width(5.dp))
-            Text(L("تلقائي", "auto"), fontSize = 10.sp, color = Palette.GoldDeep)
         }
     }
 }

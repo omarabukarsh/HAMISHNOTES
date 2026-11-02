@@ -2,97 +2,90 @@ package com.mynotes.app
 
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MindMapTest {
     private val yellow = Color(0xFFFFEB3B)
-    private val green = Color(0xFF8BC34A)
 
-    private fun mark(id: String, text: String, top: Float, color: Color = yellow, page: Int = 0, level: Int = 1, emphasis: List<String> = emptyList()) =
-        TextMark(id, page, listOf(MarkRect(0.1f, top, 0.9f, top + 0.02f)), color, text, 1L, level, emphasis)
+    private fun mark(id: String, text: String, top: Float) =
+        TextMark(id, 0, listOf(MarkRect(0.1f, top, 0.9f, top + 0.02f)), yellow, text, 1L)
 
-    private fun build(marks: List<TextMark>, edits: MapEdits = MapEdits(), byColor: Boolean = false) =
-        MindMap.build("T", marks, edits, byColor) { "c" + Summary.argbOf(it) }
+    private val marks = listOf(
+        mark("a", "المناعة الفطرية: خط الدفاع الأول، وغير متخصصة", 0.1f),
+        mark("b", "تشمل الجلد والأغشية المخاطية", 0.2f),
+        mark("c", "المناعة المكتسبة: متخصصة ولها ذاكرة", 0.3f),
+        mark("d", "الخلايا B تنتج الأجسام المضادة", 0.4f),
+        mark("e", "الخلايا T المساعدة", 0.5f)
+    )
+    private val items = MindMap.items(marks)
+
+    private fun build(e: MapEdits) = MindMap.build("T", marks, e)
 
     @Test
-    fun colonLabelsBecomeBranchesAndOthersPoints() {
-        val m = build(
-            listOf(
-                mark("a", "المناعة الفطرية: خط الدفاع الأول", 0.1f),
-                mark("b", "تشمل الجلد والأغشية المخاطية", 0.2f),
-                mark("c", "المناعة المكتسبة: متخصصة ولها ذاكرة", 0.3f),
-                mark("d", "الخلايا B تنتج الأجسام المضادة", 0.4f)
-            )
-        )
-        assertEquals(listOf("المناعة الفطرية", "المناعة المكتسبة"), m.branches.map { it.label })
-        assertEquals("خط الدفاع الأول", m.branches[0].sub)
+    fun nothingIsAutomatic() {
+        assertTrue(build(MapEdits()).branches.isEmpty())
+    }
+
+    @Test
+    fun placeBranchesPointsAndKeepFullText() {
+        var e = MindMap.place(MapEdits(), items, listOf("a#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("c#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("b#0"), MapTarget("a#0", null))
+        val m = build(e)
+        assertEquals(listOf("a#0", "c#0"), m.branches.map { it.key })
+        // النص كاملًا، بلا اختصار
+        assertEquals("المناعة الفطرية: خط الدفاع الأول، وغير متخصصة", m.branches[0].text)
         assertEquals(listOf("b#0"), m.branches[0].children.map { it.key })
-        assertEquals(listOf("d#0"), m.branches[1].children.map { it.key })
     }
 
     @Test
-    fun withoutStructureGroupsByColor() {
-        val m = build(
-            listOf(
-                mark("a", "نص أول بلا عنوان", 0.1f, yellow),
-                mark("b", "نص ثانٍ بلا عنوان", 0.2f, green),
-                mark("c", "نص ثالث", 0.3f, yellow)
-            )
-        )
-        assertEquals(2, m.branches.size)
-        assertEquals(listOf("a#0", "c#0"), m.branches[0].children.map { it.key })
-        assertNull(m.branches[0].mark)
+    fun severalTextsKeepTheirOrderAndInsertBefore() {
+        var e = MindMap.place(MapEdits(), items, listOf("c#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("d#0", "e#0"), MapTarget("c#0", null))
+        // b قبل e بالضبط
+        e = MindMap.place(e, items, listOf("b#0"), MapTarget("c#0", "e#0"))
+        assertEquals(listOf("d#0", "b#0", "e#0"), build(e).branches[0].children.map { it.key })
     }
 
     @Test
-    fun userEditsOverrideDraftAndBlankShowsOnlyChosen() {
-        val marks = listOf(
-            mark("a", "فرع أول: شرح", 0.1f), mark("b", "نقطة", 0.2f), mark("c", "فرع ثانٍ: شرح", 0.3f), mark("d", "نقطة ثانية", 0.4f)
-        )
-        // نقل d إلى الفرع الأول
-        val moved = build(marks, MapEdits(nodes = mapOf("d#0" to MapNodeEdit(MapRole.POINT, "a#0"))))
-        assertEquals(listOf("b#0", "d#0"), moved.branches[0].children.map { it.key })
-        assertTrue(moved.branches[1].children.isEmpty())
-        assertTrue(!MindMap.find(moved, "d#0")!!.auto)
-
-        // «ابدأ من فارغ»: يظهر فقط ما اختاره المستخدم
-        val blank = build(marks, MapEdits(blank = true, nodes = mapOf("c#0" to MapNodeEdit(MapRole.BRANCH), "b#0" to MapNodeEdit(MapRole.POINT, "c#0"))))
-        assertEquals(listOf("c#0"), blank.branches.map { it.key })
-        assertEquals(listOf("b#0"), blank.branches[0].children.map { it.key })
-
-        // إخفاء
-        val hidden = build(marks, MapEdits(nodes = mapOf("b#0" to MapNodeEdit(MapRole.HIDDEN))))
-        assertNull(MindMap.find(hidden, "b#0"))
+    fun moveUpDownAndSubPoint() {
+        var e = MindMap.place(MapEdits(), items, listOf("c#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("d#0", "e#0"), MapTarget("c#0", null))
+        e = MindMap.move(e, items, "e#0", -1)
+        assertEquals(listOf("e#0", "d#0"), build(e).branches[0].children.map { it.key })
+        e = MindMap.place(e, items, listOf("b#0"), MapTarget("d#0", null))
+        assertEquals(listOf("b#0"), MindMap.find(build(e), "d#0")!!.children.map { it.key })
     }
 
     @Test
-    fun pointUnderPointIsThirdLevel() {
-        val marks = listOf(mark("a", "فرع أول: شرح", 0.1f), mark("b", "نقطة", 0.2f), mark("c", "تفصيل", 0.3f))
-        val m = build(marks, MapEdits(nodes = mapOf("c#0" to MapNodeEdit(MapRole.POINT, "b#0"))))
-        val b = MindMap.find(m, "b#0")
-        assertNotNull(b)
-        assertEquals(listOf("c#0"), b!!.children.map { it.key })
+    fun movingABranchTakesItsPointsAndRemoveTakesSubtree() {
+        var e = MindMap.place(MapEdits(), items, listOf("a#0", "c#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("d#0"), MapTarget("c#0", null))
+        // الفرع c يصبح نقطة تحت a، ونقطته d تنتقل معه
+        e = MindMap.place(e, items, listOf("c#0"), MapTarget("a#0", null))
+        val m = build(e)
+        assertEquals(listOf("a#0"), m.branches.map { it.key })
+        assertEquals(listOf("d#0"), MindMap.find(m, "c#0")!!.children.map { it.key })
+        val (after, n) = MindMap.remove(e, items, "c#0")
+        assertEquals(2, n)
+        assertNull(MindMap.find(build(after), "d#0"))
     }
 
     @Test
-    fun shortLabelRules() {
-        assertEquals("المناعة الفطرية", MindMap.shortLabel("المناعة الفطرية: خط الدفاع الأول", emptyList()).first)
-        val long = MindMap.shortLabel("الخلايا البلعمية تبتلع الميكروبات وتهضمها ثم تعرض أجزاءها على سطحها", emptyList())
-        assertEquals("الخلايا البلعمية تبتلع الميكروبات وتهضمها ثم…", long.first)
-        val emph = MindMap.shortLabel("تجعل الذاكرة المناعية الاستجابة أسرع", listOf("الذاكرة المناعية"))
-        assertEquals("الذاكرة المناعية", emph.first)
-        assertTrue(emph.third)
+    fun orphanPointBecomesBranchWhenParentHighlightIsDeleted() {
+        var e = MindMap.place(MapEdits(), items, listOf("a#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("b#0"), MapTarget("a#0", null))
+        val without = MindMap.build("T", marks.filter { it.id != "a" }, e)
+        assertEquals(listOf("b#0"), without.branches.map { it.key })
     }
 
     @Test
-    fun mergeMovesAssignmentsToNewMark() {
-        val e = MapEdits(nodes = mapOf("x#0" to MapNodeEdit(MapRole.POINT, "a#0"), "a#0" to MapNodeEdit(MapRole.BRANCH)), labels = mapOf("x#0" to "اسم"))
+    fun mergeMovesPlacementToNewMark() {
+        val e = MapEdits(nodes = mapOf("x#0" to MapNodeEdit(MapRole.POINT, "a#0", 1.0), "a#0" to MapNodeEdit(MapRole.BRANCH, null, 0.0)))
         val m = MindMap.migrate(e, listOf("x", "y"), "z")
-        assertEquals(MapNodeEdit(MapRole.POINT, "a#0"), m.nodes["z#0"])
-        assertEquals("اسم", m.labels["z#0"])
+        assertEquals(MapNodeEdit(MapRole.POINT, "a#0", 1.0), m.nodes["z#0"])
         assertNull(m.nodes["x#0"])
     }
 }

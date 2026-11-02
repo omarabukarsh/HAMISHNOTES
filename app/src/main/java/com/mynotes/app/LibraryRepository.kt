@@ -793,13 +793,13 @@ class LibraryRepository(context: Context) {
                 for (k in n.keys()) {
                     val v = n.getJSONObject(k)
                     val role = runCatching { MapRole.valueOf(v.getString("role")) }.getOrNull() ?: continue
-                    nodes[k] = MapNodeEdit(role, v.optString("parent").takeIf { it.isNotEmpty() })
+                    if (role == MapRole.HIDDEN) continue
+                    val pos = if (v.has("pos")) v.optDouble("pos") else null
+                    nodes[k] = MapNodeEdit(role, v.optString("parent").takeIf { it.isNotEmpty() }, pos)
                 }
             }
-            val labels = LinkedHashMap<String, String>()
-            o.optJSONObject("labels")?.let { l -> for (k in l.keys()) labels[k] = l.getString(k) }
             val collapsed = o.optJSONArray("collapsed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-            MapEdits(nodes, labels, collapsed, o.optBoolean("started"), o.optBoolean("blank"))
+            MapEdits(nodes, collapsed)
         } catch (e: Throwable) {
             MapEdits()
         }
@@ -808,13 +808,13 @@ class LibraryRepository(context: Context) {
     private fun mapJson(m: MapEdits): JSONObject {
         val nodes = JSONObject()
         m.nodes.forEach { (k, v) ->
-            nodes.put(k, JSONObject().put("role", v.role.name).apply { v.parent?.let { put("parent", it) } })
+            nodes.put(k, JSONObject().put("role", v.role.name).apply {
+                v.parent?.let { put("parent", it) }
+                v.pos?.let { put("pos", it) }
+            })
         }
-        val labels = JSONObject()
-        m.labels.forEach { (k, v) -> labels.put(k, v) }
-        return JSONObject().put("nodes", nodes).put("labels", labels)
+        return JSONObject().put("nodes", nodes)
             .put("collapsed", JSONArray().apply { m.collapsed.forEach { put(it) } })
-            .put("started", m.started).put("blank", m.blank)
     }
 
     /** يحفظ صورة جاهزة (مثل الخريطة الذهنية) لتوضع على صفحة. خارج الخيط الرئيسي. */

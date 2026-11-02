@@ -1,57 +1,47 @@
 package com.hamishnotes.app
 
-import androidx.compose.ui.graphics.Color
-
-/** دور نص من التمييز في الخريطة الذهنية. */
+/** دور نص من التمييز في الخريطة الذهنية (HIDDEN بقي لقراءة بيانات قديمة فقط). */
 enum class MapRole { BRANCH, POINT, HIDDEN }
 
-/** ما اختاره المستخدم لنص: فرع، أو نقطة تحت parent (فرع أو نقطة)، أو مخفي. */
-data class MapNodeEdit(val role: MapRole, val parent: String? = null)
+/**
+ * مكان نص في الخريطة: فرع (parent = null) أو نقطة تحت parent (فرع أو نقطة).
+ * pos = ترتيبه بين إخوته (الأصغر أولًا).
+ */
+data class MapNodeEdit(val role: MapRole, val parent: String? = null, val pos: Double? = null)
 
 /**
- * تعديلات المستخدم على الخريطة، فوق المسودة التلقائية. المفاتيح «معرّف التمييز#رقم الجزء»
- * (مربوطة بالتمييز نفسه، فلا تتأثر بوضع «مرتّب» أو «كما التُقط» ولا بتعديلات الملخص).
- *  started  أُغلق شريط «مسودة جاهزة»
- *  blank    «ابدأ من فارغ»: لا مسودة، يظهر فقط ما اختاره المستخدم
+ * الخريطة كما وضعها المستخدم. لا شيء تلقائي: ما ليس هنا لا يظهر.
+ * المفاتيح «معرّف التمييز#رقم الجزء»: مربوطة بالتمييز نفسه، فلا تتأثر بوضع «مرتّب» أو «كما التُقط».
  */
 data class MapEdits(
     val nodes: Map<String, MapNodeEdit> = emptyMap(),
-    val labels: Map<String, String> = emptyMap(),
-    val collapsed: Set<String> = emptySet(),
-    val started: Boolean = false,
-    val blank: Boolean = false
+    val collapsed: Set<String> = emptySet()
 ) {
-    fun isEmpty(): Boolean = nodes.isEmpty() && labels.isEmpty() && collapsed.isEmpty() && !started && !blank
+    fun isEmpty(): Boolean = nodes.isEmpty() && collapsed.isEmpty()
 }
 
-/** عقدة في الخريطة كما تُرسم. */
+/** عقدة في الخريطة كما تُرسم: النص كاملًا كما التُقط. */
 class MapNode(
     val key: String,
-    val label: String,
-    val sub: String?,
-    val color: Color,
-    val star: Boolean,
-    val mark: TextMark?,
-    /** وضعها التطبيق (لا المستخدم). */
-    val auto: Boolean,
+    val text: String,
+    val mark: TextMark,
     val collapsed: Boolean,
     val children: List<MapNode>
 ) {
-    /** عدد كل النقاط تحتها (للفرع المطوي). */
+    /** عدد كل النقاط تحتها (للعقدة المطوية). */
     fun count(): Int = children.size + children.sumOf { it.count() }
 }
 
-class MindMapModel(val title: String, val total: Int, val branches: List<MapNode>)
+class MindMapModel(val title: String, val branches: List<MapNode>) {
+    val total: Int get() = branches.size + branches.sumOf { it.count() }
+}
+
+/** أين يوضع النص: تحت parent (null = المركز، أي فرع جديد)، قبل before (null = في الآخر). */
+data class MapTarget(val parent: String?, val before: String?)
 
 object MindMap {
     /** نص واحد من التمييز (جزء من «كما التُقط»). */
-    class Item(
-        val key: String,
-        val text: String,
-        val emphasis: List<String>,
-        val heading: Boolean,
-        val mark: TextMark
-    )
+    class Item(val key: String, val text: String, val mark: TextMark)
 
     /** مفتاح العقدة من مفتاح جزء «كما التُقط» (r:معرّف#رقم)، أو null لما ليس جزءًا مباشرًا. */
     fun nodeKey(blockKey: String): String? = if (blockKey.startsWith("r:")) blockKey.removePrefix("r:") else null
@@ -60,189 +50,142 @@ object MindMap {
         Summary.build(marks, tidy = false).mapNotNull { b ->
             val k = nodeKey(b.key) ?: return@mapNotNull null
             val m = b.marks.firstOrNull() ?: return@mapNotNull null
-            when (b) {
-                is SHeading -> Item(k, b.text, emptyList(), true, m)
-                is SPara -> Item(k, b.text, b.emphasis, false, m)
-                is STable -> Item(k, b.rows.firstOrNull()?.filter { it.isNotBlank() }?.joinToString(" · ") ?: "", emptyList(), false, m)
+            val text = when (b) {
+                is SHeading -> b.text
+                is SPara -> b.text
+                is STable -> b.rows.joinToString("\n") { r -> r.filter { it.isNotBlank() }.joinToString(" · ") }
             }
-        }.filter { it.text.isNotBlank() }
-
-    // ---------------------------------------------------------------- الأسماء القصيرة
-
-    private const val SHORT_WORDS = 6
-
-    private fun words(s: String) = s.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-
-    /** أول n كلمات، دون قطع كلمة. */
-    private fun firstWords(s: String, n: Int): String {
-        val w = words(s)
-        return if (w.size <= n) s.trim() else w.take(n).joinToString(" ") + "…"
-    }
-
-    /** موضع «:» إن كان ما قبلها اسمًا قصيرًا. */
-    private fun colonAt(text: String): Int {
-        val i = text.indexOfFirst { it == ':' || it == '：' }
-        if (i < 2) return -1
-        val before = text.substring(0, i)
-        return if (words(before).size in 1..5 && i < text.length - 1) i else -1
-    }
-
-    /** الاسم القصير والسطر الصغير تحته، وهل هو مهم (★). */
-    fun shortLabel(text: String, emphasis: List<String>): Triple<String, String?, Boolean> {
-        val t = text.replace('\n', ' ').trim()
-        val emph = emphasis.firstOrNull { it.isNotBlank() && it.trim().length < t.length - 2 }
-        val wholeStar = emphasis.any { it.trim() == t }
-        // قاعدة 3: الجزء المظلّل مرتين يصبح الاسم
-        if (emph != null) return Triple(firstWords(emph, SHORT_WORDS + 2), null, true)
-        // قاعدة 1: ما قبل «:» هو الاسم
-        val c = colonAt(t)
-        if (c > 0) {
-            val sub = t.substring(c + 1).trim().takeIf { it.isNotEmpty() }?.let { firstWords(it, 7) }
-            return Triple(t.substring(0, c).trim(), sub, wholeStar)
+            if (text.isBlank()) null else Item(k, text.trim(), m)
         }
-        // قاعدة 2: أول 6 كلمات تقريبًا
-        return Triple(firstWords(t, SHORT_WORDS), null, wholeStar)
-    }
-
-    // ---------------------------------------------------------------- المسودة التلقائية
-
-    private fun colorKey(c: Color) = "color:${Summary.argbOf(c)}"
 
     /**
-     * المسودة: العناوين فروع؛ وإن لم توجد فالنصوص من نوع «اسم: شرح»؛ وإن لم توجد فالألوان؛ وإلا الصفحات.
-     * synthetic = فروع ليست نصوصًا (لون أو صفحة) مع أسمائها.
+     * الأماكن الفعلية بعد تصحيح ما انكسر: نقطة فقد أبوها (حُذف تمييزه) تصبح فرعًا،
+     * وما تحت المستوى الثالث يُرفع إليه. يعيد (الأب، الترتيب) لكل نص ظاهر.
      */
-    private fun auto(items: List<Item>, labelOf: (Color) -> String): Pair<Map<String, MapNodeEdit>, Map<String, Pair<String, Color>>> {
-        val roles = LinkedHashMap<String, MapNodeEdit>()
-        val synthetic = LinkedHashMap<String, Pair<String, Color>>()
-        fun byOrder(isBranch: (Item) -> Boolean) {
-            val firstBranch = items.firstOrNull(isBranch)?.key
-            var last: String? = null
-            for (it in items) {
-                if (isBranch(it)) {
-                    roles[it.key] = MapNodeEdit(MapRole.BRANCH)
-                    last = it.key
-                } else {
-                    roles[it.key] = MapNodeEdit(MapRole.POINT, last ?: firstBranch)
+    private fun resolve(edits: MapEdits, items: List<Item>): Map<String, Pair<String?, Double>> {
+        val index = items.withIndex().associate { it.value.key to it.index }
+        val raw = edits.nodes.filter { (k, v) -> k in index && v.role != MapRole.HIDDEN }
+        val out = LinkedHashMap<String, Pair<String?, Double>>()
+        for ((k, v) in raw) {
+            val pos = v.pos ?: index.getValue(k).toDouble()
+            val p = if (v.role == MapRole.BRANCH) null else v.parent?.takeIf { it in raw && it != k }
+            out[k] = p to pos
+        }
+        // حلقات (أ تحت ب وب تحت أ): أولها يصبح فرعًا
+        for (k in out.keys.toList()) {
+            val seen = HashSet<String>()
+            var cur: String? = k
+            while (cur != null) {
+                if (!seen.add(cur)) {
+                    out[cur] = null to out.getValue(cur).second
+                    break
                 }
+                cur = out[cur]?.first
             }
         }
-        when {
-            items.any { it.heading } -> byOrder { it.heading }
-            items.count { colonAt(it.text) > 0 } >= 2 -> byOrder { colonAt(it.text) > 0 }
-            items.map { Summary.argbOf(it.mark.color) }.distinct().size >= 2 -> {
-                for (it in items) {
-                    val k = colorKey(it.mark.color)
-                    synthetic.putIfAbsent(k, labelOf(it.mark.color) to it.mark.color)
-                    roles[it.key] = MapNodeEdit(MapRole.POINT, k)
-                }
-            }
-            else -> {
-                for (it in items) {
-                    val k = "page:${it.mark.page}"
-                    synthetic.putIfAbsent(k, L("صفحة ${it.mark.page + 1}", "Page ${it.mark.page + 1}") to it.mark.color)
-                    roles[it.key] = MapNodeEdit(MapRole.POINT, k)
-                }
+        // ثلاثة مستويات فقط: فرع ← نقطة ← نقطة فرعية
+        fun depth(k: String): Int {
+            var d = 0
+            var cur = out[k]?.first
+            while (cur != null) { d++; cur = out[cur]?.first }
+            return d
+        }
+        for (k in out.keys.toList()) {
+            while (depth(k) > 2) {
+                val p = out.getValue(k).first ?: break
+                out[k] = out[p]?.first to out.getValue(k).second
             }
         }
-        return roles to synthetic
+        return out
     }
 
-    /**
-     * الخريطة كما تُعرض: المسودة (إلا في «ابدأ من فارغ») ثم اختيارات المستخدم فوقها.
-     * byColor = «حسب اللون فقط»: كل لون فرع، دون اختيارات المستخدم.
-     */
-    fun build(
-        title: String,
-        marks: List<TextMark>,
-        edits: MapEdits,
-        byColor: Boolean,
-        labelOf: (Color) -> String
-    ): MindMapModel {
+    fun build(title: String, marks: List<TextMark>, edits: MapEdits, exclude: Set<String> = emptySet()): MindMapModel {
         val items = items(marks)
         val byKey = items.associateBy { it.key }
-        val roles = LinkedHashMap<String, MapNodeEdit>()
-        val synthetic = LinkedHashMap<String, Pair<String, Color>>()
-        if (byColor) {
-            for (it in items) {
-                val k = colorKey(it.mark.color)
-                synthetic.putIfAbsent(k, labelOf(it.mark.color) to it.mark.color)
-                roles[it.key] = MapNodeEdit(MapRole.POINT, k)
-            }
-        } else {
-            if (!edits.blank) {
-                val (r, syn) = auto(items, labelOf)
-                roles.putAll(r)
-                synthetic.putAll(syn)
-            }
-            for ((k, e) in edits.nodes) if (k in byKey) roles[k] = e
-        }
-
-        // الأب الصحيح: موجود وظاهر، وإلا أقرب فرع قبل النص
-        fun isBranch(k: String) = k in synthetic || roles[k]?.role == MapRole.BRANCH
-        fun nearestBranchBefore(k: String): String? {
-            val i = items.indexOfFirst { it.key == k }
-            for (j in i - 1 downTo 0) if (roles[items[j].key]?.role == MapRole.BRANCH) return items[j].key
-            return items.firstOrNull { roles[it.key]?.role == MapRole.BRANCH }?.key ?: synthetic.keys.firstOrNull()
-        }
-        val parentOf = HashMap<String, String>()
-        for (it in items) {
-            val e = roles[it.key] ?: continue
-            if (e.role != MapRole.POINT) continue
-            var p = e.parent
-            val pr = p?.let { roles[it] }
-            val ok = p != null && (isBranch(p) || (pr?.role == MapRole.POINT && pr.parent != null && isBranch(pr.parent)))
-            if (!ok) p = nearestBranchBefore(it.key)
-            if (p != null && p != it.key) parentOf[it.key] = p
-        }
-        // نقطة تحت نقطة أصبحت أبعد من مستويين: تُرفع إلى فرعها
-        for ((k, p) in parentOf.toMap()) {
-            if (!isBranch(p)) {
-                val gp = parentOf[p]
-                if (gp == null || !isBranch(gp)) {
-                    val b = nearestBranchBefore(k)
-                    if (b != null) parentOf[k] = b else parentOf.remove(k)
+        val placed = resolve(edits, items)
+        // ما يُنقل الآن يختفي من مكانه القديم مع ما تحته
+        val hidden = HashSet<String>()
+        if (exclude.isNotEmpty()) {
+            for (k in placed.keys) {
+                var cur: String? = k
+                while (cur != null) {
+                    if (cur in exclude) { hidden.add(k); break }
+                    cur = placed[cur]?.first
                 }
             }
         }
-
-        fun nodeFor(k: String, depth: Int): MapNode {
-            val syn = synthetic[k]
-            val kids = if (depth >= 2) emptyList() else items.filter { parentOf[it.key] == k }.map { nodeFor(it.key, depth + 1) }
-            if (syn != null) {
-                return MapNode(k, edits.labels[k] ?: syn.first, null, syn.second, false, null, true, k in edits.collapsed, kids)
-            }
-            val it = byKey.getValue(k)
-            val (lbl, sub, star) = shortLabel(it.text, it.emphasis)
-            val custom = edits.labels[k]
-            return MapNode(
-                k, custom ?: lbl, if (custom != null) null else sub, it.mark.color,
-                star || it.mark.level >= 2, it.mark, !byColor && k !in edits.nodes, k in edits.collapsed, kids
-            )
-        }
-        val branchKeys = items.filter { roles[it.key]?.role == MapRole.BRANCH }.map { it.key }
-        // ترتيب الفروع: ترتيب أول ظهور في المستند (الألوان والصفحات بترتيب ظهورها)
-        val ordered = (synthetic.keys + branchKeys).distinct().sortedBy { k ->
-            if (k in synthetic) items.indexOfFirst { parentOf[it.key] == k } else items.indexOfFirst { it.key == k }
-        }
-        val branches = ordered.map { nodeFor(it, 0) }.filter { it.mark != null || it.children.isNotEmpty() }
-        return MindMapModel(title, items.size, branches)
-    }
-
-    /** الفروع الحالية (لقائمة «نقطة في فرع») مع الفرع الأقرب قبل key أولًا. */
-    fun branchChoices(model: MindMapModel, items: List<Item>, key: String?): List<MapNode> {
-        val list = model.branches
-        if (key == null) return list
-        val idx = items.indexOfFirst { it.key == key }
-        val before = list.filter { b -> b.mark != null && items.indexOfFirst { it.key == b.key } in 0 until idx }
-        val nearest = before.maxByOrNull { b -> items.indexOfFirst { it.key == b.key } }
-        return if (nearest == null) list else listOf(nearest) + (list - nearest)
+        val visible = placed.filterKeys { it !in hidden }
+        fun childrenOf(parent: String?): List<String> =
+            visible.filter { it.value.first == parent }.entries.sortedBy { it.value.second }.map { it.key }
+        fun node(k: String): MapNode =
+            MapNode(k, byKey.getValue(k).text, byKey.getValue(k).mark, k in edits.collapsed, childrenOf(k).map { node(it) })
+        return MindMapModel(title, childrenOf(null).map { node(it) })
     }
 
     /** يجد العقدة بمفتاحها في الشجرة. */
     fun find(model: MindMapModel, key: String): MapNode? {
         fun walk(n: MapNode): MapNode? = if (n.key == key) n else n.children.firstNotNullOfOrNull { walk(it) }
         return model.branches.firstNotNullOfOrNull { walk(it) }
+    }
+
+    /** الأب والإخوة (بالترتيب) لعقدة ظاهرة. */
+    fun siblingsOf(model: MindMapModel, key: String): Pair<String?, List<MapNode>>? {
+        if (model.branches.any { it.key == key }) return null to model.branches
+        fun walk(n: MapNode): Pair<String?, List<MapNode>>? =
+            if (n.children.any { it.key == key }) n.key to n.children else n.children.firstNotNullOfOrNull { walk(it) }
+        return model.branches.firstNotNullOfOrNull { walk(it) }
+    }
+
+    /** يضع النصوص (بترتيبها) في المكان المختار. ما تحتها ينتقل معها. */
+    fun place(edits: MapEdits, items: List<Item>, keys: List<String>, target: MapTarget): MapEdits {
+        if (keys.isEmpty()) return edits
+        val placed = resolve(edits, items)
+        val moving = keys.toSet()
+        // الإخوة في المكان الجديد، بلا النصوص المنقولة
+        val sibs = placed.filter { it.value.first == target.parent && it.key !in moving }.entries.sortedBy { it.value.second }
+        val i = target.before?.let { b -> sibs.indexOfFirst { it.key == b } }?.takeIf { it >= 0 } ?: sibs.size
+        val lo = if (i > 0) sibs[i - 1].value.second else (if (sibs.isNotEmpty()) sibs[0].value.second - 1.0 else 0.0)
+        val hi = if (i < sibs.size) sibs[i].value.second else lo + keys.size + 1.0
+        val step = (hi - lo) / (keys.size + 1)
+        val role = if (target.parent == null) MapRole.BRANCH else MapRole.POINT
+        // الأماكن الحالية بقيمها الفعلية (حتى تبقى ثابتة لما كُتب قبل وجود الترتيب)
+        val nodes = LinkedHashMap<String, MapNodeEdit>()
+        for ((k, v) in placed) nodes[k] = MapNodeEdit(if (v.first == null) MapRole.BRANCH else MapRole.POINT, v.first, v.second)
+        keys.forEachIndexed { j, k -> nodes[k] = MapNodeEdit(role, target.parent, lo + step * (j + 1)) }
+        return edits.copy(nodes = nodes)
+    }
+
+    /** يحرك العقدة خطوة بين إخوتها (-1 لأعلى، +1 لأسفل). */
+    fun move(edits: MapEdits, items: List<Item>, key: String, delta: Int): MapEdits {
+        val placed = resolve(edits, items)
+        val parent = placed[key]?.first
+        val sibs = placed.filter { it.value.first == parent }.entries.sortedBy { it.value.second }.map { it.key }
+        val i = sibs.indexOf(key)
+        val j = i + delta
+        if (i < 0 || j < 0 || j >= sibs.size) return edits
+        val other = sibs[j]
+        val nodes = LinkedHashMap<String, MapNodeEdit>()
+        for ((k, v) in placed) nodes[k] = MapNodeEdit(if (v.first == null) MapRole.BRANCH else MapRole.POINT, v.first, v.second)
+        val a = nodes.getValue(key)
+        val b = nodes.getValue(other)
+        nodes[key] = a.copy(pos = b.pos)
+        nodes[other] = b.copy(pos = a.pos)
+        return edits.copy(nodes = nodes)
+    }
+
+    /** يزيل النص وكل ما تحته من الخريطة (يبقى في الملخص). يعيد عدد ما أُزيل. */
+    fun remove(edits: MapEdits, items: List<Item>, key: String): Pair<MapEdits, Int> {
+        val placed = resolve(edits, items)
+        val gone = HashSet<String>()
+        for (k in placed.keys) {
+            var cur: String? = k
+            while (cur != null) {
+                if (cur == key) { gone.add(k); break }
+                cur = placed[cur]?.first
+            }
+        }
+        gone.add(key)
+        return edits.copy(nodes = edits.nodes - gone, collapsed = edits.collapsed - gone) to gone.size
     }
 
     /** دمج التمييزات: ما كان للتمييزات القديمة ينتقل إلى التمييز الجديد. */
@@ -259,8 +202,12 @@ object MindMap {
             if (nk !in nodes) nodes[nk] = nv
         }
         nodes.entries.removeAll { (k, v) -> v.parent == k }
-        val labels = LinkedHashMap<String, String>()
-        for ((k, v) in e.labels) labels.putIfAbsent(conv(k), v)
-        return e.copy(nodes = nodes, labels = labels, collapsed = e.collapsed.map { conv(it) }.toSet())
+        return e.copy(nodes = nodes, collapsed = e.collapsed.map { conv(it) }.toSet())
+    }
+
+    /** وصف قصير لاسم عقدة داخل جملة شرح (لا يغيّر نصها في الخريطة). */
+    fun quote(text: String, words: Int = 5): String {
+        val w = text.trim().split(Regex("\\s+"))
+        return if (w.size <= words) text.trim() else w.take(words).joinToString(" ") + "…"
     }
 }

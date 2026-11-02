@@ -756,7 +756,7 @@ class LibraryRepository(context: Context) {
                     )
                 }
             } ?: emptyList()
-            SummaryEdits(order, kinds, tables)
+            SummaryEdits(order, kinds, tables, parseMap(o.optJSONObject("map")))
         } catch (e: Throwable) {
             SummaryEdits()
         }
@@ -782,6 +782,50 @@ class LibraryRepository(context: Context) {
             .put("order", JSONArray().apply { e.order.forEach { put(it) } })
             .put("kinds", kinds)
             .put("tables", tables)
+            .apply { if (!e.map.isEmpty()) put("map", mapJson(e.map)) }
+    }
+
+    private fun parseMap(o: JSONObject?): MapEdits {
+        if (o == null) return MapEdits()
+        return try {
+            val nodes = LinkedHashMap<String, MapNodeEdit>()
+            o.optJSONObject("nodes")?.let { n ->
+                for (k in n.keys()) {
+                    val v = n.getJSONObject(k)
+                    val role = runCatching { MapRole.valueOf(v.getString("role")) }.getOrNull() ?: continue
+                    nodes[k] = MapNodeEdit(role, v.optString("parent").takeIf { it.isNotEmpty() })
+                }
+            }
+            val labels = LinkedHashMap<String, String>()
+            o.optJSONObject("labels")?.let { l -> for (k in l.keys()) labels[k] = l.getString(k) }
+            val collapsed = o.optJSONArray("collapsed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+            MapEdits(nodes, labels, collapsed, o.optBoolean("started"), o.optBoolean("blank"))
+        } catch (e: Throwable) {
+            MapEdits()
+        }
+    }
+
+    private fun mapJson(m: MapEdits): JSONObject {
+        val nodes = JSONObject()
+        m.nodes.forEach { (k, v) ->
+            nodes.put(k, JSONObject().put("role", v.role.name).apply { v.parent?.let { put("parent", it) } })
+        }
+        val labels = JSONObject()
+        m.labels.forEach { (k, v) -> labels.put(k, v) }
+        return JSONObject().put("nodes", nodes).put("labels", labels)
+            .put("collapsed", JSONArray().apply { m.collapsed.forEach { put(it) } })
+            .put("started", m.started).put("blank", m.blank)
+    }
+
+    /** يحفظ صورة جاهزة (مثل الخريطة الذهنية) لتوضع على صفحة. خارج الخيط الرئيسي. */
+    fun saveImage(docId: String, bmp: Bitmap): String {
+        val dir = File(imgRoot, docId).apply { mkdirs() }
+        // حد أقصى معقول للحجم كما في الصور المستوردة
+        val k = minOf(1f, 2400f / maxOf(bmp.width, bmp.height))
+        val scaled = if (k < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true) else bmp
+        val name = UUID.randomUUID().toString() + ".png"
+        File(dir, name).outputStream().use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return name
     }
 
     /** ينسخ الصورة إلى مساحة التطبيق بعد تصغيرها وتصحيح اتجاهها. خارج الخيط الرئيسي. */

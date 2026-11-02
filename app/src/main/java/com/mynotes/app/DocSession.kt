@@ -1055,7 +1055,15 @@ class DocSession(entry: DocEntry) {
         // قد يكتمل هذا بعد قراءة الصفحة في الخلفية أثناء حركة أخرى للمستخدم؛ لا نكسر لقطتها
         val nested = snapshot != null
         if (!nested) beginEdit()
+        val oldIds = (marks[page] ?: emptyList()).map { it.id }.toSet()
+        val newIds = res.marks.map { it.id }.toSet()
         marks = marks + (page to res.marks)
+        // تمييزات دُمجت في تمييز جديد: مكانها في الخريطة الذهنية ينتقل إليه
+        val removed = (oldIds - newIds).toList()
+        val added = (newIds - oldIds).toList()
+        if (removed.isNotEmpty() && added.size == 1 && !summaryEdits.map.isEmpty()) {
+            summaryEdits = summaryEdits.copy(map = MindMap.migrate(summaryEdits.map, removed, added[0]))
+        }
         if (!nested) endEdit()
         res.message?.let { AppController.messages.tryEmit(it) }
     }
@@ -1266,7 +1274,61 @@ class DocSession(entry: DocEntry) {
         )
     }
 
-    fun resetSummaryEdits() = changeEdits { SummaryEdits() }
+    /** «استعادة التلقائي» للملخص لا تمسح الخريطة الذهنية. */
+    fun resetSummaryEdits() = changeEdits { SummaryEdits(map = it.map) }
+
+    // ---------- الخريطة الذهنية ----------
+
+    /** تغيير يُتراجع عنه (أدوار النصوص وأسماؤها). */
+    private fun changeMap(f: (MapEdits) -> MapEdits) = changeEdits { e -> e.copy(map = f(e.map)) }
+
+    /** تغيير في العرض فقط (طيّ، شريط المسودة): يُحفظ دون أن يدخل التراجع. */
+    private fun changeMapQuiet(f: (MapEdits) -> MapEdits) {
+        val next = summaryEdits.copy(map = f(summaryEdits.map))
+        if (next == summaryEdits) return
+        summaryEdits = next
+        persist()
+    }
+
+    fun mapMakeBranch(keys: List<String>) = changeMap { m ->
+        m.copy(nodes = m.nodes + keys.associateWith { MapNodeEdit(MapRole.BRANCH) }, started = true)
+    }
+
+    fun mapMakePoints(keys: List<String>, parent: String) = changeMap { m ->
+        m.copy(nodes = m.nodes + keys.filter { it != parent }.associateWith { MapNodeEdit(MapRole.POINT, parent) }, started = true)
+    }
+
+    /** الأول فرع، والباقي نقاط تحته. */
+    fun mapFirstBranch(keys: List<String>) {
+        val first = keys.firstOrNull() ?: return
+        changeMap { m ->
+            m.copy(
+                nodes = m.nodes + (first to MapNodeEdit(MapRole.BRANCH)) +
+                    keys.drop(1).associateWith { MapNodeEdit(MapRole.POINT, first) },
+                started = true
+            )
+        }
+    }
+
+    fun mapHide(keys: List<String>) = changeMap { m ->
+        m.copy(nodes = m.nodes + keys.associateWith { MapNodeEdit(MapRole.HIDDEN) }, started = true)
+    }
+
+    fun mapRename(key: String, label: String?) = changeMap { m ->
+        m.copy(labels = if (label.isNullOrBlank()) m.labels - key else m.labels + (key to label.trim().take(80)))
+    }
+
+    fun mapToggleCollapsed(key: String) = changeMapQuiet { m ->
+        m.copy(collapsed = if (key in m.collapsed) m.collapsed - key else m.collapsed + key)
+    }
+
+    fun mapSetCollapsed(keys: Set<String>) = changeMapQuiet { it.copy(collapsed = keys) }
+
+    /** شريط المسودة: «ابدأ التصحيح» أو «ابدأ من فارغ». */
+    fun mapStart(blank: Boolean) = if (blank) changeMap { it.copy(started = true, blank = true) } else changeMapQuiet { it.copy(started = true) }
+
+    /** يعيد الخريطة إلى المسودة التلقائية. */
+    fun mapReset() = changeMap { MapEdits(started = true) }
 
     // ---------- مربعات النص ----------
 

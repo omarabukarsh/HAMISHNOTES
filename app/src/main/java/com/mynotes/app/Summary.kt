@@ -56,8 +56,11 @@ data class TableGroup(
 data class SummaryEdits(
     val order: List<String> = emptyList(),
     val kinds: Map<String, String> = emptyMap(),
-    val tables: List<TableGroup> = emptyList()
+    val tables: List<TableGroup> = emptyList(),
+    /** الخريطة الذهنية (لا تؤثر على عرض الملخص). */
+    val map: MapEdits = MapEdits()
 ) {
+    /** تعديلات على الملخص نفسه (الخريطة لا تُحسب). */
     fun isEmpty(): Boolean = order.isEmpty() && kinds.isEmpty() && tables.isEmpty()
 }
 

@@ -924,6 +924,7 @@ private fun CenterNode(model: MindMapModel) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, selected: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
@@ -958,6 +959,7 @@ private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, s
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun PointNode(n: MapNode, col: Color, depth: Int, ghost: Boolean, selected: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)

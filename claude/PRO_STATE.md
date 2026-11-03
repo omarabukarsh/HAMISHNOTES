@@ -107,7 +107,13 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 
 ## 2026-11-03: blocking AI dialog REMOVED (user request)
 - AiBlockingDialog and AiOrganizer.blocking deleted; organizing shows progress only inside the summaries drawer (AI tab, with Stop). The app stays usable while the AI runs.
-- Pending, awaiting «نفّذ»: port regular-app FEATURES only (no Premium/sign-in/Supabase/package rename) and an optional internet topic-outline lookup (Wikipedia sections) to order headings.
+- 2026-11-03 («نفّذ»): ported regular-app FEATURES only from feature/premium-ui (c5e3eb1) — NOT COMPILED yet (Actions billing; this container cannot reach dl.google.com for a local build):
+  - cherry-picked: c14b4c3 ink delay, ce4cd76 tab drag-reorder, 579bceb/54f61fd stats redesign, 83be151 settings sidebar/stats/toolbar redesign WITHOUT Google sign-in (Account page replaced by «✦ الذكاء الاصطناعي» page with AiSettings; SignInScreen/GoogleAuth not ported; Pro launcher icon kept).
+  - post-rename commits applied as patches with com.hamishnotes.app → com.mynotes.app: f722a33 laser/shape corners, dd44141 save-to-device 0 bytes, 0115923/7e29ebe/c50c726 pen detection & pressure, 5751dac/12f98af manual mind map (MindMap.kt/MindMapUi.kt), c5e3eb1 handwriting reading (HandwritingWords.kt).
+  - NOT ported: Premium/paywall/3-doc limit, Play Billing/Integrity, Supabase, Google sign-in, account deletion, privacy/terms for accounts, package rename, target SDK 36 change, fonts revert pair, 90e9905 test removal (conflicted, tests only).
+  - Pro AI mind map renamed: MindMap.kt → AiMindMap.kt (object AiMap, AiMindMapDialog) because the regular app now owns MindMap/MindMapDialog. ai-eval.yml paths and pipeline.py _kt("AiMindMap.kt") updated.
+  - DocSession.ocrPage merged: handwriting reader path + Pro OcrStyle analysis (baseWords/baseShapes cache); ocrVersion = (versionOf*31+7)*4+hwLang (re-reads pages once); refreshMarkTexts and scheduleInkRead both kept.
+  - WebOutline.kt (new, OFF by default, Settings > AI): on explicit organize only, sends the topic name (file title cleaned / first PDF outline entry) to Wikipedia search+parse(sections); cached per doc in files/ai/web (failures not cached). AiStructure.parts(..., web) → pageHeadings.applyWeb: promotes a detected heading to level 1 if it matches a toclevel-1 section, adds short page lines that exactly match a section as headings; never adds text that is not on the page, never demotes. Empty map = old behaviour, so the eval mirror is unchanged. About privacy text updated.
 
 ## Pro UI
 - Templates + TemplatePicker, PagePanel (⋯), tab bar contrast, document settings, toolbar customization page, default toolbar + ✦ AI button, library multi-select, «manual edits» bar removed from summaries.

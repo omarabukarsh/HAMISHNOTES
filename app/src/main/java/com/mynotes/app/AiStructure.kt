@@ -219,7 +219,7 @@ OUTPUT:
     class Heading(val page: Int, val pos: Float, val text: String, val level: Int)
 
     /** عناوين الصفحة: أسطر خطها أكبر بوضوح من نص الصفحة، وأسطر قصيرة كلها بخط عريض (عناوين فرعية). */
-    private fun pageHeadings(s: DocSession, page: Int): List<Heading> {
+    private fun pageHeadings(s: DocSession, page: Int, web: Map<String, Int> = emptyMap()): List<Heading> {
         val ls = lines(s.ocr[page]?.words ?: emptyList())
         // عناوين من «قراءة الصفحة بالذكاء» (إن قُرئت): «# » عنوان و«## » عنوان فرعي
         val aiHeads = (AiPageReader.result(s, page) ?: "").lines().mapNotNull { l ->
@@ -246,7 +246,33 @@ OUTPUT:
             if (lineText(line).contains(" | ")) continue
             found.add(Heading(page, line.minOf { it.t }, lineText(line, cells = false).trim().trimEnd(':').trim(), lvl))
         }
+        if (web.isNotEmpty()) applyWeb(page, ls, found, web)
         return found.sortedBy { it.pos }
+    }
+
+    /**
+     * بنية الموضوع من الإنترنت (اختياري): عنوان في الصفحة يطابق عنوانًا رئيسيًا في المقالة يصبح رئيسيًا،
+     * وسطر قصير في الصفحة يطابق نصه عنوانًا في المقالة يصبح عنوانًا. لا يُضاف أي نص ليس في الصفحة،
+     * ولا يُخفَّض عنوان اكتُشف من شكل الصفحة.
+     */
+    private fun applyWeb(page: Int, ls: List<List<OcrWord>>, found: MutableList<Heading>, web: Map<String, Int>) {
+        val wn = web.entries.map { norm(it.key) to it.value }.filter { it.first.length >= 3 }
+        fun close(a: String, b: String) = a == b ||
+            (a.length >= 6 && b.length >= 6 && (a.contains(b) || b.contains(a)) && minOf(a.length, b.length) * 10 >= maxOf(a.length, b.length) * 6)
+        for (i in found.indices) {
+            val h = found[i]
+            val n = norm(h.text)
+            val wl = wn.firstOrNull { close(it.first, n) }?.second ?: continue
+            if (wl == 1 && h.level != 1) found[i] = Heading(h.page, h.pos, h.text, 1)
+        }
+        for (l in ls) {
+            val t = lineText(l, cells = false).trim().trimEnd(':').trim()
+            if (t.length !in 3..80 || lineText(l).contains(" | ") || t.endsWith(".")) continue
+            val n = norm(t)
+            if (found.any { norm(it.text) == n }) continue
+            val wl = wn.firstOrNull { it.first == n }?.second ?: continue
+            found.add(Heading(page, l.minOf { it.t }, t, if (wl <= 1) 1 else 2))
+        }
     }
 
     /** عناوين من شكل الأسطر: خط أكبر بوضوح (مستوى 1)، أو أكبر قليلًا أو سطر قصير عريض عند الهامش (مستوى 2). */
@@ -378,7 +404,7 @@ OUTPUT:
     }
 
     /** يقسم التظليلات إلى أجزاء حسب عناوين المحاضرة، والجداول تُبنى بالكود. */
-    fun parts(s: DocSession, marks: List<TextMark>, budget: Int): List<Part> {
+    fun parts(s: DocSession, marks: List<TextMark>, budget: Int, web: Map<String, Int> = emptyMap()): List<Part> {
         val cache = HashMap<Int, List<Heading>>()
         val outline = s.outlineEntries().sortedBy { it.page }
         /**
@@ -397,7 +423,7 @@ OUTPUT:
                 lo--
             }
             val before = (lo..m.page).flatMap { p ->
-                cache.getOrPut(p) { pageHeadings(s, p) }.filter { p < m.page || it.pos <= top + 0.002f }
+                cache.getOrPut(p) { pageHeadings(s, p, web) }.filter { p < m.page || it.pos <= top + 0.002f }
             }
             val main = before.lastOrNull { it.level == 1 }
             val sub = before.lastOrNull { it.level == 2 && (main == null || it.page > main.page || (it.page == main.page && it.pos > main.pos)) }

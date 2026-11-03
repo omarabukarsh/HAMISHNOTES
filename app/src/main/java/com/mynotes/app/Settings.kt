@@ -1810,6 +1810,16 @@ private fun AiSettings() {
             AiOrganizer.toggleSelfReview(!AiOrganizer.selfReview)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+        Text(L("الإنترنت لترتيب العناوين (اختياري)", "Internet for heading order (optional)"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+        Text(
+            L("عند الضغط على «رتّب الملخص» يُرسل اسم الموضوع فقط (عنوان الملف أو أول عنوان فيه) إلى ويكيبيديا لمعرفة عناوين الموضوع الرئيسية والفرعية. ملاحظاتك وتظليلك لا يُرسلان، ولا يُضاف إلى ملخصك أي نص من الإنترنت. النموذج نفسه يبقى على جهازك.",
+                "When you press “Organize summary”, only the topic name (file title or its first heading) is sent to Wikipedia to learn the topic's main and sub headings. Your notes and highlights are not sent, and no internet text is added to your summary. The model itself stays on your device."),
+            fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
+        )
+        AiToggle(L("استعن بالإنترنت لترتيب العناوين", "Use the internet to order headings"), WebOutline.enabled) {
+            WebOutline.toggle(!WebOutline.enabled)
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         Text(L("اختبار قراءة الصور", "Image reading test"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
         Text(
             L("قراءة صفحة التظليل بصورتها لم تُجرَّب على كل الأجهزة. هذا الاختبار يعطيها صورة صغيرة ويعرض ما قرأه النموذج، فتعرف هل يعمل على جهازك. إن فشل يُرتَّب الملخص من نص القراءة الضوئية.",

@@ -598,7 +598,19 @@ A: بسرعة ثابتة"""
                         if (ok) { visualPages++; m.copy(text = AiOrganizer.clean(txt)) } else m
                     }
                 }
-                val parts = AiStructure.parts(s, readMarks, budget)
+                // بنية الموضوع من الإنترنت (اختياري، الضغط الصريح فقط): لمعرفة العناوين الرئيسية والفرعية
+                val web = if (explicit && WebOutline.enabled) {
+                    stepText = L("جارٍ البحث عن بنية الموضوع في الإنترنت…", "Looking up the topic outline online…")
+                    try {
+                        val firstHead = s.outlineEntries().firstOrNull()?.title
+                        WebOutline.levels(docId, listOfNotNull(WebOutline.topicFrom(s.title), firstHead))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        emptyMap()
+                    }
+                } else emptyMap()
+                val parts = AiStructure.parts(s, readMarks, budget, web)
                 // سياق من الصفحات غير المظللة (نصها المحفوظ): للفهم فقط، قصير ليبقى الطلب سريعًا على الجهاز
                 run {
                     val hl = marks.map { it.page }.toSet()
@@ -709,6 +721,10 @@ A: بسرعة ثابتة"""
                 setProcessed(docId, if (append) processed(docId) + snapshot else snapshot)
                 if (autoCards) s.putAiCards(cards, replace = !append)
                 refreshPending(s)
+                if (explicit && WebOutline.enabled) AppController.messages.tryEmit(
+                    if (web.isNotEmpty()) L("استُعملت بنية الموضوع «${WebOutline.lastTopic ?: ""}» من ويكيبيديا لترتيب العناوين", "Used the outline of “${WebOutline.lastTopic ?: ""}” from Wikipedia to order headings")
+                    else L("لم تُوجد بنية للموضوع في الإنترنت (أو لا اتصال)؛ رُتّب من الملف وحده", "No online outline found (or no connection); organized from the file only")
+                )
                 if (explicit && visualPages > 0) AppController.messages.tryEmit(
                     L("قُرئ $visualPages تظليل من صورة الصفحة نفسها، والباقي من نص القراءة الضوئية", "$visualPages highlights were read from the page image; the rest from the OCR text")
                 )

@@ -98,7 +98,7 @@ fun privacyText(): String = L(
 
 • ملفاتك تبقى على جهازك: ملفات PDF والكتابة والتمييز والملخصات والتسجيلات الصوتية تُحفظ داخل التطبيق على جهازك فقط. لا يرسل «HAMISH PRO» ملفاتك أو ملاحظاتك إلى أي خادم، ولا يملك المطوّر أي خادم يجمع بياناتك.
 
-• الذكاء الاصطناعي: الذكاء الاصطناعي يعمل بالكامل على جهازك دون إنترنت ولا يرسل شيئًا إلى أي جهة. الإنترنت يُستعمل فقط لتنزيل النموذج مرة واحدة.
+• الذكاء الاصطناعي: الذكاء الاصطناعي يعمل بالكامل على جهازك دون إنترنت. الإنترنت يُستعمل لتنزيل النموذج مرة واحدة، وإن فعّلت بنفسك «استعن بالإنترنت لترتيب العناوين» يُرسل اسم موضوع المستند فقط (لا ملاحظاتك) إلى ويكيبيديا عند الضغط على «رتّب الملخص».
 
 • لا حسابات ولا إعلانات: لا يطلب التطبيق تسجيل الدخول، ولا يحتوي إعلانات، ولا يضيف المطوّر أي أدوات تحليلات أو تتبّع.
 
@@ -121,7 +121,7 @@ Last updated: October 2026
 
 • Your files stay on your device: PDFs, handwriting, highlights, summaries and audio recordings are stored inside the app on your device only. HAMISH PRO does not send your files or notes to any server, and the developer runs no server that collects your data.
 
-• AI: the AI runs entirely on your device, offline, and sends nothing to anyone. The internet is used only to download the model once.
+• AI: the AI runs entirely on your device, offline. The internet is used to download the model once and, only if you turn on “Use the internet to order headings”, to send the document’s topic name (not your notes) to Wikipedia when you press “Organize summary”.
 
 • No accounts or ads: the app needs no sign-in, contains no ads, and the developer adds no analytics or tracking tools.
 

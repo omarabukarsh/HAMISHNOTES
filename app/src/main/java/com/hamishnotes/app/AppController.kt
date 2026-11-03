@@ -84,6 +84,7 @@ object AppController {
         for (k in library.indices) if (library[k].folder == old) library[k] = library[k].copy(folder = n)
         if (libraryFolder == old) libraryFolder = n
         examDates.remove(old)?.let { examDates[n] = it; saveExamDates() }
+        CardDeck.onFolderRenamed(old, n)
         saveFolders()
         saveLibrary()
     }
@@ -93,6 +94,7 @@ object AppController {
         for (k in library.indices) if (library[k].folder == name) library[k] = library[k].copy(folder = "")
         if (libraryFolder == name) libraryFolder = null
         if (examDates.remove(name) != null) saveExamDates()
+        CardDeck.onFolderRenamed(name, "")
         saveFolders()
         saveLibrary()
     }
@@ -718,6 +720,7 @@ object AppController {
         PenPrefs.init(app)
         PenInput.init(app)
         UiPrefs.init(app)
+        CardDeck.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {
@@ -1402,6 +1405,22 @@ object AppController {
                 openDocument(e.id)
             } catch (t: Throwable) {
                 messages.tryEmit(L("تعذر إنشاء الملاحظة", "Could not create the note"))
+            }
+        }
+    }
+
+    /** خريطة ذهنية جديدة بلا ملف (تُحفظ كمستند في المكتبة، ويمكن وضعها في مادة). */
+    fun createMap(name: String, folder: String) {
+        if (!Premium.canAdd()) return
+        scope.launch {
+            try {
+                val e = withContext(Dispatchers.IO) { repo.createNote(name, "plain", 0xFFFFFFFF.toInt()) }
+                    .copy(isMap = true, isNote = false, folder = folder)
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+            } catch (t: Throwable) {
+                messages.tryEmit(L("تعذر إنشاء الخريطة", "Could not create the map"))
             }
         }
     }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -317,4 +318,206 @@ fun AddCardDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } }
     )
+}
+
+/** اختيار المادة: «بلا مادة» ثم مواد المكتبة. */
+@Composable
+fun SubjectChips(selected: String, onSelect: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        ChoiceChip(L("بلا مادة", "No subject"), selected.isEmpty()) { onSelect("") }
+        AppController.folders.toList().forEach { f -> ChoiceChip(f, selected == f) { onSelect(f) } }
+    }
+}
+
+/** بطاقة جديدة بلا ملف: العنوان والمحتوى والمادة، و«حفظ وإضافة أخرى». */
+@Composable
+fun NewLooseCardDialog(initialFolder: String, onDismiss: () -> Unit) {
+    var front by remember { mutableStateOf("") }
+    var back by remember { mutableStateOf("") }
+    var folder by remember { mutableStateOf(initialFolder) }
+    var added by remember { mutableStateOf(0) }
+    val ok = front.isNotBlank() && back.isNotBlank()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("بطاقة جديدة", "New card") + if (added > 0) L(" · أُضيفت $added", " · $added added") else "") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = front, onValueChange = { front = it },
+                    label = { Text(L("العنوان (الوجه)", "Title (front)")) }, modifier = Modifier.fillMaxWidth()
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = back, onValueChange = { back = it },
+                    label = { Text(L("المحتوى (الظهر)", "Content (back)")) }, modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp)
+                )
+                Text(L("المادة", "Subject"), fontSize = 13.sp, color = Palette.TextSecondary)
+                SubjectChips(folder) { folder = it }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(enabled = ok, onClick = {
+                    if (CardDeck.addLoose(front, back, folder)) {
+                        added++
+                        front = ""
+                        back = ""
+                    }
+                }) { Text(L("حفظ وإضافة أخرى", "Save & add another"), color = CardTeal) }
+                TextButton(enabled = ok, onClick = {
+                    if (CardDeck.addLoose(front, back, folder)) {
+                        AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
+                        onDismiss()
+                    }
+                }) { Text(L("حفظ", "Save"), fontWeight = FontWeight.Bold) }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(if (added > 0) L("تم", "Done") else L("إلغاء", "Cancel")) } }
+    )
+}
+
+/**
+ * مراجعة بطاقات عدة مصادر: folder = null لكل بطاقات التطبيق (حتى التي بلا ملف)،
+ * وإلا بطاقات هذه المادة فقط. كل بطاقة تُظهر مصدرها، والتعديل يُحفظ في مكانها الأصلي.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun DeckDialog(folder: String?, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var all by remember { mutableStateOf<List<DeckCard>?>(null) }
+    LaunchedEffect(folder, CardDeck.version) { all = CardDeck.collect(folder) }
+    // التصفية: null = الكل، "" = بلا مادة، وإلا اسم مادة (في «كل البطاقات» فقط)
+    var subject by remember { mutableStateOf<String?>(null) }
+    var hardOnly by remember { mutableStateOf(false) }
+    var shuffled by remember { mutableStateOf<List<String>?>(null) }
+    var flipped by remember { mutableStateOf(setOf<String>()) }
+    var adding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<DeckCard?>(null) }
+    val loaded = all ?: emptyList()
+    val base = loaded.filter { (subject == null || it.folder == subject) && (!hardOnly || it.starred) }
+    val deck = shuffled?.let { order -> order.mapNotNull { id -> base.firstOrNull { it.card.id == id } } + base.filter { it.card.id !in order } } ?: base
+    val pager = rememberPagerState(pageCount = { deck.size })
+    fun restart() {
+        flipped = emptySet()
+        scope.launch { pager.scrollToPage(0) }
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            Modifier.fillMaxWidth(0.86f).heightIn(min = 460.dp, max = 720.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = Palette.Background
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            (if (folder == null) L("كل البطاقات", "All cards") else L("بطاقات $folder", "$folder cards")) +
+                                (all?.let { " · ${it.size}" } ?: ""),
+                            fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.Navy
+                        )
+                        Text(
+                            if (folder == null) L("كل بطاقات التطبيق، حتى التي بلا ملف", "Every card in the app, including those without a file")
+                            else L("بطاقات مستندات هذه المادة وبطاقاتها بلا ملف فقط", "Only this subject’s documents and its cards without a file"),
+                            fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
+                        )
+                    }
+                    TextButton(onClick = { adding = true }) {
+                        PhIcon(R.drawable.ph_plus, Palette.Navy, 16.dp)
+                        Spacer(Modifier.width(4.dp))
+                        Text(L("بطاقة جديدة", "New card"), color = Palette.Navy, fontWeight = FontWeight.Bold)
+                    }
+                    if (deck.size > 1) {
+                        TextButton(onClick = { shuffled = deck.map { it.card.id }.shuffled(); restart() }) {
+                            Text(L("خلط", "Shuffle"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ChoiceChip(L("الكل ${loaded.size}", "All ${loaded.size}"), subject == null && !hardOnly) { subject = null; hardOnly = false; restart() }
+                    if (folder == null) {
+                        val subjects = loaded.map { it.folder }.filter { it.isNotEmpty() }.distinct()
+                        AppController.folders.toList().filter { it in subjects }.plus(subjects.filter { it !in AppController.folders }).forEach { f ->
+                            ChoiceChip("$f ${loaded.count { it.folder == f }}", subject == f) { subject = if (subject == f) null else f; restart() }
+                        }
+                        val none = loaded.count { it.folder.isEmpty() }
+                        if (none > 0) ChoiceChip(L("بلا مادة $none", "No subject $none"), subject == "") { subject = if (subject == "") null else ""; restart() }
+                    }
+                    ChoiceChip(L("الصعبة ★ ${loaded.count { it.starred }}", "Hard ★ ${loaded.count { it.starred }}"), hardOnly) { hardOnly = !hardOnly; restart() }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                when {
+                    all == null -> Box(Modifier.fillMaxWidth().heightIn(min = 200.dp), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(color = Palette.Navy)
+                    }
+                    deck.isEmpty() -> EmptyCards(
+                        if (hardOnly) L("لا توجد بطاقات مميزة بنجمة هنا.", "No starred cards here.")
+                        else L("لا توجد بطاقات بعد. اضغط «بطاقة جديدة»، أو اصنعها من الملخصات.", "No cards yet. Tap “New card”, or make them from your summaries.")
+                    )
+                    else -> {
+                        HorizontalPager(
+                            state = pager,
+                            pageSpacing = 16.dp,
+                            modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                        ) { i ->
+                            val dc = deck[i]
+                            val isFlipped = dc.card.id in flipped
+                            Box {
+                                FlipCard(dc.card, isFlipped) {
+                                    flipped = if (isFlipped) flipped - dc.card.id else flipped + dc.card.id
+                                }
+                                Text(
+                                    dc.source + if (dc.folder.isNotEmpty()) " · ${dc.folder}" else "",
+                                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                                    color = if (dc.docId == null) CardTeal else Palette.TextSecondary, maxLines = 1,
+                                    modifier = Modifier.align(Alignment.TopStart).padding(14.dp)
+                                        .clip(RoundedCornerShape(8.dp)).background(Color(0xFFF1F3F7)).padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                                Row(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                                    IconButton(onClick = { editing = dc }) {
+                                        PhIcon(R.drawable.ph_pencil, Palette.TextSecondary, 20.dp, L("تعديل البطاقة", "Edit card"))
+                                    }
+                                    IconButton(onClick = { scope.launch { CardDeck.delete(dc) } }) {
+                                        PhIcon(R.drawable.ph_trash, Palette.TextSecondary, 20.dp, L("حذف البطاقة", "Delete card"))
+                                    }
+                                    IconButton(onClick = { scope.launch { CardDeck.toggleStar(dc) } }) {
+                                        StarGlyph(dc.starred, Palette.Gold, Modifier.size(24.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                enabled = pager.currentPage > 0,
+                                onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
+                            ) { Text(L("السابقة", "Previous")) }
+                            Spacer(Modifier.weight(1f))
+                            Text("${pager.currentPage + 1} / ${deck.size}", fontSize = 14.sp, color = Palette.TextSecondary, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.weight(1f))
+                            TextButton(
+                                enabled = pager.currentPage < deck.lastIndex,
+                                onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }
+                            ) { Text(L("التالية", "Next")) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (adding) NewLooseCardDialog(initialFolder = folder ?: subject.orEmpty()) { adding = false }
+    editing?.let { ec ->
+        AddCardDialog(ec.card.front, ec.card.back, title = L("تعديل البطاقة", "Edit card"), confirm = L("حفظ", "Save"), onSave = { f, b ->
+            scope.launch { CardDeck.update(ec, f, b) }
+            editing = null
+        }, onDismiss = { editing = null })
+    }
 }

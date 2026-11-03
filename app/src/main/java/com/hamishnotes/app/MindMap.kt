@@ -17,9 +17,11 @@ data class MapEdits(
     val nodes: Map<String, MapNodeEdit> = emptyMap(),
     val collapsed: Set<String> = emptySet(),
     /** نص عدّله المستخدم في الخريطة فقط (الملخص لا يتغيّر). */
-    val texts: Map<String, String> = emptyMap()
+    val texts: Map<String, String> = emptyMap(),
+    /** نصوص حرة يكتبها المستخدم في الخريطة، غير مرتبطة بالملخص (المفتاح يبدأ بـ f:). */
+    val free: Map<String, String> = emptyMap()
 ) {
-    fun isEmpty(): Boolean = nodes.isEmpty() && collapsed.isEmpty() && texts.isEmpty()
+    fun isEmpty(): Boolean = nodes.isEmpty() && collapsed.isEmpty() && texts.isEmpty() && free.isEmpty()
 }
 
 /** عقدة في الخريطة كما تُرسم: النص كاملًا كما التُقط. */
@@ -28,12 +30,15 @@ class MapNode(
     val text: String,
     /** النص كما التُقط (قبل تعديل المستخدم في الخريطة). */
     val original: String,
-    val mark: TextMark,
+    /** التمييز الذي جاء منه النص؛ null = نص حر كتبه المستخدم في الخريطة. */
+    val mark: TextMark?,
     val collapsed: Boolean,
     val children: List<MapNode>
 ) {
     /** عدد كل النقاط تحتها (للعقدة المطوية). */
     fun count(): Int = children.size + children.sumOf { it.count() }
+
+    val isFree: Boolean get() = mark == null
 }
 
 class MindMapModel(val title: String, val branches: List<MapNode>) {
@@ -44,8 +49,16 @@ class MindMapModel(val title: String, val branches: List<MapNode>) {
 data class MapTarget(val parent: String?, val before: String?)
 
 object MindMap {
-    /** نص واحد من التمييز (جزء من «كما التُقط»). */
-    class Item(val key: String, val text: String, val mark: TextMark)
+    /** نص واحد من التمييز (جزء من «كما التُقط»)، أو نص حر (mark = null). */
+    class Item(val key: String, val text: String, val mark: TextMark?)
+
+    const val FREE_PREFIX = "f:"
+
+    fun isFree(key: String) = key.startsWith(FREE_PREFIX)
+
+    /** نصوص التمييز ثم النصوص الحرة: كل ما يمكن أن يظهر في الخريطة. */
+    fun allItems(marks: List<TextMark>, edits: MapEdits): List<Item> =
+        items(marks) + edits.free.map { (k, v) -> Item(k, v, null) }
 
     /** مفتاح العقدة من مفتاح جزء «كما التُقط» (r:معرّف#رقم)، أو null لما ليس جزءًا مباشرًا. */
     fun nodeKey(blockKey: String): String? = if (blockKey.startsWith("r:")) blockKey.removePrefix("r:") else null
@@ -91,7 +104,7 @@ object MindMap {
     }
 
     fun build(title: String, marks: List<TextMark>, edits: MapEdits, exclude: Set<String> = emptySet()): MindMapModel {
-        val items = items(marks)
+        val items = allItems(marks, edits)
         val byKey = items.associateBy { it.key }
         val placed = resolve(edits, items)
         // ما يُنقل الآن يختفي من مكانه القديم مع ما تحته
@@ -179,7 +192,11 @@ object MindMap {
             }
         }
         gone.add(key)
-        return edits.copy(nodes = edits.nodes - gone, collapsed = edits.collapsed - gone, texts = edits.texts - gone) to gone.size
+        // النصوص الحرة تُحذف نهائيًا، ونصوص الملخص تُزال من الخريطة فقط
+        return edits.copy(
+            nodes = edits.nodes - gone, collapsed = edits.collapsed - gone, texts = edits.texts - gone,
+            free = edits.free - gone.filter { isFree(it) }.toSet()
+        ) to gone.size
     }
 
     /** دمج التمييزات: ما كان للتمييزات القديمة ينتقل إلى التمييز الجديد. */
@@ -203,10 +220,23 @@ object MindMap {
 
     /** يعدّل نص العقدة في الخريطة فقط. نص فارغ أو مطابق للأصل = يعود كما التُقط. */
     fun setText(edits: MapEdits, items: List<Item>, key: String, text: String): MapEdits {
+        if (isFree(key)) {
+            val v = text.trim()
+            return if (v.isEmpty() || key !in edits.free) edits else edits.copy(free = edits.free + (key to v))
+        }
         val original = items.firstOrNull { it.key == key }?.text ?: return edits
         val v = text.trim()
         return if (v.isEmpty() || v == original) edits.copy(texts = edits.texts - key)
         else edits.copy(texts = edits.texts + (key to v))
+    }
+
+    /** يضيف نصًا حرًا في المكان المختار. يعيد (الخريطة، مفتاح النص الجديد). */
+    fun addFree(edits: MapEdits, marks: List<TextMark>, text: String, target: MapTarget, id: String): Pair<MapEdits, String?> {
+        val v = text.trim()
+        if (v.isEmpty()) return edits to null
+        val key = FREE_PREFIX + id
+        val withText = edits.copy(free = edits.free + (key to v))
+        return place(withText, allItems(marks, withText), listOf(key), target) to key
     }
 
     /** وصف قصير لاسم عقدة داخل جملة شرح (لا يغيّر نصها في الخريطة). */

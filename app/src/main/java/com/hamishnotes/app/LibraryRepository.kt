@@ -132,7 +132,8 @@ class LibraryRepository(context: Context) {
                         folder = o.optString("folder", ""),
                         locked = o.optBoolean("lock", false),
                         coverColor = o.optInt("cover", 0),
-                        sticker = o.optString("sticker", "")
+                        sticker = o.optString("sticker", ""),
+                        isMap = o.optBoolean("map", false)
                     )
                 } catch (e: Throwable) {
                     null
@@ -170,6 +171,7 @@ class LibraryRepository(context: Context) {
                             .put("lock", e.locked)
                             .put("cover", e.coverColor)
                             .put("sticker", e.sticker)
+                            .put("map", e.isMap)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
@@ -781,7 +783,9 @@ class LibraryRepository(context: Context) {
             val collapsed = o.optJSONArray("collapsed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
             val texts = LinkedHashMap<String, String>()
             o.optJSONObject("texts")?.let { tx -> for (k in tx.keys()) tx.optString(k).takeIf { it.isNotBlank() }?.let { texts[k] = it } }
-            MapEdits(nodes, collapsed, texts)
+            val free = LinkedHashMap<String, String>()
+            o.optJSONObject("free")?.let { fr -> for (k in fr.keys()) fr.optString(k).takeIf { it.isNotBlank() }?.let { free[k] = it } }
+            MapEdits(nodes, collapsed, texts, free)
         } catch (e: Throwable) {
             MapEdits()
         }
@@ -798,6 +802,7 @@ class LibraryRepository(context: Context) {
         return JSONObject().put("nodes", nodes)
             .put("collapsed", JSONArray().apply { m.collapsed.forEach { put(it) } })
             .apply { if (m.texts.isNotEmpty()) put("texts", JSONObject().apply { m.texts.forEach { (k, v) -> put(k, v) } }) }
+            .apply { if (m.free.isNotEmpty()) put("free", JSONObject().apply { m.free.forEach { (k, v) -> put(k, v) } }) }
     }
 
     /** يحفظ صورة جاهزة (مثل الخريطة الذهنية) لتوضع على صفحة. خارج الخيط الرئيسي. */

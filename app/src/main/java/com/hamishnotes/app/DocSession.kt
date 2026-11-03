@@ -120,6 +120,8 @@ const val NOTE_COLLAPSED = 0.045f
 
 class DocSession(entry: DocEntry) {
     val id: String = entry.id
+    /** خريطة ذهنية مستقلة: تُعرض الخريطة بدل الصفحات. */
+    val isMap: Boolean = entry.isMap
 
     var title by mutableStateOf(entry.name)
     var status by mutableStateOf<SessionStatus>(SessionStatus.Loading)
@@ -1259,7 +1261,11 @@ class DocSession(entry: DocEntry) {
         persist()
     }
 
-    private fun mapItems() = MindMap.items(allMarks())
+    private fun mapItems() = MindMap.allItems(allMarks(), summaryEdits.map)
+
+    /** يضيف نصًا حرًا في الخريطة (غير مرتبط بالملخص). */
+    fun mapAddFree(text: String, target: MapTarget) =
+        changeMap { MindMap.addFree(it, allMarks(), text, target, UUID.randomUUID().toString()).first }
 
     /** يضع النصوص (بترتيبها) في المكان المختار على الخريطة. */
     fun mapPlace(keys: List<String>, target: MapTarget) = changeMap { MindMap.place(it, mapItems(), keys, target) }

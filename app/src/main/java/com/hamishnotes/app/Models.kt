@@ -211,7 +211,9 @@ data class DocEntry(
     /** لون غلاف الدفتر في المكتبة (ARGB)؛ 0 = اللون الافتراضي. */
     val coverColor: Int = 0,
     /** ملصق على الغلاف (رمز تعبيري)؛ فارغ = بدون. */
-    val sticker: String = ""
+    val sticker: String = "",
+    /** خريطة ذهنية مستقلة (من «جديد»): تُفتح على الخريطة مباشرة، وكل عقدها نصوص حرة. */
+    val isMap: Boolean = false
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

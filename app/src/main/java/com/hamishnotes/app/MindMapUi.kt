@@ -132,6 +132,56 @@ fun MapSelectBar(count: Int, onPlace: () -> Unit, onCancel: () -> Unit, onCard: 
     }
 }
 
+/** لون النصوص الحرة في الخريطة (غير المرتبطة بالملخص). */
+val FreeInk = Color(0xFF6D4AC2)
+
+/** رأس وضع «أضف نصًا»: اختيار مكان النص الحر الجديد. */
+@Composable
+private fun AddTextHeader(onCancel: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(Color(0xFFF1ECFF)).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(L("أضف نصًا حرًا", "Add a free text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = FreeInk)
+            Text(
+                L("المس مكانه: فرع جديد، أو نقطة، أو نقطة فرعية تحت أي نص. لا يرتبط بالملخص.", "Tap where it goes: a new branch, a point, or a sub-point under any text. Not linked to the summary."),
+                fontSize = 12.sp, color = Palette.TextSecondary
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            L("إلغاء", "Cancel"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, Palette.Divider, RoundedCornerShape(12.dp))
+                .clickable(onClick = onCancel).padding(horizontal = 14.dp, vertical = 9.dp)
+        )
+    }
+}
+
+/** كتابة نص حر جديد في الخريطة. */
+@Composable
+private fun FreeTextDialog(where: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("نص جديد", "New text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = FreeInk) },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 70.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(L("سيوضع: ", "Goes as: ") + where, fontSize = 12.sp, color = Palette.TextSecondary)
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = text.isNotBlank(), onClick = { onSave(text) }) { Text(L("إضافة", "Add"), fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+    )
+}
+
 /** لون المحتوى في صنع البطاقة من الملخص. */
 val CardTeal = Color(0xFF0F766E)
 
@@ -224,14 +274,16 @@ fun MindMapDialog(
     onJump: (TextMark) -> Unit,
     onDismiss: () -> Unit,
     placing: List<String>? = null,
-    onPlaced: () -> Unit = {}
+    onPlaced: () -> Unit = {},
+    /** خريطة مستقلة بلا ملف: كل عقدها نصوص حرة. */
+    standalone: Boolean = false
 ) {
     val c = AppController
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val all = s.allMarks()
     val mapEdits = s.summaryEdits.map
-    val items = remember(all) { MindMap.items(all) }
+    val items = remember(all, mapEdits) { MindMap.allItems(all, mapEdits) }
     val fromSummary = placing != null
     var placingKeys by remember { mutableStateOf(placing?.filter { k -> items.any { it.key == k } }) }
     var target by remember { mutableStateOf<MapTarget?>(null) }
@@ -257,6 +309,9 @@ fun MindMapDialog(
     val selected = selectedKey?.let { MindMap.find(model, it) }
     // العقدة التي يُعدَّل نصها الآن
     var editKey by remember { mutableStateOf<String?>(null) }
+    // إضافة نص حر: اختيار المكان (أماكن «+»)، ثم كتابة النص
+    var addingFree by remember { mutableStateOf(false) }
+    var freeTarget by remember { mutableStateOf<MapTarget?>(null) }
     var exportMenu by remember { mutableStateOf(false) }
 
     // التكبير والتحريك
@@ -309,6 +364,8 @@ fun MindMapDialog(
             Column(Modifier.fillMaxSize()) {
                 if (keys != null) {
                     PlacingHeader(items.filter { it.key in keys }.sortedBy { keys.indexOf(it.key) }) { cancelPlacing() }
+                } else if (addingFree) {
+                    AddTextHeader { addingFree = false; fitted = false }
                 } else {
                     MapTopBar(
                         title = s.title,
@@ -317,6 +374,7 @@ fun MindMapDialog(
                         exportMenu = exportMenu,
                         onExportMenu = { exportMenu = it },
                         onBack = onDismiss,
+                        onAddText = { selectedKey = null; addingFree = true; fitted = false },
                         onFit = { fit() },
                         onCollapseAll = { open ->
                             val bk = model.branches.map { it.key }.toSet()
@@ -344,7 +402,7 @@ fun MindMapDialog(
                         }
                     )
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(if (keys != null) Palette.Gold else Palette.Divider))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(if (keys != null || addingFree) Palette.Gold else Palette.Divider))
 
                 // ---------- مساحة الخريطة
                 Box(
@@ -371,8 +429,8 @@ fun MindMapDialog(
                             }
                         }
                 ) {
-                    if (keys == null && model.branches.isEmpty()) {
-                        EmptyMap()
+                    if (keys == null && !addingFree && model.branches.isEmpty()) {
+                        EmptyMap(standalone) { addingFree = true; fitted = false }
                     } else {
                         Box(
                             Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
@@ -386,13 +444,13 @@ fun MindMapDialog(
                         ) {
                             MapLayout(
                                 model = model,
-                                placing = keys != null,
+                                placing = keys != null || addingFree,
                                 ghosts = ghosts,
                                 target = target,
                                 selectedKey = selectedKey,
-                                onTap = { k -> if (keys == null) selectedKey = if (selectedKey == k) null else k },
-                                onTarget = { t -> target = if (target == t) null else t },
-                                onLongTap = { k -> if (keys == null) { selectedKey = k; editKey = k } },
+                                onTap = { k -> if (keys == null && !addingFree) selectedKey = if (selectedKey == k) null else k },
+                                onTarget = { t -> if (addingFree) freeTarget = t else target = if (target == t) null else t },
+                                onLongTap = { k -> if (keys == null && !addingFree) { selectedKey = k; editKey = k } },
                                 modifier = Modifier
                                     .onSizeChanged { content = it }
                                     .drawWithContent {
@@ -407,6 +465,7 @@ fun MindMapDialog(
                     when {
                         keys != null && target != null -> ConfirmBar(describe(model, target!!), bottom, onUndo = { target = null }, onConfirm = { confirmPlacing() })
                         keys != null -> HintChip(L("المس أي «+» لتختار مكان النص", "Tap any “+” to choose where it goes"), bottom)
+                        addingFree -> HintChip(L("المس أي «+» ثم اكتب النص الجديد", "Tap any “+”, then type the new text"), bottom)
                         selected != null -> {
                             val sib = MindMap.siblingsOf(model, selected.key)
                             val idx = sib?.second?.indexOfFirst { it.key == selected.key } ?: -1
@@ -415,21 +474,27 @@ fun MindMapDialog(
                                 canUp = idx > 0,
                                 canDown = sib != null && idx in 0 until sib.second.lastIndex,
                                 modifier = bottom,
-                                onJump = { onJump(selected.mark) },
+                                onJump = { selected.mark?.let { onJump(it) } },
                                 onMove = { startMove(selected.key) },
                                 onUp = { s.mapMove(selected.key, -1) },
                                 onDown = { s.mapMove(selected.key, 1) },
                                 onToggle = { s.mapToggleCollapsed(selected.key) },
                                 onRemove = {
+                                    val free = selected.isFree
                                     val n = s.mapRemove(selected.key)
                                     selectedKey = null
                                     c.messages.tryEmit(
-                                        if (n > 1) L("أُزيل من الخريطة مع ما تحته (${n - 1})، ويبقى في الملخص", "Removed from the map with ${n - 1} under it; it stays in the summary")
-                                        else L("أُزيل من الخريطة، ويبقى في الملخص", "Removed from the map; it stays in the summary")
+                                        when {
+                                            free && n > 1 -> L("حُذف النص مع ما تحته (${n - 1})", "Deleted with ${n - 1} under it")
+                                            free -> L("حُذف النص", "Text deleted")
+                                            n > 1 -> L("أُزيل من الخريطة مع ما تحته (${n - 1})، ويبقى في الملخص", "Removed from the map with ${n - 1} under it; it stays in the summary")
+                                            else -> L("أُزيل من الخريطة، ويبقى في الملخص", "Removed from the map; it stays in the summary")
+                                        }
                                     )
                                 },
                                 onClose = { selectedKey = null },
-                                onEdit = { editKey = selected.key }
+                                onEdit = { editKey = selected.key },
+                                onAddSub = { freeTarget = MapTarget(selected.key, null) }
                             )
                         }
                         model.branches.isNotEmpty() -> HintChip(L("انقر أي نص لإجراءاته · حرّك وكبّر بإصبعين", "Tap a text for actions · pan and zoom with two fingers"), bottom)
@@ -437,6 +502,20 @@ fun MindMapDialog(
                 }
             }
         }
+    }
+
+    val ft = freeTarget
+    if (ft != null) {
+        FreeTextDialog(
+            where = describe(model, ft),
+            onSave = { txt ->
+                s.mapAddFree(txt, ft)
+                freeTarget = null
+                addingFree = false
+                fitted = false
+            },
+            onDismiss = { freeTarget = null }
+        )
     }
 
     val ek = editKey
@@ -455,7 +534,7 @@ fun MindMapDialog(
 @Composable
 private fun NodeTextDialog(node: MapNode, onSave: (String) -> Unit, onRestore: () -> Unit, onDismiss: () -> Unit) {
     var text by remember(node.key) { mutableStateOf(node.text) }
-    val edited = node.text != node.original
+    val edited = !node.isFree && node.text != node.original
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(L("تعديل نص العقدة", "Edit node text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = Palette.Navy) },
@@ -467,8 +546,9 @@ private fun NodeTextDialog(node: MapNode, onSave: (String) -> Unit, onRestore: (
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    L("يتغيّر في الخريطة فقط، والملخص يبقى كما هو", "Changes the map only; the summary stays as it is") +
-                        if (edited) L("\nالنص الأصلي: «${MindMap.quote(node.original, 12)}» · ص ${node.mark.page + 1}", "\nOriginal: “${MindMap.quote(node.original, 12)}” · p. ${node.mark.page + 1}") else "",
+                    (if (node.isFree) L("نص حر في الخريطة، غير مرتبط بالملخص", "A free text on the map, not linked to the summary")
+                    else L("يتغيّر في الخريطة فقط، والملخص يبقى كما هو", "Changes the map only; the summary stays as it is")) +
+                        if (edited) L("\nالنص الأصلي: «${MindMap.quote(node.original, 12)}» · ص ${(node.mark?.page ?: 0) + 1}", "\nOriginal: “${MindMap.quote(node.original, 12)}” · p. ${(node.mark?.page ?: 0) + 1}") else "",
                     fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
                 )
             }
@@ -551,7 +631,8 @@ private fun MapTopBar(
     onBack: () -> Unit,
     onFit: () -> Unit,
     onCollapseAll: (Boolean) -> Unit,
-    onExport: (Int) -> Unit
+    onExport: (Int) -> Unit,
+    onAddText: () -> Unit = {}
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().background(Color.White)) {
         val compact = maxWidth < 600.dp
@@ -565,6 +646,18 @@ private fun MapTopBar(
                 Text(L("الخريطة الذهنية", "Mind map"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.Navy, maxLines = 1)
                 Text(title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Row(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(FreeInk).clickable(onClick = onAddText)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("＋", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                if (!compact) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(L("أضف نصًا", "Add text"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+            Spacer(Modifier.width(6.dp))
             if (hasBranches) {
                 TopAction(R.drawable.ph_fit, L("توسيط", "Fit"), onFit)
                 TopAction(R.drawable.ph_list, if (anyOpen) L("طيّ الكل", "Collapse all") else L("فتح الكل", "Expand all")) { onCollapseAll(anyOpen) }
@@ -633,15 +726,21 @@ private fun ConfirmBar(what: String, modifier: Modifier, onUndo: () -> Unit, onC
 }
 
 @Composable
-private fun EmptyMap() {
+private fun EmptyMap(standalone: Boolean = false, onAdd: () -> Unit = {}) {
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         PhIcon(R.drawable.ph_mindmap, Palette.Gold, 56.dp)
         Spacer(Modifier.height(12.dp))
         Text(L("خريطتك فارغة", "Your map is empty"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.Navy)
         Text(
-            L("من الملخصات ← «كما التُقط»: اضغط نصًا واختر «ضعه في الخريطة»، ثم المس مكانه على الخريطة.",
-                "In Summaries → “As captured”: tap a text, choose “Place on the map”, then tap where it goes."),
+            if (standalone) L("اكتب أول فرع في خريطتك.", "Write the first branch of your map.")
+            else L("من الملخصات ← «كما التُقط»: اضغط نصًا واختر «ضعه في الخريطة»، أو اكتب نصًا حرًا هنا.",
+                "In Summaries → “As captured”: tap a text and choose “Place on the map”, or write a free text here."),
             fontSize = 14.sp, color = Palette.TextSecondary, modifier = Modifier.padding(top = 6.dp), textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "＋ " + L("أضف نصًا", "Add text"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White,
+            modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(FreeInk).clickable(onClick = onAdd).padding(horizontal = 18.dp, vertical = 11.dp)
         )
     }
 }
@@ -659,7 +758,8 @@ private fun NodeActions(
     onToggle: () -> Unit,
     onRemove: () -> Unit,
     onClose: () -> Unit,
-    onEdit: () -> Unit = {}
+    onEdit: () -> Unit = {},
+    onAddSub: () -> Unit = {}
 ) {
     val shape = RoundedCornerShape(16.dp)
     Row(
@@ -667,13 +767,14 @@ private fun NodeActions(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ActionChip(L("ص ${node.mark.page + 1} · انتقال", "p. ${node.mark.page + 1} · Go"), primary = true, onClick = onJump)
+        node.mark?.let { m -> ActionChip(L("ص ${m.page + 1} · انتقال", "p. ${m.page + 1} · Go"), primary = true, onClick = onJump) }
         ActionChip("✎ " + L("تعديل النص", "Edit text"), onClick = onEdit)
+        ActionChip("＋ " + L("نقطة فرعية", "Sub-point"), onClick = onAddSub)
         ActionChip(L("نقل إلى مكان آخر", "Move elsewhere"), onClick = onMove)
         ActionChip("↑ " + L("أعلى", "Up"), enabled = canUp, onClick = onUp)
         ActionChip("↓ " + L("أسفل", "Down"), enabled = canDown, onClick = onDown)
         if (node.children.isNotEmpty() || node.collapsed) ActionChip(if (node.collapsed) L("فتح", "Expand") else L("طيّ", "Collapse"), onClick = onToggle)
-        ActionChip(L("إزالة من الخريطة", "Remove from map"), danger = true, onClick = onRemove)
+        ActionChip(if (node.isFree) L("حذف", "Delete") else L("إزالة من الخريطة", "Remove from map"), danger = true, onClick = onRemove)
         ActionChip("✕", onClick = onClose)
     }
 }
@@ -937,7 +1038,7 @@ private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, s
                 .clip(shape).background(if (ghost) GhostBg else Color.White)
                 .let {
                     if (ghost) it.drawBehind { dashedBorder(Palette.Gold, 16.dp.toPx(), 2.dp.toPx()) }
-                    else it.border(if (selected) 2.dp else 1.dp, if (selected) Palette.Gold else Palette.Divider, shape)
+                    else it.border(if (selected) 2.dp else if (n.isFree) 1.5.dp else 1.dp, if (selected) Palette.Gold else if (n.isFree) FreeInk else Palette.Divider, shape)
                 }
                 .drawBehind {
                     if (!ghost) {
@@ -977,7 +1078,7 @@ private fun PointNode(n: MapNode, col: Color, depth: Int, ghost: Boolean, select
             )
             .let {
                 if (ghost) it.drawBehind { dashedBorder(Palette.Gold, 12.dp.toPx(), 2.dp.toPx()) }
-                else it.border(if (selected) 2.dp else 1.dp, if (selected) Palette.Gold else col.copy(alpha = 0.22f), shape)
+                else it.border(if (selected) 2.dp else if (n.isFree) 1.5.dp else 1.dp, if (selected) Palette.Gold else if (n.isFree) FreeInk else col.copy(alpha = 0.22f), shape)
             }
             .combinedClickable(enabled = !ghost, onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 12.dp, vertical = 7.dp)

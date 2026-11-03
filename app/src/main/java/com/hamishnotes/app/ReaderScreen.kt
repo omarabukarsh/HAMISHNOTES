@@ -173,7 +173,16 @@ fun ReaderScreen(session: DocSession) {
             Modifier.fillMaxSize().background(Palette.Desk), Alignment.Center
         ) { CircularProgressIndicator() }
         is SessionStatus.Failed -> FailedView(session, st.message)
-        is SessionStatus.Ready -> ReaderContent(session)
+        is SessionStatus.Ready -> if (session.isMap) {
+            // خريطة مستقلة: الخريطة نفسها هي المستند، وإغلاقها يغلق التبويب
+            Box(Modifier.fillMaxSize().background(Palette.Ivory))
+            MindMapDialog(
+                session,
+                onJump = {},
+                onDismiss = { AppController.closeTab(session.id) },
+                standalone = true
+            )
+        } else ReaderContent(session)
     }
 }
 

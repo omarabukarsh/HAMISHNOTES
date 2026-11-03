@@ -127,4 +127,34 @@ class MindMapTest {
         e = MindMap.setText(e, items, "a#0", "x")
         assertTrue(MindMap.remove(e, items, "a#0").first.texts.isEmpty())
     }
+
+    @Test
+    fun freeTextsLiveOnlyInTheMap() {
+        // نص حر فرعًا، ونص من الملخص تحته
+        val (e1, k) = MindMap.addFree(MapEdits(), marks, "  جهاز المناعة  ", MapTarget(null, null), "x")
+        assertEquals("f:x", k)
+        var e = MindMap.place(e1, MindMap.allItems(marks, e1), listOf("a#0"), MapTarget("f:x", null))
+        val m = MindMap.build("T", marks, e)
+        val b = m.branches.single()
+        assertEquals("جهاز المناعة", b.text)
+        assertTrue(b.isFree)
+        assertEquals(listOf("a#0"), b.children.map { it.key })
+        // لا يدخل نصوص الملخص
+        assertTrue(MindMap.items(marks).none { it.key == "f:x" })
+        // تعديله يغيّر نصه
+        e = MindMap.setText(e, MindMap.allItems(marks, e), "f:x", "المناعة")
+        assertEquals("المناعة", MindMap.build("T", marks, e).branches.single().text)
+        // حذفه يحذف النص الحر نهائيًا، ونص الملخص تحته يُزال من الخريطة فقط
+        val (after, n) = MindMap.remove(e, MindMap.allItems(marks, e), "f:x")
+        assertEquals(2, n)
+        assertTrue(after.free.isEmpty())
+        assertTrue(MindMap.build("T", marks, after).branches.isEmpty())
+    }
+
+    @Test
+    fun emptyFreeTextIsIgnored() {
+        val (e, k) = MindMap.addFree(MapEdits(), marks, "   ", MapTarget(null, null), "y")
+        assertNull(k)
+        assertTrue(e.free.isEmpty())
+    }
 }

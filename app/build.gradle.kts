@@ -34,8 +34,10 @@ android {
     namespace = "com.hamishnotes.app"
     compileSdk = 36
     defaultConfig {
-        // اسم التطبيق في المتجر (لا يتغير بعد أول رفع)، وهو نفسه لنسخ التجربة
-        applicationId = "com.hamishnotes.app"
+        // اسم التطبيق في المتجر (لا يتغير بعد أول رفع)، وهو نفسه لنسخ التجربة.
+        // LEGACY_PACKAGE=true (نسخ التجربة فقط): اسم الحزمة القديم com.mynotes.app،
+        // فتُثبَّت كتحديث فوق التطبيق القديم على الجهاز وتبقى بياناته
+        applicationId = if (!storeBuild && setting("LEGACY_PACKAGE") == "true") "com.mynotes.app" else "com.hamishnotes.app"
         minSdk = 26
         // شرط Google Play للتطبيقات الجديدة والتحديثات منذ أغسطس 2026
         targetSdk = 36

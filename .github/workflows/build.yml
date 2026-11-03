@@ -30,3 +30,28 @@ jobs:
         with:
           name: Hamish
           path: app/build/outputs/apk/release/app-release.apk
+
+  # نفس التطبيق باسم الحزمة القديم com.mynotes.app: يُثبَّت فوق النسخة القديمة على الجهاز
+  build-old-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+      - name: Build (old package)
+        shell: bash
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          LEGACY_PACKAGE: "true"
+        run: |
+          set -o pipefail
+          gradle assembleRelease 2>&1 | tee build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hamish-old-package
+          path: app/build/outputs/apk/release/app-release.apk

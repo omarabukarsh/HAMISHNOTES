@@ -236,9 +236,6 @@ private fun ReaderContent(s: DocSession) {
         if (mode == "full") AiOrganizer.startAuto(s) else AiOrganizer.continueSummary(s, quiet = true)
     }
 
-    // ضغط صريح على ترتيب الملخص: نافذة معالجة تمنع استعمال التطبيق حتى ينتهي أو يُلغى
-    AiBlockingDialog()
-
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {

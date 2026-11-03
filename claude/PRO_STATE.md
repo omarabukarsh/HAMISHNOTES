@@ -105,6 +105,10 @@ Decision (user, 2026-10-23): standalone copy on its own branch, does not touch t
 - Conflicts resolved by hand: AppController.shareOrSaveSummary (regular signature with docId + withDocSession; kept Pro «✦ ذكاء» export of the AI summary, returns -1 when none), LibraryRepository (took regular's parseDocData/docDataJson refactor and re-added "mind" notes read/write), LibraryScreen (regular layout, title «HAMISH PRO»).
 - Visible texts in merged files that said «هامش»/Hamish now say HAMISH PRO. FileProvider authority uses packageName, so applicationId is untouched.
 
+## 2026-11-03: blocking AI dialog REMOVED (user request)
+- AiBlockingDialog and AiOrganizer.blocking deleted; organizing shows progress only inside the summaries drawer (AI tab, with Stop). The app stays usable while the AI runs.
+- Pending, awaiting «نفّذ»: port regular-app FEATURES only (no Premium/sign-in/Supabase/package rename) and an optional internet topic-outline lookup (Wikipedia sections) to order headings.
+
 ## Pro UI
 - Templates + TemplatePicker, PagePanel (⋯), tab bar contrast, document settings, toolbar customization page, default toolbar + ✦ AI button, library multi-select, «manual edits» bar removed from summaries.
 - #168: bottom snackbar shows ONLY copy confirmations. #169: highlight-count badge on the summaries drawer button removed.

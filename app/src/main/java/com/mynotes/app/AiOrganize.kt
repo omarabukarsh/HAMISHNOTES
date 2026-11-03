@@ -136,9 +136,6 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         private set
     var stepFraction by mutableStateOf(0f)
         private set
-    /** ضغط صريح على الترتيب: نافذة معالجة تمنع استعمال التطبيق حتى ينتهي أو يُلغى (التشغيل التلقائي لا يحجب). */
-    var blocking by mutableStateOf(false)
-        private set
     /** كيف قُرئت صفحات التظليل في آخر ترتيب صريح (للتقرير الصادق في الرسالة الختامية). */
     private var visualPages = 0
     private var visualFailed = false
@@ -535,7 +532,6 @@ A: بسرعة ثابتة"""
         val snapshot = s.allMarks().filter { m -> marks.any { it.id == m.id } }.associate { it.id to it.text }
         val before = if (append) result(docId) ?: "" else ""
         runningDoc = docId
-        blocking = explicit
         visualPages = 0
         visualFailed = false
         partial = ""
@@ -741,7 +737,6 @@ A: بسرعة ثابتة"""
                 )
             } finally {
                 runningDoc = null
-                blocking = false
                 stepText = ""
                 partial = ""
             }
@@ -789,7 +784,6 @@ Pen V | Acid-stable | Oral | Only for mild infections"""
         val docId = s.id
         val text = result(docId) ?: return
         runningDoc = docId
-        blocking = true
         partial = ""
         stepFraction = 0f
         stepText = L("جارٍ إعداد جدول: ${heading.trimStart('#', ' ')}", "Making a table: ${heading.trimStart('#', ' ')}")
@@ -829,7 +823,6 @@ Pen V | Acid-stable | Oral | Only for mild infections"""
                 AppController.messages.tryEmit(Ai.errorText(t, L("تعذر تشغيل النموذج", "Could not run the model")))
             } finally {
                 runningDoc = null
-                blocking = false
                 stepText = ""
                 partial = ""
             }
@@ -858,7 +851,6 @@ Output only the edited summary, no introduction or closing remarks."""
             return
         }
         runningDoc = docId
-        blocking = true
         partial = ""
         stepFraction = 0f
         stepText = L("جارٍ تعديل الملخص…", "Editing the summary…")
@@ -875,7 +867,6 @@ Output only the edited summary, no introduction or closing remarks."""
                 AppController.messages.tryEmit(Ai.errorText(t, L("تعذر تشغيل النموذج", "Could not run the model")))
             } finally {
                 runningDoc = null
-                blocking = false
                 stepText = ""
                 partial = ""
             }
@@ -1242,32 +1233,5 @@ fun AiExplainDialog(text: String, context: String = "", onDismiss: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
-    )
-}
-
-/** نافذة معالجة تمنع استعمال التطبيق أثناء ترتيب الملخص المطلوب صراحةً (التشغيل التلقائي لا يحجب). تحوي إلغاءً. */
-@Composable
-fun AiBlockingDialog() {
-    if (!AiOrganizer.blocking || AiOrganizer.runningDoc == null) return
-    AlertDialog(
-        onDismissRequest = {},
-        properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text(L("جارٍ ترتيب الملخص", "Organizing the summary")) },
-        text = {
-            Column {
-                Text(AiOrganizer.stepText.ifEmpty { Ai.engineStatus }, fontSize = 14.sp, color = Palette.Navy, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(progress = { AiOrganizer.stepFraction }, modifier = Modifier.fillMaxWidth(), color = Palette.Gold)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    L("انتظر حتى ينتهي الذكاء الاصطناعي حتى لا تتأثر دقة الملخص. يمكنك الإلغاء.",
-                        "Please wait until the AI finishes so the summary stays accurate. You can cancel."),
-                    fontSize = 12.sp, color = Palette.TextSecondary
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { AiOrganizer.cancelRunning() }) { Text(L("إلغاء", "Cancel"), color = Palette.Danger) }
-        }
     )
 }

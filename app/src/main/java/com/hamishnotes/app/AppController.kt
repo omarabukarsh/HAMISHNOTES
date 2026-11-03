@@ -1305,6 +1305,86 @@ object AppController {
         }
     }
 
+    /**
+     * مشاركة عدة مستندات معًا (ملف PDF لكل مستند) أو حفظها في مجلد يختاره المستخدم.
+     * folderUri = null للمشاركة. المستندات المقفلة تُتخطى.
+     */
+    fun shareOrSaveDocs(context: Context, ids: List<String>, editable: Boolean, folderUri: Uri?) {
+        if (exporting != null) return
+        val entries = ids.mapNotNull { id -> library.firstOrNull { it.id == id } }
+        val open = entries.filter { !it.locked }
+        val skipped = entries.size - open.size
+        if (open.isEmpty()) {
+            messages.tryEmit(L("افتح قفل المستندات أولًا", "Unlock the documents first"))
+            return
+        }
+        exporting = L("جارٍ تجهيز ${open.size} ملفات…", "Preparing ${open.size} files…")
+        scope.launch {
+            val resolver = context.contentResolver
+            val done = ArrayList<File>()
+            var saved = 0
+            var failed = 0
+            try {
+                val dir = if (folderUri == null) {
+                    File(appContext.cacheDir, "share").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+                } else null
+                val parent = folderUri?.let {
+                    android.provider.DocumentsContract.buildDocumentUriUsingTree(it, android.provider.DocumentsContract.getTreeDocumentId(it))
+                }
+                val used = HashSet<String>()
+                open.forEachIndexed { i, e ->
+                    exporting = L("جارٍ تجهيز ${i + 1} من ${open.size}…", "Preparing ${i + 1} of ${open.size}…")
+                    // أسماء غير مكررة داخل المجموعة نفسها
+                    val base = (e.name + if (editable) "" else L(" - نهائي", " - final"))
+                        .replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80).ifBlank { "document" }
+                    var name = base
+                    var n = 2
+                    while (!used.add(name.lowercase())) name = "$base ($n)".also { n++ }
+                    try {
+                        val target: Uri = if (dir != null) {
+                            Uri.fromFile(File(dir, "$name.pdf"))
+                        } else {
+                            withContext(Dispatchers.IO) {
+                                android.provider.DocumentsContract.createDocument(resolver, parent!!, "application/pdf", "$name.pdf")
+                            } ?: throw IllegalStateException("create failed")
+                        }
+                        withDocSession(e.id) { s -> writeDocPdf(context, s, target, editable) } ?: throw IllegalStateException("not ready")
+                        if (dir != null) done.add(File(dir, "$name.pdf")) else saved++
+                    } catch (c: kotlinx.coroutines.CancellationException) {
+                        throw c
+                    } catch (t: Throwable) {
+                        failed++
+                    }
+                }
+                if (dir != null) {
+                    if (done.isNotEmpty()) launchShareMany(context, done)
+                } else if (saved > 0) {
+                    messages.tryEmit(L("حُفظت $saved ملفات في المجلد الذي اخترته", "Saved $saved files to the folder you chose"))
+                }
+                if (failed > 0) messages.tryEmit(L("تعذر تجهيز $failed من الملفات", "Could not prepare $failed of the files"))
+                if (skipped > 0) messages.tryEmit(L("تُخطي $skipped مستند مقفل", "Skipped $skipped locked document(s)"))
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                messages.tryEmit(L("تعذر تجهيز الملفات", "Could not prepare the files"))
+            } finally {
+                exporting = null
+            }
+        }
+    }
+
+    private fun launchShareMany(context: Context, files: List<File>) {
+        if (files.size == 1) return launchShare(context, files[0])
+        val uris = ArrayList<Uri>(files.map { androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", it) })
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE)
+            .setType("application/pdf")
+            .putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, uris)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val chooser = android.content.Intent.createChooser(send, L("مشاركة عبر", "Share via"))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
+    }
+
     fun exportDocument(context: Context, s: DocSession, uri: Uri) = shareOrSaveDoc(context, s.id, false, uri)
 
     fun exportSummary(context: Context, s: DocSession, uri: Uri) = shareOrSaveSummary(context, s.id, uri)

@@ -116,6 +116,7 @@ fun LibraryScreen() {
     var selecting by remember { mutableStateOf(false) }
     val selected = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var moveMany by remember { mutableStateOf(false) }
+    var shareMany by remember { mutableStateOf(false) }
     var deleteMany by remember { mutableStateOf(false) }
 
     val query = c.libraryQuery.trim()
@@ -166,7 +167,8 @@ fun LibraryScreen() {
                             onDuplicate = { c.library.filter { it.id in selected }.forEach { c.duplicate(it) }; selected.clear(); selecting = false },
                             onMove = { moveMany = true },
                             onDelete = { deleteMany = true },
-                            onDone = { selected.clear(); selecting = false }
+                            onDone = { selected.clear(); selecting = false },
+                            onShare = { shareMany = true }
                         )
                     } else {
                         LibraryHeader(wide, docs.size, startImport, onSelect = { selecting = true }) { showNewNote = true }
@@ -275,6 +277,11 @@ fun LibraryScreen() {
         )
     }
 
+    if (shareMany) {
+        val ids = c.library.filter { it.id in selected }.map { it.id }
+        if (ids.isEmpty()) shareMany = false
+        else ShareManyDialog(ids, onDismiss = { shareMany = false }, onStarted = { shareMany = false; selected.clear(); selecting = false })
+    }
     if (moveMany) {
         val list = c.library.filter { it.id in selected }
         if (list.isEmpty()) moveMany = false
@@ -909,7 +916,8 @@ private fun SelectionBar(
     onDuplicate: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    onShare: () -> Unit = {}
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)
@@ -925,6 +933,7 @@ private fun SelectionBar(
             modifier = Modifier.padding(end = 10.dp)
         )
         BarAction(if (allSelected) L("إلغاء تحديد الكل", "Deselect all") else L("تحديد الكل", "Select all"), true, onSelectAll)
+        BarAction(L("مشاركة أو حفظ", "Share or save"), count > 0, onShare)
         BarAction(L("المفضلة", "Favorite"), count > 0, onFavorite)
         BarAction(L("نقل إلى مادة", "Move to subject"), count > 0, onMove)
         BarAction(L("نسخ", "Duplicate"), count > 0, onDuplicate)

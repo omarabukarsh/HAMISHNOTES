@@ -7,14 +7,18 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,8 +32,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
@@ -47,10 +49,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -59,7 +63,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -135,196 +141,105 @@ object ToolCatalog {
 
 // ---------------------------------------------------------------- نافذة الإعدادات
 
-@OptIn(ExperimentalFoundationApi::class)
+/** أقسام الإعدادات كما تظهر في القائمة الجانبية. */
+private enum class SettingsPage { AI, GENERAL, PEN, HIGHLIGHTS, STUDY, APPEARANCE, PRIVACY, ABOUT }
+
+private fun SettingsPage.title(): String = when (this) {
+    SettingsPage.AI -> L("✦ الذكاء الاصطناعي", "✦ AI")
+    SettingsPage.GENERAL -> L("عام", "General")
+    SettingsPage.PEN -> L("القلم والإيماءات", "Pen & gestures")
+    SettingsPage.HIGHLIGHTS -> L("التمييز والملخص", "Highlights & summary")
+    SettingsPage.STUDY -> L("المذاكرة", "Study")
+    SettingsPage.APPEARANCE -> L("المظهر", "Appearance")
+    SettingsPage.PRIVACY -> L("الخصوصية والأمان", "Privacy & security")
+    SettingsPage.ABOUT -> L("حول", "About")
+}
+
+private fun SettingsPage.lead(): String = when (this) {
+    SettingsPage.AI -> L("ذكاء اصطناعي على جهازك دون إنترنت، ومحفزاته التلقائية.", "On-device AI, offline, and its automatic triggers.")
+    SettingsPage.GENERAL -> L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
+    SettingsPage.PEN -> L("القلم والأصابع وشريط الأدوات.", "Your pen, finger gestures and the toolbar.")
+    SettingsPage.HIGHLIGHTS -> L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
+    SettingsPage.STUDY -> L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
+    SettingsPage.APPEARANCE -> L("اجعل هامش يبدو كما تحب.", "Make Hamish look and feel the way you like.")
+    SettingsPage.PRIVACY -> L("قفل المستندات وما يحفظه التطبيق.", "Document lock and what the app stores.")
+    SettingsPage.ABOUT -> L("الإصدار والتراخيص والشروط.", "Version, licenses and terms.")
+}
+
+private fun SettingsPage.icon(): Int = when (this) {
+    SettingsPage.AI -> R.drawable.ph_summary
+    SettingsPage.GENERAL -> R.drawable.ph_sliders
+    SettingsPage.PEN -> R.drawable.ph_pen
+    SettingsPage.HIGHLIGHTS -> R.drawable.ph_highlighter
+    SettingsPage.STUDY -> R.drawable.ph_timer
+    SettingsPage.APPEARANCE -> R.drawable.ph_palette
+    SettingsPage.PRIVACY -> R.drawable.ph_lock
+    SettingsPage.ABOUT -> R.drawable.ph_info
+}
+
+private fun SettingsPage.color(): Color = when (this) {
+    SettingsPage.AI -> Palette.Navy
+    SettingsPage.GENERAL -> TileGray
+    SettingsPage.PEN -> TileBlue
+    SettingsPage.HIGHLIGHTS -> TileGold
+    SettingsPage.STUDY -> TileGreen
+    SettingsPage.APPEARANCE -> TilePurple
+    SettingsPage.PRIVACY -> TileRed
+    SettingsPage.ABOUT -> TileSlate
+}
+
+private val TileGray = Color(0xFF6B7A90)
+private val TileBlue = Color(0xFF2F6FDB)
+private val TileGold = Color(0xFFD9A21B)
+private val TileGreen = Color(0xFF2E9D6B)
+private val TilePurple = Color(0xFF8B5CF6)
+private val TileRed = Color(0xFFB0413E)
+private val TileSlate = Color(0xFF667085)
+private val GroupLine = Color(0xFFF1EEE7)
+
 @Composable
 fun SettingsDialog(onDismiss: () -> Unit) {
     val c = AppController
-    val listState = rememberLazyListState()
-    val pager = rememberPagerState(pageCount = { ToolCatalog.tour.size })
-    val scope = rememberCoroutineScope()
     var toolbarOpen by remember { mutableStateOf(false) }
     var templateOpen by remember { mutableStateOf(false) }
     var templateVer by remember { mutableStateOf(0) }
     var licensesOpen by remember { mutableStateOf(false) }
     var privacyOpen by remember { mutableStateOf(false) }
     var termsOpen by remember { mutableStateOf(false) }
-    fun showTour(id: String) {
-        val i = ToolCatalog.tour.indexOfFirst { it.id == id }
-        if (i >= 0) scope.launch {
-            listState.animateScrollToItem(0)
-            pager.animateScrollToPage(i)
-        }
-    }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    OriginDialog(onDismiss = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) { close ->
         Surface(
-            Modifier.fillMaxWidth(0.94f).widthIn(max = 780.dp).fillMaxHeight(0.92f),
+            Modifier.fillMaxWidth(0.94f).widthIn(max = 880.dp).fillMaxHeight(0.92f),
             shape = RoundedCornerShape(24.dp),
             color = Palette.Background
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 8.dp, top = 14.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PhIcon(R.drawable.ph_sliders, Palette.Navy, 24.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        L("الإعدادات", "Settings"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                // شاشة عريضة: قائمة جانبية ومحتوى. شاشة ضيقة: القائمة أولًا ثم القسم في صفحة كاملة
+                val wide = maxWidth >= 600.dp
+                var page by remember { mutableStateOf<SettingsPage?>(if (wide) SettingsPage.GENERAL else null) }
+                val pane: @Composable (SettingsPage, Modifier) -> Unit = { p, m ->
+                    SettingsPane(
+                        p, m,
+                        onClose = close,
+                        onBack = if (wide) null else ({ page = null }),
+                        templateVer = templateVer,
+                        openToolbar = { toolbarOpen = true },
+                        openTemplate = { templateOpen = true },
+                        openLicenses = { licensesOpen = true },
+                        openPrivacy = { privacyOpen = true },
+                        openTerms = { termsOpen = true }
                     )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 22.dp, L("إغلاق", "Close")) }
                 }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item { SectionTitle(L("الذكاء الاصطناعي (على جهازك)", "AI (on your device)")) }
-                    item { AiSettings() }
-
-                    item { SectionTitle(L("إعدادات المستندات", "Document settings")) }
-                    item {
-                        SettingSwitch(
-                            L("المتابعة من حيث توقفت", "Continue where you left off"),
-                            L("عند فتح التطبيق تُفتح المستندات التي كانت مفتوحة وآخر مستند استخدمته", "When the app starts, the documents you had open and the last one you used are reopened"),
-                            c.resumeLast
-                        ) { c.toggleResumeLast() }
+                if (wide) {
+                    Row(Modifier.fillMaxSize()) {
+                        SettingsSidebar(page ?: SettingsPage.GENERAL, Modifier.width(250.dp).fillMaxHeight(), onClose = null) { page = it }
+                        Box(Modifier.width(1.dp).fillMaxHeight().background(Palette.Divider))
+                        pane(page ?: SettingsPage.GENERAL, Modifier.weight(1f).fillMaxHeight())
                     }
-                    item {
-                        SettingSwitch(
-                            L("فتح المستندات في تبويبات", "Open documents as tabs"),
-                            L("كل مستند تفتحه يظهر في تبويب جديد. أوقفه ليحل المستند الجديد محل المفتوح", "Each document opens in a new tab. Turn off to replace the open document"),
-                            c.openAsTabs
-                        ) { c.toggleOpenAsTabs() }
-                    }
-                    item {
-                        NavRow(
-                            L("تخصيص شريط الأدوات", "Toolbar customization"),
-                            L("شكل الشريط، والأدوات الظاهرة فيه، واستعادة الشريط الافتراضي", "Toolbar style, which tools it shows, and restoring the default toolbar"),
-                            R.drawable.ph_sliders
-                        ) { toolbarOpen = true }
-                    }
-                    item {
-                        val d = templateVer.let { Templates.defaultChoice() }
-                        NavRow(
-                            L("القالب الافتراضي للملاحظات", "Default notebook template"),
-                            Templates.labelOf(d.kind) + " · " + Templates.sizeOf(d.size).label + if (d.landscape) L(" · أفقي", " · landscape") else "",
-                            R.drawable.ph_pages
-                        ) { templateOpen = true }
-                    }
-
-                    item { SectionTitle("اللغة / Language") }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            ChoiceChip("العربية", !I18n.english) { c.setEnglish(false) }
-                            ChoiceChip("English", I18n.english) { c.setEnglish(true) }
-                        }
-                    }
-                    item { SectionTitle(L("القلم والأصابع", "Pen and fingers")) }
-                    item {
-                        SettingSwitch(
-                            L("النقر المزدوج على القلم", "Pen double-tap"),
-                            L("يبدّل بين الممحاة وآخر قلم استخدمته", "Switches between the eraser and your last pen"),
-                            c.penDoubleTapEnabled
-                        ) { c.togglePenDoubleTap() }
-                    }
-                    item { PenKeyLearnRow() }
-                    item {
-                        SettingSwitch(
-                            L("نقرة بإصبعين للتراجع، وبثلاثة للإعادة", "Two-finger tap to undo, three to redo"),
-                            L("انقر الصفحة بإصبعين معًا للتراجع، وبثلاثة أصابع لإعادة ما تراجعت عنه", "Tap the page with two fingers to undo, with three fingers to redo"),
-                            c.fingerUndo
-                        ) { c.toggleFingerUndo() }
-                    }
-
-                    item { SectionTitle(L("مؤقت الدراسة", "Study timer")) }
-                    item { PomodoroSettings() }
-
-                    item { SectionTitle(L("قفل المستندات", "Document lock")) }
-                    item {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                L("اقفل مستندًا من قائمته في المكتبة؛ يُفتح بالرمز أو البصمة.", "Lock a document from its menu in the library; it opens with your PIN or fingerprint."),
-                                fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
-                            )
-                            if (c.hasPin()) {
-                                androidx.compose.material3.TextButton(onClick = { c.setPinFor = "" }) {
-                                    Text(L("تغيير الرمز", "Change PIN"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
-                    item { SectionTitle(L("التذكير اليومي", "Daily reminder")) }
-                    item { ReminderRow() }
-
-                    item { SectionTitle(L("التمييز والملخص", "Highlights and summary")) }
-                    item {
-                        SettingSwitch(
-                            L("تفعيل الملخصات", "Enable summaries"),
-                            L("أوقفه لإخفاء زر الملخصات وعدم إضافة التمييز إلى الملخص", "Turn off to hide the summaries button and stop adding highlights to the summary"),
-                            UiPrefs.summariesOn
-                        ) { UiPrefs.changeSummariesOn(!UiPrefs.summariesOn) }
-                    }
-                    item {
-                        SettingSwitch(L("التقاط النص", "Text snap"), L("يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", "The highlighter snaps to words and adds their text to the summary"), c.highlightSnap) {
-                            c.toggleHighlightSnap()
-                        }
-                    }
-                    item {
-                        SettingSwitch(
-                            L("إضافة التمييز إلى الملخص", "Add highlights to summary"),
-                            L("أوقفه لتظلّل على الصفحة فقط دون أن يظهر النص في الملخصات", "Turn off to highlight on the page only, without adding text to summaries"),
-                            c.highlightToSummary
-                        ) { c.toggleHighlightToSummary() }
-                    }
-                    item {
-                        SettingSwitch(L("ترتيب نص الملخص", "Tidy summary text"), L("تنظيف المسافات وإكمال الجمل المقطوعة بين الأسطر", "Clean spacing and join sentences broken across lines"), c.summaryTidy) {
-                            c.toggleSummaryTidy()
-                        }
-                    }
-                    item {
-                        SettingSwitch(L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"), L("ارسم ثم أبقِ القلم ضاغطًا دون حركة لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"), PenPrefs.drawAndHold) {
-                            PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold)
-                        }
-                    }
-
-                    item { SectionTitle(L("المظهر", "Appearance")) }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            ChoiceChip(L("كحلي", "Navy"), ThemeState.theme == AppTheme.NAVY) { c.setTheme(AppTheme.NAVY) }
-                            ChoiceChip(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT) { c.setTheme(AppTheme.LIGHT) }
-                        }
-                    }
-                    item { Text(L("حجم شريط الأدوات", "Toolbar size"), fontSize = 14.sp, color = Palette.TextSecondary) }
-                    item {
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            listOf(0.85f to L("صغير", "Small"), 1f to L("عادي", "Normal"), 1.15f to L("كبير", "Large"), 1.3f to L("أكبر", "Larger")).forEach { (v, label) ->
-                                ChoiceChip(label, kotlin.math.abs(UiPrefs.toolbarScale - v) < 0.01f) { UiPrefs.changeToolbarScale(v) }
-                            }
-                        }
-                    }
-                    item { Text(L("حجم الكتابة في التطبيق", "App text size"), fontSize = 14.sp, color = Palette.TextSecondary) }
-                    item {
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            listOf(0.9f to L("صغير", "Small"), 1f to L("عادي", "Normal"), 1.15f to L("كبير", "Large"), 1.3f to L("أكبر", "Larger")).forEach { (v, label) ->
-                                ChoiceChip(label, kotlin.math.abs(UiPrefs.textScale - v) < 0.01f) { UiPrefs.changeTextScale(v) }
-                            }
-                        }
-                    }
-
-                    item { SectionTitle(L("حول التطبيق", "About")) }
-                    item {
-                        NavRow(L("تراخيص المكتبات المفتوحة", "Open-source licenses"), L("المكوّنات المستخدمة في التطبيق وتراخيصها", "Components used in the app and their licenses"), R.drawable.ph_list) { licensesOpen = true }
-                    }
-                    item {
-                        NavRow(L("سياسة الخصوصية", "Privacy policy"), L("ما يحفظه التطبيق وأين", "What the app stores and where"), R.drawable.ph_lock) { privacyOpen = true }
-                    }
-                    item {
-                        NavRow(L("شروط الاستخدام", "Terms of use"), L("حدود المسؤولية واستخدام الملفات", "Liability and use of your files"), R.drawable.ph_note) { termsOpen = true }
-                    }
+                } else {
+                    val p = page
+                    if (p == null) SettingsSidebar(null, Modifier.fillMaxSize(), onClose = close) { page = it }
+                    else pane(p, Modifier.fillMaxSize())
                 }
             }
         }
@@ -338,6 +253,415 @@ fun SettingsDialog(onDismiss: () -> Unit) {
         onDismiss = { templateOpen = false },
         onConfirm = { _, _, _ -> templateOpen = false; templateVer++ }
     )
+}
+
+/** القائمة الجانبية: العنوان، بطاقة الحساب المصغّرة، الأقسام، ورقم الإصدار. */
+@Composable
+private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose: (() -> Unit)?, onSelect: (SettingsPage) -> Unit) {
+    val c = AppController
+    Column(modifier.background(Color.White).padding(horizontal = 12.dp, vertical = 16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                L("الإعدادات", "Settings"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                fontSize = 22.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
+            )
+            if (onClose != null) CloseButton(onClose)
+        }
+        Spacer(Modifier.height(12.dp))
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            SettingsPage.values().forEach { p ->
+                val on = p == selected
+                val shape = RoundedCornerShape(12.dp)
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 1.dp).clip(shape)
+                        .background(if (on) Palette.NavySoft else Color.Transparent)
+                        .clickable { onSelect(p) }.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconTile(p.icon(), p.color(), 28.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        p.title(), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        color = if (on) Palette.Navy else Palette.TextPrimary, modifier = Modifier.weight(1f)
+                    )
+                    if (selected == null) Chevron()
+                    if (on) Box(Modifier.size(width = 3.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(Palette.Gold))
+                }
+            }
+        }
+        Text(
+            L("هامش", "Hamish") + " " + BuildConfig.VERSION_NAME,
+            fontSize = 11.sp, color = Palette.TextSecondary, modifier = Modifier.padding(start = 10.dp, top = 8.dp)
+        )
+    }
+}
+
+/** محتوى قسم واحد: العنوان والوصف ثم مجموعات الإعدادات. */
+@Composable
+private fun SettingsPane(
+    page: SettingsPage,
+    modifier: Modifier,
+    onClose: () -> Unit,
+    onBack: (() -> Unit)?,
+    templateVer: Int,
+    openToolbar: () -> Unit,
+    openTemplate: () -> Unit,
+    openLicenses: () -> Unit,
+    openPrivacy: () -> Unit,
+    openTerms: () -> Unit
+) {
+    val c = AppController
+    Column(modifier) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = if (onBack != null) 8.dp else 24.dp, end = 14.dp, top = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) { Text(if (I18n.english) "‹" else "›", fontSize = 28.sp, color = Palette.Navy) }
+            }
+            Text(
+                page.title(), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                fontSize = 24.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f)
+            )
+            CloseButton(onClose)
+        }
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, bottom = 28.dp)
+        ) {
+            Text(page.lead(), fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+            when (page) {
+                SettingsPage.AI -> {
+                    AiSettings()
+                    GroupLabel(L("البيانات", "Data"))
+                    SettingsGroup {
+                        GroupRow(
+                            R.drawable.ph_folder, TileGreen,
+                            L("أين تُحفظ ملاحظاتك", "Where your notes are stored"),
+                            L("على هذا الجهاز فقط", "On this device only")
+                        )
+                    }
+                }
+                SettingsPage.GENERAL -> {
+                    GroupLabel(L("اللغة", "Language"))
+                    SettingsGroup {
+                        GroupRow(R.drawable.ph_translate, TileBlue, L("لغة التطبيق", "App language")) {
+                            Segmented(listOf("العربية", "English"), if (I18n.english) 1 else 0) { c.setEnglish(it == 1) }
+                        }
+                    }
+                    GroupLabel(L("المستندات", "Documents"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_recent, TileGreen,
+                            L("المتابعة من حيث توقفت", "Continue where you left off"),
+                            L("تُفتح المستندات التي كانت مفتوحة عند تشغيل التطبيق", "Reopen your last documents when the app starts"),
+                            c.resumeLast
+                        ) { c.toggleResumeLast() }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_pages, TileGray,
+                            L("فتح المستندات في تبويبات", "Open documents as tabs"),
+                            L("كل مستند في تبويب جديد. أوقفه ليحل الجديد محل المفتوح", "Each document opens in a new tab. Turn off to replace the open one"),
+                            c.openAsTabs
+                        ) { c.toggleOpenAsTabs() }
+                        GroupDivider()
+                        val d = templateVer.let { Templates.defaultChoice() }
+                        GroupRow(
+                            R.drawable.ph_note, TileGold,
+                            L("القالب الافتراضي للملاحظات", "Default notebook template"),
+                            onClick = openTemplate
+                        ) {
+                            ValueChevron(Templates.labelOf(d.kind) + " · " + Templates.sizeOf(d.size).label + if (d.landscape) L(" · أفقي", " · landscape") else "")
+                        }
+                    }
+                }
+                SettingsPage.PEN -> {
+                    GroupLabel(L("القلم", "Pen"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_pen_nib, TileBlue,
+                            L("النقر المزدوج على القلم", "Pen double-tap"),
+                            L("يبدّل بين الممحاة وآخر قلم استخدمته", "Switches between the eraser and your last pen"),
+                            c.penDoubleTapEnabled
+                        ) { c.togglePenDoubleTap() }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_shape_detect, TilePurple,
+                            L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"),
+                            L("ارسم ثم أبقِ القلم ثابتًا لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"),
+                            PenPrefs.drawAndHold
+                        ) { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    PenKeyLearnRow()
+                    GroupLabel(L("الأصابع", "Fingers"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_undo, TileGreen,
+                            L("نقرة بإصبعين للتراجع، وبثلاثة للإعادة", "Two-finger tap to undo, three to redo"),
+                            L("انقر الصفحة بإصبعين للتراجع، وبثلاثة لإعادة ما تراجعت عنه", "Tap the page with two fingers to undo, with three to redo"),
+                            c.fingerUndo
+                        ) { c.toggleFingerUndo() }
+                    }
+                    GroupLabel(L("شريط الأدوات", "Toolbar"))
+                    SettingsGroup {
+                        GroupRow(
+                            R.drawable.ph_sliders, TileGray,
+                            L("تخصيص شريط الأدوات", "Toolbar customization"),
+                            L("الشكل، والأدوات الظاهرة، واستعادة الافتراضي", "Style, which tools it shows, and restoring the default"),
+                            onClick = openToolbar
+                        ) { Chevron() }
+                    }
+                }
+                SettingsPage.HIGHLIGHTS -> {
+                    GroupLabel(L("الملخصات", "Summaries"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_summary, TileGold,
+                            L("تفعيل الملخصات", "Enable summaries"),
+                            L("أوقفه لإخفاء زر الملخصات وعدم إضافة التمييز إليها", "Turn off to hide the summaries button and stop adding highlights"),
+                            UiPrefs.summariesOn
+                        ) { UiPrefs.changeSummariesOn(!UiPrefs.summariesOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_text, TileGray,
+                            L("ترتيب نص الملخص", "Tidy summary text"),
+                            L("تنظيف المسافات وإكمال الجمل المقطوعة بين الأسطر", "Clean spacing and join sentences broken across lines"),
+                            c.summaryTidy
+                        ) { c.toggleSummaryTidy() }
+                    }
+                    GroupLabel(L("الهايلايتر", "Highlighter"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_snap, TileBlue,
+                            L("التقاط النص", "Text snap"),
+                            L("يلتصق الهايلايتر بالكلمات ويُضاف نصها إلى الملخص", "The highlighter snaps to words and adds their text to the summary"),
+                            c.highlightSnap
+                        ) { c.toggleHighlightSnap() }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_highlighter, TileGold,
+                            L("إضافة التمييز إلى الملخص", "Add highlights to summary"),
+                            L("أوقفه لتظلّل على الصفحة فقط دون إضافة النص", "Turn off to highlight on the page only, without adding text"),
+                            c.highlightToSummary
+                        ) { c.toggleHighlightToSummary() }
+                    }
+                }
+                SettingsPage.STUDY -> {
+                    GroupLabel(L("مؤقت الدراسة", "Study timer"))
+                    PomodoroSettings()
+                    GroupLabel(L("التذكير اليومي", "Daily reminder"))
+                    ReminderRow()
+                }
+                SettingsPage.APPEARANCE -> {
+                    GroupLabel(L("السمة", "Theme"))
+                    SettingsGroup {
+                        Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            ThemeCard(L("كحلي", "Navy"), ThemeState.theme == AppTheme.NAVY, AppTheme.NAVY, Modifier.weight(1f)) { c.setTheme(AppTheme.NAVY) }
+                            ThemeCard(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT, AppTheme.LIGHT, Modifier.weight(1f)) { c.setTheme(AppTheme.LIGHT) }
+                        }
+                    }
+                    GroupLabel(L("الأحجام", "Sizes"))
+                    SettingsGroup {
+                        val bars = listOf(0.85f, 1f, 1.15f, 1.3f)
+                        GroupRow(R.drawable.ph_sliders, TileGray, L("حجم شريط الأدوات", "Toolbar size")) {
+                            Segmented(
+                                listOf(L("صغير", "S"), L("عادي", "M"), L("كبير", "L"), L("أكبر", "XL")),
+                                bars.indexOfFirst { kotlin.math.abs(UiPrefs.toolbarScale - it) < 0.01f }
+                            ) { UiPrefs.changeToolbarScale(bars[it]) }
+                        }
+                        GroupDivider()
+                        val texts = listOf(0.9f, 1f, 1.15f, 1.3f)
+                        GroupRow(R.drawable.ph_text, TilePurple, L("حجم الكتابة", "Text size")) {
+                            Segmented(
+                                listOf(L("أ", "Aa"), L("أ", "Aa"), L("أ", "Aa"), L("أ", "Aa")),
+                                texts.indexOfFirst { kotlin.math.abs(UiPrefs.textScale - it) < 0.01f },
+                                sizes = listOf(11, 13, 15, 17)
+                            ) { UiPrefs.changeTextScale(texts[it]) }
+                        }
+                    }
+                }
+                SettingsPage.PRIVACY -> {
+                    GroupLabel(L("قفل المستندات", "Document lock"))
+                    SettingsGroup {
+                        GroupRow(
+                            R.drawable.ph_lock, TileRed,
+                            L("قفل بالرمز أو البصمة", "Lock with PIN or fingerprint"),
+                            L("اقفل مستندًا من قائمته في المكتبة", "Lock a document from its menu in the library"),
+                            onClick = if (c.hasPin()) ({ c.setPinFor = "" }) else null
+                        ) {
+                            if (c.hasPin()) ValueChevron(L("تغيير الرمز", "Change PIN"))
+                        }
+                    }
+                    GroupLabel(L("الخصوصية", "Privacy"))
+                    SettingsGroup {
+                        GroupRow(
+                            R.drawable.ph_eye, TileSlate,
+                            L("سياسة الخصوصية", "Privacy policy"),
+                            L("ما يحفظه التطبيق وأين", "What the app stores and where"),
+                            onClick = openPrivacy
+                        ) { Chevron() }
+                    }
+                }
+                SettingsPage.ABOUT -> {
+                    SettingsGroup {
+                        Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Image(painterResource(R.drawable.logo_app), null, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
+                            Spacer(Modifier.width(14.dp))
+                            Column {
+                                Text(L("هامش", "Hamish"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
+                                Text(L("الإصدار", "Version") + " " + BuildConfig.VERSION_NAME, fontSize = 13.sp, color = Palette.TextSecondary)
+                            }
+                        }
+                    }
+                    GroupLabel(L("قانوني", "Legal"))
+                    SettingsGroup {
+                        GroupRow(
+                            R.drawable.ph_list, TileSlate,
+                            L("تراخيص المكتبات المفتوحة", "Open-source licenses"),
+                            L("المكوّنات المستخدمة وتراخيصها", "Components used and their licenses"),
+                            onClick = openLicenses
+                        ) { Chevron() }
+                        GroupDivider()
+                        GroupRow(
+                            R.drawable.ph_note, TileGray,
+                            L("شروط الاستخدام", "Terms of use"),
+                            L("حدود المسؤولية واستخدام الملفات", "Liability and use of your files"),
+                            onClick = openTerms
+                        ) { Chevron() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloseButton(onClick: () -> Unit) {
+    Box(
+        Modifier.size(34.dp).clip(CircleShape).background(Color(0xFFE8EBF0)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 18.dp, L("إغلاق", "Close")) }
+}
+
+/** مربع ملوّن بأيقونة بيضاء، كأيقونات إعدادات الأنظمة الحديثة. */
+@Composable
+private fun IconTile(icon: Int, color: Color, size: androidx.compose.ui.unit.Dp = 32.dp) {
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.28f)).background(color),
+        contentAlignment = Alignment.Center
+    ) { PhIcon(icon, Color.White, size * 0.58f) }
+}
+
+@Composable
+private fun GroupLabel(text: String) {
+    Text(
+        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
+        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp)
+    )
+}
+
+/** بطاقة بيضاء تجمع عدة صفوف بينها خطوط رفيعة. */
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)) { content() }
+}
+
+@Composable
+private fun GroupDivider() {
+    Box(Modifier.fillMaxWidth().padding(start = 60.dp).height(1.dp).background(GroupLine))
+}
+
+@Composable
+private fun GroupRow(
+    icon: Int, color: Color, title: String, desc: String? = null,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit = {}
+) {
+    Row(
+        Modifier.fillMaxWidth().let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconTile(icon, color)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+            if (desc != null) Text(desc, fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary)
+        }
+        Spacer(Modifier.width(10.dp))
+        trailing()
+    }
+}
+
+@Composable
+private fun SwitchRow(icon: Int, color: Color, title: String, desc: String, checked: Boolean, onToggle: () -> Unit) {
+    GroupRow(icon, color, title, desc, onClick = onToggle) { NavySwitch(checked) { onToggle() } }
+}
+
+@Composable
+private fun Chevron() {
+    Text(if (I18n.english) "›" else "‹", fontSize = 20.sp, color = Color(0xFFB0B5BF))
+}
+
+@Composable
+private fun ValueChevron(value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(value, fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1)
+        Spacer(Modifier.width(6.dp))
+        Chevron()
+    }
+}
+
+/** أزرار اختيار متلاصقة داخل شريط واحد. */
+@Composable
+private fun Segmented(options: List<String>, selected: Int, sizes: List<Int>? = null, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(11.dp)).background(Color(0xFFEEF0F4)).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        options.forEachIndexed { i, label ->
+            val on = i == selected
+            Box(
+                Modifier.clip(RoundedCornerShape(9.dp))
+                    .let { if (on) it.shadow(1.dp, RoundedCornerShape(9.dp)).background(Color.White) else it }
+                    .clickable { onSelect(i) }.padding(horizontal = 12.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label, fontSize = (sizes?.getOrNull(i) ?: 13).sp, fontWeight = FontWeight.Bold,
+                    color = if (on) Palette.Navy else Palette.TextSecondary
+                )
+            }
+        }
+    }
+}
+
+/** بطاقة سمة بمعاينة مصغّرة للشكل. */
+@Composable
+private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    val navy = theme == AppTheme.NAVY
+    Column(
+        modifier.clip(shape).border(2.dp, if (selected) Palette.Gold else Palette.Divider, shape)
+            .clickable(onClick = onClick).padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(9.dp)).background(if (navy) Color(0xFFF3F5F8) else Color(0xFFFFFDF7))) {
+            Box(Modifier.fillMaxHeight().weight(0.28f).background(if (navy) Palette.Navy else Color.White))
+            Column(Modifier.weight(0.72f).padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                val line = if (navy) Color(0xFFC9D2E0) else Color(0xFFE6E1D4)
+                Box(Modifier.fillMaxWidth(0.7f).height(6.dp).clip(CircleShape).background(if (navy) Palette.Navy else Color(0xFF1E2A44)))
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(line))
+                Box(Modifier.fillMaxWidth(0.8f).height(6.dp).clip(CircleShape).background(line))
+                Box(Modifier.fillMaxWidth(0.45f).height(6.dp).clip(CircleShape).background(Lib.accent))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text((if (selected) "✓ " else "") + label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+    }
 }
 
 /** إن لم يعمل النقر المزدوج تلقائيًا: يتعلّم التطبيق الإشارة التي يرسلها القلم. */
@@ -376,89 +700,274 @@ private fun PenKeyLearnRow() {
     }
 }
 
-/** نافذة «تخصيص شريط الأدوات»: الشكل، الأدوات الأساسية، والأدوات التي تُضاف أو تُخفى. */
+/** نافذة «شريط الأدوات»: تبويب للتخصيص (معاينة حية، الشكل، الأدوات) وتبويب للتعرّف على الأدوات. */
 @Composable
-@OptIn(ExperimentalFoundationApi::class)
 private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
     val c = AppController
-    // «تعرّف على الأدوات» هنا، وزر المعلومات بجانب كل أداة يعرض شرحها في الأعلى
-    val listState = rememberLazyListState()
-    val pager = rememberPagerState(pageCount = { ToolCatalog.tour.size })
-    val scope = rememberCoroutineScope()
+    var learn by remember { mutableStateOf(false) }
+    var learnIndex by remember { mutableStateOf(0) }
     fun onInfo(id: String) {
         val i = ToolCatalog.tour.indexOfFirst { it.id == id }
-        if (i >= 0) scope.launch {
-            listState.animateScrollToItem(0)
-            pager.animateScrollToPage(i)
-        }
+        if (i >= 0) { learnIndex = i; learn = true }
     }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    OriginDialog(onDismiss = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) { close ->
         Surface(
-            Modifier.fillMaxWidth(0.9f).widthIn(max = 720.dp).fillMaxHeight(0.88f),
-            shape = RoundedCornerShape(24.dp),
+            Modifier.fillMaxWidth(0.92f).widthIn(max = 900.dp).fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(26.dp),
             color = Palette.Background
         ) {
             Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 8.dp, top = 14.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        L("تخصيص شريط الأدوات", "Toolbar customization"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 22.dp, L("إغلاق", "Close")) }
+                // الرأس: العنوان، الاستعادة، الإغلاق، والتبويبات
+                Column(Modifier.fillMaxWidth().background(Color.White).padding(start = 26.dp, end = 18.dp, top = 20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                L("شريط الأدوات", "Toolbar"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp, color = Palette.TextPrimary
+                            )
+                            Text(
+                                L("اختر شكل شريطك والأدوات التي تظهر فيه.", "Choose how your toolbar looks and which tools it shows."),
+                                fontSize = 13.sp, color = Palette.TextSecondary
+                            )
+                        }
+                        Box(
+                            Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFFBF4E2)).clickable { c.resetToolbar() }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) { Text(L("↺ استعادة الافتراضي", "↺ Restore default"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep) }
+                        Spacer(Modifier.width(10.dp))
+                        CloseButton(close)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        DialogTab(L("تخصيص", "Customize"), !learn) { learn = false }
+                        DialogTab(L("تعرّف على الأدوات", "Learn the tools"), learn) { learn = true }
+                    }
                 }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 22.dp, end = 22.dp, bottom = 28.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item { SectionTitle(L("تعرّف على الأدوات", "Get to know the tools")) }
-                    item { ToolTour(pager) }
-                    item { SectionTitle(L("شكل شريط الأدوات", "Toolbar style")) }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            StyleOption(
-                                Modifier.weight(1f), ToolbarStyle.PEN_BAR, L("شريط الأقلام", "Pen bar"),
-                                L("زر قلم واحد؛ الضغط عليه يفتح شريطًا ثانيًا فيه كل الأقلام والهايلايتر والألوان والحجم.", "One pen button; tapping it opens a second bar with all pens, the highlighter, colors and size.")
-                            )
-                            StyleOption(
-                                Modifier.weight(1f), ToolbarStyle.CLASSIC, L("الكلاسيكي", "Classic"),
-                                L("القلم والهايلايتر زرّان منفصلان؛ نقرة ثانية على الأداة تفتح إعداداتها.", "Pen and highlighter are separate buttons; tapping a tool again opens its settings.")
-                            )
-                        }
-                    }
-
-                    item { SectionTitle(L("الأدوات الأساسية (ظاهرة دائمًا)", "Essential tools (always shown)")) }
-                    ToolCatalog.essentials.forEach { t ->
-                        item(key = "e_" + t.id) {
-                            ToolRow(t, onInfo = { onInfo(t.id) }) {
-                                Text(L("أساسية", "Essential"), fontSize = 12.sp, color = Palette.TextSecondary)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val wide = maxWidth >= 640.dp
+                    if (learn) {
+                        LearnTools(learnIndex, wide) { learnIndex = it }
+                    } else {
+                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 26.dp, end = 26.dp, bottom = 28.dp)) {
+                            GroupLabel(L("معاينة", "Preview"))
+                            ToolbarLivePreview()
+                            GroupLabel(L("شكل الشريط", "Toolbar style"))
+                            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                StyleOption(
+                                    Modifier.weight(1f), ToolbarStyle.PEN_BAR, L("شريط الأقلام", "Pen bar"),
+                                    L("زر قلم واحد؛ الضغط عليه يفتح شريطًا ثانيًا فيه كل الأقلام والهايلايتر والألوان والحجم.", "One pen button. Tapping it opens a second bar with all pens, the highlighter, colors and size.")
+                                )
+                                StyleOption(
+                                    Modifier.weight(1f), ToolbarStyle.CLASSIC, L("الكلاسيكي", "Classic"),
+                                    L("القلم والهايلايتر زرّان منفصلان؛ نقرة ثانية على الأداة تفتح إعداداتها.", "Pen and highlighter are separate buttons. Tap a tool again to open its settings.")
+                                )
                             }
+                            val cols = if (wide) 3 else 2
+                            GroupLabel(L("الأدوات الأساسية", "Essential tools"))
+                            ToolGrid(ToolCatalog.essentials, cols, ::onInfo, essential = true)
+                            GroupLabel(L("أدوات إضافية · اضغط لإظهارها أو إخفائها", "More tools · tap to show or hide"))
+                            ToolGrid(ToolCatalog.optional, cols, ::onInfo, essential = false)
                         }
                     }
-
-                    item { SectionTitle(L("أدوات اختيارية: أظهرها أو أخفها من الشريط", "Optional tools: show or hide them in the toolbar")) }
-                    item {
-                        androidx.compose.material3.TextButton(onClick = { c.resetToolbar() }) {
-                            Text(L("استعادة الشريط الافتراضي", "Restore default toolbar"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    ToolCatalog.optional.forEach { t ->
-                        item(key = "o_" + t.id) {
-                            ToolRow(t, onInfo = { onInfo(t.id) }) {
-                                NavySwitch(c.toolVisible(t.id)) { c.setToolVisible(t.id, it) }
-                            }
-                        }
-                    }
-
                 }
             }
         }
     }
 }
+
+@Composable
+private fun DialogTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(Modifier.width(IntrinsicSize.Max).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            color = if (selected) Palette.Navy else Palette.TextSecondary, modifier = Modifier.padding(bottom = 10.dp)
+        )
+        Box(
+            Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
+                .background(if (selected) Palette.Gold else Color.Transparent)
+        )
+    }
+}
+
+/** شريط مصغّر يعرض الأدوات الظاهرة الآن ويتغيّر فورًا مع الاختيار. */
+@Composable
+private fun ToolbarLivePreview() {
+    val c = AppController
+    val shown = ToolCatalog.essentials + ToolCatalog.optional.filter { c.toolVisible(it.id) }
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape)
+            .background(Brush.verticalGradient(listOf(Color(0xFFE9EDF3), Color(0xFFDDE3EC))))
+            .padding(vertical = 20.dp, horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            Modifier.shadow(6.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Color.White)
+                .horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            shown.forEachIndexed { i, t ->
+                if (i == ToolCatalog.essentials.size) {
+                    Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(24.dp).background(Color(0xFFE3E6EC)))
+                }
+                Box(
+                    Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(if (i == 0) Palette.Navy else Color.Transparent),
+                    contentAlignment = Alignment.Center
+                ) { PhIcon(t.icon, if (i == 0) Color.White else Palette.Navy, 20.dp) }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            L("معاينة حية · ${shown.size} أداة في شريطك", "Live preview · ${shown.size} tools in your toolbar"),
+            fontSize = 12.sp, color = Palette.TextSecondary
+        )
+    }
+}
+
+/** شبكة بطاقات الأدوات: الأساسية بشارة «دائمًا ظاهرة»، والإضافية تُظهر وتُخفى بالضغط. */
+@Composable
+private fun ToolGrid(tools: List<ToolInfo>, cols: Int, onInfo: (String) -> Unit, essential: Boolean) {
+    val c = AppController
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        tools.chunked(cols).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { t ->
+                    val on = essential || c.toolVisible(t.id)
+                    val shape = RoundedCornerShape(16.dp)
+                    Row(
+                        Modifier.weight(1f).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+                            .let { if (essential) it else it.clickable { c.setToolVisible(t.id, !on) } }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(if (on) Palette.NavySoft else Color(0xFFF3F4F6)),
+                            contentAlignment = Alignment.Center
+                        ) { PhIcon(t.icon, if (on) Palette.Navy else Color(0xFF9AA1AD), 20.dp) }
+                        Spacer(Modifier.width(11.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(t.name, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, lineHeight = 17.sp, maxLines = 2)
+                            Text(
+                                L("ⓘ كيف تعمل", "ⓘ How it works"), fontSize = 11.sp, color = Palette.TextSecondary,
+                                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onInfo(t.id) }.padding(vertical = 2.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        if (essential) {
+                            Text(
+                                L("دائمًا ظاهرة", "Always on"), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFFBF4E2)).padding(horizontal = 7.dp, vertical = 3.dp)
+                            )
+                        } else {
+                            Box(
+                                Modifier.size(24.dp).clip(CircleShape)
+                                    .then(if (on) Modifier.background(Palette.Navy) else Modifier.border(2.dp, Color(0xFFCDD2DA), CircleShape)),
+                                contentAlignment = Alignment.Center
+                            ) { if (on) PhIcon(R.drawable.ph_check, Color.White, 14.dp) }
+                        }
+                    }
+                }
+                repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** تبويب «تعرّف على الأدوات»: قائمة الأدوات وبجانبها شرح الأداة المختارة. */
+@Composable
+private fun LearnTools(index: Int, wide: Boolean, onSelect: (Int) -> Unit) {
+    val tools = ToolCatalog.tour
+    val list: @Composable (Modifier) -> Unit = { m ->
+        val shape = RoundedCornerShape(18.dp)
+        val state = rememberLazyListState(initialFirstVisibleItemIndex = (index - 2).coerceAtLeast(0))
+        LazyColumn(
+            m.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape),
+            state = state,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)
+        ) {
+            items(tools.size) { i ->
+                val t = tools[i]
+                val on = i == index
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp))
+                        .background(if (on) Palette.NavySoft else Color.Transparent)
+                        .clickable { onSelect(i) }.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(Palette.Background),
+                        contentAlignment = Alignment.Center
+                    ) { PhIcon(t.icon, Palette.Navy, 16.dp) }
+                    Spacer(Modifier.width(10.dp))
+                    Text(t.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (on) Palette.Navy else Palette.TextPrimary, maxLines = 1)
+                }
+            }
+        }
+    }
+    if (wide) {
+        Row(Modifier.fillMaxSize().padding(start = 26.dp, end = 26.dp, top = 18.dp, bottom = 26.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            list(Modifier.width(240.dp).fillMaxHeight())
+            ToolExplainer(index, Modifier.weight(1f).fillMaxHeight(), onSelect)
+        }
+    } else {
+        Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            ToolExplainer(index, Modifier.fillMaxWidth(), onSelect)
+            list(Modifier.fillMaxWidth().weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun ToolExplainer(index: Int, modifier: Modifier, onSelect: (Int) -> Unit) {
+    val c = AppController
+    val tools = ToolCatalog.tour
+    val t = tools[index]
+    val shape = RoundedCornerShape(18.dp)
+    Column(modifier.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).verticalScroll(rememberScrollState()).padding(18.dp)) {
+        ToolDemo(t.demo, Modifier.fillMaxWidth().height(220.dp))
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(Palette.NavySoft),
+                contentAlignment = Alignment.Center
+            ) { PhIcon(t.icon, Palette.Navy, 22.dp) }
+            Spacer(Modifier.width(12.dp))
+            Text(t.name, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+            val inBar = t.essential || (!t.tourOnly && c.toolVisible(t.id))
+            if (!t.tourOnly) {
+                Text(
+                    if (inBar) L("في شريطك", "In your toolbar") else L("غير ظاهرة", "Hidden"),
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    color = if (inBar) Color(0xFF1F7A50) else Palette.TextSecondary,
+                    modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(if (inBar) Color(0xFFE5F4EC) else Color(0xFFF1F2F5))
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(t.benefit, fontSize = 14.sp, lineHeight = 22.sp, color = Palette.TextSecondary)
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RoundArrow(if (I18n.english) "‹" else "›", index > 0) { onSelect(index - 1) }
+            Text(
+                L("${index + 1} من ${tools.size}", "${index + 1} of ${tools.size}"), fontSize = 12.sp, color = Palette.TextSecondary,
+                textAlign = TextAlign.Center, modifier = Modifier.weight(1f)
+            )
+            RoundArrow(if (I18n.english) "›" else "‹", index < tools.size - 1) { onSelect(index + 1) }
+        }
+    }
+}
+
+@Composable
+private fun RoundArrow(glyph: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(38.dp).clip(CircleShape).border(1.dp, Palette.Divider, CircleShape).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Text(glyph, fontSize = 20.sp, color = if (enabled) Palette.Navy else Palette.Divider) }
+}
+
 
 /** صف ينقل إلى صفحة إعدادات فرعية. */
 @Composable
@@ -501,71 +1010,31 @@ private fun NavySwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun SettingSwitch(title: String, desc: String, checked: Boolean, onToggle: () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
-            .clickable(onClick = onToggle).padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-            Text(desc, fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary)
-        }
-        Spacer(Modifier.width(10.dp))
-        NavySwitch(checked) { onToggle() }
-    }
-}
-
-@Composable
-private fun ToolRow(t: ToolInfo, onInfo: () -> Unit, trailing: @Composable () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
-            .clickable(onClick = onInfo).padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Background),
-            contentAlignment = Alignment.Center
-        ) { PhIcon(t.icon, Palette.Navy, 22.dp) }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(t.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-            Text(t.benefit, fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary, maxLines = 2)
-        }
-        Spacer(Modifier.width(8.dp))
-        trailing()
-    }
-}
-
-@Composable
 private fun StyleOption(modifier: Modifier, style: ToolbarStyle, title: String, desc: String) {
     val c = AppController
     val sel = c.toolbarStyle == style
-    val shape = RoundedCornerShape(16.dp)
-    Column(
+    val shape = RoundedCornerShape(18.dp)
+    Box(
         modifier.clip(shape).background(Color.White)
-            .border(if (sel) 2.dp else 1.dp, if (sel) Palette.Gold else Palette.Divider, shape)
-            .clickable { c.updateToolbarStyle(style) }.padding(12.dp)
+            .border(2.dp, if (sel) Palette.Gold else Palette.Divider, shape)
+            .clickable { c.updateToolbarStyle(style) }
     ) {
-        StylePreview(style)
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(16.dp).clip(CircleShape)
-                    .border(2.dp, if (sel) Palette.Gold else Palette.Divider, CircleShape)
-                    .background(if (sel) Palette.Gold else Color.Transparent)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+        Column(Modifier.padding(14.dp)) {
+            StylePreview(style)
+            Spacer(Modifier.height(12.dp))
+            Text(title, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Palette.TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(desc, fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary)
         }
-        Spacer(Modifier.height(4.dp))
-        Text(desc, fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary)
+        if (sel) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(10.dp).size(22.dp).clip(CircleShape).background(Palette.Gold),
+                contentAlignment = Alignment.Center
+            ) { PhIcon(R.drawable.ph_check, Color.White, 14.dp) }
+        }
     }
 }
 
-/** رسم متحرك صغير يوضح شكل الشريط. */
 @Composable
 private fun StylePreview(style: ToolbarStyle) {
     val t by rememberInfiniteTransition(label = "style").animateFloat(
@@ -621,54 +1090,6 @@ private fun StylePreview(style: ToolbarStyle) {
 // ---------------------------------------------------------------- جولة الأدوات المتحركة
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ToolTour(pager: androidx.compose.foundation.pager.PagerState) {
-    val tools = ToolCatalog.tour
-    // تقدّم تلقائي كل 5 ثوانٍ ما دام المستخدم لا يسحب
-    LaunchedEffect(pager) {
-        while (true) {
-            delay(5000)
-            if (!pager.isScrollInProgress) {
-                pager.animateScrollToPage((pager.currentPage + 1) % tools.size)
-            }
-        }
-    }
-    val shape = RoundedCornerShape(20.dp)
-    Column(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
-            .padding(vertical = 14.dp)
-    ) {
-        HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { i ->
-            val t = tools[i]
-            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                ToolDemo(t.demo, Modifier.fillMaxWidth().height(170.dp))
-                Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PhIcon(t.icon, Palette.Navy, 20.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(t.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    t.benefit, fontSize = 14.sp, lineHeight = 22.sp, color = Palette.TextPrimary,
-                    textAlign = TextAlign.Center, minLines = 2
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            tools.indices.forEach { k ->
-                val cur = k == pager.currentPage
-                Box(
-                    Modifier.padding(horizontal = 2.dp).size(if (cur) 14.dp else 6.dp, 6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(if (cur) Palette.Gold else Palette.Divider)
-                )
-            }
-        }
-    }
-}
-
 private val DemoYellow = Color(0xFFFFE066)
 private val DemoGreen = Color(0xFF9BE7B4)
 private val DemoInk = Color(0xFF1F3A5F)

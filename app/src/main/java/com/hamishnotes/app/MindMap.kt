@@ -15,15 +15,19 @@ data class MapNodeEdit(val role: MapRole, val parent: String? = null, val pos: D
  */
 data class MapEdits(
     val nodes: Map<String, MapNodeEdit> = emptyMap(),
-    val collapsed: Set<String> = emptySet()
+    val collapsed: Set<String> = emptySet(),
+    /** نص عدّله المستخدم في الخريطة فقط (الملخص لا يتغيّر). */
+    val texts: Map<String, String> = emptyMap()
 ) {
-    fun isEmpty(): Boolean = nodes.isEmpty() && collapsed.isEmpty()
+    fun isEmpty(): Boolean = nodes.isEmpty() && collapsed.isEmpty() && texts.isEmpty()
 }
 
 /** عقدة في الخريطة كما تُرسم: النص كاملًا كما التُقط. */
 class MapNode(
     val key: String,
     val text: String,
+    /** النص كما التُقط (قبل تعديل المستخدم في الخريطة). */
+    val original: String,
     val mark: TextMark,
     val collapsed: Boolean,
     val children: List<MapNode>
@@ -60,7 +64,7 @@ object MindMap {
 
     /**
      * الأماكن الفعلية بعد تصحيح ما انكسر: نقطة فقد أبوها (حُذف تمييزه) تصبح فرعًا،
-     * وما تحت المستوى الثالث يُرفع إليه. يعيد (الأب، الترتيب) لكل نص ظاهر.
+     * والحلقات تُكسر. لا حد للعمق. يعيد (الأب، الترتيب) لكل نص ظاهر.
      */
     private fun resolve(edits: MapEdits, items: List<Item>): Map<String, Pair<String?, Double>> {
         val index = items.withIndex().associate { it.value.key to it.index }
@@ -81,19 +85,6 @@ object MindMap {
                     break
                 }
                 cur = out[cur]?.first
-            }
-        }
-        // ثلاثة مستويات فقط: فرع ← نقطة ← نقطة فرعية
-        fun depth(k: String): Int {
-            var d = 0
-            var cur = out[k]?.first
-            while (cur != null) { d++; cur = out[cur]?.first }
-            return d
-        }
-        for (k in out.keys.toList()) {
-            while (depth(k) > 2) {
-                val p = out.getValue(k).first ?: break
-                out[k] = out[p]?.first to out.getValue(k).second
             }
         }
         return out
@@ -117,8 +108,11 @@ object MindMap {
         val visible = placed.filterKeys { it !in hidden }
         fun childrenOf(parent: String?): List<String> =
             visible.filter { it.value.first == parent }.entries.sortedBy { it.value.second }.map { it.key }
-        fun node(k: String): MapNode =
-            MapNode(k, byKey.getValue(k).text, byKey.getValue(k).mark, k in edits.collapsed, childrenOf(k).map { node(it) })
+        fun node(k: String): MapNode {
+            val item = byKey.getValue(k)
+            val shown = edits.texts[k]?.takeIf { s -> s.isNotBlank() } ?: item.text
+            return MapNode(k, shown, item.text, item.mark, k in edits.collapsed, childrenOf(k).map { c -> node(c) })
+        }
         return MindMapModel(title, childrenOf(null).map { node(it) })
     }
 
@@ -185,7 +179,7 @@ object MindMap {
             }
         }
         gone.add(key)
-        return edits.copy(nodes = edits.nodes - gone, collapsed = edits.collapsed - gone) to gone.size
+        return edits.copy(nodes = edits.nodes - gone, collapsed = edits.collapsed - gone, texts = edits.texts - gone) to gone.size
     }
 
     /** دمج التمييزات: ما كان للتمييزات القديمة ينتقل إلى التمييز الجديد. */
@@ -202,7 +196,17 @@ object MindMap {
             if (nk !in nodes) nodes[nk] = nv
         }
         nodes.entries.removeAll { (k, v) -> v.parent == k }
-        return e.copy(nodes = nodes, collapsed = e.collapsed.map { conv(it) }.toSet())
+        val texts = LinkedHashMap<String, String>()
+        for ((k, v) in e.texts) texts.putIfAbsent(conv(k), v)
+        return e.copy(nodes = nodes, collapsed = e.collapsed.map { conv(it) }.toSet(), texts = texts)
+    }
+
+    /** يعدّل نص العقدة في الخريطة فقط. نص فارغ أو مطابق للأصل = يعود كما التُقط. */
+    fun setText(edits: MapEdits, items: List<Item>, key: String, text: String): MapEdits {
+        val original = items.firstOrNull { it.key == key }?.text ?: return edits
+        val v = text.trim()
+        return if (v.isEmpty() || v == original) edits.copy(texts = edits.texts - key)
+        else edits.copy(texts = edits.texts + (key to v))
     }
 
     /** وصف قصير لاسم عقدة داخل جملة شرح (لا يغيّر نصها في الخريطة). */

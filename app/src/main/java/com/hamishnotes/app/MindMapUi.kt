@@ -6,6 +6,7 @@ import android.graphics.pdf.PdfDocument
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,7 +100,7 @@ private val BarDark = Color(0xFF1A2230)
 
 /** شريط «اختيار عدة نصوص» في درج الملخصات. */
 @Composable
-fun MapSelectBar(count: Int, onPlace: () -> Unit, onCancel: () -> Unit) {
+fun MapSelectBar(count: Int, onPlace: () -> Unit, onCancel: () -> Unit, onCard: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().background(BarDark).padding(horizontal = 12.dp, vertical = 10.dp)) {
         Text(
             if (count == 0) L("اختر النصوص بالترتيب الذي تريده في الخريطة", "Pick texts in the order you want on the map")
@@ -113,10 +115,74 @@ fun MapSelectBar(count: Int, onPlace: () -> Unit, onCancel: () -> Unit) {
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Palette.Gold.copy(alpha = if (count > 0) 1f else 0.5f))
                     .clickable(enabled = count > 0, onClick = onPlace).padding(vertical = 11.dp)
             )
+            if (onCard != null) {
+                Text(
+                    "▤ " + L("أضفها إلى بطاقة", "Add to card"), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = if (count > 0) 1f else 0.4f), textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(CardTeal.copy(alpha = if (count > 0) 1f else 0.5f))
+                        .clickable(enabled = count > 0, onClick = onCard).padding(vertical = 11.dp)
+                )
+            }
             Text(
                 L("إلغاء", "Cancel"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
                 modifier = Modifier.weight(0.45f).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.1f))
                     .clickable(onClick = onCancel).padding(vertical = 11.dp)
+            )
+        }
+    }
+}
+
+/** لون المحتوى في صنع البطاقة من الملخص. */
+val CardTeal = Color(0xFF0F766E)
+
+/**
+ * شريط صنع البطاقة بعد «أضفها إلى بطاقة»: يختار المستخدم Title أو Content على النصوص نفسها.
+ */
+@Composable
+fun CardRoleBar(titles: Int, contents: Int, onBack: () -> Unit, onNext: () -> Unit, onCancel: () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Color(0xFF123B37)).padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Text(
+            L("بطاقة · اختر عنوان أو محتوى على كل نص", "Card · tap Title or Content on each text") +
+                L("  ($titles عنوان، $contents محتوى)", "  ($titles title, $contents content)"),
+            fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                L("رجوع", "Back"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
+                modifier = Modifier.weight(0.6f).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.1f))
+                    .clickable(onClick = onBack).padding(vertical = 11.dp)
+            )
+            Text(
+                L("التالي", "Next"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Palette.Navy)
+                    .border(1.dp, Color(0xFF4B6A95), RoundedCornerShape(12.dp))
+                    .clickable(onClick = onNext).padding(vertical = 11.dp)
+            )
+            Text(
+                L("إلغاء", "Cancel"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
+                modifier = Modifier.weight(0.6f).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.1f))
+                    .clickable(onClick = onCancel).padding(vertical = 11.dp)
+            )
+        }
+    }
+}
+
+/** اختيار دور النص في البطاقة، فوق النص نفسه. */
+@Composable
+fun CardRoleChips(title: Boolean, onSelect: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.shadow(2.dp, RoundedCornerShape(9.dp)).clip(RoundedCornerShape(9.dp)).background(Color.White).padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        listOf(true to L("عنوان", "Title"), false to L("محتوى", "Content")).forEach { (v, label) ->
+            val on = v == title
+            Text(
+                label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = if (on) Color.White else Palette.TextSecondary,
+                modifier = Modifier.clip(RoundedCornerShape(7.dp))
+                    .background(if (on) (if (v) Palette.Navy else CardTeal) else Color.Transparent)
+                    .clickable { onSelect(v) }.padding(horizontal = 9.dp, vertical = 5.dp)
             )
         }
     }
@@ -131,9 +197,12 @@ private class MapGeometry {
     var curves: List<MapCurve> = emptyList()
 }
 
-private enum class EKind { CENTER, BRANCH, POINT, KID, PLUS_CENTER, PLUS_ROW, PLUS_KID }
+private enum class EKind { CENTER, BRANCH, POINT, PLUS_CENTER, PLUS_ROW }
 
-/** عنصر في الترتيب: عقدة أو مكان «+». parent = رقم العنصر الأب في القائمة. */
+/**
+ * عنصر في الترتيب: عقدة أو مكان «+». parent = رقم العنصر الأب في القائمة.
+ * depth: 0 فرع، 1 نقطة، 2 فأكثر نقاط فرعية (بلا حد).
+ */
 private class Entry(
     val kind: EKind,
     val node: MapNode?,
@@ -141,7 +210,8 @@ private class Entry(
     val parent: Int,
     val target: MapTarget? = null,
     val ghost: Boolean = false,
-    val label: String? = null
+    val label: String? = null,
+    val depth: Int = 0
 )
 
 /**
@@ -185,6 +255,8 @@ fun MindMapDialog(
     }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     val selected = selectedKey?.let { MindMap.find(model, it) }
+    // العقدة التي يُعدَّل نصها الآن
+    var editKey by remember { mutableStateOf<String?>(null) }
     var exportMenu by remember { mutableStateOf(false) }
 
     // التكبير والتحريك
@@ -320,6 +392,7 @@ fun MindMapDialog(
                                 selectedKey = selectedKey,
                                 onTap = { k -> if (keys == null) selectedKey = if (selectedKey == k) null else k },
                                 onTarget = { t -> target = if (target == t) null else t },
+                                onLongTap = { k -> if (keys == null) { selectedKey = k; editKey = k } },
                                 modifier = Modifier
                                     .onSizeChanged { content = it }
                                     .drawWithContent {
@@ -355,7 +428,8 @@ fun MindMapDialog(
                                         else L("أُزيل من الخريطة، ويبقى في الملخص", "Removed from the map; it stays in the summary")
                                     )
                                 },
-                                onClose = { selectedKey = null }
+                                onClose = { selectedKey = null },
+                                onEdit = { editKey = selected.key }
                             )
                         }
                         model.branches.isNotEmpty() -> HintChip(L("انقر أي نص لإجراءاته · حرّك وكبّر بإصبعين", "Tap a text for actions · pan and zoom with two fingers"), bottom)
@@ -364,6 +438,53 @@ fun MindMapDialog(
             }
         }
     }
+
+    val ek = editKey
+    val editNode = ek?.let { MindMap.find(model, it) }
+    if (editNode != null) {
+        NodeTextDialog(
+            node = editNode,
+            onSave = { txt -> s.mapSetText(editNode.key, txt); editKey = null },
+            onRestore = { s.mapSetText(editNode.key, editNode.original); editKey = null },
+            onDismiss = { editKey = null }
+        )
+    }
+}
+
+/** تعديل نص العقدة في الخريطة فقط؛ الملخص لا يتغيّر. */
+@Composable
+private fun NodeTextDialog(node: MapNode, onSave: (String) -> Unit, onRestore: () -> Unit, onDismiss: () -> Unit) {
+    var text by remember(node.key) { mutableStateOf(node.text) }
+    val edited = node.text != node.original
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("تعديل نص العقدة", "Edit node text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = Palette.Navy) },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    L("يتغيّر في الخريطة فقط، والملخص يبقى كما هو", "Changes the map only; the summary stays as it is") +
+                        if (edited) L("\nالنص الأصلي: «${MindMap.quote(node.original, 12)}» · ص ${node.mark.page + 1}", "\nOriginal: “${MindMap.quote(node.original, 12)}” · p. ${node.mark.page + 1}") else "",
+                    fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = text.isNotBlank(), onClick = { onSave(text) }) {
+                Text(L("حفظ", "Save"), fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row {
+                if (edited) androidx.compose.material3.TextButton(onClick = onRestore) { Text(L("استعادة الأصلي", "Restore original"), color = Palette.GoldDeep) }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+            }
+        }
+    )
 }
 
 /** جملة تشرح أين سيوضع النص. */
@@ -537,7 +658,8 @@ private fun NodeActions(
     onDown: () -> Unit,
     onToggle: () -> Unit,
     onRemove: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onEdit: () -> Unit = {}
 ) {
     val shape = RoundedCornerShape(16.dp)
     Row(
@@ -546,6 +668,7 @@ private fun NodeActions(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ActionChip(L("ص ${node.mark.page + 1} · انتقال", "p. ${node.mark.page + 1} · Go"), primary = true, onClick = onJump)
+        ActionChip("✎ " + L("تعديل النص", "Edit text"), onClick = onEdit)
         ActionChip(L("نقل إلى مكان آخر", "Move elsewhere"), onClick = onMove)
         ActionChip("↑ " + L("أعلى", "Up"), enabled = canUp, onClick = onUp)
         ActionChip("↓ " + L("أسفل", "Down"), enabled = canDown, onClick = onDown)
@@ -589,31 +712,40 @@ private fun MapLayout(
     selectedKey: String?,
     onTap: (String) -> Unit,
     onTarget: (MapTarget) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongTap: (String) -> Unit = {}
 ) {
-    // قائمة مسطحة بترتيب ثابت: المركز، ثم كل فرع ونقاطه وأماكن «+»
+    // قائمة مسطحة بترتيب ثابت: المركز، ثم كل فرع وما تحته بأي عمق، وأماكن «+»
     val entries = remember(model, placing, ghosts) {
         val out = ArrayList<Entry>()
         out.add(Entry(EKind.CENTER, null, -1, -1))
         if (placing) out.add(Entry(EKind.PLUS_CENTER, null, -1, 0, MapTarget(null, null), label = L("فرع جديد", "New branch")))
+        // أبناء عقدة (depth = عمق الأبناء)، ثم مكان «+» في آخرهم
+        fun addKids(n: MapNode, nIdx: Int, depth: Int, bi: Int, nGhost: Boolean) {
+            if (!n.collapsed || placing) {
+                var prevReal: MapNode? = null
+                n.children.forEach { ch ->
+                    val g = ch.key in ghosts || nGhost
+                    // ⊕ بين نقطتين تحت الفرع: في هذا الموضع بالضبط
+                    if (placing && depth == 1 && !g && prevReal != null) {
+                        out.add(Entry(EKind.PLUS_ROW, null, bi, nIdx, MapTarget(n.key, ch.key), depth = depth))
+                    }
+                    val idx = out.size
+                    out.add(Entry(EKind.POINT, ch, bi, nIdx, ghost = g, depth = depth))
+                    addKids(ch, idx, depth + 1, bi, g)
+                    if (!g) prevReal = ch
+                }
+            }
+            if (placing && !nGhost) {
+                val label = if (depth == 1) L("نقطة", "Point") else L("نقطة فرعية", "Sub-point")
+                out.add(Entry(EKind.PLUS_ROW, null, bi, nIdx, MapTarget(n.key, null), label = label, depth = depth))
+            }
+        }
         model.branches.forEachIndexed { bi, b ->
             val bIdx = out.size
             val bGhost = b.key in ghosts
             out.add(Entry(EKind.BRANCH, b, bi, 0, ghost = bGhost))
-            if (!b.collapsed || placing) {
-                var prevReal: MapNode? = null
-                b.children.forEach { p ->
-                    val pGhost = p.key in ghosts
-                    // ⊕ بين نقطتين: في هذا الموضع بالضبط
-                    if (placing && !bGhost && !pGhost && prevReal != null) out.add(Entry(EKind.PLUS_ROW, null, bi, bIdx, MapTarget(b.key, p.key)))
-                    val pIdx = out.size
-                    out.add(Entry(EKind.POINT, p, bi, bIdx, ghost = pGhost || bGhost))
-                    if (!p.collapsed || placing) p.children.forEach { k -> out.add(Entry(EKind.KID, k, bi, pIdx, ghost = k.key in ghosts || pGhost || bGhost)) }
-                    if (placing && !pGhost && !bGhost) out.add(Entry(EKind.PLUS_KID, null, bi, pIdx, MapTarget(p.key, null), label = L("نقطة فرعية", "Sub-point")))
-                    if (!pGhost) prevReal = p
-                }
-                if (placing && !bGhost) out.add(Entry(EKind.PLUS_ROW, null, bi, bIdx, MapTarget(b.key, null), label = L("نقطة", "Point")))
-            }
+            addKids(b, bIdx, 1, bi, bGhost)
         }
         out
     }
@@ -644,8 +776,8 @@ private fun MapLayout(
                 val col = mapBranchColor(e.branch)
                 when (e.kind) {
                     EKind.CENTER -> CenterNode(model)
-                    EKind.BRANCH -> BranchNode(e.node!!, col, right = e.branch < rightCount, ghost = e.ghost, selected = selectedKey == e.node.key) { onTap(e.node.key) }
-                    EKind.POINT, EKind.KID -> PointNode(e.node!!, col, kid = e.kind == EKind.KID, ghost = e.ghost, selected = selectedKey == e.node.key) { onTap(e.node.key) }
+                    EKind.BRANCH -> BranchNode(e.node!!, col, right = e.branch < rightCount, ghost = e.ghost, selected = selectedKey == e.node.key, onLongClick = { onLongTap(e.node.key) }) { onTap(e.node.key) }
+                    EKind.POINT -> PointNode(e.node!!, col, depth = e.depth, ghost = e.ghost, selected = selectedKey == e.node.key, onLongClick = { onLongTap(e.node.key) }) { onTap(e.node.key) }
                     else -> PlusChip(
                         label = e.label,
                         big = e.kind == EKind.PLUS_CENTER,
@@ -658,21 +790,29 @@ private fun MapLayout(
         val dp = density
         fun px(v: Dp) = (v.value * dp).toInt()
         val ms = measurables.mapIndexed { i, m ->
-            val maxW = when (entries[i].kind) {
+            val e = entries[i]
+            val maxW = when (e.kind) {
                 EKind.CENTER -> 280.dp
                 EKind.BRANCH -> 260.dp
-                EKind.POINT -> 250.dp
-                EKind.KID -> 220.dp
+                // كل مستوى أعمق أضيق قليلًا حتى لا تتمدد الخريطة كثيرًا
+                EKind.POINT -> if (e.depth <= 1) 250.dp else max(160f, 220f - 15f * (e.depth - 2)).dp
                 else -> 200.dp
             }
             m.measure(Constraints(maxWidth = px(maxW)))
         }
         val gapB = 40f * dp
-        val gapP = 12f * dp
-        val gapKid = 8f * dp
-        val toBranch = 84f * dp
-        val toPoint = 54f * dp
-        val toKid = 34f * dp
+        fun gapY(depth: Int) = (if (depth <= 1) 12f else 8f) * dp
+        fun gapX(depth: Int) = when (depth) {
+            0 -> 84f
+            1 -> 54f
+            else -> 34f
+        } * dp
+        fun lineW(depth: Int) = when (depth) {
+            0 -> 3.5f
+            1 -> 2.2f
+            2 -> 1.6f
+            else -> 1.3f
+        } * dp
         val xs = FloatArray(ms.size)
         val ys = FloatArray(ms.size)
         val curves = ArrayList<MapCurve>()
@@ -688,18 +828,51 @@ private fun MapLayout(
             ys[i] = ch / 2f + 12f * dp
         }
 
-        fun kidsOf(pIdx: Int) = entries.indices.filter { (entries[it].kind == EKind.KID || entries[it].kind == EKind.PLUS_KID) && entries[it].parent == pIdx }
-        fun rowsOf(bIdx: Int) = entries.indices.filter { (entries[it].kind == EKind.POINT || entries[it].kind == EKind.PLUS_ROW) && entries[it].parent == bIdx }
-        fun rowHeight(rIdx: Int): Float {
-            val kids = kidsOf(rIdx)
-            val kh = if (kids.isEmpty()) 0f else kids.sumOf { ms[it].height.toDouble() }.toFloat() + gapKid * (kids.size - 1)
-            return max(ms[rIdx].height.toFloat(), kh)
+        // أبناء كل عنصر (نقاط وأماكن «+»)
+        val kids = HashMap<Int, MutableList<Int>>()
+        entries.forEachIndexed { i, e ->
+            if (e.kind == EKind.POINT || e.kind == EKind.PLUS_ROW) kids.getOrPut(e.parent) { ArrayList() }.add(i)
         }
-        fun rowsHeight(bIdx: Int): Float {
-            val rows = rowsOf(bIdx)
-            return if (rows.isEmpty()) 0f else rows.sumOf { rowHeight(it).toDouble() }.toFloat() + gapP * (rows.size - 1)
+        // ارتفاع أبناء كل عنصر مع ما تحتهم، ثم ارتفاع العنصر مع كل ما تحته (من الأعمق للأعلى)
+        val kidsH = FloatArray(ms.size)
+        val subH = FloatArray(ms.size)
+        for (i in entries.indices.reversed()) {
+            val k = kids[i]
+            kidsH[i] = if (k.isNullOrEmpty()) 0f else k.sumOf { subH[it].toDouble() }.toFloat() + gapY(entries[k[0]].depth) * (k.size - 1)
+            subH[i] = max(ms[i].height.toFloat(), kidsH[i])
         }
-        fun blockHeight(bIdx: Int) = max(ms[bIdx].height.toFloat(), rowsHeight(bIdx))
+        fun kidsHeight(i: Int) = kidsH[i]
+        fun blockHeight(i: Int) = subH[i]
+
+        /** يضع العنصر وما تحته. edge = الحافة المواجهة لأبيه، top = أعلى كتلته. */
+        fun place(i: Int, edge: Float, top: Float, side: Int, col: Color) {
+            val e = entries[i]
+            val w = ms[i].width.toFloat()
+            val h = ms[i].height.toFloat()
+            val bh = blockHeight(i)
+            val x = if (side == 1) edge else edge - w
+            val y = top + bh / 2f - h / 2f
+            xs[i] = x; ys[i] = y
+            val k = kids[i] ?: return
+            var ky = top + bh / 2f - kidsHeight(i) / 2f
+            for (c in k) {
+                val ce = entries[c]
+                val cEdge = if (side == 1) x + w + gapX(ce.depth) else x - gapX(ce.depth)
+                place(c, cEdge, ky, side, col)
+                if (ce.kind == EKind.POINT) {
+                    val cw2 = ms[c].width.toFloat()
+                    val chh = ms[c].height.toFloat()
+                    curves.add(
+                        MapCurve(
+                            Offset(if (side == 1) x + w else x, y + h / 2f),
+                            Offset(if (side == 1) xs[c] else xs[c] + cw2, ys[c] + chh / 2f),
+                            if (ce.ghost) ghostInk else col, lineW(ce.depth), ce.ghost
+                        )
+                    )
+                }
+                ky += blockHeight(c) + gapY(ce.depth)
+            }
+        }
 
         val branchIdx = entries.indices.filter { entries[it].kind == EKind.BRANCH }
         for (side in listOf(1, -1)) {
@@ -710,40 +883,12 @@ private fun MapLayout(
             for (bIdx in list) {
                 val e = entries[bIdx]
                 val col = if (e.ghost) ghostInk else mapBranchColor(e.branch)
-                val bh = blockHeight(bIdx)
+                val edge = if (side == 1) cw / 2f + gapX(0) else -cw / 2f - gapX(0)
+                place(bIdx, edge, y, side, mapBranchColor(e.branch))
                 val bw = ms[bIdx].width.toFloat()
                 val bHt = ms[bIdx].height.toFloat()
-                val bx = if (side == 1) cw / 2f + toBranch else -cw / 2f - toBranch - bw
-                val by = y + bh / 2f - bHt / 2f
-                xs[bIdx] = bx; ys[bIdx] = by
-                curves.add(MapCurve(Offset(side * cw / 2f, 0f), Offset(if (side == 1) bx else bx + bw, by + bHt / 2f), col, 3.5f * dp, e.ghost))
-                var py = y + bh / 2f - rowsHeight(bIdx) / 2f
-                for (rIdx in rowsOf(bIdx)) {
-                    val r = entries[rIdx]
-                    val rh = rowHeight(rIdx)
-                    val pw = ms[rIdx].width.toFloat()
-                    val pHt = ms[rIdx].height.toFloat()
-                    val px = if (side == 1) bx + bw + toPoint else bx - toPoint - pw
-                    val ppy = py + rh / 2f - pHt / 2f
-                    xs[rIdx] = px; ys[rIdx] = ppy
-                    if (r.kind == EKind.POINT) {
-                        curves.add(MapCurve(Offset(if (side == 1) bx + bw else bx, by + bHt / 2f), Offset(if (side == 1) px else px + pw, ppy + pHt / 2f), if (r.ghost) ghostInk else col, 2.2f * dp, r.ghost))
-                    }
-                    var ky = py
-                    for (kIdx in kidsOf(rIdx)) {
-                        val k = entries[kIdx]
-                        val kw = ms[kIdx].width.toFloat()
-                        val kHt = ms[kIdx].height.toFloat()
-                        val kx = if (side == 1) px + pw + toKid else px - toKid - kw
-                        xs[kIdx] = kx; ys[kIdx] = ky
-                        if (k.kind == EKind.KID) {
-                            curves.add(MapCurve(Offset(if (side == 1) px + pw else px, ppy + pHt / 2f), Offset(if (side == 1) kx else kx + kw, ky + kHt / 2f), if (k.ghost) ghostInk else col, 1.6f * dp, k.ghost))
-                        }
-                        ky += kHt + gapKid
-                    }
-                    py += rh + gapP
-                }
-                y += bh + gapB
+                curves.add(MapCurve(Offset(side * cw / 2f, 0f), Offset(if (side == 1) xs[bIdx] else xs[bIdx] + bw, ys[bIdx] + bHt / 2f), col, lineW(0), e.ghost))
+                y += blockHeight(bIdx) + gapB
             }
         }
 
@@ -780,7 +925,7 @@ private fun CenterNode(model: MindMapModel) {
 }
 
 @Composable
-private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, selected: Boolean, onClick: () -> Unit) {
+private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, selected: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Box {
         Text(
@@ -801,7 +946,7 @@ private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, s
                         drawRoundRect(col, Offset(x, 10.dp.toPx()), Size(bw, size.height - 20.dp.toPx()), CornerRadius(bw / 2))
                     }
                 }
-                .clickable(enabled = !ghost, onClick = onClick)
+                .combinedClickable(enabled = !ghost, onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         )
         if (n.collapsed && n.children.isNotEmpty()) {
@@ -814,8 +959,9 @@ private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, s
 }
 
 @Composable
-private fun PointNode(n: MapNode, col: Color, kid: Boolean, ghost: Boolean, selected: Boolean, onClick: () -> Unit) {
+private fun PointNode(n: MapNode, col: Color, depth: Int, ghost: Boolean, selected: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)
+    val kid = depth >= 2
     Text(
         n.text + if (n.collapsed && n.children.isNotEmpty()) "  (+${n.count()})" else "",
         fontSize = if (kid) 12.5.sp else 13.5.sp, lineHeight = 20.sp, color = if (ghost) GhostInk else Palette.TextPrimary,
@@ -831,7 +977,7 @@ private fun PointNode(n: MapNode, col: Color, kid: Boolean, ghost: Boolean, sele
                 if (ghost) it.drawBehind { dashedBorder(Palette.Gold, 12.dp.toPx(), 2.dp.toPx()) }
                 else it.border(if (selected) 2.dp else 1.dp, if (selected) Palette.Gold else col.copy(alpha = 0.22f), shape)
             }
-            .clickable(enabled = !ghost, onClick = onClick)
+            .combinedClickable(enabled = !ghost, onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }

@@ -779,7 +779,9 @@ class LibraryRepository(context: Context) {
                 }
             }
             val collapsed = o.optJSONArray("collapsed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-            MapEdits(nodes, collapsed)
+            val texts = LinkedHashMap<String, String>()
+            o.optJSONObject("texts")?.let { tx -> for (k in tx.keys()) tx.optString(k).takeIf { it.isNotBlank() }?.let { texts[k] = it } }
+            MapEdits(nodes, collapsed, texts)
         } catch (e: Throwable) {
             MapEdits()
         }
@@ -795,6 +797,7 @@ class LibraryRepository(context: Context) {
         }
         return JSONObject().put("nodes", nodes)
             .put("collapsed", JSONArray().apply { m.collapsed.forEach { put(it) } })
+            .apply { if (m.texts.isNotEmpty()) put("texts", JSONObject().apply { m.texts.forEach { (k, v) -> put(k, v) } }) }
     }
 
     /** يحفظ صورة جاهزة (مثل الخريطة الذهنية) لتوضع على صفحة. خارج الخيط الرئيسي. */

@@ -1274,6 +1274,9 @@ class DocSession(entry: DocEntry) {
         return n
     }
 
+    /** يعدّل نص العقدة في الخريطة فقط (يمكن التراجع عنه). */
+    fun mapSetText(key: String, text: String) = changeMap { MindMap.setText(it, mapItems(), key, text) }
+
     fun mapToggleCollapsed(key: String) = changeMapQuiet { m ->
         m.copy(collapsed = if (key in m.collapsed) m.collapsed - key else m.collapsed + key)
     }

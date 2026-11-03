@@ -292,7 +292,8 @@ fun AddCardDialog(
     title: String = L("بطاقة جديدة", "New card"),
     confirm: String = L("إضافة", "Add"),
     onSave: (String, String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    dismissLabel: String = L("إلغاء", "Cancel")
 ) {
     var front by remember { mutableStateOf(initialFront) }
     var back by remember { mutableStateOf(initialBack) }
@@ -300,20 +301,20 @@ fun AddCardDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 androidx.compose.material3.OutlinedTextField(
                     value = front, onValueChange = { front = it },
                     label = { Text(L("عنوان البطاقة", "Card title")) }, modifier = Modifier.fillMaxWidth()
                 )
                 androidx.compose.material3.OutlinedTextField(
                     value = back, onValueChange = { back = it },
-                    label = { Text(L("محتوى البطاقة", "Card content")) }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
+                    label = { Text(L("محتوى البطاقة", "Card content")) }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp)
                 )
             }
         },
         confirmButton = {
             TextButton(enabled = front.isNotBlank() && back.isNotBlank(), onClick = { onSave(front, back) }) { Text(confirm) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } }
     )
 }

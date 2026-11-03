@@ -88,4 +88,43 @@ class MindMapTest {
         assertEquals(MapNodeEdit(MapRole.POINT, "a#0", 1.0), m.nodes["z#0"])
         assertNull(m.nodes["x#0"])
     }
+
+    @Test
+    fun branchesGoDeeperThanThreeLevels() {
+        // a ← b ← c ← d ← e: خمسة مستويات بلا رفع لأي نص
+        var e = MindMap.place(MapEdits(), items, listOf("a#0"), MapTarget(null, null))
+        e = MindMap.place(e, items, listOf("b#0"), MapTarget("a#0", null))
+        e = MindMap.place(e, items, listOf("c#0"), MapTarget("b#0", null))
+        e = MindMap.place(e, items, listOf("d#0"), MapTarget("c#0", null))
+        e = MindMap.place(e, items, listOf("e#0"), MapTarget("d#0", null))
+        val m = build(e)
+        assertEquals(listOf("e#0"), MindMap.find(m, "d#0")!!.children.map { it.key })
+        assertEquals(1, m.branches.size)
+        assertEquals(4, m.branches[0].count())
+    }
+
+    @Test
+    fun editedTextIsForTheMapOnlyAndCanBeRestored() {
+        var e = MindMap.place(MapEdits(), items, listOf("a#0"), MapTarget(null, null))
+        e = MindMap.setText(e, items, "a#0", "  المناعة الفطرية  ")
+        val n = build(e).branches[0]
+        assertEquals("المناعة الفطرية", n.text)
+        assertEquals("المناعة الفطرية: خط الدفاع الأول، وغير متخصصة", n.original)
+        // الملخص (نصوص التمييز) لا يتغيّر
+        assertEquals("المناعة الفطرية: خط الدفاع الأول، وغير متخصصة", MindMap.items(marks).first { it.key == "a#0" }.text)
+        // نقل العقدة يحفظ نصها المعدَّل
+        e = MindMap.place(e, items, listOf("c#0"), MapTarget(null, null))
+        e = MindMap.move(e, items, "c#0", -1)
+        assertEquals("المناعة الفطرية", MindMap.find(build(e), "a#0")!!.text)
+        // إرجاع الأصل أو نص فارغ يحذف التعديل
+        assertTrue(MindMap.setText(e, items, "a#0", n.original).texts.isEmpty())
+        assertTrue(MindMap.setText(e, items, "a#0", " ").texts.isEmpty())
+    }
+
+    @Test
+    fun removingANodeDropsItsEditedText() {
+        var e = MindMap.place(MapEdits(), items, listOf("a#0"), MapTarget(null, null))
+        e = MindMap.setText(e, items, "a#0", "x")
+        assertTrue(MindMap.remove(e, items, "a#0").first.texts.isEmpty())
+    }
 }

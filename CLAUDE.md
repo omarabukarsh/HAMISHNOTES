@@ -18,7 +18,7 @@ Read `claude/PRO_STATE.md` first (project state, history, pitfalls) and check `g
 3. Compile errors: fix only the root cause, re-read the diff, rebuild until it succeeds.
 4. Verify with aapt2 + apksigner: package com.mynotes.app.pro, label «HAMISH PRO», cert SHA-256 = keystore/mynotes.jks (f0b818a6…9b38). Report truthfully.
 5. Deliver the APK as a file, zipped if large. Keep ALL ABIs (arm64-only build 181 broke the app).
-6. If AiStructure.kt / AiOrganize.kt / MindMap.kt / tools/ai-eval changed since the last eval: run the eval (CI or locally with the real model) and show before/after, reading the outputs.
+6. If AiStructure.kt / AiOrganize.kt / AiMindMap.kt / tools/ai-eval changed since the last eval: run the eval (CI or locally with the real model) and show before/after, reading the outputs.
 7. Ignore "CI tests" (failing since before this work).
 8. Update PRO_STATE.md (build number, commit, fixes, results) and push with [skip ci].
 Be honest about what was verified; never claim on-device behaviour (e.g. image reading on Kirin) that only the user can confirm with «اختبر قراءة الصور».
@@ -26,7 +26,7 @@ Be honest about what was verified; never claim on-device behaviour (e.g. image r
 ## After every push to `pro`
 - Wait for **Build APK** to succeed, then give the direct link:
   `https://github.com/omarabukarsh/Mynotes/actions/runs/<runId>/artifacts/<artifactId>` (artifact «MyNotes-Pro»).
-- For AI changes (AiStructure.kt, AiOrganize.kt, MindMap.kt, tools/ai-eval): wait for **AI summary eval** and show before/after results; read the outputs themselves, not only the metrics.
+- For AI changes (AiStructure.kt, AiOrganize.kt, AiMindMap.kt, tools/ai-eval): wait for **AI summary eval** and show before/after results; read the outputs themselves, not only the metrics.
 - "CI tests" has been failing since before #166 (golden/SummaryRules unit tests + emulator); unrelated to AI work unless told otherwise.
 
 ## Build and checks

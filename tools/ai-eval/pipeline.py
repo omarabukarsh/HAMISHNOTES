@@ -19,7 +19,7 @@ def _kt(file, name):
 
 
 NEW = {"SYSTEM": _kt("AiStructure.kt", "SYSTEM"), "REVIEW_SYSTEM": _kt("AiStructure.kt", "REVIEW_SYSTEM"),
-       "MM_SYSTEM": _kt("MindMap.kt", "SYSTEM"), "CARDS_SYSTEM": _kt("AiOrganize.kt", "CARDS_SYSTEM")}
+       "MM_SYSTEM": _kt("AiMindMap.kt", "SYSTEM"), "CARDS_SYSTEM": _kt("AiOrganize.kt", "CARDS_SYSTEM")}
 OLD = {"SYSTEM": LP.SYSTEM, "REVIEW_SYSTEM": LP.REVIEW_SYSTEM, "MM_SYSTEM": LP.MM_SYSTEM, "CARDS_SYSTEM": LP.CARDS_SYSTEM}
 
 

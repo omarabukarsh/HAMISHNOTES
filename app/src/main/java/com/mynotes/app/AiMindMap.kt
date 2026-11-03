@@ -65,7 +65,7 @@ import kotlin.math.max
  * MyNotes Pro: خريطة ذهنية من الملخص المرتّب، تُبنى بالكود (دون نموذج، فلا اختلاق):
  * العنوان «# » فرع، والعنوان الفرعي «## » فرع داخله، والنقاط وصفوف الجداول أوراق.
  */
-object MindMap {
+object AiMap {
     class Node(val label: String, val level: Int, val children: MutableList<Node> = ArrayList(), var branch: Int = 0) {
         val id: String get() = "$level:$label"
     }
@@ -415,7 +415,7 @@ Output only the lines."""
         var h2: String? = null
         val buf = StringBuilder()
         fun flush() {
-            val skip = listOfNotNull(h1, h2).any { MindMap.EXPLAIN.containsMatchIn(it) }
+            val skip = listOfNotNull(h1, h2).any { AiMap.EXPLAIN.containsMatchIn(it) }
             if (buf.isNotBlank() && !skip) out.add(Sec(h1, h2, buf.toString().trim()))
             buf.clear()
         }
@@ -460,9 +460,9 @@ Output only the lines."""
                 val first = c.firstOrNull { it.isNotEmpty() && it != "—" } ?: continue
                 val val1 = c.drop(1).firstOrNull { it.isNotEmpty() && it != "—" && it != "-" }
                 // البند (حتى 4 كلمات) وأهم خليته باختصار، والعبارة كلها حتى 7 كلمات
-                val head = MindMap.brief(MindMap.cut(first, 28), 4)
-                val label = if (val1 == null) head else MindMap.brief(head + ": " + MindMap.keyPhrase(val1, 80), 7)
-                out.add(label to MindMap.score(rows[r]))
+                val head = AiMap.brief(AiMap.cut(first, 28), 4)
+                val label = if (val1 == null) head else AiMap.brief(head + ": " + AiMap.keyPhrase(val1, 80), 7)
+                out.add(label to AiMap.score(rows[r]))
             }
             i = maxOf(j, i + 1)
         }
@@ -470,11 +470,11 @@ Output only the lines."""
     }
 
     /** عبارة بالكود من سطر نقطة. */
-    private fun linePoint(l: String): String = MindMap.brief(MindMap.keyPhrase(l.removePrefix("- ").removePrefix("• "), 60), 7)
+    private fun linePoint(l: String): String = AiMap.brief(AiMap.keyPhrase(l.removePrefix("- ").removePrefix("• "), 60), 7)
 
     /** نقاط بالكود (احتياط): الأعلى درجة، كعبارات مفتاحية. */
     private fun codePoints(lines: List<String>, n: Int = 4): List<String> = lines
-        .withIndex().sortedByDescending { MindMap.score(it.value) }.take(n).sortedBy { it.index }
+        .withIndex().sortedByDescending { AiMap.score(it.value) }.take(n).sortedBy { it.index }
         .map { linePoint(it.value) }.filter { it.length >= 3 }
 
     /** العبارة من سطرها: 2..8 كلمات، كل كلماتها المهمة وأرقامها من ذلك السطر، ونفي السطر محفوظ. */
@@ -515,7 +515,7 @@ Output only the lines."""
     }
 
     /** يبني الخريطة بالنقاط المهمة. onlyCached = بلا نموذج (ما حُفظ سابقًا، وإلا بالكود). */
-    suspend fun build(docId: String, title: String, summary: String, onlyCached: Boolean): MindMap.Node {
+    suspend fun build(docId: String, title: String, summary: String, onlyCached: Boolean): AiMap.Node {
         val secs = sections(summary)
         val cache = withContext(Dispatchers.IO) { load(docId) }
         val model = Ai.selected.id
@@ -550,56 +550,56 @@ Output only the lines."""
                     fin
                 }
             }
-            points.add((textPts.filter { !MindMap.fragment(it) }.take(5) + tablePts).distinctBy { it.lowercase() })
+            points.add((textPts.filter { !AiMap.fragment(it) }.take(5) + tablePts).distinctBy { it.lowercase() })
         }
         if (changed) withContext(Dispatchers.IO) { try { file(docId).writeText(org.json.JSONObject(cache as Map<*, *>).toString()) } catch (t: Throwable) {} }
         step = ""
         // الشجرة: عنوان ← عنوان فرعي ← نقاط
-        val root = MindMap.Node(MindMap.shortLabel(title, 60), 0)
-        val h1Nodes = LinkedHashMap<String?, MindMap.Node>()
+        val root = AiMap.Node(AiMap.shortLabel(title, 60), 0)
+        val h1Nodes = LinkedHashMap<String?, AiMap.Node>()
         secs.forEachIndexed { i, sec ->
             val pts = points[i]
             if (pts.isEmpty()) return@forEachIndexed
-            val b1 = if (sec.h1 == null) root else h1Nodes.getOrPut(sec.h1) { MindMap.Node(MindMap.shortLabel(sec.h1, 60), 1).also { root.children.add(it) } }
-            val par = if (sec.h2 == null) b1 else MindMap.Node(MindMap.shortLabel(sec.h2, 60), 2).also { b1.children.add(it) }
-            pts.forEach { par.children.add(MindMap.Node(it, 3)) }
+            val b1 = if (sec.h1 == null) root else h1Nodes.getOrPut(sec.h1) { AiMap.Node(AiMap.shortLabel(sec.h1, 60), 1).also { root.children.add(it) } }
+            val par = if (sec.h2 == null) b1 else AiMap.Node(AiMap.shortLabel(sec.h2, 60), 2).also { b1.children.add(it) }
+            pts.forEach { par.children.add(AiMap.Node(it, 3)) }
         }
-        root.children.forEachIndexed { k, n -> MindMap.paintBranch(n, k) }
+        root.children.forEachIndexed { k, n -> AiMap.paintBranch(n, k) }
         return root
     }
 }
 
 /** نافذة الخريطة الذهنية: تكبير وتصغير، طيّ الفروع بالنقر، وحفظ PDF. */
 @Composable
-fun MindMapDialog(docId: String, title: String, summary: String, notes: List<MindNote> = emptyList(), onDismiss: () -> Unit) {
+fun AiMindMapDialog(docId: String, title: String, summary: String, notes: List<MindNote> = emptyList(), onDismiss: () -> Unit) {
     val context = LocalContext.current
     var important by remember { mutableStateOf(true) }
     // «المهم فقط»: يختارها الذكاء (المحفوظ يظهر فورًا، والجديد يُكمل في الخلفية)
-    var aiRoot by remember(summary) { mutableStateOf<MindMap.Node?>(null) }
+    var aiRoot by remember(summary) { mutableStateOf<AiMap.Node?>(null) }
     androidx.compose.runtime.LaunchedEffect(summary) {
         if (summary.isBlank()) return@LaunchedEffect
         aiRoot = MindMapAi.build(docId, title, summary, onlyCached = true)
         aiRoot = MindMapAi.build(docId, title, summary, onlyCached = false)
     }
     val baseRoot = when {
-        summary.isBlank() -> remember(title) { MindMap.Node(MindMap.shortLabel(title, 60), 0) }
-        important -> aiRoot ?: remember(summary) { MindMap.parse(title, summary, true) }
-        else -> remember(summary) { MindMap.parse(title, summary, false) }
+        summary.isBlank() -> remember(title) { AiMap.Node(AiMap.shortLabel(title, 60), 0) }
+        important -> aiRoot ?: remember(summary) { AiMap.parse(title, summary, true) }
+        else -> remember(summary) { AiMap.parse(title, summary, false) }
     }
-    val root = remember(baseRoot, notes) { MindMap.withNotes(baseRoot, notes) }
+    val root = remember(baseRoot, notes) { AiMap.withNotes(baseRoot, notes) }
     val collapsed = remember(summary) { mutableStateListOf<String>() }
     var zoom by remember { mutableStateOf(1f) }
     val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) AppController.scope.launch {
             try {
-                withContext(Dispatchers.IO) { MindMap.exportPdf(context, root, collapsed.toSet(), uri) }
+                withContext(Dispatchers.IO) { AiMap.exportPdf(context, root, collapsed.toSet(), uri) }
                 AppController.messages.tryEmit(L("حُفظت الخريطة الذهنية", "Mind map saved"))
             } catch (t: Throwable) {
                 AppController.messages.tryEmit(L("تعذر حفظ الخريطة", "Could not save the mind map"))
             }
         }
     }
-    val placed = remember(root, collapsed.toList()) { MindMap.layout(root, collapsed.toSet()) }
+    val placed = remember(root, collapsed.toList()) { AiMap.layout(root, collapsed.toSet()) }
     val totalW = (placed.maxOfOrNull { it.x + it.w } ?: 300f) + 40f
     val totalH = (placed.maxOfOrNull { it.y + it.h } ?: 300f) + 40f
 
@@ -653,11 +653,11 @@ fun MindMapDialog(docId: String, title: String, summary: String, notes: List<Min
                                     moveTo(sx, sy)
                                     cubicTo(sx + 28f * d, sy, ex - 28f * d, ey, ex, ey)
                                 }
-                                drawPath(path, MindMap.colorOf(p.node).copy(alpha = 0.55f), style = Stroke(width = 2f * d))
+                                drawPath(path, AiMap.colorOf(p.node).copy(alpha = 0.55f), style = Stroke(width = 2f * d))
                             }
                         }
                         for (p in placed) {
-                            val col = MindMap.colorOf(p.node)
+                            val col = AiMap.colorOf(p.node)
                             val strong = p.node.level <= 2
                             val folded = p.node.id in collapsed && p.node.children.isNotEmpty()
                             Box(

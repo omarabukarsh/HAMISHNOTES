@@ -8,7 +8,7 @@ on:
       - "tools/ai-eval/**"
       - "app/src/main/java/com/mynotes/app/AiStructure.kt"
       - "app/src/main/java/com/mynotes/app/AiOrganize.kt"
-      - "app/src/main/java/com/mynotes/app/MindMap.kt"
+      - "app/src/main/java/com/mynotes/app/AiMindMap.kt"
       - ".github/workflows/ai-eval.yml"
   workflow_dispatch:
 jobs:

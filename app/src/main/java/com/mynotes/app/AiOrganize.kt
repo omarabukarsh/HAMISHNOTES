@@ -1088,7 +1088,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
         }
     }
     readPage?.let { p -> AiPageDialog(s, p) { readPage = null } }
-    if (mindMap && (saved != null || s.mindNotes.isNotEmpty())) MindMapDialog(s.id, s.title, saved ?: "", s.mindNotes) { mindMap = false }
+    if (mindMap && (saved != null || s.mindNotes.isNotEmpty())) AiMindMapDialog(s.id, s.title, saved ?: "", s.mindNotes) { mindMap = false }
     if (aiSettings) {
         AlertDialog(
             onDismissRequest = { aiSettings = false },

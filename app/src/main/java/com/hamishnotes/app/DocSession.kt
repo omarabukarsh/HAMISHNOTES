@@ -253,7 +253,7 @@ class DocSession(entry: DocEntry) {
 
     /** رقم الصفحة الذي يظهر في الشريط وتعمل عليه الأزرار (إضافة صورة، ملصق، ...). */
     fun currentPage(): Int {
-        val n = pdf?.count ?: entry.pageCount
+        val n = pdf?.count ?: Int.MAX_VALUE
         val a = activePage
         if (a in 0 until n && listState.layoutInfo.visibleItemsInfo.any { it.index == a }) return a
         return mostVisiblePage().coerceIn(0, maxOf(0, n - 1))

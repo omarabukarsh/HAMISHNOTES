@@ -208,20 +208,20 @@ object StickerStore {
         }
     }
 
-    /** يضع الملصق على الصفحة الظاهرة. */
-    fun place(s: DocSession, bmp: Bitmap) {
+    /** يضع الملصق على الصفحة (الحالية افتراضياً) في نقطة at (افتراضياً وسط الجزء الظاهر). */
+    fun place(s: DocSession, bmp: Bitmap, page: Int = s.currentPage(), at: androidx.compose.ui.geometry.Offset? = s.visibleCenter(page)) {
         AppController.scope.launch {
             val f = withContext(Dispatchers.IO) {
                 File(app.cacheDir, "sticker-" + UUID.randomUUID() + ".png").also { out -> out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
             }
             val w = if (bmp.width > bmp.height * 1.5f) 0.26f else 0.16f
-            AppController.insertImage(s, Uri.fromFile(f), s.listState.firstVisibleItemIndex, width = w, quiet = true)
+            AppController.insertImage(s, Uri.fromFile(f), page, width = w, quiet = true, at = at)
             AppController.messages.tryEmit(L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
         }
     }
 
-    fun place(s: DocSession, f: File) {
-        AppController.insertImage(s, Uri.fromFile(f), s.listState.firstVisibleItemIndex, width = 0.16f, quiet = true)
+    fun place(s: DocSession, f: File, page: Int = s.currentPage(), at: androidx.compose.ui.geometry.Offset? = s.visibleCenter(page)) {
+        AppController.insertImage(s, Uri.fromFile(f), page, width = 0.16f, quiet = true, at = at)
     }
 }
 

@@ -46,7 +46,7 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     val c = AppController
     val scope = rememberCoroutineScope()
     val n = pdf.count
-    val page = s.listState.firstVisibleItemIndex.coerceIn(0, maxOf(0, n - 1))
+    val page = s.currentPage().coerceIn(0, maxOf(0, n - 1))
     val ref = pdf.pages.getOrNull(page)
     val blank = ref?.src?.startsWith("blank:") == true
     var jump by remember { mutableStateOf(false) }

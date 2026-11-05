@@ -1122,22 +1122,35 @@ object AppController {
     // ---------- الصور ----------
 
     /** index: ترتيب الصورة بين عدة صور مختارة معًا (تُزاح قليلًا حتى لا تتطابق). width: عرضها نسبةً للصفحة. */
-    fun insertImage(s: DocSession, uri: Uri, page: Int, index: Int = 0, width: Float = 0.45f, quiet: Boolean = false) {
+    /**
+     * يضيف صورة إلى الصفحة. at = وسط الصورة بوحدات عرض الصفحة (مكان الإسقاط أو وسط الجزء الظاهر)؛
+     * null = أعلى الصفحة كما كان.
+     */
+    fun insertImage(
+        s: DocSession, uri: Uri, page: Int, index: Int = 0, width: Float = 0.45f, quiet: Boolean = false,
+        at: androidx.compose.ui.geometry.Offset? = null
+    ) {
         scope.launch {
             try {
                 val res = withContext(Dispatchers.IO) { repo.importImage(s.id, uri) }
                 val shift = (index % 8) * 0.035f
+                val aspect = if (res.second > 0f) res.second else 1f
+                val pageH = 1f / (s.pdf?.ratio(page) ?: 0.707f)
+                val h = width / aspect
+                val x = if (at != null) at.x - width / 2f + shift else (1f - width) / 2f + shift
+                val y = if (at != null) at.y - h / 2f + shift else 0.15f + shift
                 s.addImage(
                     ImageItem(
                         id = UUID.randomUUID().toString(),
                         file = res.first,
                         page = page,
-                        x = ((1f - width) / 2f + shift).coerceIn(0f, 1f - width),
-                        y = 0.15f + shift,
+                        x = x.coerceIn(0f, (1f - width).coerceAtLeast(0f)),
+                        y = y.coerceIn(0f, (pageH - h).coerceAtLeast(0f)),
                         w = width,
                         aspect = res.second
                     )
                 )
+                s.activePage = page
                 if (!quiet) messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
             } catch (t: Throwable) {
                 messages.tryEmit(L("تعذر إضافة الصورة", "Could not add the image"))

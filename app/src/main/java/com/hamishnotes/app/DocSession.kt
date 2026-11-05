@@ -236,6 +236,100 @@ class DocSession(entry: DocEntry) {
 
     val listState = LazyListState(entry.lastPage.coerceIn(0, maxOf(0, entry.pageCount - 1)), 0)
 
+    // ---- الصفحة الحالية: آخر صفحة لُمست أو كُتب عليها، وإلا الأكثر ظهوراً على الشاشة ----
+    /** آخر صفحة لمسها المستخدم (-1 = لا شيء؛ تُلغى عند التمرير باليد). */
+    var activePage by mutableStateOf(-1)
+
+    /** الصفحة الأكثر ظهوراً في الشاشة الآن. */
+    fun mostVisiblePage(): Int {
+        val info = listState.layoutInfo
+        val vis = info.visibleItemsInfo
+        if (vis.isEmpty()) return listState.firstVisibleItemIndex
+        val top = info.viewportStartOffset
+        val bottom = info.viewportEndOffset
+        return vis.maxByOrNull { minOf(it.offset + it.size, bottom) - maxOf(it.offset, top) }?.index
+            ?: listState.firstVisibleItemIndex
+    }
+
+    /** رقم الصفحة الذي يظهر في الشريط وتعمل عليه الأزرار (إضافة صورة، ملصق، ...). */
+    fun currentPage(): Int {
+        val n = pdf?.count ?: entry.pageCount
+        val a = activePage
+        if (a in 0 until n && listState.layoutInfo.visibleItemsInfo.any { it.index == a }) return a
+        return mostVisiblePage().coerceIn(0, maxOf(0, n - 1))
+    }
+
+    /** وسط الجزء الظاهر من الصفحة (بوحدات عرض الصفحة): هنا توضع الصورة أو الملصق عند النقر. */
+    fun visibleCenter(page: Int): Offset {
+        val ratio = pdf?.ratio(page) ?: 0.707f
+        val pageH = 1f / ratio
+        val info = listState.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { v -> v.index == page } ?: return Offset(0.5f, pageH / 2f)
+        if (item.size <= 0) return Offset(0.5f, pageH / 2f)
+        val top = maxOf(item.offset, info.viewportStartOffset)
+        val bottom = minOf(item.offset + item.size, info.viewportEndOffset)
+        val cy = ((top + bottom) / 2f - item.offset) / item.size * pageH
+        return Offset(0.5f, cy.coerceIn(0f, pageH))
+    }
+
+    /** مواضع الصفحات الظاهرة في النافذة (لإسقاط الصور والملصقات المسحوبة عليها). */
+    val pageWindowRects = HashMap<Int, androidx.compose.ui.geometry.Rect>()
+
+    /** الصفحة التي تقع تحت نقطة في النافذة، وموضعها داخل الصفحة بوحدات عرض الصفحة. */
+    fun pageAt(win: Offset): Pair<Int, Offset>? {
+        val vis = listState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
+        val hit = pageWindowRects.entries.firstOrNull { it.key in vis && it.value.contains(win) } ?: return null
+        val r = hit.value
+        if (r.width <= 0f) return null
+        return hit.key to Offset((win.x - r.left) / r.width, (win.y - r.top) / r.width)
+    }
+
+    // ---- الكتابة المباشرة على الصفحة ----
+    /** مربع النص الذي يُكتب فيه الآن مباشرة على الصفحة (null = لا شيء). */
+    var inlineEditId by mutableStateOf<String?>(null)
+
+    /** يبدأ الكتابة المباشرة في مربع موجود. */
+    fun startInlineEdit(boxId: String) {
+        if (inlineEditId != null && inlineEditId != boxId) finishInlineEdit()
+        beginEdit()
+        inlineEditId = boxId
+        selectedTextId = boxId
+        selectedImageId = null
+    }
+
+    /** ينهي الكتابة المباشرة: مربع فارغ يُحذف، وإلا يُحفظ التعديل كخطوة تراجع واحدة. */
+    fun finishInlineEdit() {
+        val id = inlineEditId ?: return
+        inlineEditId = null
+        val tb = textBox(id)
+        if (tb != null && tb.text.isBlank()) {
+            texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).filter { it.id != id })
+            if (selectedTextId == id) selectedTextId = null
+        }
+        if (snapshot != null) endEdit() else persist()
+    }
+
+    /** يضع مربع نص فارغاً في موضع النقر ويفتح الكتابة فيه مباشرة. */
+    fun placeInlineText(page: Int, x: Float, y: Float, color: Color, size: Float) {
+        finishInlineEdit()
+        val ratio = pdf?.ratio(page) ?: 0.707f
+        val w = 0.42f
+        val tb = TextBox(
+            UUID.randomUUID().toString(), page,
+            x.coerceIn(0f, 1f - w * 0.3f), (y - size * 0.6f).coerceIn(0f, maxOf(0f, 1f / ratio - size * 1.4f)),
+            w, "", color, size
+        )
+        beginEdit()
+        texts = texts + (page to ((texts[page] ?: emptyList()) + tb))
+        inlineEditId = tb.id
+        selectedTextId = tb.id
+        selectedImageId = null
+        activePage = page
+    }
+
+    /** الدرج الجانبي المفتوح: "stickers" أو "photos" أو null. */
+    var trayMode by mutableStateOf<String?>(null)
+
     // ---- القراءة الضوئية والتحديد والبحث ----
     val ocr = mutableStateMapOf<Int, OcrPage>()
     var ocrRunning by mutableStateOf(false)
@@ -592,6 +686,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun undo() {
+        if (inlineEditId != null) finishInlineEdit()
         if (undoStack.isEmpty()) return
         redoStack.add(snap())
         restore(undoStack.removeAt(undoStack.lastIndex))
@@ -599,6 +694,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun redo() {
+        if (inlineEditId != null) finishInlineEdit()
         if (redoStack.isEmpty()) return
         undoStack.add(snap())
         restore(redoStack.removeAt(redoStack.lastIndex))
@@ -817,6 +913,7 @@ class DocSession(entry: DocEntry) {
         val doc = pdf ?: return
         lassoSel = null
         zoomBox = null
+        inlineEditId = null
         undoStack.clear()
         redoStack.clear()
         snapshot = null
@@ -1429,6 +1526,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun dispose() {
+        finishInlineEdit()
         flushPersist()
         disposed = true
         ocrJob?.cancel()

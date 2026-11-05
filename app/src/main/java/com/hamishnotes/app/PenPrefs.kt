@@ -67,6 +67,8 @@ object PenPrefs {
     // ---- الملاحظات اللاصقة ----
     /** وضع إضافة ملاحظة: النقرة التالية على الصفحة تضع ملاحظة. */
     var stickyActive by mutableStateOf(false)
+    /** أداة النص: النقرة التالية على الصفحة تضع مربع كتابة مباشرة في مكانها. */
+    var textActive by mutableStateOf(false)
     var stickyColor by mutableStateOf(0xFFF6B3B5.toInt()); private set
     var stickyStyle by mutableStateOf(0); private set
     /** الاسم الذي يظهر أسفل الملاحظات. */

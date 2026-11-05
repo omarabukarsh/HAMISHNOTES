@@ -637,6 +637,14 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         }
                     }) { PhIcon(R.drawable.ph_shapes, tintFor(PenPrefs.shapeActive && !c.lassoActive)) }
                 }
+                // «Aa تلقائي»: الكتابة اليدوية تتحول إلى الخط المختار بعد إنهاء الجملة
+                if (v("autofont")) {
+                    var autoDlg by remember { mutableStateOf(false) }
+                    TBtn(selected = AutoFont.on, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) autoDlg = true }) {
+                        Text("Aa", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (AutoFont.on) Palette.GoldDeep else Palette.TextSecondary)
+                    }
+                    if (autoDlg) AutoFontDialog { autoDlg = false }
+                }
                 // التبديل بين الكتابة بالقلم فقط، والكتابة بالقلم والإصبع
                 if (PenInput.showToggle) {
                     TBtn(selected = PenInput.fingerWrites, onClick = {
@@ -1694,6 +1702,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             if (s.selectedImageId != null) ImageBar(s)
             if (s.selectedTextId != null && s.inlineEditId == null) TextBoxBar(s)
             if (s.selectedNoteId != null) NoteBar(s)
+            AutoFontChip(s)
         }
     }
 }
@@ -2529,6 +2538,7 @@ private fun PageView(
                             AppController.lastInkAt = System.currentTimeMillis()
                             if (session.selection != null) session.selection = null
                             session.beginEdit()
+                            AutoFont.penDown()
                             livePts.clear()
                             // عرض الخط: ضغط القلم بعد المعايرة، أو السرعة للإصبع والأقلام بلا ضغط
                             val speedW = SpeedWidth()
@@ -2697,12 +2707,15 @@ private fun PageView(
                                         if (noteTarget != null) session.addNoteInk(noteTarget, ink) else {
                                             pendingInk.add(ink)
                                             session.addInk(index, ink)
+                                            // «Aa تلقائي»: الجملة تتحول إلى الخط المختار عند إنهائها
+                                            if (shaped == null) AutoFont.onStroke(session, index, ink)
                                         }
                                     }
                                 }
                                 livePts.clear()
                                 tick++
                                 session.endEdit()
+                                AutoFont.penUp()
                                 // الهايلايتر الملتقط: يتحول الخط إلى تمييز خلف كلمات السطر ويُضاف إلى الملخصات
                                 if (snapPts != null) session.snapHighlight(index, snapPts, live.color, live.width)
                                 if (backToPen) AppController.selectTool(AppController.lastWriting)

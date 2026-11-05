@@ -1399,6 +1399,15 @@ class DocSession(entry: DocEntry) {
         endEdit()
     }
 
+    /** التحويل التلقائي: الكتابة تصبح نصاً بالخط المختار دون تغيير التحديد (خطوة تراجع واحدة). */
+    fun autoInkToText(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        endEdit()
+    }
+
     /** يعيد الكتابة اليدوية الأصلية بدل مربع النص. */
     fun textBoxToInk(boxId: String) {
         val tb = textBox(boxId) ?: return

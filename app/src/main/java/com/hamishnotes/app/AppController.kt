@@ -723,6 +723,7 @@ object AppController {
         CardDeck.init(app)
         FontStore.init(app)
         StickerStore.init(app)
+        AutoFont.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {

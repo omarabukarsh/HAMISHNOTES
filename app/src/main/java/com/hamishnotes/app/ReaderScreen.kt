@@ -97,6 +97,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -302,7 +303,7 @@ private fun ReaderContent(s: DocSession) {
         }
         // درج الملصقات والصور الجانبي، وصورة العنصر المسحوب منه
         if (!c.focusMode) SideTray(s)
-        TrayDragGhost(rootCoords[0])
+        TrayDragGhost(s, rootCoords[0])
     }
 
     val req = s.textDialog
@@ -697,7 +698,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             PenPrefs.shapeActive = false
                             PenPrefs.textActive = false
                             PenPrefs.stickyActive = true
-                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة لوضع الملاحظة", "Pick a color, then tap the page to place the note"))
+                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
                         }
                     }) { PhIcon(R.drawable.ph_note, tintFor(PenPrefs.stickyActive)) }
                 }
@@ -1441,7 +1442,34 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+    // درج الأوراق ودرج الملخصات يُغلقان بنقرة إصبع خارجهما (والقلم يبقى يكتب)
+    val areaCoords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    val drawerRects = remember { HashMap<String, androidx.compose.ui.geometry.Rect>() }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().clipToBounds()
+            .onGloballyPositioned { areaCoords[0] = it }
+            .pointerInput(s) {
+                awaitEachGesture {
+                    val d = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (d.type != PointerType.Touch || !s.sideOpen()) return@awaitEachGesture
+                    val inDrawer = (s.drawerOpen && drawerRects["pages"]?.contains(d.position) == true) ||
+                        (s.summaryOpen && drawerRects["summary"]?.contains(d.position) == true)
+                    if (inDrawer) return@awaitEachGesture
+                    var tap = true
+                    while (true) {
+                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                        if (e.changes.count { it.pressed } > 1) tap = false
+                        val ch = e.changes.firstOrNull { it.id == d.id } ?: break
+                        if (!ch.pressed) break
+                        if ((ch.position - d.position).getDistance() > viewConfiguration.touchSlop) tap = false
+                    }
+                    if (tap) {
+                        s.drawerOpen = false
+                        s.summaryOpen = false
+                    }
+                }
+            }
+    ) {
         val vw = constraints.maxWidth.toFloat()
         val vh = constraints.maxHeight.toFloat()
         val pad = with(density) { 12.dp.toPx() }
@@ -1602,7 +1630,13 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             if (s.drawerOpen && wide) PAGES_PANEL_W.dp else 0.dp, tween(240), label = "sidePad"
         )
         Box(
-            Modifier.fillMaxSize().padding(start = sidePad).multiFingerTap(
+            Modifier.fillMaxSize().padding(start = sidePad)
+                // على الهاتف تظلل الصفحة قليلاً والدرج مفتوح (رسم فقط؛ القلم يبقى يكتب)
+                .drawWithContent {
+                    drawContent()
+                    if (!wide && s.sideOpen()) drawRect(Color.Black.copy(alpha = 0.14f))
+                }
+                .multiFingerTap(
                 onTwo = { if (AppController.fingerUndo && s.undoStack.isNotEmpty()) s.undo() },
                 onThree = { if (AppController.fingerUndo && s.redoStack.isNotEmpty()) s.redo() }
             ).zoomAndPan(
@@ -1648,7 +1682,9 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         // الدرجان ينزلقان من حافتيهما عند الفتح
         AnimatedVisibility(
             visible = s.drawerOpen,
-            modifier = Modifier.align(Alignment.CenterStart),
+            modifier = Modifier.align(Alignment.CenterStart).onGloballyPositioned { lc ->
+                areaCoords[0]?.let { a -> if (a.isAttached && lc.isAttached) drawerRects["pages"] = a.localBoundingBoxOf(lc, false) }
+            },
             enter = Motion.drawerEnter(fromStart = true),
             exit = Motion.drawerExit(toStart = true)
         ) {
@@ -1656,7 +1692,9 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         }
         AnimatedVisibility(
             visible = s.summaryOpen && UiPrefs.summariesOn,
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier.align(Alignment.CenterEnd).onGloballyPositioned { lc ->
+                areaCoords[0]?.let { a -> if (a.isAttached && lc.isAttached) drawerRects["summary"] = a.localBoundingBoxOf(lc, false) }
+            },
             enter = Motion.drawerEnter(fromStart = false),
             exit = Motion.drawerExit(toStart = false)
         ) {
@@ -2328,7 +2366,7 @@ private fun PageView(
                         var carry: PointerEvent? = null
                         /** الإصبع يكتب هنا: الوضع مفعّل، ولا نافذة كتابة مكبّرة، والقلم ليس قريبًا (راحة اليد). */
                         fun fingerInk(e: PointerEvent): Boolean =
-                            PenInput.fingerWrites && session.zoomBox == null && !PenInput.stylusActiveRecently() &&
+                            PenInput.fingerWrites && session.zoomBox == null && !PenInput.stylusActiveRecently() && !session.sideOpen() &&
                                 e.changes.count { it.pressed && it.type == PointerType.Touch } == 1
                         while (true) {
                             val ev = carry ?: awaitPointerEvent()
@@ -2728,6 +2766,8 @@ private fun PageView(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         if (down.type != PointerType.Touch) return@awaitEachGesture
+                        // درج الأوراق أو الملخصات مفتوح: نقرة الإصبع تغلقه فقط (يتولاها PageArea)
+                        if (session.sideOpen()) return@awaitEachGesture
                         val w = size.width.toFloat()
                         if (w <= 0f) return@awaitEachGesture
                         val nx = down.position.x / w
@@ -3388,6 +3428,9 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
     }
 }
 
+
+/** درج الأوراق أو درج الملخصات ظاهر الآن. */
+internal fun DocSession.sideOpen(): Boolean = drawerOpen || (summaryOpen && UiPrefs.summariesOn)
 
 /** أداة النص: نقرة على مربع موجود تفتح الكتابة فيه، وإلا يوضع مربع جديد في مكان النقرة. */
 private fun placeOrEditText(

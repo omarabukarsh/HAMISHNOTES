@@ -54,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -84,6 +85,8 @@ sealed class TrayPayload {
     class BuiltinSticker(val b: StickerStore.Builtin) : TrayPayload()
     class MySticker(val f: File) : TrayPayload()
     class Photo(val uri: Uri) : TrayPayload()
+    /** ملاحظة لاصقة تُسحب من شريط ألوانها. */
+    class Sticky(val color: Int) : TrayPayload()
 }
 
 /** حالة السحب من الدرج: العنصر وموضع الإصبع في النافذة وصورته المصغّرة. */
@@ -118,7 +121,80 @@ private fun placePayload(s: DocSession, p: TrayPayload, page: Int, at: Offset) {
         is TrayPayload.BuiltinSticker -> StickerStore.render(p.b, 400)?.let { StickerStore.place(s, it, page, at) }
         is TrayPayload.MySticker -> StickerStore.place(s, p.f, page, at)
         is TrayPayload.Photo -> AppController.insertImage(s, p.uri, page, width = 0.45f, at = at)
+        is TrayPayload.Sticky -> {
+            val pageH = 1f / (s.pdf?.ratio(page) ?: 0.707f)
+            s.addNote(newStickyAt(page, at.x, at.y, pageH))
+            PenPrefs.stickyActive = false
+        }
     }
+}
+
+/** عرض العنصر على الصفحة (بوحدات عرض الصفحة) ونسبة عرضه لارتفاعه، كما سيوضع عند الإفلات. */
+private fun placedSize(p: TrayPayload, thumb: ImageBitmap?): Pair<Float, Float> {
+    val aspect = if (thumb != null && thumb.height > 0) thumb.width.toFloat() / thumb.height else 1f
+    return when (p) {
+        is TrayPayload.Photo -> 0.45f to aspect
+        is TrayPayload.BuiltinSticker -> (if (aspect > 1.5f) 0.26f else 0.16f) to aspect
+        is TrayPayload.MySticker -> 0.16f to aspect
+        is TrayPayload.Sticky -> 0.2f to 1f
+    }
+}
+
+/**
+ * سحب عنصر إلى الصفحة: ضغطة مطوّلة ثم سحب، والإفلات على أي صفحة يضعه هناك.
+ * ضغطة مطوّلة دون سحب = onLongStill. onStart يُستدعى عند بداية السحب.
+ */
+@Composable
+fun Modifier.dragToPage(
+    s: DocSession?,
+    payload: TrayPayload,
+    img: ImageBitmap?,
+    onStart: () -> Unit = {},
+    onLongStill: (() -> Unit)? = null
+): Modifier {
+    val haptic = LocalHapticFeedback.current
+    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val slop = with(LocalDensity.current) { 12.dp.toPx() }
+    if (s == null) return this
+    return this.onGloballyPositioned { coords[0] = it }
+        .pointerInput(payload, s) {
+            var start = Offset.Zero
+            var moved = false
+            detectDragGesturesAfterLongPress(
+                onDragStart = start@{ p ->
+                    val c = coords[0] ?: return@start
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onStart()
+                    start = p
+                    moved = false
+                    TrayDrag.payload = payload
+                    TrayDrag.thumb = img
+                    TrayDrag.pos = c.localToWindow(p)
+                    TrayDrag.overPage = -1
+                },
+                onDrag = drag@{ ch, _ ->
+                    if (TrayDrag.payload !== payload) return@drag
+                    ch.consume()
+                    val c = coords[0] ?: return@drag
+                    if (!moved && (ch.position - start).getDistance() > slop) moved = true
+                    TrayDrag.pos = c.localToWindow(ch.position)
+                    TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
+                },
+                onDragEnd = end@{
+                    val p = TrayDrag.payload
+                    val hit = TrayDrag.target(s)
+                    TrayDrag.cancel()
+                    if (p !== payload) return@end
+                    if (!moved) {
+                        onLongStill?.invoke()
+                    } else if (hit != null) {
+                        s.activePage = hit.first
+                        placePayload(s, payload, hit.first, hit.second)
+                    }
+                },
+                onDragCancel = { TrayDrag.cancel() }
+            )
+        }
 }
 
 /**
@@ -133,6 +209,8 @@ fun BoxScope.SideTray(s: DocSession) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     var widthDp by remember { mutableStateOf(TrayPrefs.load(ctx)) }
     LaunchedEffect(Unit) { if (s.summaryOpen) s.summaryOpen = false }
+    // بعد إغلاق الدرج لا يمنع مكانه القديم الإفلات على الصفحة
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { TrayDrag.trayRect = androidx.compose.ui.geometry.Rect.Zero } }
 
     Surface(
         Modifier.align(Alignment.CenterEnd)
@@ -193,27 +271,65 @@ fun BoxScope.SideTray(s: DocSession) {
     }
 }
 
-/** صورة العنصر المسحوب تتبع الإصبع (تُرسم فوق كل شيء في شاشة القراءة). */
+/**
+ * العنصر المسحوب يتبع الإصبع (فوق كل شيء في شاشة القراءة): فوق صفحة يظهر بحجمه الحقيقي
+ * في المكان الذي سيوضع فيه بالضبط، وخارج الصفحات يعود صغيراً.
+ */
 @Composable
-fun BoxScope.TrayDragGhost(root: LayoutCoordinates?) {
+fun BoxScope.TrayDragGhost(s: DocSession, root: LayoutCoordinates?) {
     val p = TrayDrag.payload ?: return
     val r = root ?: return
     if (!r.isAttached) return
+    val density = LocalDensity.current
+    val thumb = TrayDrag.thumb
+    val green = Color(0xFF16A34A)
+    val stickyColor = (p as? TrayPayload.Sticky)?.let { Color(it.color) }
+    val page = TrayDrag.overPage
+    val pr = if (page >= 0) s.pageWindowRects[page] else null
+    val at = if (pr != null) TrayDrag.target(s)?.second else null
+    if (pr != null && at != null && pr.width > 0f) {
+        val pw = pr.width
+        val (wu, aspect) = placedSize(p, thumb)
+        val hu = wu / aspect
+        val pageH = pr.height / pw
+        val x = (at.x - wu / 2f).coerceIn(0f, (1f - wu).coerceAtLeast(0f))
+        val y = (at.y - hu / 2f).coerceIn(0f, (pageH - hu).coerceAtLeast(0f))
+        val local = r.windowToLocal(Offset(pr.left + x * pw, pr.top + y * pw))
+        Box(
+            Modifier.align(AbsoluteAlignment.TopLeft)
+                .absoluteOffset { IntOffset(local.x.roundToInt(), local.y.roundToInt()) }
+                .size(with(density) { (wu * pw).toDp() }, with(density) { (hu * pw).toDp() })
+                .graphicsLayer { alpha = 0.85f }
+                .then(if (stickyColor != null) Modifier.shadow(4.dp, RoundedCornerShape(4.dp)).background(stickyColor, RoundedCornerShape(4.dp)) else Modifier)
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        green,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 8f))
+                        )
+                    )
+                }
+        ) {
+            if (thumb != null && stickyColor == null) Image(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+        }
+        return
+    }
     val local = r.windowToLocal(TrayDrag.pos)
-    val half = with(LocalDensity.current) { 38.dp.toPx() }
+    val half = with(density) { 38.dp.toPx() }
     Box(
         Modifier.align(AbsoluteAlignment.TopLeft)
             .absoluteOffset { IntOffset((local.x - half).roundToInt(), (local.y - half * 1.6f).roundToInt()) }
             .size(76.dp)
-            .graphicsLayer { alpha = if (TrayDrag.overPage >= 0) 0.95f else 0.6f; scaleX = 1.08f; scaleY = 1.08f }
+            .graphicsLayer { alpha = 0.6f }
             .shadow(10.dp, RoundedCornerShape(12.dp))
             .clip(RoundedCornerShape(12.dp))
-            .background(if (p is TrayPayload.Photo) Color(0xFFEEF0F4) else Color.White.copy(alpha = 0.85f))
-            .border(2.dp, if (TrayDrag.overPage >= 0) Color(0xFF16A34A) else Palette.Navy, RoundedCornerShape(12.dp)),
+            .background(stickyColor ?: if (p is TrayPayload.Photo) Color(0xFFEEF0F4) else Color.White.copy(alpha = 0.85f))
+            .border(2.dp, Palette.Navy, RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
-        TrayDrag.thumb?.let {
-            Image(it, null, Modifier.fillMaxSize().padding(if (p is TrayPayload.Photo) 0.dp else 6.dp), contentScale = if (p is TrayPayload.Photo) ContentScale.Crop else ContentScale.Fit)
+        if (thumb != null && stickyColor == null) {
+            Image(thumb, null, Modifier.fillMaxSize().padding(if (p is TrayPayload.Photo) 0.dp else 6.dp), contentScale = if (p is TrayPayload.Photo) ContentScale.Crop else ContentScale.Fit)
         }
     }
 }
@@ -232,53 +348,13 @@ private fun TrayTile(
     onTap: () -> Unit,
     onLongStill: (() -> Unit)? = null
 ) {
-    val haptic = LocalHapticFeedback.current
-    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    val slop = with(LocalDensity.current) { 12.dp.toPx() }
     Box(
         Modifier.fillMaxWidth().aspectRatio(1f)
-            .onGloballyPositioned { coords[0] = it }
             .clip(RoundedCornerShape(if (photo) 8.dp else 12.dp))
             .background(if (photo) Color(0xFFEEF0F4) else Color.White)
             .then(if (photo) Modifier else Modifier.border(1.dp, Palette.Divider, RoundedCornerShape(12.dp)))
             .graphicsLayer { alpha = if (TrayDrag.payload === payload) 0.35f else 1f }
-            .pointerInput(payload) {
-                var start = Offset.Zero
-                var moved = false
-                detectDragGesturesAfterLongPress(
-                    onDragStart = start@{ p ->
-                        val c = coords[0] ?: return@start
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        start = p
-                        moved = false
-                        TrayDrag.payload = payload
-                        TrayDrag.thumb = img
-                        TrayDrag.pos = c.localToWindow(p)
-                        TrayDrag.overPage = -1
-                    },
-                    onDrag = drag@{ ch, _ ->
-                        if (TrayDrag.payload !== payload) return@drag
-                        ch.consume()
-                        val c = coords[0] ?: return@drag
-                        if (!moved && (ch.position - start).getDistance() > slop) moved = true
-                        TrayDrag.pos = c.localToWindow(ch.position)
-                        TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
-                    },
-                    onDragEnd = end@{
-                        val p = TrayDrag.payload
-                        val hit = TrayDrag.target(s)
-                        TrayDrag.cancel()
-                        if (p !== payload) return@end
-                        if (!moved) {
-                            onLongStill?.invoke()
-                        } else if (hit != null) {
-                            s.activePage = hit.first
-                            placePayload(s, payload, hit.first, hit.second)
-                        }
-                    },
-                    onDragCancel = { TrayDrag.cancel() }
-                )
-            }
+            .dragToPage(s, payload, img, onLongStill = onLongStill)
             .combinedClickable(onClick = onTap),
         contentAlignment = Alignment.Center
     ) {

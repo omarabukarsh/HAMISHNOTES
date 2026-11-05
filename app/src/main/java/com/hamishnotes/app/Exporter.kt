@@ -251,6 +251,7 @@ object Exporter {
                 val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = tb.color.toArgb()
                     textSize = tb.size * w * scale
+                    FontStore.typeface(tb.font)?.let { typeface = it }
                 }
                 val lw = (tb.w * w * scale).toInt().coerceAtLeast(10)
                 val layout = layoutOf(tb.text, tp, lw, 1.25f)
@@ -450,6 +451,7 @@ object Exporter {
             val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
             tp.color = tb.color.toArgb()
             tp.textSize = tb.size * w
+            FontStore.typeface(tb.font)?.let { tp.typeface = it }
             val layout = layoutOf(tb.text, tp, (tb.w * w).toInt().coerceAtLeast(10), 1.25f)
             c.save()
             c.translate(tb.x * w, tb.y * w)

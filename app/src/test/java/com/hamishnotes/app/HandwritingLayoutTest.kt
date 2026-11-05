@@ -100,4 +100,13 @@ class HandwritingLayoutTest {
         val run = HandwritingLayout.lines(en(0.1f), HwLang.ENGLISH, defaultRtl = false).single().runs.single()
         assertEquals(null, HandwritingLayout.assign(run, "two words"))
     }
+
+    @Test
+    fun recognizedWordsBecomeLinesOfText() {
+        val words = listOf(
+            OcrWord("Cardiac", 0.1f, 0.1f, 0.2f, 0.12f, 0), OcrWord("output", 0.21f, 0.1f, 0.3f, 0.12f, 0),
+            OcrWord("=", 0.1f, 0.15f, 0.12f, 0.17f, 1), OcrWord("HR", 0.13f, 0.15f, 0.16f, 0.17f, 1)
+        )
+        assertEquals("Cardiac output\n= HR", handwritingText(words))
+    }
 }

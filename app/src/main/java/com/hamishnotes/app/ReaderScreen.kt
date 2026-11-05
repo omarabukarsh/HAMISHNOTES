@@ -440,11 +440,19 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     val cur = s.listState.firstVisibleItemIndex
     val pill = RoundedCornerShape(28.dp)
 
-    val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) c.insertImage(s, uri, s.listState.firstVisibleItemIndex)
+    var galleryOpen by remember { mutableStateOf(false) }
+    var stickersOpen by remember { mutableStateOf(false) }
+    if (galleryOpen) {
+        PhotoGalleryDialog(
+            multi = true, title = L("صور الجهاز", "Photos"),
+            onPicked = { uris ->
+                val page = s.listState.firstVisibleItemIndex
+                uris.forEachIndexed { i, u -> c.insertImage(s, u, page, index = i, quiet = i > 0) }
+            },
+            onDismiss = { galleryOpen = false }
+        )
     }
+    if (stickersOpen) StickerDialog(s) { stickersOpen = false }
     val pdfPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -644,11 +652,15 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
 
                 // صورة / نص / إضافة صفحة / قراءة النص / بحث / حفظ
-                if (listOf("image", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
+                if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
                 if (v("image")) {
-                    TBtn(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
+                    // معرض صور الجهاز داخل التطبيق (و«من الملفات» داخله)
+                    TBtn(onClick = { galleryOpen = true }) {
                         ImageGlyph(Palette.TextSecondary)
                     }
+                }
+                if (v("stickers")) {
+                    TBtn(onClick = { stickersOpen = true }) { PhIcon(R.drawable.ph_sticker, Palette.TextSecondary) }
                 }
                 if (v("text")) TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
                 if (v("sticky")) {
@@ -1726,6 +1738,7 @@ private fun SelectionBar(s: DocSession) {
 private fun LassoBar(s: DocSession) {
     val c = AppController
     var toText by remember { mutableStateOf(false) }
+    var changeFont by remember { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 8.dp, vertical = 4.dp).horizontalScroll(rememberScrollState()),
@@ -1741,6 +1754,10 @@ private fun LassoBar(s: DocSession) {
             }
             TextButton(onClick = { s.lassoDuplicate() }) { Text(L("نسخ", "Duplicate")) }
             TextButton(onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }) { Text(L("إلى نص", "To text")) }
+            TextButton(onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) changeFont = true }) {
+                Text("Aa " + L("تغيير الخط", "Change font"), color = Palette.Navy, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = { StickerStore.saveFromLasso(s) }) { Text("☺ " + L("حفظ كملصق", "Save as sticker")) }
             // تشغيل التسجيل الصوتي من لحظة كتابة أول خط محدد
             val sel = s.lassoSel
             val firstT = sel?.strokes?.filter { it.t > 0 }?.minOfOrNull { it.t } ?: 0L
@@ -1755,6 +1772,7 @@ private fun LassoBar(s: DocSession) {
         }
     }
     if (toText) InkToTextDialog(s) { toText = false }
+    if (changeFont) ChangeFontDialog(s) { changeFont = false }
 }
 
 @Composable
@@ -1796,6 +1814,7 @@ private fun ReaderTimer(id: String) {
 
 @Composable
 private fun TextBoxBar(s: DocSession) {
+    var fontPick by remember { mutableStateOf(false) }
     val id = s.selectedTextId ?: return
     val tb = s.textBox(id)
     if (tb == null) {
@@ -1836,9 +1855,20 @@ private fun TextBoxBar(s: DocSession) {
                 s.updateTextBox(id) { it.copy(color = AppController.colorFor(pen)) }
                 s.endEdit()
             }) { Text(L("لون القلم", "Pen color")) }
+            TextButton(onClick = { fontPick = true }) { Text("Aa " + L("الخط", "Font"), fontWeight = FontWeight.Bold) }
+            if (tb.ink.isNotEmpty()) {
+                TextButton(onClick = { s.textBoxToInk(id) }) { Text(L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting"), color = Palette.GoldDeep) }
+            }
             TextButton(onClick = { s.deleteTextBox(id) }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             TextButton(onClick = { s.selectedTextId = null }) { Text(L("تم", "Done")) }
         }
+    }
+    if (fontPick) {
+        FontLibraryDialog(tb.text, tb.font, onPick = { f ->
+            s.beginEdit()
+            s.updateTextBox(id) { it.copy(font = f) }
+            s.endEdit()
+        }, onDismiss = { fontPick = false })
     }
 }
 
@@ -2192,9 +2222,13 @@ private fun PageView(
                             Text(tb.text, fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Medium, maxLines = 1)
                         }
                     } else {
+                    // خط من المكتبة: يُنزَّل إن لم يكن على هذا الجهاز (مستند منقول من جهاز آخر)
+                    val ready = tb.font.isEmpty() || FontStore.state[tb.font] == true || FontStore.isReady(tb.font)
+                    if (!ready) LaunchedEffect(tb.font) { FontStore.ensure(tb.font, retryFailed = false) }
                     Text(
                         tb.text,
                         color = if (night) nightOf(tb.color) else tb.color,
+                        fontFamily = if (ready) FontStore.family(tb.font) else null,
                         fontSize = fs,
                         lineHeight = fs * 1.25f,
                         modifier = Modifier

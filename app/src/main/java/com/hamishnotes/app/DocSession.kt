@@ -1289,6 +1289,30 @@ class DocSession(entry: DocEntry) {
 
     fun mapSetCollapsed(keys: Set<String>) = changeMapQuiet { it.copy(collapsed = keys) }
 
+    // ---------- تغيير خط الكتابة اليدوية ----------
+
+    /** يستبدل خطوط الكتابة المحددة بمربع نص بخط من المكتبة (خطوة تراجع واحدة). */
+    fun inkToTextBox(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        lassoSel = null
+        selectedTextId = box.id
+        endEdit()
+    }
+
+    /** يعيد الكتابة اليدوية الأصلية بدل مربع النص. */
+    fun textBoxToInk(boxId: String) {
+        val tb = textBox(boxId) ?: return
+        if (tb.ink.isEmpty()) return
+        beginEdit()
+        texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).filter { it.id != boxId })
+        annotations = annotations + (tb.page to ((annotations[tb.page] ?: emptyList()) + tb.ink))
+        selectedTextId = null
+        endEdit()
+    }
+
     // ---------- مربعات النص ----------
 
     fun addTextBox(item: TextBox) {

@@ -518,7 +518,9 @@ class LibraryRepository(context: Context) {
                                 size = o.getDouble("s").toFloat(),
                                 sticky = o.optBoolean("st", false),
                                 linkDoc = o.optString("ld", "").ifEmpty { null },
-                                linkPage = o.optInt("lp", 0)
+                                linkPage = o.optInt("lp", 0),
+                                font = o.optString("f", ""),
+                                ink = parseInkArray(o.optJSONArray("ink"))
                             )
                         )
                     } catch (e: Throwable) {
@@ -666,6 +668,10 @@ class LibraryRepository(context: Context) {
                             .put("st", tb.sticky)
                             .put("ld", tb.linkDoc ?: "")
                             .put("lp", tb.linkPage)
+                            .apply {
+                                if (tb.font.isNotEmpty()) put("f", tb.font)
+                                if (tb.ink.isNotEmpty()) put("ink", inkArray(tb.ink))
+                            }
                     )
                 }
             }
@@ -767,6 +773,40 @@ class LibraryRepository(context: Context) {
             .apply { if (!e.map.isEmpty()) put("map", mapJson(e.map)) }
     }
 
+    /** خطوط كتابة يدوية بنفس صيغة الحفظ («p» نقاط مسطحة x,y,ضغط). */
+    private fun inkArray(list: List<Ink>): JSONArray = JSONArray().apply {
+        list.forEach { s ->
+            val flat = JSONArray()
+            s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+            put(
+                JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble()).put("k", s.tool.name).put("t", s.t)
+                    .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                    .put("p", flat)
+            )
+        }
+    }
+
+    private fun parseInkArray(a: JSONArray?): List<Ink> {
+        if (a == null) return emptyList()
+        val out = ArrayList<Ink>()
+        for (k in 0 until a.length()) {
+            try {
+                val so = a.getJSONObject(k)
+                val flat = so.getJSONArray("p")
+                val pts = ArrayList<Pt>(flat.length() / 3)
+                var j = 0
+                while (j + 2 < flat.length()) {
+                    pts.add(Pt(flat.getDouble(j).toFloat(), flat.getDouble(j + 1).toFloat(), flat.getDouble(j + 2).toFloat()))
+                    j += 3
+                }
+                val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
+                out.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false)))
+            } catch (e: Throwable) {
+            }
+        }
+        return out
+    }
+
     private fun parseMap(o: JSONObject?): MapEdits {
         if (o == null) return MapEdits()
         return try {
@@ -854,7 +894,7 @@ class LibraryRepository(context: Context) {
         }
 
         val isPng = try {
-            resolver.getType(uri) == "image/png"
+            resolver.getType(uri) == "image/png" || uri.path?.endsWith(".png", ignoreCase = true) == true
         } catch (e: Throwable) {
             false
         }

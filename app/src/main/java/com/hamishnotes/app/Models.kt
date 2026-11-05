@@ -138,7 +138,11 @@ data class TextBox(
     val sticky: Boolean = false,
     /** رابط إلى مستند (معرّفه) وصفحة فيه؛ null = ليس رابطًا. */
     val linkDoc: String? = null,
-    val linkPage: Int = 0
+    val linkPage: Int = 0,
+    /** اسم الخط من مكتبة الخطوط؛ فارغ = الخط الافتراضي. */
+    val font: String = "",
+    /** الكتابة اليدوية التي حُوّلت إلى هذا النص (لإرجاعها)؛ فارغة لمربعات النص العادية. */
+    val ink: List<Ink> = emptyList()
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */

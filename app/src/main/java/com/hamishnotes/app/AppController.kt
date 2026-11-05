@@ -721,6 +721,8 @@ object AppController {
         PenInput.init(app)
         UiPrefs.init(app)
         CardDeck.init(app)
+        FontStore.init(app)
+        StickerStore.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {
@@ -1119,22 +1121,24 @@ object AppController {
 
     // ---------- الصور ----------
 
-    fun insertImage(s: DocSession, uri: Uri, page: Int) {
+    /** index: ترتيب الصورة بين عدة صور مختارة معًا (تُزاح قليلًا حتى لا تتطابق). width: عرضها نسبةً للصفحة. */
+    fun insertImage(s: DocSession, uri: Uri, page: Int, index: Int = 0, width: Float = 0.45f, quiet: Boolean = false) {
         scope.launch {
             try {
                 val res = withContext(Dispatchers.IO) { repo.importImage(s.id, uri) }
+                val shift = (index % 8) * 0.035f
                 s.addImage(
                     ImageItem(
                         id = UUID.randomUUID().toString(),
                         file = res.first,
                         page = page,
-                        x = 0.275f,
-                        y = 0.15f,
-                        w = 0.45f,
+                        x = ((1f - width) / 2f + shift).coerceIn(0f, 1f - width),
+                        y = 0.15f + shift,
+                        w = width,
                         aspect = res.second
                     )
                 )
-                messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
+                if (!quiet) messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
             } catch (t: Throwable) {
                 messages.tryEmit(L("تعذر إضافة الصورة", "Could not add the image"))
             }

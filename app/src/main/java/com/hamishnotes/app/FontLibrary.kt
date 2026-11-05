@@ -124,7 +124,7 @@ object FontStore {
         if (name.isEmpty()) return null
         synchronized(typefaces) { typefaces[name]?.let { return it } }
         val e = byName[name] ?: return null
-        val tf = try {
+        val loaded: android.graphics.Typeface? = try {
             when {
                 e.bundled != null -> android.graphics.Typeface.createFromAsset(app.assets, "fonts/bundled/${e.bundled}")
                 fileOf(e).exists() -> android.graphics.Typeface.createFromFile(fileOf(e))
@@ -132,7 +132,8 @@ object FontStore {
             }
         } catch (t: Throwable) {
             null
-        } ?: return null
+        }
+        val tf = loaded ?: return null
         synchronized(typefaces) { typefaces[name] = tf }
         return tf
     }
@@ -156,11 +157,13 @@ object FontStore {
         sp.edit().putString("recent", recent.joinToString("\n")).apply()
     }
 
-    fun unmetered(): Boolean = try {
-        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        !cm.isActiveNetworkMetered
-    } catch (t: Throwable) {
-        false
+    fun unmetered(): Boolean {
+        return try {
+            val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.isActiveNetworkMetered.not()
+        } catch (t: Throwable) {
+            false
+        }
     }
 
     /** ينزّل الخط إن لم يكن موجودًا. true = جاهز. */

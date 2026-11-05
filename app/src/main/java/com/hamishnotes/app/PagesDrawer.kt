@@ -64,6 +64,9 @@ import kotlinx.coroutines.withContext
 /** عرض درج الصفحات (dp): ثابت، ويُزاح المستند بجانبه على الشاشات العريضة. */
 const val PAGES_PANEL_W = 300
 
+/** وقت فتح درج الصفحات (لتأخير رسم الصور المصغّرة حتى تنتهي حركة الفتح). */
+private var drawerOpenedAt = 0L
+
 /**
  * درج الصفحات الجانبي: رأس فيه زر التحديد، وأربعة تبويبات (الصفحات، الفهرس، العلامات، التسجيلات)،
  * وقائمة خيارات؛ ثم شبكة صور الصفحات برقم الصفحة وزر «⋯» وعلامة في الزاوية، وبطاقة «إضافة صفحة».
@@ -71,6 +74,7 @@ const val PAGES_PANEL_W = 300
 @Composable
 fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     val c = AppController
+    remember { drawerOpenedAt = android.os.SystemClock.uptimeMillis(); 0 }
     val scope = rememberCoroutineScope()
     val cur = s.listState.firstVisibleItemIndex
     // يفتح الدرج عند الصفحة المعروضة لا من البداية
@@ -246,7 +250,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
             title = { Text(L("حذف ${picked.size} صفحة؟", "Delete ${picked.size} pages?")) },
             text = { Text(L("ستُحذف الصفحات المحددة وكل ما كتبته عليها.", "The selected pages and everything written on them will be deleted.")) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     confirmDelete = false
                     val drop = picked.toSet()
                     s.rearrangePages((0 until n).filter { it !in drop })
@@ -254,7 +258,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                     selecting = false
                 }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }
@@ -323,6 +327,11 @@ private fun PageThumb(
     val ref = pdf.pages.getOrNull(i)
     val ratio = pdf.ratio(i)
     val bmp by produceState<Bitmap?>(pdf.cached(ref, 360), ref) {
+        // الصور غير الجاهزة تُرسم بعد انتهاء حركة فتح الدرج، كي لا تنافسها
+        if (pdf.cached(ref, 360) == null) {
+            val wait = drawerOpenedAt + 340L - android.os.SystemClock.uptimeMillis()
+            if (wait > 0) kotlinx.coroutines.delay(wait)
+        }
         value = pdf.cached(ref, 360) ?: withContext(Dispatchers.IO) {
             try {
                 pdf.render(ref, 360)
@@ -414,12 +423,12 @@ private fun PageThumb(
             title = { Text(L("حذف الصفحة ${i + 1}؟", "Delete page ${i + 1}?")) },
             text = { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     confirmDelete = false
                     s.rearrangePages((0 until pdf.count).filter { it != i })
                 }) { Text(L("حذف", "Delete"), color = Color(0xFFC62828)) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }
@@ -570,6 +579,6 @@ fun OutlineTitleDialog(title: String, initial: String, onDismiss: () -> Unit, on
             )
         },
         confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSave(text.trim()) }) { Text(L("حفظ", "Save")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }

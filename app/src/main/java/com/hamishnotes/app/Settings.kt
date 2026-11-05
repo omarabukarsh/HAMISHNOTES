@@ -231,16 +231,29 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         openTerms = { termsOpen = true }
                     )
                 }
+                val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
                 if (wide) {
                     Row(Modifier.fillMaxSize()) {
                         SettingsSidebar(page ?: SettingsPage.GENERAL, Modifier.width(250.dp).fillMaxHeight(), onClose = null) { page = it }
                         Box(Modifier.width(1.dp).fillMaxHeight().background(Palette.Divider))
-                        pane(page ?: SettingsPage.GENERAL, Modifier.weight(1f).fillMaxHeight())
+                        // القسم الجديد يظهر بتلاشٍ وانزلاق قصير من جهة ترتيبه في القائمة
+                        androidx.compose.animation.AnimatedContent(
+                            targetState = page ?: SettingsPage.GENERAL,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            transitionSpec = { fadeShift(down = targetState.ordinal > initialState.ordinal) },
+                            label = "settingsPane"
+                        ) { p -> pane(p, Modifier.fillMaxSize()) }
                     }
                 } else {
-                    val p = page
-                    if (p == null) SettingsSidebar(null, Modifier.fillMaxSize(), onClose = close) { page = it }
-                    else pane(p, Modifier.fillMaxSize())
+                    // القائمة ثم القسم: انتقال «المحور المشترك»، والرجوع يعكسه
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = page,
+                        transitionSpec = { sharedAxisX(forward = targetState != null, rtl = rtl) },
+                        label = "settingsNav"
+                    ) { p ->
+                        if (p == null) SettingsSidebar(null, Modifier.fillMaxSize(), onClose = close) { page = it }
+                        else pane(p, Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -298,9 +311,12 @@ private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose
             SettingsPage.values().forEach { p ->
                 val on = p == selected
                 val shape = RoundedCornerShape(12.dp)
+                val rowBg by androidx.compose.animation.animateColorAsState(
+                    if (on) Palette.NavySoft else Color.Transparent, tween(220), label = "sideItem"
+                )
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 1.dp).clip(shape)
-                        .background(if (on) Palette.NavySoft else Color.Transparent)
+                    Modifier.fillMaxWidth().padding(vertical = 1.dp).pressScale(0.97f).clip(shape)
+                        .background(rowBg)
                         .clickable { onSelect(p) }.padding(horizontal = 10.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -475,6 +491,13 @@ private fun SettingsPane(
                             PenPrefs.drawAndHold
                         ) { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }
                         GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_eraser, TileRed,
+                            L("أبقِ القلم ثابتًا ليصير ممحاة", "Hold the pen still to erase"),
+                            L("ضع القلم ثانية دون تحريك فيصير ممحاة حتى ترفعه، ثم يعود قلمًا", "Hold the pen still for a second and it erases until you lift it, then it is a pen again"),
+                            UiPrefs.holdToErase
+                        ) { UiPrefs.changeHoldToErase(!UiPrefs.holdToErase) }
+                        GroupDivider()
                         // تُقرأ كتابتك بهذه اللغة لتلتقطها بالهايلايتر وتبحث فيها
                         GroupRow(
                             R.drawable.ph_text_scan, TileBlue,
@@ -576,6 +599,33 @@ private fun SettingsPane(
                             ) { UiPrefs.changeTextScale(texts[it]) }
                         }
                     }
+                    GroupLabel(L("الحركة واللمس", "Motion and touch"))
+                    SettingsGroup {
+                        val feels = listOf(MotionFeel.CALM, MotionFeel.BALANCED, MotionFeel.LIVELY)
+                        GroupRow(
+                            R.drawable.ph_sliders, TilePurple, L("قوة الارتداد", "Bounce"),
+                            L("في حركة النوافذ والأدراج والقوائم", "In windows, drawers and menus")
+                        ) {
+                            Segmented(
+                                listOf(L("هادئ", "Calm"), L("متوازن", "Balanced"), L("حيوي", "Lively")),
+                                feels.indexOf(UiPrefs.motionFeel)
+                            ) { UiPrefs.changeMotionFeel(feels[it]) }
+                        }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_hand_pointing, TileBlue,
+                            L("الرجوع التنبؤي", "Predictive back"),
+                            L("أثناء سحب الرجوع من حافة الشاشة ترى إلى أين ستعود قبل أن تُفلت", "While swiping back from the screen edge, see where you will return before you let go"),
+                            UiPrefs.predictiveBack
+                        ) { UiPrefs.changePredictiveBack(!UiPrefs.predictiveBack) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_waveform, TileGreen,
+                            L("الاهتزاز الخفيف", "Haptics"),
+                            L("عند فتح القوائم والحذف واكتمال السحب", "When menus open, on delete, and when a swipe completes"),
+                            UiPrefs.haptics
+                        ) { UiPrefs.changeHaptics(!UiPrefs.haptics) }
+                    }
                 }
                 SettingsPage.PRIVACY -> {
                     GroupLabel(L("قفل المستندات", "Document lock"))
@@ -676,7 +726,7 @@ private fun GroupRow(
     trailing: @Composable () -> Unit = {}
 ) {
     Row(
-        Modifier.fillMaxWidth().let { if (onClick != null) it.clickable(onClick = onClick) else it }
+        Modifier.fillMaxWidth().let { if (onClick != null) it.pressScale(0.98f).clickable(onClick = onClick) else it }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -842,7 +892,13 @@ private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val wide = maxWidth >= 640.dp
-                    if (learn) {
+                    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = learn,
+                        transitionSpec = { sharedAxisX(forward = targetState, rtl = rtl) },
+                        label = "toolbarTabs"
+                    ) { learnNow ->
+                    if (learnNow) {
                         LearnTools(learnIndex, wide) { learnIndex = it }
                     } else {
                         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 26.dp, end = 26.dp, bottom = 28.dp)) {
@@ -866,6 +922,7 @@ private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
                             ToolGrid(ToolCatalog.optional, cols, ::onInfo, essential = false)
                         }
                     }
+                    }
                 }
             }
         }
@@ -879,9 +936,12 @@ private fun DialogTab(label: String, selected: Boolean, onClick: () -> Unit) {
             label, fontSize = 14.sp, fontWeight = FontWeight.Bold,
             color = if (selected) Palette.Navy else Palette.TextSecondary, modifier = Modifier.padding(bottom = 10.dp)
         )
+        val line by androidx.compose.animation.animateColorAsState(
+            if (selected) Palette.Gold else Color.Transparent, tween(220), label = "tabLine"
+        )
         Box(
             Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                .background(if (selected) Palette.Gold else Color.Transparent)
+                .background(line)
         )
     }
 }
@@ -1005,7 +1065,10 @@ private fun LearnTools(index: Int, wide: Boolean, onSelect: (Int) -> Unit) {
     if (wide) {
         Row(Modifier.fillMaxSize().padding(start = 26.dp, end = 26.dp, top = 18.dp, bottom = 26.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             list(Modifier.width(240.dp).fillMaxHeight())
-            ToolExplainer(index, Modifier.weight(1f).fillMaxHeight(), onSelect)
+            androidx.compose.animation.AnimatedContent(
+                targetState = index, modifier = Modifier.weight(1f).fillMaxHeight(),
+                transitionSpec = { fadeShift(down = targetState > initialState) }, label = "explainer"
+            ) { i -> ToolExplainer(i, Modifier.fillMaxSize(), onSelect) }
         }
     } else {
         Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1192,7 +1255,7 @@ private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, on
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val pill = RoundedCornerShape(50)
                 Box(
-                    Modifier.weight(1f).height(46.dp).clip(pill).background(Color(0xFFF3F4F8)).clickable(onClick = onDismiss),
+                    Modifier.weight(1f).height(46.dp).clip(pill).background(Color(0xFFF3F4F8)).clickable(onClick = dialogClose(onDismiss)),
                     contentAlignment = Alignment.Center
                 ) { Text(L("إلغاء", "Cancel"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }
                 Box(
@@ -1845,12 +1908,12 @@ private fun ReminderRow() {
             title = { Text(L("وقت التذكير", "Reminder time")) },
             text = { androidx.compose.material3.TimePicker(state = state) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
+                androidx.compose.material3.TextButton(onClick = dialogClose {
                     c.setReminder(true, state.hour * 60 + state.minute)
                     picking = false
                 }) { Text(L("حفظ", "Save")) }
             },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { picking = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { androidx.compose.material3.TextButton(onClick = dialogClose { picking = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }

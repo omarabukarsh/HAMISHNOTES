@@ -191,7 +191,7 @@ fun TableEditorDialog(
                         L("اضغط رقم الصف أو اسم العمود لتحريكه أو حذفه", "Tap a row number or column name to move or delete it"),
                         fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+                    TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) }
                     TextButton(onClick = {
                         // تجاهل الصفوف الفارغة تمامًا
                         val clean = rows.map { r -> r.map { it.trim() } }.filter { r -> r.any { it.isNotEmpty() } }

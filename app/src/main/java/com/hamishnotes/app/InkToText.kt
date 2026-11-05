@@ -193,6 +193,6 @@ fun InkToTextDialog(s: DocSession, onDismiss: () -> Unit) {
                 }) { Text(L("إدراج كنص", "Insert as text")) }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }

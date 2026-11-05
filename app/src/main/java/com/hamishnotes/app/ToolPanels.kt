@@ -177,7 +177,7 @@ fun SizeSlots(t: Tool) {
                     )
                 }
                 DropdownMenu(
-                    expanded = edit, onDismissRequest = { edit = false },
+                    expanded = edit, onDismissRequest = { edit = false }, passThrough = true,
                     shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                 ) {
                     Column(Modifier.width(260.dp).padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -255,11 +255,11 @@ fun EraserAdvancedSection() {
             title = { Text(L("مسح الصفحة ${page + 1}؟", "Clear page ${page + 1}?")) },
             text = { Text(L("تُحذف الكتابة والتمييز والنصوص والصور من هذه الصفحة. يمكنك التراجع.", "Handwriting, highlights, text and images on this page are removed. You can undo.")) },
             confirmButton = {
-                TextButton(onClick = { confirm = false; s?.clearPageItems(page, true, true, true, true) }) {
+                TextButton(onClick = dialogClose { confirm = false; s?.clearPageItems(page, true, true, true, true) }) {
                     Text(L("مسح", "Clear"), color = Palette.Danger)
                 }
             },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { confirm = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }
@@ -335,7 +335,7 @@ fun ShapeBar() {
                 Box {
                     TBtn(onClick = { strokeMenu = true }) { LineStyleSample(PenPrefs.shapeStyle, Palette.TextPrimary, 4f) }
                     DropdownMenu(
-                        expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
+                        expanded = strokeMenu, onDismissRequest = { strokeMenu = false }, passThrough = true,
                         shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) { ShapeStrokePanel() }
                 }
@@ -347,7 +347,7 @@ fun ShapeBar() {
                         Box(Modifier.size(24.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
                     }
                     DropdownMenu(
-                        expanded = colorMenu, onDismissRequest = { colorMenu = false },
+                        expanded = colorMenu, onDismissRequest = { colorMenu = false }, passThrough = true,
                         shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) {
                         Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

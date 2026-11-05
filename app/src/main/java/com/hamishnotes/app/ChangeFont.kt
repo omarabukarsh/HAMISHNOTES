@@ -142,7 +142,7 @@ fun ChangeFontDialog(s: DocSession, onDismiss: () -> Unit) {
                 onDismiss()
             }) { Text(L("تطبيق", "Apply"), fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
     if (library) FontLibraryDialog(text, font, onPick = { if (it.isNotEmpty()) font = it }, onDismiss = { library = false })
 }

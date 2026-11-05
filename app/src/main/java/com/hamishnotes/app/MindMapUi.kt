@@ -162,7 +162,7 @@ private fun AddTextHeader(onCancel: () -> Unit) {
 @Composable
 private fun FreeTextDialog(where: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(L("نص جديد", "New text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = FreeInk) },
         text = {
@@ -178,7 +178,7 @@ private fun FreeTextDialog(where: String, onSave: (String) -> Unit, onDismiss: (
         confirmButton = {
             androidx.compose.material3.TextButton(enabled = text.isNotBlank(), onClick = { onSave(text) }) { Text(L("إضافة", "Add"), fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { androidx.compose.material3.TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -535,7 +535,7 @@ fun MindMapDialog(
 private fun NodeTextDialog(node: MapNode, onSave: (String) -> Unit, onRestore: () -> Unit, onDismiss: () -> Unit) {
     var text by remember(node.key) { mutableStateOf(node.text) }
     val edited = !node.isFree && node.text != node.original
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(L("تعديل نص العقدة", "Edit node text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = Palette.Navy) },
         text = {
@@ -560,8 +560,8 @@ private fun NodeTextDialog(node: MapNode, onSave: (String) -> Unit, onRestore: (
         },
         dismissButton = {
             Row {
-                if (edited) androidx.compose.material3.TextButton(onClick = onRestore) { Text(L("استعادة الأصلي", "Restore original"), color = Palette.GoldDeep) }
-                androidx.compose.material3.TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+                if (edited) androidx.compose.material3.TextButton(onClick = dialogClose(onRestore)) { Text(L("استعادة الأصلي", "Restore original"), color = Palette.GoldDeep) }
+                androidx.compose.material3.TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) }
             }
         }
     )

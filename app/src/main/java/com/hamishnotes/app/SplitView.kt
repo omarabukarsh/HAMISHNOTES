@@ -80,6 +80,6 @@ fun SplitPickerDialog(current: DocSession, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }

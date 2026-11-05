@@ -41,6 +41,9 @@ object AppController {
     @Volatile
     var lastInkAt: Long = 0L
 
+    /** القلم صار ممحاة مؤقتًا لأنه بقي ثابتًا (حتى رفعه). */
+    var holdErasing by mutableStateOf(false)
+
 
     val library = mutableStateListOf<DocEntry>()
     val tabs = mutableStateListOf<DocSession>()
@@ -207,10 +210,6 @@ object AppController {
     fun toggleHighlightToSummary() {
         highlightToSummary = !highlightToSummary
         prefs.edit().putBoolean("hl_summary", highlightToSummary).apply()
-        messages.tryEmit(
-            if (highlightToSummary) L("التمييز الجديد يُضاف إلى الملخصات", "New highlights are added to summaries")
-            else L("التمييز الجديد يبقى على الصفحة فقط ولا يظهر في الملخصات", "New highlights stay on the page only and are not added to summaries")
-        )
     }
 
     var highlightSnap by mutableStateOf(false)
@@ -223,10 +222,6 @@ object AppController {
     fun toggleHighlightSnap() {
         highlightSnap = !highlightSnap
         prefs.edit().putBoolean("hl_snap", highlightSnap).apply()
-        messages.tryEmit(
-            if (highlightSnap) L("التقاط النص مفعّل: مرّر الهايلايتر على السطر ليُميَّز ويُضاف إلى الملخصات", "Text snap on: run the highlighter over a line to mark it and add it to summaries")
-            else L("التقاط النص متوقف: الهايلايتر يرسم بحرية", "Text snap off: the highlighter draws freely")
-        )
     }
 
     fun toggleSummaryTidy() {
@@ -424,7 +419,6 @@ object AppController {
         if (presets.size >= 12) presets.removeAt(0)
         presets.add(p)
         savePresets()
-        messages.tryEmit(L("حُفظ في أقلامي المفضلة (اضغط مطولًا لحذفه)", "Saved to favorite pens (long-press to remove)"))
     }
 
     fun applyPreset(p: PenPreset) {
@@ -685,10 +679,6 @@ object AppController {
     /** يختار الأداة، ويذكّر مرة واحدة فقط بأن النقرة الثانية تفتح إعداداتها. */
     fun selectToolWithHint(t: Tool) {
         selectTool(t)
-        if (!prefs.getBoolean("tool_hint_shown", false)) {
-            prefs.edit().putBoolean("tool_hint_shown", true).apply()
-            messages.tryEmit(L("اضغط على الأداة مرة ثانية لفتح إعداداتها: النوع واللون والحجم", "Tap the tool again to open its settings: type, color and size"))
-        }
     }
 
     fun setColor(c: Color) {
@@ -1138,7 +1128,6 @@ object AppController {
                         aspect = res.second
                     )
                 )
-                if (!quiet) messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
             } catch (t: Throwable) {
                 messages.tryEmit(L("تعذر إضافة الصورة", "Could not add the image"))
             }
@@ -1170,7 +1159,6 @@ object AppController {
                     text = clean, color = Color(0xFF6B4E00), size = 0.022f, sticky = true
                 )
             )
-            messages.tryEmit(L("أُضيفت الملاحظة اللاصقة. انقر عليها لفتحها، واسحبها لتحريكها", "Sticky note added. Tap to open it, drag to move it"))
             return
         }
         val pen = if (tool.isPen()) tool else lastPen
@@ -1186,7 +1174,6 @@ object AppController {
                 size = 0.024f
             )
         )
-        messages.tryEmit(L("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله", "Text added. Drag it with your finger to move it, tap it again to edit"))
     }
 
     // ---------- التصدير ----------
@@ -1630,6 +1617,7 @@ object AppController {
     }
 
     fun delete(entry: DocEntry) {
+        Haptics.heavy()
         tabs.firstOrNull { it.id == entry.id }?.cancelPendingPersist()
         closeTab(entry.id)
         library.removeAll { it.id == entry.id }

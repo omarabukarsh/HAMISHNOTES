@@ -297,9 +297,9 @@ fun CoverDialog(entry: DocEntry, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { AppController.setCover(entry.id, color, sticker); onDismiss() }) { Text(L("حفظ", "Save")) }
+            TextButton(onClick = dialogClose { AppController.setCover(entry.id, color, sticker); onDismiss() }) { Text(L("حفظ", "Save")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 

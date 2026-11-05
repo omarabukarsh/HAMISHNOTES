@@ -216,7 +216,6 @@ object StickerStore {
             }
             val w = if (bmp.width > bmp.height * 1.5f) 0.26f else 0.16f
             AppController.insertImage(s, Uri.fromFile(f), s.listState.firstVisibleItemIndex, width = w, quiet = true)
-            AppController.messages.tryEmit(L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
         }
     }
 
@@ -257,9 +256,6 @@ fun StickerDialog(s: DocSession, onDismiss: () -> Unit) {
                         item { AddTile("＋\n" + L("من صورة", "From photo")) { fromPhoto = true } }
                         item {
                             AddTile("＋\n" + L("من رسمي", "From my drawing")) {
-                                AppController.messages.tryEmit(
-                                    L("حدّد رسمك بأداة التحديد الحر، ثم اضغط «☺ حفظ كملصق»", "Select your drawing with the lasso, then tap “☺ Save as sticker”")
-                                )
                                 onDismiss()
                             }
                         }
@@ -303,8 +299,8 @@ fun StickerDialog(s: DocSession, onDismiss: () -> Unit) {
             onDismissRequest = { deleting = null },
             title = { Text(L("حذف الملصق؟", "Delete sticker?")) },
             text = { Text(L("يُحذف من «ملصقاتي». ما وضعته منه على الصفحات يبقى.", "It is removed from “My stickers”. Copies already on pages stay.")) },
-            confirmButton = { TextButton(onClick = { StickerStore.delete(f); deleting = null }) { Text(L("حذف", "Delete"), color = Palette.Danger) } },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text(L("إلغاء", "Cancel")) } }
+            confirmButton = { TextButton(onClick = dialogClose { StickerStore.delete(f); deleting = null }) { Text(L("حذف", "Delete"), color = Palette.Danger) } },
+            dismissButton = { TextButton(onClick = dialogClose { deleting = null }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }

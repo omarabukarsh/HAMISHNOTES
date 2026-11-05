@@ -87,7 +87,7 @@ fun LicensesDialog(onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+        confirmButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إغلاق", "Close")) } }
     )
     shown?.let { (name, txt) ->
         AlertDialog(
@@ -99,7 +99,7 @@ fun LicensesDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())
                 )
             },
-            confirmButton = { TextButton(onClick = { shown = null }) { Text(L("رجوع", "Back")) } }
+            confirmButton = { TextButton(onClick = dialogClose { shown = null }) { Text(L("رجوع", "Back")) } }
         )
     }
 }
@@ -180,7 +180,7 @@ fun PrivacyDialog(onDismiss: () -> Unit) {
         text = {
             Text(privacyText(), fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()))
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+        confirmButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إغلاق", "Close")) } }
     )
 }
 
@@ -257,6 +257,6 @@ fun TermsDialog(onDismiss: () -> Unit) {
         text = {
             Text(termsText(), fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()))
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+        confirmButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إغلاق", "Close")) } }
     )
 }

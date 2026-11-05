@@ -243,7 +243,6 @@ fun AudioDialog(s: DocSession, onDismiss: () -> Unit) {
     val busyElsewhere = AudioNotes.recordingDoc != null && !recHere
     fun begin() {
         if (AudioNotes.start(s.id)) {
-            AppController.messages.tryEmit(L("بدأ التسجيل — اكتب وسيُربط كل خط بلحظته", "Recording — every stroke is linked to its moment"))
             onDismiss()
         } else AppController.messages.tryEmit(L("تعذر بدء التسجيل", "Could not start recording"))
     }
@@ -289,7 +288,7 @@ fun AudioDialog(s: DocSession, onDismiss: () -> Unit) {
         },
         confirmButton = {
             if (recHere) {
-                androidx.compose.material3.TextButton(onClick = { AudioNotes.stop(); onDismiss() }) {
+                androidx.compose.material3.TextButton(onClick = dialogClose { AudioNotes.stop(); onDismiss() }) {
                     androidx.compose.material3.Text(L("إيقاف التسجيل", "Stop recording") + "  " + mmss(AudioNotes.recElapsed), color = Palette.Danger, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 }
             } else {
@@ -300,6 +299,6 @@ fun AudioDialog(s: DocSession, onDismiss: () -> Unit) {
                 }) { androidx.compose.material3.Text(L("● بدء التسجيل", "● Start recording"), color = Palette.Danger, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) }
             }
         },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { androidx.compose.material3.Text(L("إغلاق", "Close")) } }
+        dismissButton = { androidx.compose.material3.TextButton(onClick = dialogClose(onDismiss)) { androidx.compose.material3.Text(L("إغلاق", "Close")) } }
     )
 }

@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -254,7 +253,6 @@ fun PensSection() {
             ) {
                 PenChipButton(L("إعادة", "Reset")) {
                     PenInput.recalibrate(pen.key)
-                    AppController.messages.tryEmit(L("ستُعاد المعايرة من كتابتك القادمة", "Calibration restarts from your next writing"))
                 }
             }
             PenDivider()
@@ -342,9 +340,9 @@ fun PensSection() {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { PenInput.rename(p.key, name); renameFor = null }) { Text(L("حفظ", "Save")) }
+                TextButton(onClick = dialogClose { PenInput.rename(p.key, name); renameFor = null }) { Text(L("حفظ", "Save")) }
             },
-            dismissButton = { TextButton(onClick = { renameFor = null }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { renameFor = null }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }

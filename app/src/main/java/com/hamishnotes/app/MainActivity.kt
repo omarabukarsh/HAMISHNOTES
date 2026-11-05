@@ -1,5 +1,15 @@
 package com.hamishnotes.app
 
+import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.layout.layout
+import kotlin.math.roundToInt
+import androidx.compose.ui.draw.clipToBounds
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
@@ -88,6 +98,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         Premium.init(applicationContext)
         requestHighRefreshRate()
         handleOpenIntent(intent)
+        Haptics.view = java.lang.ref.WeakReference(window.decorView)
         setContent {
             val light = ThemeState.light
             SideEffect { applySystemBars(light) }
@@ -189,8 +200,27 @@ fun MyNotesApp() {
         c.messages.collect { snackbar.showSnackbar(it) }
     }
 
-    // زر الرجوع من المستند يعيد إلى المكتبة بدل إغلاق التطبيق
-    BackHandler(enabled = c.activeId != null) { c.activate(null) }
+    // زر الرجوع من المستند يعيد إلى المكتبة بدل إغلاق التطبيق.
+    // مع الرجوع التنبؤي: أثناء السحب يصغر المستند وتظهر المكتبة خلفه.
+    val backP = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    if (UiPrefs.predictiveBack) {
+        androidx.activity.compose.PredictiveBackHandler(enabled = c.activeId != null && !c.focusMode) { events ->
+            try {
+                events.collect { backP.snapTo(it.progress) }
+                c.activate(null)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                scope.launch { backP.animateTo(0f, Motion.grow()) }
+                throw e
+            }
+        }
+    } else {
+        BackHandler(enabled = c.activeId != null) { c.activate(null) }
+    }
+    // بعد انتهاء انتقال الرجوع يعود المقياس كما كان
+    LaunchedEffect(c.activeId) {
+        if (c.activeId != null) backP.snapTo(0f) else { kotlinx.coroutines.delay(500); backP.snapTo(0f) }
+    }
     // في وضع التركيز: الرجوع يخرج من الوضع أولًا
     BackHandler(enabled = c.focusMode) { c.focusMode = false }
 
@@ -214,28 +244,61 @@ fun MyNotesApp() {
     ) {
         Column(Modifier.fillMaxSize()) {
             if (c.tabs.isNotEmpty() && !(c.focusMode && c.activeId != null)) TabBar()
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                // انتقال ناعم بين المكتبة والمستندات (وبين التبويبات)
-                androidx.compose.animation.Crossfade(
+            val container = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+            Box(
+                Modifier.weight(1f).fillMaxWidth()
+                    .onGloballyPositioned { container[0] = it.boundsInWindow() }
+            ) {
+                // المستند يتمدد من غلافه في المكتبة وينكمش إليه عند الرجوع؛ وبين التبويبات تلاشٍ عابر
+                androidx.compose.animation.AnimatedContent(
                     targetState = c.activeId,
-                    animationSpec = androidx.compose.animation.core.tween(Motion.ENTER),
+                    transitionSpec = { screenTransition(initialState, targetState, container[0]) },
                     label = "screen"
                 ) { id ->
                     val active = c.tabs.firstOrNull { it.id == id }
                     if (active == null) {
-                        LibraryScreen()
+                        LibraryCapture { LibraryScreen() }
                     } else {
-                        val second = c.tabs.firstOrNull { it.id == c.splitId && it.id != active.id }
-                        if (second == null || c.focusMode) {
-                            key(active.id) { ReaderScreen(active) }
-                        } else {
-                            SplitReaders(active, second)
+                        val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+                        val showShot by remember { androidx.compose.runtime.derivedStateOf { backP.value > 0f } }
+                        Box(Modifier.fillMaxSize()) {
+                            // أثناء سحب الرجوع: صورة المكتبة خلف المستند
+                            if (showShot) LibraryShot.image?.let { img ->
+                                androidx.compose.foundation.Image(
+                                    img, null, Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+                                )
+                                Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.25f * (1f - backP.value) }.background(Color.Black))
+                            }
+                            Box(
+                                Modifier.fillMaxSize().graphicsLayer {
+                                    val p = backP.value
+                                    val sc = 1f - 0.12f * p
+                                    scaleX = sc
+                                    scaleY = sc
+                                    translationX = (if (rtl) -1f else 1f) * 0.04f * size.width * p
+                                    if (p > 0f) {
+                                        shape = RoundedCornerShape((24f * p).dp)
+                                        clip = true
+                                        shadowElevation = 16f * p
+                                    }
+                                }
+                            ) {
+                                val second = c.tabs.firstOrNull { it.id == c.splitId && it.id != active.id }
+                                if (second == null || c.focusMode) {
+                                    key(active.id) { ReaderScreen(active) }
+                                } else {
+                                    SplitReaders(active, second)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp)) { data ->
+            androidx.compose.material3.Snackbar(data, Modifier.riseIn())
+        }
     }
     if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
     PremiumHost()
@@ -253,6 +316,9 @@ private fun TabBar() {
     val activeBg = if (libraryActive) Palette.Spine else Palette.Desk
     // ترتيب التبويبات: ضغط مطوّل ثم سحب أفقي
     var dragId by remember { mutableStateOf<String?>(null) }
+    // التبويبات الموجودة عند فتح التطبيق لا تنمو؛ الجديدة بعدها تنمو من عرض صفر
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { settled = true }
     var dragDx by remember { mutableStateOf(0f) }
     val widths = remember { mutableMapOf<String, Int>() }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -274,14 +340,24 @@ private fun TabBar() {
         c.tabs.forEach { s ->
             key(s.id) {
                 val dragging = dragId == s.id
+                val grow = remember { androidx.compose.animation.core.Animatable(if (settled) 0f else 1f) }
+                val tabScope = androidx.compose.runtime.rememberCoroutineScope()
+                LaunchedEffect(Unit) { if (grow.value < 1f) grow.animateTo(1f, Motion.grow()) }
                 TabItem(
                     title = s.title,
                     active = c.activeId == s.id,
                     home = false,
                     activeBg = activeBg,
                     onClick = { c.activate(s.id) },
-                    onClose = { c.closeTab(s.id) },
+                    // ينكمش التبويب أولًا ثم يُغلق، فتنزلق التبويبات المجاورة إلى مكانه
+                    onClose = {
+                        tabScope.launch {
+                            grow.animateTo(0f, androidx.compose.animation.core.tween(170, easing = androidx.compose.animation.core.FastOutLinearInEasing))
+                            c.closeTab(s.id)
+                        }
+                    },
                     modifier = Modifier
+                        .growWidth { grow.value }
                         .onSizeChanged { widths[s.id] = it.width }
                         .zIndex(if (dragging) 1f else 0f)
                         .graphicsLayer {
@@ -336,6 +412,7 @@ private fun TabItem(
     Column(modifier.width(IntrinsicSize.Max)) {
         Row(
             Modifier.height(if (active) 40.dp else 36.dp)
+                .pressScale(0.95f)
                 .clip(shape)
                 .background(bg)
                 .clickable(onClick = onClick)
@@ -377,3 +454,101 @@ private fun TabItem(
 
 /** لون شريطي النظام (يُرسم خلفهما): بلون شريط التبويبات، كحلي أو رمادي فاتح. */
 fun systemBarColor(light: Boolean): Color = if (light) Color(0xFFE4E9F0) else Color(0xFF13233B)
+
+/** رسالة أسفل الشاشة ترتفع بنابض. */
+private fun Modifier.riseIn(): Modifier = composed {
+    val a = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { a.animateTo(1f, Motion.grow()) }
+    graphicsLayer {
+        translationY = (1f - a.value) * 48.dp.toPx()
+        alpha = a.value.coerceIn(0f, 1f)
+    }
+}
+
+/** صورة من المكتبة تظهر خلف المستند أثناء سحب الرجوع التنبؤي. */
+object LibraryShot {
+    var image: androidx.compose.ui.graphics.ImageBitmap? = null
+}
+
+/** يسجّل رسم المكتبة، ويحفظ منه صورة واحدة عند فتح مستند (لتظهر خلفه أثناء الرجوع). */
+@Composable
+private fun LibraryCapture(content: @Composable () -> Unit) {
+    val layer = androidx.compose.ui.graphics.rememberGraphicsLayer()
+    val c = AppController
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { c.activeId }.collect { id ->
+            if (id != null && UiPrefs.predictiveBack) {
+                try { LibraryShot.image = layer.toImageBitmap() } catch (_: Throwable) {}
+            }
+        }
+    }
+    Box(
+        Modifier.fillMaxSize().drawWithContent {
+            layer.record { this@drawWithContent.drawContent() }
+            drawLayer(layer)
+        }
+    ) { content() }
+}
+
+/** الانتقال بين المكتبة والمستندات والتبويبات. */
+private fun androidx.compose.animation.AnimatedContentTransitionScope<String?>.screenTransition(
+    from: String?, to: String?, container: androidx.compose.ui.geometry.Rect?
+): androidx.compose.animation.ContentTransform {
+    val card = DocOrigin.rect
+    fun cardOrigin(): Pair<androidx.compose.ui.graphics.TransformOrigin, Float>? {
+        val r = card ?: return null
+        val cn = container ?: return null
+        if (cn.width <= 0f || cn.height <= 0f || !cn.overlaps(r)) return null
+        val o = androidx.compose.ui.graphics.TransformOrigin(
+            ((r.center.x - cn.left) / cn.width).coerceIn(0f, 1f),
+            ((r.center.y - cn.top) / cn.height).coerceIn(0f, 1f)
+        )
+        return o to (r.width / cn.width).coerceIn(0.08f, 0.9f)
+    }
+    val emph = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    // المكتبة ← مستند: يتمدد من غلافه
+    if (from == null && to != null && DocOrigin.id == to) {
+        val (o, s0) = cardOrigin() ?: return fadeThrough(emph)
+        return (androidx.compose.animation.scaleIn(Motion.gentle(), initialScale = s0, transformOrigin = o) +
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(140))) togetherWith
+            (androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(320), targetScale = 0.94f) +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(220, delayMillis = 100)))
+    }
+    // مستند ← المكتبة: ينكمش إلى غلافه والمكتبة تتقدم من خلفه
+    if (from != null && to == null && DocOrigin.id == from) {
+        val (o, s0) = cardOrigin() ?: return fadeThrough(emph)
+        return ((androidx.compose.animation.scaleIn(Motion.gentle(), initialScale = 0.94f) +
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
+            (androidx.compose.animation.scaleOut(
+                androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                targetScale = s0, transformOrigin = o
+            ) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150, delayMillis = 150))))
+            .apply { targetContentZIndex = -1f }
+    }
+    return fadeThrough(emph)
+}
+
+/** تلاشٍ عابر: القديم يختفي سريعًا والجديد يظهر مع تكبير خفيف. */
+private fun fadeThrough(e: androidx.compose.animation.core.Easing): androidx.compose.animation.ContentTransform =
+    (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(210, delayMillis = 90)) +
+        androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(300, delayMillis = 90, easing = e), initialScale = 0.96f)) togetherWith
+        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(90))
+
+/** يكبر عرض العنصر من صفر (أو ينكمش إليه) حسب p، مع تلاشٍ. */
+private fun Modifier.growWidth(p: () -> Float): Modifier = this
+    .layout { m, cons ->
+        val pl = m.measure(cons)
+        val f = p().coerceAtLeast(0f)
+        val w = (pl.width * f).roundToInt().coerceAtLeast(0)
+        layout(w, pl.height) {
+            pl.placeRelativeWithLayer(0, 0) {
+                alpha = f.coerceIn(0f, 1f)
+                val sc = 0.85f + 0.15f * f.coerceIn(0f, 1f)
+                scaleX = sc
+                scaleY = sc
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+            }
+        }
+    }
+    .clipToBounds()
+

@@ -4,6 +4,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
@@ -224,7 +225,6 @@ class DocSession(entry: DocEntry) {
     fun toggleBookmark(page: Int) {
         bookmarks = if (page in bookmarks) bookmarks - page else bookmarks + page
         persist()
-        AppController.messages.tryEmit(if (page in bookmarks) L("أُضيفت علامة على الصفحة ${page + 1}", "Bookmarked page ${page + 1}") else L("أُزيلت العلامة", "Bookmark removed"))
     }
 
     /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
@@ -387,6 +387,20 @@ class DocSession(entry: DocEntry) {
 
     var lassoSel by mutableStateOf<LassoSel?>(null)
 
+    /**
+     * سحب التحديد الحر الجاري: الخطوط المحددة تُرفع إلى طبقة عائمة تتحرك مع الإصبع،
+     * ولا تُكتب في الصفحة إلا مرة واحدة عند رفعه (فلا يُعاد رسم الصفحة مع كل حركة).
+     * الإزاحة والتكبير نسبةً لعرض الصفحة، والتكبير حول (px, py).
+     */
+    class LassoDrag(val page: Int, val sel: LassoSel, val px: Float, val py: Float) {
+        var dx by mutableFloatStateOf(0f)
+        var dy by mutableFloatStateOf(0f)
+        var k by mutableFloatStateOf(1f)
+        val lifted: Set<Ink> = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).also { it.addAll(sel.strokes) }
+        val moved get() = dx != 0f || dy != 0f || k != 1f
+    }
+    var lassoDrag by mutableStateOf<LassoDrag?>(null)
+
     /** نافذة الكتابة المكبّرة (null = مغلقة). */
     var zoomBox by mutableStateOf<ZoomBox?>(null)
 
@@ -420,7 +434,6 @@ class DocSession(entry: DocEntry) {
         }.map { it.id }
         val sel = LassoSel(page, picked, imgs, txts)
         lassoSel = if (sel.isEmpty()) null else sel
-        if (sel.isEmpty()) AppController.messages.tryEmit(L("لم تحدد أي شيء", "Nothing selected"))
     }
 
     /** المستطيل المحيط بالتحديد (l, t, r, b) بإحداثيات الصفحة. */
@@ -504,6 +517,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun lassoDelete() {
+        Haptics.heavy()
         val sel = lassoSel ?: return
         beginEdit()
         if (sel.imageIds.isNotEmpty()) images = images + (sel.page to (images[sel.page] ?: emptyList()).filter { it.id !in sel.imageIds })
@@ -710,6 +724,8 @@ class DocSession(entry: DocEntry) {
      * (صفحة محذوفة لا تظهر، وصفحة منسوخة تظهر مرتين). الكتابة والصور والتمييز تنتقل مع صفحاتها.
      */
     fun rearrangePages(order: List<Int>) {
+        // حذف صفحات: اهتزاز خفيف
+        if (order.size < (pdf?.count ?: 0)) Haptics.heavy()
         val doc = pdf ?: return
         val old = doc.pages
         if (order.isEmpty() || order.any { it !in old.indices }) return
@@ -1064,7 +1080,6 @@ class DocSession(entry: DocEntry) {
                 if (!nested) beginEdit()
                 addInk(page, Ink(pts, color, width, Tool.HIGHLIGHTER))
                 if (!nested) endEdit()
-                AppController.messages.tryEmit(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
             }
         }
         // القراءة المحفوظة قد تسبق ما كُتب بعدها؛ تُعاد قراءتها حينئذ (الأسطر الجديدة فقط تُقرأ فعلًا)
@@ -1095,9 +1110,6 @@ class DocSession(entry: DocEntry) {
         val b = maxOf(sel.start, sel.end)
         addMark(sel.page, words, (a..b).toList(), color)
         selection = null
-        AppController.messages.tryEmit(
-            if (AppController.highlightToSummary && UiPrefs.summariesOn) L("أُضيف النص إلى الملخصات", "Text added to summaries") else L("مُيّز النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries")
-        )
     }
 
     /** كل التمييزات مرتبة حسب الصفحة ثم موضعها في الصفحة. */

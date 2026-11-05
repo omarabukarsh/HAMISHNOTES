@@ -1,5 +1,7 @@
 package com.hamishnotes.app
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -263,13 +265,13 @@ fun LibraryScreen() {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     c.rename(rt.id, name)
                     renameTarget = null
                 }) { Text(L("حفظ", "Save")) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text(L("إلغاء", "Cancel")) }
+                TextButton(onClick = dialogClose { renameTarget = null }) { Text(L("إلغاء", "Cancel")) }
             }
         )
     }
@@ -305,14 +307,14 @@ fun LibraryScreen() {
             title = { Text(L("حذف ${list.size} مستندات؟", "Delete ${list.size} documents?")) },
             text = { Text(L("ستُحذف المستندات المحددة وكل الكتابة عليها نهائيًا، ولا يمكن التراجع.", "The selected documents and everything written on them will be deleted permanently. This cannot be undone.")) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     list.forEach { c.delete(it) }
                     deleteMany = false
                     selected.clear()
                     selecting = false
                 }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
-            dismissButton = { TextButton(onClick = { deleteMany = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { deleteMany = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 
@@ -328,13 +330,13 @@ fun LibraryScreen() {
             title = { Text(L("حذف المستند؟", "Delete document?")) },
             text = { Text(L("سيتم حذف «${dt.name}» وكل الكتابة عليه نهائيًا، ولا يمكن التراجع.", "“${dt.name}” and everything written on it will be deleted permanently. This cannot be undone.")) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     c.delete(dt)
                     deleteTarget = null
                 }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text(L("إلغاء", "Cancel")) }
+                TextButton(onClick = dialogClose { deleteTarget = null }) { Text(L("إلغاء", "Cancel")) }
             }
         )
     }
@@ -521,7 +523,7 @@ private fun LibrarySearchDialog(onDismiss: () -> Unit) {
                         L("بحث داخل نصوص المكتبة", "Search inside library text"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                         fontSize = 20.sp, color = Palette.Navy, modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
+                    IconButton(onClick = dialogClose(onDismiss)) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -663,7 +665,7 @@ fun ExamDateDialog(folder: String, onDismiss: () -> Unit) {
     androidx.compose.material3.DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(onClick = dialogClose {
                 state.selectedDateMillis?.let { ms ->
                     val day = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toEpochDay()
                     c.setExamDate(folder, day)
@@ -674,11 +676,11 @@ fun ExamDateDialog(folder: String, onDismiss: () -> Unit) {
         dismissButton = {
             Row {
                 if (c.examDates.containsKey(folder)) {
-                    TextButton(onClick = { c.setExamDate(folder, null); onDismiss() }) {
+                    TextButton(onClick = dialogClose { c.setExamDate(folder, null); onDismiss() }) {
                         Text(L("حذف الموعد", "Remove date"), color = Palette.Danger)
                     }
                 }
-                TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+                TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) }
             }
         }
     ) {
@@ -735,7 +737,7 @@ private fun NewMapDialog(initialFolder: String, onDismiss: () -> Unit) {
                 onDismiss()
             }) { Text(L("إنشاء", "Create"), fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -785,7 +787,7 @@ private fun NameDialog(title: String, initial: String, onSave: (String) -> Unit,
         title = { Text(title) },
         text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(L("الاسم", "Name")) }) },
         confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text(L("حفظ", "Save")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -827,7 +829,7 @@ private fun MoveToFolderDialog(entries: List<DocEntry>, onDismiss: () -> Unit) {
                 Text(L("نقل", "Move"))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -1151,13 +1153,16 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, modifier: Modifier, onOpe
     val total = maxOf(1, entry.pageCount)
     val page = (entry.lastPage + 1).coerceIn(1, total)
     val readMin = entry.readMs / 60_000L
+    val cardRect = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+    val open = { DocOrigin.record(entry.id, cardRect[0]); onOpen() }
     Row(
         modifier.padding(bottom = 4.dp)
+            .onGloballyPositioned { cardRect[0] = it.boundsInWindow() }
             .pressScale(0.98f)
             .clip(shape)
             .background(Lib.resume)
             .border(1.dp, Lib.accent.copy(alpha = 0.45f), shape)
-            .clickable(onClick = onOpen)
+            .clickable(onClick = open)
             .padding(horizontal = 22.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1190,7 +1195,7 @@ private fun ResumeCard(entry: DocEntry, wide: Boolean, modifier: Modifier, onOpe
                 if (wide) {
                     Box(
                         Modifier.pressScale(0.95f).clip(RoundedCornerShape(22.dp)).background(Lib.strong)
-                            .clickable(onClick = onOpen).padding(horizontal = 22.dp, vertical = 12.dp)
+                            .clickable(onClick = open).padding(horizontal = 22.dp, vertical = 12.dp)
                     ) { Text(L("متابعة القراءة", "Continue reading"), color = Lib.onStrong, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
                 }
             }
@@ -1222,13 +1227,24 @@ private fun DocCard(
     val bg by androidx.compose.animation.animateColorAsState(
         if (selected) Lib.accentSoft else Color.Transparent, androidx.compose.animation.core.tween(Motion.ENTER), label = "doc"
     )
+    // حدود الغلاف: يتمدد المستند منه عند فتحه وينكمش إليه عند الرجوع
+    val coverRect = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
     // في وضع التحديد: النقر يحدد، والضغط المطول يبدأ التحديد
     Column(
         modifier.clip(RoundedCornerShape(12.dp))
             .background(bg)
-            .combinedClickable(onClick = { if (selecting) onToggleSelect() else onOpen() }, onLongClick = onToggleSelect)
+            .combinedClickable(onClick = {
+                if (selecting) onToggleSelect() else {
+                    DocOrigin.record(entry.id, coverRect[0])
+                    onOpen()
+                }
+            }, onLongClick = onToggleSelect)
     ) {
-        Box(Modifier.fillMaxWidth().padding(end = 6.dp).pressScale(0.96f)) {
+        Box(
+            Modifier.fillMaxWidth().padding(end = 6.dp)
+                .onGloballyPositioned { coverRect[0] = it.boundsInWindow() }
+                .pressScale(0.96f)
+        ) {
             NotebookCover(entry, Modifier.fillMaxWidth())
             androidx.compose.animation.AnimatedVisibility(
                 visible = selecting,

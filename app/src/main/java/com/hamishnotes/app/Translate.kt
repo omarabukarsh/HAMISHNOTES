@@ -168,6 +168,6 @@ fun TranslateDialog(text: String, onDismiss: () -> Unit) {
                 AppController.messages.tryEmit(L("تم النسخ", "Copied"))
             }) { Text(L("نسخ", "Copy")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إغلاق", "Close")) } }
     )
 }

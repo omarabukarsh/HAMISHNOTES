@@ -1,5 +1,19 @@
 package com.hamishnotes.app
 
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.layout.boundsInParent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -138,6 +152,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineStart
@@ -163,6 +178,9 @@ private const val LASER_LINE_FADE = 450L
 
 /** أدنى مقياس للتصغير (25%). غيّر الرقم لتقليل أو زيادة التصغير. */
 private const val MIN_SCALE = 0.25f
+
+/** مدة إبقاء القلم ثابتًا قبل أن يصير ممحاة. */
+private const val HOLD_TO_ERASE_MS = 1000L
 
 // ---------------------------------------------------------------- نقطة الدخول
 
@@ -259,24 +277,48 @@ private fun ReaderContent(s: DocSession) {
                     exit = Motion.barExit
                 ) { StickyBar() }
               }
-                if (s.searchOpen) ReaderSearchBar(s)
-                c.exporting?.let { ExportStatusBar(it) }
+                AnimatedVisibility(visible = s.searchOpen, enter = Motion.barEnter, exit = Motion.barExit) { ReaderSearchBar(s) }
+                val exportText = rememberLast(c.exporting)
+                AnimatedVisibility(visible = c.exporting != null, enter = Motion.barEnter, exit = Motion.barExit) {
+                    exportText?.let { ExportStatusBar(it) }
+                }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { PageArea(s, pdf, exportSummary) }
-            // نافذة الكتابة المكبّرة
-            if (s.zoomBox != null && !c.focusMode) ZoomPanel(s, pdf)
+            // نافذة الكتابة المكبّرة: ترتفع من الأسفل (مساحتها تُحجز مرة واحدة فلا يُعاد قياس الصفحات مع كل إطار)
+            AnimatedVisibility(
+                visible = s.zoomBox != null && !c.focusMode,
+                enter = slideInVertically(Motion.gentle()) { it / 2 } + fadeIn(tween(160)),
+                exit = ExitTransition.None
+            ) { ZoomPanel(s, pdf) }
         }
-        if (c.focusMode) FocusOverlay(Modifier.align(Alignment.TopEnd).padding(14.dp))
+        AnimatedVisibility(
+            visible = c.focusMode,
+            modifier = Modifier.align(Alignment.TopEnd).padding(14.dp),
+            enter = Motion.dropEnter + scaleIn(Motion.grow(), initialScale = 0.8f),
+            exit = Motion.dropExit
+        ) { FocusOverlay(Modifier) }
         // مشغّل التسجيل الصوتي
-        AudioNotes.playing?.let { rec ->
-            if (rec.docId == s.id) AudioPlayerBar(rec, Modifier.align(Alignment.BottomCenter).padding(16.dp))
-        }
+        val playingHere = AudioNotes.playing?.takeIf { it.docId == s.id }
+        val heldRec = rememberLast(playingHere)
+        AnimatedVisibility(
+            visible = playingHere != null,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            enter = Motion.floatEnter,
+            exit = Motion.floatExit
+        ) { heldRec?.let { AudioPlayerBar(it, Modifier) } }
         // رجوع بعد تتبّع رابط
-        c.linkBack?.let { (backId, backPage) ->
+        val heldBack = rememberLast(c.linkBack)
+        AnimatedVisibility(
+            visible = c.linkBack != null,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            enter = Motion.floatEnter,
+            exit = Motion.floatExit
+        ) {
+          heldBack?.let { (backId, backPage) ->
             run {
                 val backName = c.library.firstOrNull { it.id == backId }?.name ?: ""
                 Row(
-                    Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                    Modifier
                         .shadow(6.dp, RoundedCornerShape(20.dp))
                         .background(Color.White, RoundedCornerShape(20.dp))
                         .padding(start = 4.dp, end = 2.dp),
@@ -288,6 +330,7 @@ private fun ReaderContent(s: DocSession) {
                     IconButton(onClick = { c.linkBack = null }) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 16.dp) }
                 }
             }
+          }
         }
     }
 
@@ -364,11 +407,11 @@ private fun TextBoxDialog(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp).focusRequester(focus)
             )
         },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(if (isNew) L("إضافة", "Add") else L("حفظ", "Save")) } },
+        confirmButton = { TextButton(onClick = dialogClose { onSave(text) }) { Text(if (isNew) L("إضافة", "Add") else L("حفظ", "Save")) } },
         dismissButton = {
             Row {
-                if (!isNew) TextButton(onClick = onDelete) { Text(L("حذف", "Delete"), color = Palette.Danger) }
-                TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+                if (!isNew) TextButton(onClick = dialogClose(onDelete)) { Text(L("حذف", "Delete"), color = Palette.Danger) }
+                TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) }
             }
         }
     )
@@ -569,7 +612,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 } else {
                     // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
-                    val penSelected = c.tool.isPen() && !c.lassoActive && !PenPrefs.shapeActive
+                    val penSelected = c.tool.isPen() && !c.lassoActive && !PenPrefs.shapeActive && !c.holdErasing
                     val shownPen = if (c.tool.isPen()) c.tool else c.lastPen
                     ToolSlot(
                         tool = shownPen, selected = penSelected, open = settingsFor == "pen",
@@ -578,7 +621,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         onCustomColor = { settingsFor = null; showPicker = true }
                     )
                     ToolSlot(
-                        tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER && !c.lassoActive, open = settingsFor == "hl",
+                        tool = Tool.HIGHLIGHTER, selected = c.tool == Tool.HIGHLIGHTER && !c.lassoActive && !c.holdErasing, open = settingsFor == "hl",
                         onTap = { if (c.tool == Tool.HIGHLIGHTER && !c.lassoActive) settingsFor = "hl" else c.selectToolWithHint(Tool.HIGHLIGHTER) },
                         onDismiss = { settingsFor = null },
                         onCustomColor = { settingsFor = null; showPicker = true }
@@ -591,7 +634,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 }
                 ToolSlot(
-                    tool = Tool.ERASER, selected = c.tool == Tool.ERASER && !c.lassoActive, open = settingsFor == "er",
+                    tool = Tool.ERASER, selected = (c.tool == Tool.ERASER || c.holdErasing) && !c.lassoActive, open = settingsFor == "er",
                     onTap = { if (c.tool == Tool.ERASER && !c.lassoActive) settingsFor = "er" else c.selectToolWithHint(Tool.ERASER) },
                     onDismiss = { settingsFor = null },
                     onCustomColor = {}
@@ -613,11 +656,10 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             } else {
                                 c.lassoActive = true
                                 PenPrefs.shapeActive = false
-                                c.messages.tryEmit(L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, tintFor(c.lassoActive)) }
                         DropdownMenu(
-                            expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
+                            expanded = lassoMenu, onDismissRequest = { lassoMenu = false }, passThrough = true,
                             shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                         ) { LassoMenuContent(onOff = { lassoMenu = false; c.lassoActive = false }) }
                     }
@@ -639,10 +681,6 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     TBtn(selected = PenInput.fingerWrites, onClick = {
                         val on = !PenInput.fingerWrites
                         PenInput.chooseFingerWrites(on)
-                        c.messages.tryEmit(
-                            if (on) L("صار الإصبع يكتب · اسحب بإصبعين للتمرير", "Your finger now writes · drag with two fingers to scroll")
-                            else L("القلم يكتب، والإصبع للتمرير", "The pen writes; your finger scrolls")
-                        )
                     }) {
                         PhIcon(
                             if (PenInput.fingerWrites) R.drawable.ph_hand_pointing_fill else R.drawable.ph_hand_pointing,
@@ -672,7 +710,6 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             c.lassoActive = false
                             PenPrefs.shapeActive = false
                             PenPrefs.stickyActive = true
-                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة لوضع الملاحظة", "Pick a color, then tap the page to place the note"))
                         }
                     }) { PhIcon(R.drawable.ph_note, tintFor(PenPrefs.stickyActive)) }
                 }
@@ -764,7 +801,6 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         s.drawerOpen = false
                         s.summaryOpen = false
                         c.focusMode = true
-                        c.messages.tryEmit(L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
                     }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
                 }
                 // الإعدادات: ظاهرة دائمًا
@@ -849,7 +885,7 @@ private fun PenBar() {
                             ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
                         }
                         DropdownMenu(
-                            expanded = more && sel,
+                            expanded = more && sel, passThrough = true,
                             onDismissRequest = { more = false },
                             shape = RoundedCornerShape(18.dp),
                             containerColor = Color.White,
@@ -978,7 +1014,7 @@ private fun ToolSlot(
             )
         }
         DropdownMenu(
-            expanded = open && selected,
+            expanded = open && selected, passThrough = AppController.tool != Tool.HIGHLIGHTER,
             onDismissRequest = onDismiss,
             shape = RoundedCornerShape(18.dp),
             containerColor = Color.White,
@@ -1193,13 +1229,13 @@ internal fun PageJumpDialog(count: Int, current: Int, onGo: (Int) -> Unit, onDis
             )
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(onClick = dialogClose {
                 val n = text.toIntOrNull()
                 if (n != null) onGo(n.coerceIn(1, count) - 1)
                 onDismiss()
             }) { Text(L("انتقال", "Go")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -1282,9 +1318,11 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     session: DocSession,
     index: Int,
     down: PointerInputChange,
-    w: Float
+    w: Float,
+    onCommitted: (List<Ink>) -> Unit = {}
 ): Boolean {
-    if (session.lassoSel?.page != index) return false
+    val sel = session.lassoSel ?: return false
+    if (sel.page != index) return false
     val bb = session.lassoBounds() ?: return false
     val nx = down.position.x / w
     val ny = down.position.y / w
@@ -1292,36 +1330,51 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     val inside = nx >= bb[0] && nx <= bb[2] && ny >= bb[1] && ny <= bb[3]
     if (!onHandle && !inside) return false
     down.consume()
-    session.beginEdit()
-    var last = down.position
+    // الخطوط المحددة تُرفع إلى طبقة عائمة: كل حركة تغيّر الإزاحة فقط، والكتابة في الصفحة مرة واحدة عند الرفع
+    val drag = DocSession.LassoDrag(index, sel, bb[0], bb[1])
+    session.lassoDrag = drag
+    Haptics.tick()
+    val width0 = (bb[2] - bb[0]).coerceAtLeast(0.0001f)
     try {
         while (true) {
             val e = awaitPointerEvent()
             val ch = e.changes.firstOrNull { it.id == down.id } ?: break
             if (!ch.pressed) break
             if (onHandle) {
-                // تكبير حول الزاوية العليا: نسبة بُعد القلم الجديد إلى القديم عن الزاوية
+                // تكبير حول الزاوية العليا: نسبة بُعد القلم الآن إلى بُعده عند البدء
                 val px = bb[0] * w
                 val py = bb[1] * w
-                val d0 = hypot(last.x - px, last.y - py)
+                val d0 = hypot(down.position.x - px, down.position.y - py)
                 val d1 = hypot(ch.position.x - px, ch.position.y - py)
-                if (d0 > 4f) {
-                    val k = (d1 / d0).coerceIn(0.8f, 1.25f)
-                    val cur = session.lassoBounds()
-                    val size = if (cur != null) (cur[2] - cur[0]) else 1f
-                    if (!(k < 1f && size < 0.03f)) session.lassoTransform(0f, 0f, k, bb[0], bb[1])
-                }
+                if (d0 > 4f) drag.k = (d1 / d0).coerceIn(0.03f / width0, 8f)
             } else {
-                session.lassoTransform((ch.position.x - last.x) / w, (ch.position.y - last.y) / w)
+                // من نقطة اللمس الأولى مباشرة: لا قفزة ولا ابتعاد عن الإصبع
+                drag.dx = (ch.position.x - down.position.x) / w
+                drag.dy = (ch.position.y - down.position.y) / w
             }
-            last = ch.position
             ch.consume()
         }
     } finally {
-        session.endEdit()
+        if (drag.moved) {
+            session.beginEdit()
+            session.lassoTransform(drag.dx, drag.dy, drag.k, drag.px, drag.py)
+            session.endEdit()
+            onCommitted(session.lassoSel?.strokes ?: emptyList())
+        }
+        session.lassoDrag = null
     }
     return true
 }
+
+/** يحرّك عنصرًا محددًا (صورة أو نص) مع طبقة التحديد الحر العائمة أثناء سحبها. */
+private fun Modifier.liftedBy(drag: DocSession.LassoDrag?, x: Float, y: Float, wp: Float): Modifier =
+    if (drag == null) this else graphicsLayer {
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+        scaleX = drag.k
+        scaleY = drag.k
+        translationX = ((drag.px - x) * (1f - drag.k) + drag.dx) * wp
+        translationY = ((drag.py - y) * (1f - drag.k) + drag.dy) * wp
+    }
 
 /**
  * نقرة سريعة بإصبعين = تراجع، بثلاثة أصابع = إعادة. يراقب اللمس فقط دون أن يستهلكه،
@@ -1409,6 +1462,54 @@ private fun Modifier.zoomAndPan(
         } while (event.changes.any { it.pressed })
         if (pinching) onPinchEnd()
     }
+}
+
+/**
+ * غلاف الدرج: يُسحب نحو حافته ليُغلق (يتبع الإصبع، ويكمل أو يرجع حسب المسافة والسرعة)،
+ * والرجوع يغلقه، ومع الرجوع التنبؤي ينزاح أثناء السحب من حافة الشاشة.
+ */
+@Composable
+private fun DrawerFrame(fromStart: Boolean, open: Boolean, onClose: () -> Unit, content: @Composable () -> Unit) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    // اتجاه الإغلاق على محور x: نحو حافة الدرج
+    val dir = if (fromStart) (if (rtl) 1f else -1f) else (if (rtl) -1f else 1f)
+    val offset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var width by remember { mutableStateOf(1) }
+    val close by rememberUpdatedState(onClose)
+    if (UiPrefs.predictiveBack) {
+        androidx.activity.compose.PredictiveBackHandler(enabled = open) { events ->
+            try {
+                events.collect { offset.snapTo(it.progress * width * 0.3f) }
+                close()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                scope.launch { offset.animateTo(0f, Motion.grow()) }
+                throw e
+            }
+        }
+    } else {
+        androidx.activity.compose.BackHandler(enabled = open) { close() }
+    }
+    Box(
+        Modifier
+            .onSizeChanged { width = it.width.coerceAtLeast(1) }
+            .graphicsLayer { translationX = offset.value * dir }
+            .draggable(
+                state = rememberDraggableState { d ->
+                    scope.launch { offset.snapTo((offset.value + d * dir).coerceAtLeast(0f)) }
+                },
+                orientation = Orientation.Horizontal,
+                enabled = open,
+                onDragStopped = { v ->
+                    if (offset.value > width * 0.3f || v * dir > 900f) {
+                        Haptics.confirm()
+                        close()
+                    } else {
+                        offset.animateTo(0f, Motion.grow())
+                    }
+                }
+            )
+    ) { content() }
 }
 
 @Composable
@@ -1571,13 +1672,82 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             s.listState.animateScrollToItem(h.page, off)
         }
 
-        // على الشاشات العريضة يُزاح المستند بجانب درج الصفحات بدل أن يغطيه
+        // على الشاشات العريضة يُزاح المستند بجانب درج الصفحات بدل أن يغطيه.
+        // الحركة تكبير/إزاحة بالـGPU، وعرض الصفحات الحقيقي يتغير مرة واحدة فقط
+        // (لا يُعاد قياس الصفحات ورسم PDF والحبر مع كل إطار).
         val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 720
-        val sidePad by androidx.compose.animation.core.animateDpAsState(
-            if (s.drawerOpen && wide) PAGES_PANEL_W.dp else 0.dp, tween(240), label = "sidePad"
+        val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+        // قلم نزل على الصفحة فأغلق الدرج: لا تتحرك الصفحة تحته حتى يُرفع
+        var holdPad by remember { mutableStateOf(false) }
+        val targetPad = if ((s.drawerOpen || holdPad) && wide) PAGES_PANEL_W.toFloat() else 0f
+        var committedPad by remember { mutableStateOf(targetPad) }
+        val animPad = remember { Animatable(targetPad) }
+        val padPx = with(density) { 1.dp.toPx() }
+        fun commitPad(v: Float) {
+            if (v == committedPad) return
+            val oldW = vw - committedPad * padPx
+            val newW = vw - v * padPx
+            if (oldW > 0f && newW > 0f) {
+                // يبقى الموضع نفسه ظاهرًا بعد تغيّر عرض الصفحات
+                val r = newW / oldW
+                s.listState.requestScrollToItem(
+                    s.listState.firstVisibleItemIndex,
+                    (s.listState.firstVisibleItemScrollOffset * r).roundToInt()
+                )
+                s.panX *= r
+            }
+            committedPad = v
+        }
+        LaunchedEffect(targetPad) {
+            // الفتح: العرض الضيق فورًا والصورة تنكمش إليه؛ الإغلاق: الصورة تتمدد ثم يُطبّق العرض الواسع
+            if (targetPad > committedPad) commitPad(targetPad)
+            animPad.animateTo(targetPad, spring(dampingRatio = 1f, stiffness = 380f))
+            commitPad(targetPad)
+        }
+        // اللمس خارج الأدراج يغلقها، واللمسة تكمل طريقها للقلم أو للتمرير
+        val drawerRect = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(3) }
+        val dimAlpha by androidx.compose.animation.core.animateFloatAsState(
+            if ((s.drawerOpen && !wide) || (s.summaryOpen && UiPrefs.summariesOn) || s.pageMenuOpen) 0.14f else 0f,
+            tween(220), label = "drawerDim"
         )
         Box(
-            Modifier.fillMaxSize().padding(start = sidePad).multiFingerTap(
+            Modifier.fillMaxSize()
+                .pointerInput(wide) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val p = down.position
+                        fun outside(i: Int) = drawerRect[i]?.contains(p) != true
+                        var penOnPage = false
+                        if (s.drawerOpen && outside(0)) {
+                            s.drawerOpen = false
+                            if (wide) { holdPad = true; penOnPage = true }
+                        }
+                        if (s.summaryOpen && outside(1)) s.summaryOpen = false
+                        if (s.pageMenuOpen && outside(2)) s.pageMenuOpen = false
+                        if (penOnPage) {
+                            do {
+                                val e = awaitPointerEvent(PointerEventPass.Initial)
+                            } while (e.changes.any { it.pressed })
+                            holdPad = false
+                        }
+                    }
+                }
+                .padding(start = committedPad.dp)
+                .graphicsLayer {
+                    val wc = vw - committedPad * padPx
+                    val wv = vw - animPad.value * padPx
+                    val k = if (wc > 0f) (wv / wc).coerceAtLeast(0.01f) else 1f
+                    // التكبير حول الحافة البعيدة عن الدرج، فتبدو الصفحات كأنها تنزاح معه
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (rtl) 0f else 1f, 0f)
+                    scaleX = k
+                    scaleY = k
+                }
+                // السحب في الفراغ بجانب الصفحات يمرّرها أيضًا
+                .scrollable(
+                    s.listState, Orientation.Vertical,
+                    reverseDirection = ScrollableDefaults.reverseDirection(LocalLayoutDirection.current, Orientation.Vertical, false)
+                )
+                .multiFingerTap(
                 onTwo = { if (AppController.fingerUndo && s.undoStack.isNotEmpty()) s.undo() },
                 onThree = { if (AppController.fingerUndo && s.redoStack.isNotEmpty()) s.redo() }
             ).zoomAndPan(
@@ -1620,35 +1790,44 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             }
         }
 
-        // الدرجان ينزلقان من حافتيهما عند الفتح
+        // تعتيم خفيف خلف الأدراج التي تغطي الصفحة (لا يمنع اللمس: اللمسة تغلق الدرج وتصل للصفحة)
+        if (dimAlpha > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = dimAlpha }.background(Color.Black))
+
+        // الأدراج تنزلق من حافتيها عند الفتح، وتُغلق بالسحب نحو حافتها أو بالرجوع
         AnimatedVisibility(
             visible = s.drawerOpen,
-            modifier = Modifier.align(Alignment.CenterStart),
+            modifier = Modifier.align(Alignment.CenterStart).onGloballyPositioned { drawerRect[0] = it.boundsInParent() },
             enter = Motion.drawerEnter(fromStart = true),
             exit = Motion.drawerExit(toStart = true)
         ) {
-            PagesDrawer(s, pdf)
+            DrawerFrame(fromStart = true, open = s.drawerOpen, onClose = { s.drawerOpen = false }) {
+                PagesDrawer(s, pdf)
+            }
         }
         AnimatedVisibility(
             visible = s.summaryOpen && UiPrefs.summariesOn,
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier.align(Alignment.CenterEnd).onGloballyPositioned { drawerRect[1] = it.boundsInParent() },
             enter = Motion.drawerEnter(fromStart = false),
             exit = Motion.drawerExit(toStart = false)
         ) {
-            SummaryDrawer(
-                s = s,
-                onJump = { m -> s.jumpHook?.invoke(m) },
-                onExport = onExportSummary
-            )
+            DrawerFrame(fromStart = false, open = s.summaryOpen, onClose = { s.summaryOpen = false }) {
+                SummaryDrawer(
+                    s = s,
+                    onJump = { m -> s.jumpHook?.invoke(m) },
+                    onExport = onExportSummary
+                )
+            }
         }
         // درج خيارات الصفحة على اليمين
         AnimatedVisibility(
             visible = s.pageMenuOpen,
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier.align(Alignment.CenterEnd).onGloballyPositioned { drawerRect[2] = it.boundsInParent() },
             enter = Motion.drawerEnter(fromStart = false),
             exit = Motion.drawerExit(toStart = false)
         ) {
-            PagePanel(s, pdf)
+            DrawerFrame(fromStart = false, open = s.pageMenuOpen, onClose = { s.pageMenuOpen = false }) {
+                PagePanel(s, pdf)
+            }
         }
 
         // شريط التمرير بالصفحات على الحافة
@@ -1667,24 +1846,53 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             }
         }
 
-        Column(
-            Modifier.align(Alignment.BottomCenter).padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (s.selection != null) SelectionBar(s)
-            if (s.lassoSel != null) LassoBar(s)
-            if (s.selectedImageId != null) ImageBar(s)
-            if (s.selectedTextId != null) TextBoxBar(s)
-            if (s.selectedNoteId != null) NoteBar(s)
+        // أشرطة التحديد: ترتفع من الأسفل، وتتحول من شريط إلى آخر بتغيّر حجمها بدل أن تقفز
+        val bars = buildList {
+            if (s.selection != null) add(1)
+            if (s.lassoSel != null) add(2)
+            if (s.selectedImageId != null) add(3)
+            if (s.selectedTextId != null) add(4)
+            if (s.selectedNoteId != null) add(5)
+        }
+        val heldSel = rememberLast(s.selection)
+        val heldText = rememberLast(s.selectedTextId)
+        val heldNote = rememberLast(s.selectedNoteId)
+        androidx.compose.animation.AnimatedContent(
+            targetState = bars,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+            contentAlignment = Alignment.BottomCenter,
+            transitionSpec = {
+                val enter = if (initialState.isEmpty()) Motion.floatEnter
+                else fadeIn(tween(160, delayMillis = 60)) + scaleIn(tween(220), initialScale = 0.96f)
+                val exit = if (targetState.isEmpty()) Motion.floatExit else fadeOut(tween(110))
+                (enter togetherWith exit).using(
+                    androidx.compose.animation.SizeTransform(clip = false) { _, _ ->
+                        spring(dampingRatio = Motion.damping(0.85f), stiffness = 500f, visibilityThreshold = IntSize.VisibilityThreshold)
+                    }
+                )
+            },
+            label = "selectionBars"
+        ) { kinds ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                for (k in kinds) when (k) {
+                    1 -> SelectionBar(s, heldSel)
+                    2 -> LassoBar(s)
+                    3 -> ImageBar(s)
+                    4 -> TextBoxBar(s, heldText)
+                    5 -> NoteBar(s, heldNote)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SelectionBar(s: DocSession) {
+private fun SelectionBar(s: DocSession, held: TextSelection? = null) {
     val context = LocalContext.current
-    val sel = s.selection ?: return
+    val sel = s.selection ?: held ?: return
     var cardBack by remember { mutableStateOf<String?>(null) }
     var translateText by remember { mutableStateOf<String?>(null) }
     translateText?.let { t -> TranslateDialog(t) { translateText = null } }
@@ -1813,9 +2021,9 @@ private fun ReaderTimer(id: String) {
 }
 
 @Composable
-private fun TextBoxBar(s: DocSession) {
+private fun TextBoxBar(s: DocSession, held: String? = null) {
     var fontPick by remember { mutableStateOf(false) }
-    val id = s.selectedTextId ?: return
+    val id = s.selectedTextId ?: held ?: return
     val tb = s.textBox(id)
     if (tb == null) {
         SideEffect { s.selectedTextId = null }
@@ -2128,10 +2336,14 @@ private fun PageView(
             modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp)
         )
 
+        // سحب التحديد الحر الجاري على هذه الصفحة (طبقة عائمة)
+        val drag = session.lassoDrag?.takeIf { it.page == index }
+
         // طبقة الصور
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             for (item in pageImages) {
+                if (drag != null && item.id in drag.sel.imageIds) continue
                 val bm = bitmaps[item.file] ?: continue
                 drawImage(
                     image = bm,
@@ -2197,6 +2409,7 @@ private fun PageView(
                         Box(
                             Modifier.align(AbsoluteAlignment.TopLeft)
                                 .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
+                                .liftedBy(drag?.takeIf { tb.id in it.sel.textIds }, tb.x, tb.y, wp)
                                 .size(side)
                                 .onSizeChanged { textHeights[tb.id] = it.height / wp }
                                 .shadow(3.dp, RoundedCornerShape(6.dp))
@@ -2209,6 +2422,7 @@ private fun PageView(
                         Row(
                             Modifier.align(AbsoluteAlignment.TopLeft)
                                 .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
+                                .liftedBy(drag?.takeIf { tb.id in it.sel.textIds }, tb.x, tb.y, wp)
                                 .widthIn(max = with(density) { (tb.w * wp).toDp() })
                                 .onSizeChanged { textHeights[tb.id] = it.height / wp }
                                 .clip(RoundedCornerShape(14.dp))
@@ -2234,6 +2448,7 @@ private fun PageView(
                         modifier = Modifier
                             .align(AbsoluteAlignment.TopLeft)
                             .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
+                                .liftedBy(drag?.takeIf { tb.id in it.sel.textIds }, tb.x, tb.y, wp)
                             .width(with(density) { (tb.w * wp).toDp() })
                             .onSizeChanged { textHeights[tb.id] = it.height / wp }
                             .then(
@@ -2258,12 +2473,53 @@ private fun PageView(
         }
 
         // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
-        InkLayer("${session.id}:$index", strokes, night, visRect, Modifier.fillMaxSize()) { drawnLists ->
+        val inkStrokes = if (drag == null) strokes else remember(drag, strokes) { strokes.filter { it !in drag.lifted } }
+        InkLayer("${session.id}:$index", inkStrokes, night, visRect, Modifier.fillMaxSize()) { drawnLists ->
             if (pendingInk.isNotEmpty()) {
                 val cur = strokesNow
                 val before = pendingInk.size
                 pendingInk.removeAll { p -> drawnLists.all { l -> l.any { it === p } } || cur.none { it === p } }
                 if (pendingInk.size != before) tick++
+            }
+        }
+        // طبقة التحديد الحر العائمة أثناء السحب: تُرسم مرة واحدة، والحركة تحويل بالـGPU فقط
+        if (drag != null) {
+            Canvas(
+                Modifier.fillMaxSize().graphicsLayer {
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                        drag.px, if (size.height > 0f) drag.py * size.width / size.height else 0f
+                    )
+                    scaleX = drag.k
+                    scaleY = drag.k
+                    translationX = drag.dx * size.width
+                    translationY = drag.dy * size.width
+                }
+            ) {
+                val w = size.width
+                for (item in pageImages) {
+                    if (item.id !in drag.sel.imageIds) continue
+                    val bm = bitmaps[item.file] ?: continue
+                    drawImage(
+                        image = bm,
+                        srcOffset = IntOffset.Zero,
+                        srcSize = IntSize(bm.width, bm.height),
+                        dstOffset = IntOffset((item.x * w).roundToInt(), (item.y * w).roundToInt()),
+                        dstSize = IntSize(
+                            (item.w * w).roundToInt().coerceAtLeast(1),
+                            (item.w / item.aspect * w).roundToInt().coerceAtLeast(1)
+                        )
+                    )
+                }
+                drag.sel.strokes.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
+                session.lassoBounds()?.let { bb ->
+                    val k = drag.k.coerceAtLeast(0.01f)
+                    drawRect(
+                        Palette.Navy, Offset(bb[0] * w, bb[1] * w), Size((bb[2] - bb[0]) * w, (bb[3] - bb[1]) * w),
+                        style = Stroke(1.5.dp.toPx() / k, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f / k, 8f / k)))
+                    )
+                    drawCircle(Palette.Navy, 10.dp.toPx() / k, Offset(bb[2] * w, bb[3] * w))
+                    drawCircle(Color.White, 4.dp.toPx() / k, Offset(bb[2] * w, bb[3] * w))
+                }
             }
         }
         // الملاحظات اللاصقة فوق الكتابة
@@ -2372,7 +2628,7 @@ private fun PageView(
                             // التحديد الحر: تحريك/تكبير التحديد، أو رسم حلقة تحديد جديدة
                             if (lassoNow && down.type != PointerType.Eraser) {
                                 down.consume()
-                                if (dragLasso(session, index, down, w)) continue
+                                if (dragLasso(session, index, down, w) { moved -> pendingInk.addAll(moved); tick++ }) continue
                                 session.lassoSel = null
                                 livePts.clear()
                                 livePts.add(Pt(down.position.x / w, down.position.y / w, 0.5f))
@@ -2406,7 +2662,7 @@ private fun PageView(
                             }
 
                             // زر القلم الجانبي = ممحاة مؤقتة (حيث يدعمه الجهاز)
-                            val erasing = toolNow == Tool.ERASER ||
+                            var erasing = toolNow == Tool.ERASER ||
                                 down.type == PointerType.Eraser ||
                                 ev.buttons.isSecondaryPressed ||
                                 ev.buttons.isTertiaryPressed
@@ -2543,13 +2799,34 @@ private fun PageView(
                                 live.sharp = true
                                 tick++
                             }
+                            // «أبقِ القلم ثابتًا ليصير ممحاة»: ثانية دون تحريك قبل أي كتابة، حتى رفع القلم
+                            val holdEligible = UiPrefs.holdToErase && !erasing && down.type == PointerType.Stylus &&
+                                (live.tool.isPen() || live.tool == Tool.HIGHLIGHTER)
+                            var movedFromDown = false
+                            var holdErasing = false
+                            fun tryHoldErase(now: Long, at: Offset) {
+                                if (!holdEligible || holdErasing || movedFromDown || now - down.uptimeMillis < HOLD_TO_ERASE_MS) return
+                                holdErasing = true
+                                erasing = true
+                                eraseArmed = true
+                                livePts.clear()
+                                snappedLive = null
+                                live.sharp = false
+                                eraserCursor[0] = at
+                                eraserR[0] = eraseR
+                                AppController.holdErasing = true
+                                Haptics.confirm()
+                                tick++
+                            }
                             /** خط الإصبع أُلغي: بداية تمرير بإصبعين أو راحة يد قبل نزول القلم. */
                             var aborted = false
                             try {
                                 while (true) {
-                                    val e = withTimeoutOrNull(480L) { awaitPointerEvent() }
+                                    val waitMs = if (holdEligible && !holdErasing && !movedFromDown) 100L else 480L
+                                    val e = withTimeoutOrNull(waitMs) { awaitPointerEvent() }
                                     if (e == null) {
-                                        trySnapLive()
+                                        tryHoldErase(android.os.SystemClock.uptimeMillis(), down.position)
+                                        if (!holdErasing) trySnapLive()
                                         continue
                                     }
                                     val ch = e.changes.firstOrNull { it.id == id } ?: break
@@ -2557,6 +2834,8 @@ private fun PageView(
                                         ch.consume()
                                         break
                                     }
+                                    if (!movedFromDown && (ch.position - down.position).getDistance() > viewConfiguration.touchSlop) movedFromDown = true
+                                    tryHoldErase(ch.uptimeMillis, ch.position)
                                     if (fingerInterrupted(e)) {
                                         val stylus = e.changes.any { it.pressed && (it.type == PointerType.Stylus || it.type == PointerType.Eraser) }
                                         var len = 0f
@@ -2613,6 +2892,8 @@ private fun PageView(
                             } finally {
                                 live.hasPred = false
                                 live.sharp = false
+                                // رُفع القلم: يعود قلمًا كما كان
+                                if (holdErasing) AppController.holdErasing = false
                                 // بعد رفع القلم تختفي الحدود (وتعود مع التحويم إن دعمه الجهاز)
                                 if (erasing) {
                                     eraserCursor[0] = null
@@ -2674,7 +2955,7 @@ private fun PageView(
                         val ny = down.position.y / w
 
                         // تحريك التحديد الحر بالإصبع أيضًا
-                        if (session.lassoSel?.page == index && dragLasso(session, index, down, w)) return@awaitEachGesture
+                        if (session.lassoSel?.page == index && dragLasso(session, index, down, w) { moved -> pendingInk.addAll(moved); tick++ }) return@awaitEachGesture
 
                         // الملاحظات اللاصقة: وضع، تحديد، تحريك، تكبير
                         if (PenPrefs.stickyActive) {
@@ -2902,7 +3183,7 @@ private fun PageView(
             }
 
             // التحديد الحر: إطار متقطع حول الخطوط المحددة ومقبض للتكبير
-            if (session.lassoSel?.page == index) {
+            if (session.lassoSel?.page == index && session.lassoDrag == null) {
                 session.lassoBounds()?.let { bb ->
                     val w = size.width
                     drawRect(
@@ -3058,8 +3339,8 @@ private fun LinkDialog(s: DocSession, cur: Int, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(enabled = target != null, onClick = {
-                val t = target ?: return@TextButton
+            TextButton(enabled = target != null, onClick = dialogClose {
+                val t = target ?: return@dialogClose
                 val p = ((pageText.toIntOrNull() ?: 1) - 1).coerceIn(0, maxOf(0, t.pageCount - 1))
                 val title = label.trim().ifEmpty {
                     (if (t.id == s.id) L("صفحة", "Page") else t.name + L(" — ص", " — p.")) + " ${p + 1}"
@@ -3070,11 +3351,10 @@ private fun LinkDialog(s: DocSession, cur: Int, onDismiss: () -> Unit) {
                         text = title, color = Palette.Navy, size = 0.02f, linkDoc = t.id, linkPage = p
                     )
                 )
-                c.messages.tryEmit(L("أُضيف الرابط: اسحبه لمكانه، وانقر عليه مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
                 onDismiss()
             }) { Text(L("إضافة", "Add")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 

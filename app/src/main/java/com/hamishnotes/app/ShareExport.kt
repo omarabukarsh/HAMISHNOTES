@@ -115,7 +115,7 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إغلاق", "Close")) } }
     )
 }
 
@@ -187,7 +187,7 @@ fun ShareManyDialog(ids: List<String>, onDismiss: () -> Unit, onStarted: () -> U
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إغلاق", "Close")) } }
     )
 }
 

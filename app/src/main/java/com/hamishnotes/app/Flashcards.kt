@@ -1,5 +1,7 @@
 package com.hamishnotes.app
 
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.composed
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -159,7 +161,7 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                             scope.launch { pager.scrollToPage(0) }
                         }) { Text(L("خلط", "Shuffle"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold) }
                     }
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
+                    IconButton(onClick = dialogClose(onDismiss)) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(12.dp))
 
@@ -177,7 +179,7 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
                     ) { i ->
                         val card = deck[i]
                         val isFlipped = card.id in flipped
-                        Box {
+                        Box(Modifier.deckPage(pager, i)) {
                             FlipCard(card, isFlipped) {
                                 flipped = if (isFlipped) flipped - card.id else flipped + card.id
                             }
@@ -237,7 +239,8 @@ fun StudyDialog(s: DocSession, cards: List<Card>, onDismiss: () -> Unit) {
 /** بطاقة تنقلب ثلاثيًا عند النقر: الوجه ثم الظهر. */
 @Composable
 private fun FlipCard(card: Card, flipped: Boolean, onFlip: () -> Unit) {
-    val angle by animateFloatAsState(if (flipped) 180f else 0f, tween(380), label = "flip")
+    // القلب بنابض (قوته من الإعدادات)، وترتفع البطاقة قليلًا في منتصف القلب
+    val angle by animateFloatAsState(if (flipped) 180f else 0f, Motion.bouncy(), label = "flip")
     val showBack = angle > 90f
     val shape = RoundedCornerShape(20.dp)
     Box(
@@ -245,6 +248,9 @@ private fun FlipCard(card: Card, flipped: Boolean, onFlip: () -> Unit) {
             .graphicsLayer {
                 rotationY = angle
                 cameraDistance = 14f * density
+                val lift = 1f + 0.05f * kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat().coerceAtLeast(0f)
+                scaleX = lift
+                scaleY = lift
             }
             .clip(shape)
             .background(if (showBack) Palette.Ivory else Color.White)
@@ -316,7 +322,7 @@ fun AddCardDialog(
         confirmButton = {
             TextButton(enabled = front.isNotBlank() && back.isNotBlank(), onClick = { onSave(front, back) }) { Text(confirm) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(dismissLabel) } }
     )
 }
 
@@ -366,7 +372,7 @@ fun NewLooseCardDialog(initialFolder: String, onDismiss: () -> Unit) {
                         back = ""
                     }
                 }) { Text(L("حفظ وإضافة أخرى", "Save & add another"), color = CardTeal) }
-                TextButton(enabled = ok, onClick = {
+                TextButton(enabled = ok, onClick = dialogClose {
                     if (CardDeck.addLoose(front, back, folder)) {
                         AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
                         onDismiss()
@@ -374,7 +380,7 @@ fun NewLooseCardDialog(initialFolder: String, onDismiss: () -> Unit) {
                 }) { Text(L("حفظ", "Save"), fontWeight = FontWeight.Bold) }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(if (added > 0) L("تم", "Done") else L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(if (added > 0) L("تم", "Done") else L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -434,7 +440,7 @@ fun DeckDialog(folder: String?, onDismiss: () -> Unit) {
                             Text(L("خلط", "Shuffle"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                         }
                     }
-                    IconButton(onClick = onDismiss) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
+                    IconButton(onClick = dialogClose(onDismiss)) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق", "Close")) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(
@@ -470,7 +476,7 @@ fun DeckDialog(folder: String?, onDismiss: () -> Unit) {
                         ) { i ->
                             val dc = deck[i]
                             val isFlipped = dc.card.id in flipped
-                            Box {
+                            Box(Modifier.deckPage(pager, i)) {
                                 FlipCard(dc.card, isFlipped) {
                                     flipped = if (isFlipped) flipped - dc.card.id else flipped + dc.card.id
                                 }
@@ -521,3 +527,28 @@ fun DeckDialog(folder: String?, onDismiss: () -> Unit) {
         }, onDismiss = { editing = null })
     }
 }
+
+/**
+ * البطاقات كمجموعة: البطاقة التي تُسحب تميل وتخرج، والتالية تنتظر تحتها في مكانها وتكبر إليه.
+ */
+private fun Modifier.deckPage(pager: androidx.compose.foundation.pager.PagerState, page: Int): Modifier = composed {
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.toPx() }
+    val off = (pager.currentPage - page) + pager.currentPageOffsetFraction
+    this
+        .zIndex(if (off >= 0f) 1f else 0f)
+        .graphicsLayer {
+            val dir = if (rtl) -1f else 1f
+            if (off < 0f && off > -1f) {
+                // البطاقة القادمة: ثابتة تحت الحالية وتكبر من 92%
+                translationX = dir * off * (size.width + gap)
+                val sc = 0.92f + 0.08f * (1f + off)
+                scaleX = sc
+                scaleY = sc
+            } else if (off > 0f && off < 1f) {
+                // البطاقة الخارجة: تميل مع السحب
+                rotationZ = -dir * 10f * off
+            }
+        }
+}
+

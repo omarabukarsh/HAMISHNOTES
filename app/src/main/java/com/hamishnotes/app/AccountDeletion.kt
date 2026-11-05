@@ -190,7 +190,7 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val pill = RoundedCornerShape(50)
                 Box(
-                    Modifier.weight(1f).height(46.dp).clip(pill).background(Color(0xFFF3F4F8)).clickable(enabled = !busy, onClick = onDismiss),
+                    Modifier.weight(1f).height(46.dp).clip(pill).background(Color(0xFFF3F4F8)).clickable(enabled = !busy, onClick = dialogClose(onDismiss)),
                     contentAlignment = Alignment.Center
                 ) { Text(L("إلغاء", "Cancel"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }
                 val ready = understood && !busy

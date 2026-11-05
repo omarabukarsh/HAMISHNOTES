@@ -202,12 +202,12 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                 }
             },
             confirmButton = {
-                TextButton(enabled = ink || hl || tx || im, onClick = {
+                TextButton(enabled = ink || hl || tx || im, onClick = dialogClose {
                     itemsDialog = false
                     s.clearPageItems(page, ink, hl, tx, im)
                 }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
-            dismissButton = { TextButton(onClick = { itemsDialog = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { itemsDialog = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 
@@ -217,11 +217,11 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
             title = { Text(L("مسح الصفحة ${page + 1}؟", "Clear page ${page + 1}?")) },
             text = { Text(L("تُمسح الكتابة والتظليل والنصوص والصور من هذه الصفحة، وتبقى الصفحة نفسها. يمكنك التراجع.", "Writing, highlights, text and images are removed from this page; the page itself stays. You can undo.")) },
             confirmButton = {
-                TextButton(onClick = { confirmClear = false; s.clearPageItems(page, true, true, true, true) }) {
+                TextButton(onClick = dialogClose { confirmClear = false; s.clearPageItems(page, true, true, true, true) }) {
                     Text(L("مسح", "Clear"), color = Palette.Danger)
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { confirmClear = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 
@@ -231,12 +231,12 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
             title = { Text(L("حذف الصفحة ${page + 1}؟", "Delete page ${page + 1}?")) },
             text = { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     confirmDelete = false
                     s.rearrangePages(order { removeAt(page) })
                 }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }

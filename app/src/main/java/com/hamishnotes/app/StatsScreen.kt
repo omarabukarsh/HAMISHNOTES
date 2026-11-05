@@ -229,7 +229,16 @@ fun StatsDialog(onDismiss: () -> Unit) {
                                 LegendDot(Lib.iconBlue, L("دون الهدف", "Below goal"))
                             }
                             Spacer(Modifier.height(14.dp))
-                            MonthBars(values, goalMs, today.takeIf { it.withDayOfMonth(1) == month }?.dayOfMonth)
+                            // الشهر السابق والتالي ينزلقان من جهتهما
+                            val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+                            androidx.compose.animation.AnimatedContent(
+                                targetState = month,
+                                transitionSpec = { sharedAxisX(forward = targetState.isAfter(initialState), rtl = rtl) },
+                                label = "monthBars"
+                            ) { m ->
+                                val vals = (0 until m.lengthOfMonth()).map { dayMs(m.plusDays(it.toLong())) }
+                                MonthBars(vals, goalMs, today.takeIf { it.withDayOfMonth(1) == m }?.dayOfMonth)
+                            }
                         }
 
                         // تقرير كل مادة
@@ -297,8 +306,8 @@ private fun GoalDialog(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Uni
                 )
             }
         },
-        confirmButton = { TextButton(enabled = total in 5..1440, onClick = { onSave(total) }) { Text(L("حفظ", "Save"), color = goldText()) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel"), color = Lib.muted) } }
+        confirmButton = { TextButton(enabled = total in 5..1440, onClick = dialogClose { onSave(total) }) { Text(L("حفظ", "Save"), color = goldText()) } },
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel"), color = Lib.muted) } }
     )
 }
 

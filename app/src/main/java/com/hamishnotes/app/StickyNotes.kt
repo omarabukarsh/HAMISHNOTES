@@ -170,13 +170,12 @@ fun StickyBar() {
                 if (AppController.noteClipboard != null) {
                     TBtn(selected = AppController.notePastePending, onClick = {
                         AppController.notePastePending = !AppController.notePastePending
-                        if (AppController.notePastePending) AppController.messages.tryEmit(L("انقر مكان لصق الملاحظة", "Tap where to paste the note"))
                     }) { PhIcon(R.drawable.ph_copy, tintFor(AppController.notePastePending), 20.dp, L("لصق", "Paste")) }
                 }
                 Box {
                     TBtn(onClick = { panel = true }) { PhIcon(R.drawable.ph_caret_down, Palette.TextSecondary, 20.dp, L("أنماط الملاحظات", "Note styles")) }
                     DropdownMenu(
-                        expanded = panel, onDismissRequest = { panel = false },
+                        expanded = panel, onDismissRequest = { panel = false }, passThrough = true,
                         shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) { StickerPanel { panel = false } }
                 }
@@ -228,9 +227,9 @@ fun StickerPanel(onDone: () -> Unit) {
 
 /** شريط أدوات الملاحظة المحددة. */
 @Composable
-fun NoteBar(s: DocSession) {
+fun NoteBar(s: DocSession, held: String? = null) {
     val c = AppController
-    val id = s.selectedNoteId ?: return
+    val id = s.selectedNoteId ?: held ?: return
     val n = s.note(id) ?: return
     var colors by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
@@ -242,7 +241,7 @@ fun NoteBar(s: DocSession) {
                     Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).clickable { colors = true },
                     contentAlignment = Alignment.Center
                 ) { Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(n.color)).border(1.dp, Palette.Divider, RoundedCornerShape(6.dp))) }
-                DropdownMenu(expanded = colors, onDismissRequest = { colors = false }) {
+                DropdownMenu(expanded = colors, onDismissRequest = { colors = false }, passThrough = true) {
                     Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         StickyColors.forEach { col ->
                             Box(
@@ -278,7 +277,7 @@ fun NoteBar(s: DocSession) {
             TBtn(onClick = { s.deleteNote(id) }) { PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp, L("حذف", "Delete")) }
             Box {
                 TBtn(onClick = { more = true }) { PhIcon(R.drawable.ph_more, Palette.TextSecondary, 20.dp) }
-                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                DropdownMenu(expanded = more, onDismissRequest = { more = false }, passThrough = true) {
                     DropdownMenuItem(text = { Text(L("نسخ", "Copy")) }, onClick = {
                         more = false; c.noteClipboard = n
                         c.messages.tryEmit(L("نُسخت الملاحظة", "Note copied"))
@@ -301,13 +300,13 @@ fun NoteBar(s: DocSession) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(L("اسمك (اختياري)", "Your name (optional)")) })
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = dialogClose {
                     PenPrefs.changeAuthor(name.trim())
                     s.editNote(id) { it.copy(author = name.trim()) }
                     authorDialog = false
                 }) { Text(L("حفظ", "Save")) }
             },
-            dismissButton = { TextButton(onClick = { authorDialog = false }) { Text(L("إلغاء", "Cancel")) } }
+            dismissButton = { TextButton(onClick = dialogClose { authorDialog = false }) { Text(L("إلغاء", "Cancel")) } }
         )
     }
 }

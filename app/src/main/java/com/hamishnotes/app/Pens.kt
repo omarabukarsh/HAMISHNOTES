@@ -316,7 +316,6 @@ object PenInput {
             // أول مرة نرى قلمًا: إن كان الإصبع يكتب تلقائيًا (لا باختيار المستخدم) نعيده للتمرير
             if (fingerWrites && !modeChosen) {
                 fingerWrites = false
-                AppController.messages.tryEmit(L("اكتشفنا قلمًا: صار الإصبع للتمرير والقلم للكتابة", "Pen detected: your finger scrolls and the pen writes"))
             }
         }
         currentKey = key

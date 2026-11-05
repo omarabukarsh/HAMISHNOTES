@@ -53,13 +53,13 @@ private fun SetPinDialog(id: String) {
             }
         },
         confirmButton = {
-            TextButton(enabled = ok, onClick = {
+            TextButton(enabled = ok, onClick = dialogClose {
                 c.setPin(p1)
                 c.setPinFor = null
                 if (id.isNotEmpty()) c.toggleLock(id) else c.messages.tryEmit(L("تم تغيير الرمز", "PIN changed"))
             }) { Text(L("حفظ", "Save")) }
         },
-        dismissButton = { TextButton(onClick = { c.setPinFor = null }) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose { c.setPinFor = null }) { Text(L("إلغاء", "Cancel")) } }
     )
 }
 
@@ -112,7 +112,7 @@ private fun UnlockDialog(id: String) {
         dismissButton = {
             androidx.compose.foundation.layout.Row {
                 if (canBio) TextButton(onClick = { bio() }) { Text(L("البصمة", "Fingerprint")) }
-                TextButton(onClick = { c.unlockRequest = null }) { Text(L("إلغاء", "Cancel")) }
+                TextButton(onClick = dialogClose { c.unlockRequest = null }) { Text(L("إلغاء", "Cancel")) }
             }
         }
     )

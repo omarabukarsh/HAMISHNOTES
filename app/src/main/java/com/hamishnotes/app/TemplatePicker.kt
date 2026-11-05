@@ -275,7 +275,7 @@ fun TemplatePickerDialog(
                         TextButton(onClick = { onPdf(atEnd) }) { Text(L("إضافة ملف PDF…", "Add PDF file…"), color = Palette.Navy) }
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel"), color = Palette.TextSecondary) }
+                    TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel"), color = Palette.TextSecondary) }
                     Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = {

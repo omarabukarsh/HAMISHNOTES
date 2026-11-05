@@ -684,8 +684,8 @@ private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss:
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isNotBlank()) onSave(text.trim()) }) { Text(L("حفظ", "Save")) }
+            TextButton(onClick = dialogClose { if (text.isNotBlank()) onSave(text.trim()) }) { Text(L("حفظ", "Save")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+        dismissButton = { TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) } }
     )
 }

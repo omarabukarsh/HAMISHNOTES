@@ -223,10 +223,10 @@ fun ColorPickerDialog(initial: Color, onPick: (Color) -> Unit, onDismiss: () -> 
             }
         },
         confirmButton = {
-            TextButton(onClick = { onPick(current) }) { Text(L("اختيار", "Choose")) }
+            TextButton(onClick = dialogClose { onPick(current) }) { Text(L("اختيار", "Choose")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) }
+            TextButton(onClick = dialogClose(onDismiss)) { Text(L("إلغاء", "Cancel")) }
         }
     )
 }

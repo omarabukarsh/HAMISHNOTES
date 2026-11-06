@@ -2609,6 +2609,18 @@ private fun PageView(
                             live.sharp = false
                             val eraseR = eraserNow
 
+                            // صورة أو ملصق اختير من الدرج بنقرة: نقرة القلم تضعه هنا
+                            if (TrayDrag.armed != null && down.type != PointerType.Eraser) {
+                                down.consume()
+                                TrayDrag.placeArmed(session, index, Offset(down.position.x / w, down.position.y / w))
+                                while (true) {
+                                    val e = awaitPointerEvent()
+                                    val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                    ch.consume()
+                                    if (!ch.pressed) break
+                                }
+                                continue
+                            }
                             // أداة الملاحظات: نقرة القلم تضع ملاحظة
                             if (PenPrefs.stickyActive && down.type != PointerType.Eraser) {
                                 down.consume()
@@ -2905,6 +2917,12 @@ private fun PageView(
                         // تحريك التحديد الحر بالإصبع أيضًا
                         if (session.lassoSel?.page == index && dragLasso(session, index, down, w)) return@awaitEachGesture
 
+                        // صورة أو ملصق اختير من الدرج بنقرة: نقرة الإصبع تضعه هنا
+                        if (TrayDrag.armed != null) {
+                            down.consume()
+                            TrayDrag.placeArmed(session, index, Offset(nx, ny))
+                            return@awaitEachGesture
+                        }
                         // الملاحظات اللاصقة: وضع، تحديد، تحريك، تكبير
                         if (PenPrefs.stickyActive) {
                             down.consume()

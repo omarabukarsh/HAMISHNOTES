@@ -113,6 +113,31 @@ object TrayDrag {
     }
     var landing by mutableStateOf<Landing?>(null)
 
+    /**
+     * عنصر اختير بنقرة (مثل الملاحظات اللاصقة): النقرة التالية على الصفحة تضعه في مكانها،
+     * دون إبقاء الإصبع مضغوطاً. نقرة ثانية على نفس العنصر تلغي الاختيار.
+     */
+    var armed by mutableStateOf<TrayPayload?>(null)
+    private var armedThumb: ImageBitmap? = null
+
+    fun arm(p: TrayPayload, img: ImageBitmap?) {
+        if (armed === p) {
+            armed = null
+            return
+        }
+        armed = p
+        armedThumb = img
+        AppController.say(MsgKind.TIP, L("انقر على الصفحة حيث تريد وضعه", "Tap the page where you want to place it"))
+    }
+
+    /** يضع العنصر المختار عند النقطة (بوحدات عرض الصفحة). false = لا عنصر مختار. */
+    fun placeArmed(s: DocSession, page: Int, at: Offset): Boolean {
+        val p = armed ?: return false
+        armed = null
+        drop(s, p, armedThumb, page, at)
+        return true
+    }
+
     /** التمرير التلقائي عند الحافة مسموح بعد أن يمر الإصبع فوق وسط الصفحات مرة. */
     internal var scrollArmed = false
 
@@ -312,6 +337,8 @@ fun BoxScope.SideTray(s: DocSession) {
         if (visible && s.summaryOpen) s.summaryOpen = false
         // بعد إغلاق النافذة لا يمنع مكانها القديم الإفلات على الصفحة
         if (!visible) TrayDrag.trayRect = androidx.compose.ui.geometry.Rect.Zero
+        // إغلاق النافذة يلغي العنصر المختار (حتى لا توضعه نقرة لاحقة على الصفحة)
+        if (!visible) TrayDrag.armed = null
     }
 
     // المكان: تحت الزر مباشرة، وسطها على الزر قدر الإمكان. مقاس الشاشة ومكانها يُقرآن كحالة
@@ -542,7 +569,7 @@ fun BoxScope.TrayDragGhost(s: DocSession) {
 }
 
 /**
- * مربع في الدرج: نقرة = onTap، وضغطة مطوّلة ثم سحب = إسقاط على الصفحة.
+ * مربع في الدرج: نقرة = اختياره ثم نقرة على الصفحة تضعه، وضغطة مطوّلة ثم سحب = إسقاط على الصفحة.
  * ضغطة مطوّلة دون سحب = onLongStill (مثل حذف ملصق من «ملصقاتي»).
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -552,16 +579,23 @@ private fun TrayTile(
     payload: TrayPayload,
     img: ImageBitmap?,
     photo: Boolean = false,
-    onTap: () -> Unit,
     onLongStill: (() -> Unit)? = null
 ) {
+    val armed = TrayDrag.armed === payload
+    val shape = RoundedCornerShape(if (photo) 8.dp else 12.dp)
     Box(
         Modifier.fillMaxWidth().aspectRatio(1f)
-            .clip(RoundedCornerShape(if (photo) 8.dp else 12.dp))
+            .clip(shape)
             .background(if (photo) Color(0xFFEEF0F4) else Color.White)
-            .then(if (photo) Modifier else Modifier.border(1.dp, Palette.Divider, RoundedCornerShape(12.dp)))
+            .then(
+                when {
+                    armed -> Modifier.border(2.5.dp, Palette.Navy, shape)
+                    photo -> Modifier
+                    else -> Modifier.border(1.dp, Palette.Divider, shape)
+                }
+            )
             .graphicsLayer { alpha = if (TrayDrag.payload === payload) 0.35f else 1f }
-            .combinedClickable(onClick = onTap)
+            .combinedClickable(onClick = { TrayDrag.arm(payload, img) })
             .dragToPage(s, payload, img, onLongStill = onLongStill),
         contentAlignment = Alignment.Center
     ) {
@@ -618,7 +652,7 @@ private fun StickerTrayContent(s: DocSession) {
                     value = withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(f.path)?.asImageBitmap() }
                 }
                 val payload = remember(f) { TrayPayload.MySticker(f) }
-                TrayTile(s, payload, img, onTap = { StickerStore.place(s, f) }, onLongStill = { deleting = f })
+                TrayTile(s, payload, img, onLongStill = { deleting = f })
             }
         }
     } else {
@@ -633,7 +667,7 @@ private fun StickerTrayContent(s: DocSession) {
             items(list) { b ->
                 val img = remember(b) { StickerStore.render(b, 200)?.asImageBitmap() }
                 val payload = remember(b) { TrayPayload.BuiltinSticker(b) }
-                TrayTile(s, payload, img, onTap = { StickerStore.render(b, 400)?.let { StickerStore.place(s, it) } })
+                TrayTile(s, payload, img)
             }
         }
     }
@@ -748,10 +782,7 @@ private fun PhotoTrayContent(s: DocSession, forSticker: Boolean) {
                             .clickable { StickerStore.addFromUri(p.uri); s.trayMode = "stickers" }
                     ) { img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } }
                 } else {
-                    TrayTile(s, payload, img, photo = true, onTap = {
-                        val page = s.currentPage()
-                        AppController.insertImage(s, p.uri, page, width = 0.45f, at = s.visibleCenter(page))
-                    })
+                    TrayTile(s, payload, img, photo = true)
                 }
             }
         }

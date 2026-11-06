@@ -48,9 +48,9 @@ class ToolWindowsTest {
         opensInMenu { LassoMenuContent(s, onOff = {}) }
     }
 
-    @Test fun shapeColorMenu_withFillAndOpacity_opensInsideAMenu() {
+    @Test fun shapeSettingsWindow_withFillAndOpacity_opensInsideAMenu() {
         PenPrefs.changeShapeFill(true)
-        opensInMenu { ShapeColorMenu(onPick = {}, onCustom = {}) }
+        opensInMenu { ShapeSettingsWindow(onClose = {}, onCustom = {}) }
     }
 
     @Test fun segmented_opensInsideAMenu() = opensInMenu {

@@ -362,7 +362,6 @@ fun ShapeBar() {
     val c = AppController
     val pill = RoundedCornerShape(26.dp)
     var strokeMenu by remember { mutableStateOf(false) }
-    var colorMenu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)) {
@@ -381,27 +380,28 @@ fun ShapeBar() {
                     TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
                 }
                 ToolbarSep()
+                // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
                 Box {
-                    TBtn(onClick = { strokeMenu = true }) { LineStyleSample(PenPrefs.shapeStyle, Palette.TextPrimary, 4f) }
-                    DropdownMenu(
-                        expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
-                        shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
-                    ) { ShapeStrokePanel() }
-                }
-                Box {
-                    Box(
-                        Modifier.size(42.dp).clip(CircleShape).clickable { colorMenu = true },
-                        contentAlignment = Alignment.Center
+                    Row(
+                        Modifier.padding(horizontal = 4.dp).height(40.dp).clip(RoundedCornerShape(20.dp))
+                            .background(Palette.NavySoft.copy(alpha = 0.5f))
+                            .border(1.5.dp, Palette.Navy, RoundedCornerShape(20.dp))
+                            .clickable { strokeMenu = true }
+                            .padding(start = 10.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Box(Modifier.size(24.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
+                        LineStyleSample(PenPrefs.shapeStyle, Color(PenPrefs.shapeColor), (1.5f + PenPrefs.shapeSize * 0.6f).coerceAtMost(6f))
+                        Box(Modifier.size(18.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
+                        PhIcon(R.drawable.ph_caret_down, Palette.Navy, 12.dp)
                     }
                     DropdownMenu(
-                        expanded = colorMenu, onDismissRequest = { colorMenu = false },
-                        shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                        expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
+                        shape = RoundedCornerShape(20.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) {
-                        ShapeColorMenu(
-                            onPick = { col -> PenPrefs.changeShapeColor(col.toArgb()); colorMenu = false },
-                            onCustom = { colorMenu = false; picker = true }
+                        ShapeSettingsWindow(
+                            onClose = { strokeMenu = false },
+                            onCustom = { strokeMenu = false; picker = true }
                         )
                     }
                 }
@@ -421,66 +421,117 @@ fun ShapeBar() {
     }
 }
 
-/** نافذة لون الأشكال: الألوان، ثم «ملء بلون الشكل» وشفافيته (تفتح داخل قائمة منسدلة). */
+/** سماكات سريعة للأشكال (من مستويات Sizes). */
+private val SHAPE_SIZES = listOf(1, 3, 5, 8)
+
+/**
+ * نافذة «إعدادات الشكل» الموحّدة: معاينة، اللون، نمط الخط، السماكة، الملء وشفافيته،
+ * الزوايا المستديرة ورؤوس الأسهم. تفتح داخل قائمة منسدلة (بلا مكوّنات تقيس محتواها لاحقاً).
+ */
 @Composable
-internal fun ShapeColorMenu(onPick: (Color) -> Unit, onCustom: () -> Unit) {
+internal fun ShapeSettingsWindow(onClose: () -> Unit, onCustom: () -> Unit) {
     val c = AppController
-    Column {
-        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (c.penPalette + c.customColors.toList()).take(10).forEach { col ->
-                val sel = col.toArgb() == PenPrefs.shapeColor
+    val col = Color(PenPrefs.shapeColor)
+    val cardShape = RoundedCornerShape(12.dp)
+    @Composable
+    fun Choice(sel: Boolean, modifier: Modifier, h: androidx.compose.ui.unit.Dp = 42.dp, onClick: () -> Unit, content: @Composable () -> Unit) {
+        Box(
+            modifier.height(h).clip(cardShape)
+                .background(if (sel) Palette.NavySoft else Palette.Background)
+                .border(if (sel) 2.dp else 0.dp, if (sel) Palette.Navy else Color.Transparent, cardShape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) { content() }
+    }
+    Column(Modifier.width(340.dp).padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(L("إعدادات الشكل", "Shape settings"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+            Box(Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 18.dp, L("إغلاق", "Close"))
+            }
+        }
+        // معاينة الشكل بإعداداته
+        Canvas(Modifier.fillMaxWidth().height(70.dp).clip(cardShape).background(Color(0xFFFCF6E4))) {
+            val sw = (1.5f + PenPrefs.shapeSize * 0.7f).dp.toPx()
+            val l = size.width * 0.28f; val r = size.width * 0.72f
+            val t = size.height * 0.2f; val b = size.height * 0.8f
+            val cx = (l + r) / 2f; val cy = (t + b) / 2f
+            val kind = PenPrefs.shapeKind
+            val path = Path()
+            when (kind) {
+                ShapeKind.LINE -> { path.moveTo(l, b); path.lineTo(r, t) }
+                ShapeKind.ELBOW -> { path.moveTo(l, t); path.lineTo(l, b); path.lineTo(r, b) }
+                ShapeKind.CURVE -> { path.moveTo(l, b); path.cubicTo(cx, b, cx, t, r, t) }
+                ShapeKind.RECT -> path.addRoundRect(androidx.compose.ui.geometry.RoundRect(l, t, r, b, if (PenPrefs.shapeRounded) 6.dp.toPx() else 0f, if (PenPrefs.shapeRounded) 6.dp.toPx() else 0f))
+                ShapeKind.CIRCLE -> path.addOval(androidx.compose.ui.geometry.Rect(Offset(cx, cy), (b - t) / 2f))
+                ShapeKind.ELLIPSE -> path.addOval(androidx.compose.ui.geometry.Rect(l, t, r, b))
+                ShapeKind.TRIANGLE -> { path.moveTo(cx, t); path.lineTo(r, b); path.lineTo(l, b); path.close() }
+                ShapeKind.DIAMOND -> { path.moveTo(cx, t); path.lineTo(r, cy); path.lineTo(cx, b); path.lineTo(l, cy); path.close() }
+            }
+            if (PenPrefs.shapeFill && kind.closed()) drawPath(path, col.copy(alpha = PenPrefs.shapeFillAlpha))
+            drawPath(path, col, style = Stroke(sw, cap = StrokeCap.Round, join = if (PenPrefs.shapeRounded) StrokeJoin.Round else StrokeJoin.Miter, pathEffect = dashEffect(PenPrefs.shapeStyle, sw)))
+        }
+        PanelSmallLabel(L("اللون", "Color"))
+        val colors = (c.penPalette + c.customColors.toList()).distinctBy { it.toArgb() }.take(7)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            colors.forEach { cl ->
+                val sel = cl.toArgb() == PenPrefs.shapeColor
                 Box(
-                    Modifier.size(32.dp).clip(CircleShape).background(col)
+                    Modifier.size(32.dp).clip(CircleShape).background(cl)
                         .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
-                        .clickable { onPick(col) }
+                        .clickable { PenPrefs.changeShapeColor(cl.toArgb()) }
                 )
             }
             Box(
-                Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onCustom),
+                Modifier.size(32.dp).clip(CircleShape).border(1.dp, Palette.Divider, CircleShape).clickable(onClick = onCustom),
                 contentAlignment = Alignment.Center
-            ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp) }
+            ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("لون آخر", "Other color")) }
         }
-        // ملء الشكل المغلق بلونه (تحت الكتابة) وشفافيته
-        Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
-            Divider()
-            PanelSwitch(L("ملء بلون الشكل", "Fill with color"), PenPrefs.shapeFill, R.drawable.ph_shape_fill) { PenPrefs.changeShapeFill(it) }
-            if (PenPrefs.shapeFill) {
-                Spacer(Modifier.height(4.dp))
-                PercentSlider(L("الشفافية", "Opacity"), PenPrefs.shapeFillAlpha, steps = 8) {
-                    PenPrefs.changeShapeFillAlpha(kotlin.math.round(it * 10f) / 10f)
+        PanelSmallLabel(L("نمط الخط", "Line style"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(LineStyle.SOLID, LineStyle.DASHED, LineStyle.DOTTED).forEach { st ->
+                Choice(PenPrefs.shapeStyle == st, Modifier.weight(1f), onClick = { PenPrefs.changeShapeStyle(st) }) {
+                    LineStyleSample(st, Palette.TextPrimary)
                 }
             }
         }
+        PanelSmallLabel(L("السماكة", "Thickness"))
+        val nearest = SHAPE_SIZES.minByOrNull { kotlin.math.abs(it - PenPrefs.shapeSize) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SHAPE_SIZES.forEach { sz ->
+                Choice(nearest == sz, Modifier.weight(1f), h = 38.dp, onClick = { PenPrefs.changeShapeSize(sz) }) {
+                    Box(Modifier.width(30.dp).height((1.5f + sz * 0.8f).dp).clip(RoundedCornerShape(50)).background(Palette.TextPrimary))
+                }
+            }
+        }
+        Divider()
+        PanelSwitch(L("ملء بلون الشكل", "Fill with color"), PenPrefs.shapeFill) { PenPrefs.changeShapeFill(it) }
+        if (PenPrefs.shapeFill) {
+            PercentSlider(L("الشفافية", "Opacity"), PenPrefs.shapeFillAlpha, steps = 8) {
+                PenPrefs.changeShapeFillAlpha(kotlin.math.round(it * 10f) / 10f)
+            }
+        }
+        Divider()
+        PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
+        PanelSmallLabel(L("رؤوس الأسهم (للخطوط): النهاية ثم البداية", "Arrowheads (lines): end, then start"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ArrowHead.values().forEach { h ->
+                Box(Modifier.weight(1f)) { ArrowOption(h, start = false, selected = PenPrefs.arrowEnd == h) { PenPrefs.changeArrowEnd(h) } }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ArrowHead.values().forEach { h ->
+                Box(Modifier.weight(1f)) { ArrowOption(h, start = true, selected = PenPrefs.arrowStart == h) { PenPrefs.changeArrowStart(h) } }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
-/** إعدادات خط الأشكال: النمط، السماكة، الزوايا المستديرة، رؤوس الأسهم. */
 @Composable
-private fun ShapeStrokePanel() {
-    Column(Modifier.width(270.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
-        StrokeStyleSection(
-            style = PenPrefs.shapeStyle, onStyle = { PenPrefs.changeShapeStyle(it) },
-            size = PenPrefs.shapeSize, onSize = { PenPrefs.changeShapeSize(it) },
-            widthOf = { Sizes.width(Tool.BALLPOINT, it) },
-            onReset = { PenPrefs.resetShape() }
-        )
-        Divider()
-        PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
-        Spacer(Modifier.height(8.dp))
-        PanelLabel(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)"))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ArrowHead.values().forEach { h ->
-                    ArrowOption(h, start = true, selected = PenPrefs.arrowStart == h) { PenPrefs.changeArrowStart(h) }
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ArrowOption(ArrowHead.NONE, start = false, selected = PenPrefs.arrowEnd == ArrowHead.NONE) { PenPrefs.changeArrowEnd(ArrowHead.NONE) }
-                ArrowOption(ArrowHead.OPEN, start = false, selected = PenPrefs.arrowEnd == ArrowHead.OPEN) { PenPrefs.changeArrowEnd(ArrowHead.OPEN) }
-                ArrowOption(ArrowHead.CLOSED, start = false, selected = PenPrefs.arrowEnd == ArrowHead.CLOSED) { PenPrefs.changeArrowEnd(ArrowHead.CLOSED) }
-            }
-        }
-    }
+private fun PanelSmallLabel(text: String) {
+    Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextSecondary, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
 }
 
 @Composable

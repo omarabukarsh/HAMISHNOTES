@@ -499,8 +499,13 @@ object Exporter {
     /** خط مربع النص ونمطه (عريض/مائل/تحته خط) على قلم الرسم. */
     private fun applyTextStyle(tp: TextPaint, tb: TextBox) {
         val base = FontStore.typeface(tb.font) ?: Typeface.DEFAULT
-        val style = (if (tb.bold) Typeface.BOLD else 0) or (if (tb.italic) Typeface.ITALIC else 0)
-        tp.typeface = if (style != 0) Typeface.create(base, style) else base
+        val style = when {
+            tb.bold && tb.italic -> Typeface.BOLD_ITALIC
+            tb.bold -> Typeface.BOLD
+            tb.italic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        }
+        tp.typeface = if (style != Typeface.NORMAL) Typeface.create(base, style) else base
         // الخطوط بلا نسخة عريضة/مائلة: محاكاة
         if (tb.bold && !tp.typeface.isBold) tp.isFakeBoldText = true
         if (tb.italic && !tp.typeface.isItalic) tp.textSkewX = -0.22f

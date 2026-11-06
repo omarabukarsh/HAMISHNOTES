@@ -163,8 +163,10 @@ class InkFillTest {
         assertEquals(null, InkFill.nearestLine(old, 0.30f, 0.45f, base = 0.36f, size = 0.03f))
         // على نفس الارتفاع لكن فوق حروف السطر نفسه: ليست متابعة
         assertEquals(null, InkFill.nearestLine(old, 0.20f, 0.40f, base = 0.30f, size = 0.10f))
-        // بجانبه لكن أصغر من نصف حجمه بوضوح: كتابة مستقلة
-        assertEquals(null, InkFill.nearestLine(old, 0.62f, 0.70f, base = 0.30f, size = 0.04f))
+        // بجانبه وأصغر منه بوضوح: تلتحق وتأخذ حجمه
+        val small = InkFill.nearestLine(old, 0.62f, 0.70f, base = 0.31f, size = 0.04f)!!
+        assertEquals(0.30f, small.base, 1e-6f)
+        assertEquals(0.10f, small.em, 1e-6f)
         // بجانبه وبحجم قريب: تلتحق
         assertEquals(0.30f, InkFill.nearestLine(old, 0.63f, 0.80f, base = 0.31f, size = 0.08f)!!.base, 1e-6f)
     }
@@ -180,19 +182,5 @@ class InkFillTest {
         // جزيرة داخل الفراغ تبقى مملوءة
         val island = InkFill.orient(same + listOf(circle(0.5f, 0.5f, 0.1f, false)))
         assertTrue(InkFill.winding(0.5f, 0.5f, InkFill.contours(InkFill.encode(island))) != 0)
-    }
-
-    @Test
-    fun repairHoles_fixesOldDamagedLetters_andLeavesOthersAlone() {
-        val damaged = InkFill.encode(listOf(circle(0.5f, 0.5f, 0.4f, true), circle(0.5f, 0.5f, 0.25f, true)))
-        val repaired = InkFill.contours(InkFill.repairHoles(damaged))
-        assertEquals(0, InkFill.winding(0.5f, 0.5f, repaired))
-        assertTrue(InkFill.winding(0.82f, 0.5f, repaired) != 0)
-        // حرف سليم: لا يتغير
-        val good = InkFill.encode(listOf(circle(0.5f, 0.5f, 0.4f, true), circle(0.5f, 0.5f, 0.25f, false)))
-        assertTrue(InkFill.repairHoles(good) === good)
-        // أجزاء متقاطعة بنفس الاتجاه (حرف بخط متغير السماكة): الملء بينها مقصود، لا يُمس
-        val crossing = InkFill.encode(listOf(rect(0f, 0f, 2f, 1f), rect(1f, 0.2f, 3f, 0.8f)))
-        assertTrue(InkFill.repairHoles(crossing) === crossing)
     }
 }

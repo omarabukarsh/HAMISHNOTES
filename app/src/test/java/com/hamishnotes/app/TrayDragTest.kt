@@ -172,15 +172,37 @@ class TrayDragTest {
 
     @Test
     fun nearTheBottomEdgeThePagesScroll() {
-        // صفحات أطول من الشاشة: الإصبع قرب الحافة السفلية يحرّك الصفحات
+        // صفحات أطول من الشاشة: بعد المرور فوق وسط الصفحة، الإصبع قرب الحافة السفلية يحرّك الصفحات
         val start = Offset(40f, 40f) * rule.density.density
-        rule.onNodeWithTag("tile").performTouchInput { down(start); moveTo(start + Offset(60f, 0f)) }
+        rule.onNodeWithTag("tile").performTouchInput {
+            down(start)
+            moveTo(start + Offset(60f, 0f))
+            moveTo(start + Offset(60f, 300f))
+        }
+        rule.waitForIdle()
+        // التمرير يطلب إطاراً بعد إطار: نتحكم في الساعة يدوياً
+        rule.mainClock.autoAdvance = false
         val bottom = s.pagesViewport.bottom - tileRect.top - 10f
         rule.onNodeWithTag("tile").performTouchInput { moveTo(Offset(start.x + 60f, bottom)) }
         val before = s.listState.firstVisibleItemScrollOffset
         rule.mainClock.advanceTimeBy(500)
-        rule.waitForIdle()
         assertTrue("scrolled: $before → ${s.listState.firstVisibleItemScrollOffset}", s.listState.firstVisibleItemScrollOffset > before)
+        rule.onNodeWithTag("tile").performTouchInput { up() }
+        rule.mainClock.autoAdvance = true
+    }
+
+    @Test
+    fun leavingTheTrayAtTheTopDoesNotScroll() {
+        // الخروج من النافذة فوق أعلى الصفحات لا يحرّك الصفحات
+        val start = Offset(40f, 40f) * rule.density.density
+        rule.onNodeWithTag("tile").performTouchInput {
+            down(start)
+            moveTo(start + Offset(60f, 0f))
+            moveTo(start + Offset(60f, 60f))
+        }
+        rule.mainClock.advanceTimeBy(500)
+        rule.waitForIdle()
+        assertEquals(0, s.listState.firstVisibleItemScrollOffset)
         rule.onNodeWithTag("tile").performTouchInput { up() }
     }
 }

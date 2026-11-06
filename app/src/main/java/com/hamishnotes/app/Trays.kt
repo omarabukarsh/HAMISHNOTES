@@ -113,6 +113,9 @@ object TrayDrag {
     }
     var landing by mutableStateOf<Landing?>(null)
 
+    /** التمرير التلقائي عند الحافة مسموح بعد أن يمر الإصبع فوق وسط الصفحات مرة. */
+    internal var scrollArmed = false
+
     /** يضع العنصر على الصفحة ثم يستدعي onDone (يُستبدل في الاختبارات). */
     internal var placer: (DocSession, TrayPayload, Int, Offset, () -> Unit) -> Unit = ::placePayload
 
@@ -123,6 +126,7 @@ object TrayDrag {
         payload = null
         thumb = null
         overPage = -1
+        scrollArmed = false
     }
 
     /** إفلات العنصر على الصفحة: يبقى ظاهراً في مكانه حتى تكتمل إضافته. */
@@ -417,6 +421,17 @@ internal fun landedRect(page: androidx.compose.ui.geometry.Rect, at: Offset, wu:
     return androidx.compose.ui.geometry.Rect(page.left + x * pw, page.top + y * pw, page.left + (x + wu) * pw, page.top + (y + hu) * pw)
 }
 
+/** سرعة التمرير التلقائي (بكسل لكل إطار) والإصبع داخل منطقة الحافة العليا (سالبة) أو السفلى (موجبة) من الصفحات. */
+internal fun edgeSpeed(finger: Offset, viewport: androidx.compose.ui.geometry.Rect, zone: Float, maxSpeed: Float): Float {
+    if (viewport.height <= zone * 2f || !viewport.contains(finger)) return 0f
+    val y = finger.y
+    return when {
+        y > viewport.bottom - zone -> maxSpeed * ((y - (viewport.bottom - zone)) / zone).coerceIn(0.15f, 1f)
+        y < viewport.top + zone -> -maxSpeed * (((viewport.top + zone) - y) / zone).coerceIn(0.15f, 1f)
+        else -> 0f
+    }
+}
+
 /**
  * العنصر المسحوب يبقى تحت الإصبع من لحظة خروجه من النافذة إلى أن يُوضع (فوق كل شيء في شاشة القراءة):
  * فوق صفحة يكبر بسلاسة إلى حجمه الحقيقي، وخارجها يعود صغيراً. بعد الإفلات يبقى في مكانه حتى يظهر
@@ -429,25 +444,24 @@ fun BoxScope.TrayDragGhost(s: DocSession) {
     val dragging = TrayDrag.payload
     val land = TrayDrag.landing
 
-    // تمرير تلقائي قرب حافتي الصفحات أثناء السحب (مفيد في الهاتف والشاشات الصغيرة)
-    LaunchedEffect(dragging != null) {
-        if (dragging == null) return@LaunchedEffect
-        val zone = with(density) { 72.dp.toPx() }
-        val maxSpeed = with(density) { 18.dp.toPx() }
+    // تمرير تلقائي قرب حافتي الصفحات أثناء السحب (مفيد في الهاتف والشاشات الصغيرة):
+    // يعمل فقط بعد أن يمر الإصبع فوق وسط الصفحات (لا عند الخروج من النافذة أعلى الصفحات)،
+    // وفقط ما دام الإصبع عند الحافة والصفحات تستطيع التحرك
+    val zone = with(density) { 72.dp.toPx() }
+    val maxSpeed = with(density) { 18.dp.toPx() }
+    val speedNow = if (dragging != null && !TrayDrag.trayRect.contains(TrayDrag.pos)) edgeSpeed(TrayDrag.pos, s.pagesViewport, zone, maxSpeed) else 0f
+    if (dragging != null && speedNow == 0f && s.pagesViewport.contains(TrayDrag.pos)) TrayDrag.scrollArmed = true
+    val scrolling = speedNow != 0f && TrayDrag.scrollArmed
+    LaunchedEffect(scrolling) {
+        if (!scrolling) return@LaunchedEffect
         while (TrayDrag.payload != null) {
             androidx.compose.runtime.withFrameNanos { }
-            val vp = s.pagesViewport
-            val y = TrayDrag.pos.y
-            if (vp.height <= 0f || TrayDrag.trayRect.contains(TrayDrag.pos) || TrayDrag.pos.x !in vp.left..vp.right) continue
-            val dy = when {
-                y > vp.bottom - zone -> maxSpeed * ((y - (vp.bottom - zone)) / zone).coerceIn(0f, 1f)
-                y < vp.top + zone -> -maxSpeed * (((vp.top + zone) - y) / zone).coerceIn(0f, 1f)
-                else -> 0f
-            }
-            if (dy != 0f) {
-                s.listState.scrollBy(dy)
-                TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
-            }
+            if (TrayDrag.trayRect.contains(TrayDrag.pos)) break
+            val dy = edgeSpeed(TrayDrag.pos, s.pagesViewport, zone, maxSpeed)
+            if (dy == 0f) break
+            if (dy > 0f && !s.listState.canScrollForward || dy < 0f && !s.listState.canScrollBackward) break
+            s.listState.scrollBy(dy)
+            TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
         }
     }
     // بعد إضافة العنصر: لحظة قصيرة حتى تُرسم صورته على الصفحة، ثم يختفي الظل (وحد أقصى إن تأخرت الإضافة)

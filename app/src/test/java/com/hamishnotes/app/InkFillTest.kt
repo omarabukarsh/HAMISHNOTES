@@ -83,4 +83,21 @@ class InkFillTest {
             i += 2
         }
     }
+
+    @Test
+    fun connectedLetters_areSlicedAtLetterBoundaries() {
+        // كلمة متصلة = شكل واحد بعرض 3؛ حدود الحروف عند 1 و2 ← ثلاث شرائح، تتداخل قليلاً
+        val word = listOf(rect(0f, 0f, 3f, 1f))
+        val parts = InkFill.slice(word, listOf(1f, 2f), 0.2f, 0.01f)
+        assertEquals(3, parts.size)
+        val xs = parts.map { p -> p.flatMap { c -> c.filterIndexed { i, _ -> i % 2 == 0 }.toList() } }
+        assertEquals(0f, xs[0].min(), 1e-6f); assertEquals(1.01f, xs[0].max(), 1e-6f)
+        assertEquals(0.99f, xs[1].min(), 1e-6f); assertEquals(2.01f, xs[1].max(), 1e-6f)
+        assertEquals(1.99f, xs[2].min(), 1e-6f); assertEquals(3f, xs[2].max(), 1e-6f)
+        // المساحة الكلية لم تنقص (التداخل فقط يزيدها قليلاً)
+        val area = parts.sumOf { p -> p.sumOf { kotlin.math.abs(InkFill.area(it)).toDouble() } }
+        assertTrue(area >= 3.0 && area < 3.1)
+        // حرف منفصل لا يمر به حد (أو حد قريب من طرفه فقط): لا يُقص
+        assertEquals(1, InkFill.slice(listOf(rect(0f, 0f, 1f, 1f)), listOf(0.1f, 5f), 0.2f, 0.01f).size)
+    }
 }

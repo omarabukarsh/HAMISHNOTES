@@ -183,4 +183,26 @@ class InkFillTest {
         val island = InkFill.orient(same + listOf(circle(0.5f, 0.5f, 0.1f, false)))
         assertTrue(InkFill.winding(0.5f, 0.5f, InkFill.contours(InkFill.encode(island))) != 0)
     }
+
+    @Test
+    fun writingInAGapBetweenWords_staysInPlace() {
+        // كلمتان على سطر: 0.10-0.30 ثم 0.45-0.65، والكتابة في الفراغ بينهما
+        val old = listOf(InkFill.LineRef(0.30f, 0.05f, 0.10f, 0.30f), InkFill.LineRef(0.30f, 0.05f, 0.45f, 0.65f))
+        assertEquals(null, InkFill.nearestLine(old, 0.33f, 0.42f, base = 0.30f, size = 0.05f))
+        // بعد آخر كلمة: تلتحق
+        assertTrue(InkFill.nearestLine(old, 0.68f, 0.75f, base = 0.30f, size = 0.05f) != null)
+    }
+
+    @Test
+    fun joinedWriting_sizeAndStart() {
+        // حجم قريب: حجم السطر؛ أصغر أو أكبر بوضوح: حجمها
+        assertEquals(0.10f, AutoFont.joinedSize(0.09f, 0.10f, 0.09f), 0f)
+        assertEquals(0.10f, AutoFont.joinedSize(0.12f, 0.10f, 0.12f), 0f)
+        assertEquals(0.05f, AutoFont.joinedSize(0.05f, 0.10f, 0.05f), 0f)
+        assertEquals(0.20f, AutoFont.joinedSize(0.20f, 0.10f, 0.20f), 0f)
+        // «بعد آخر كلمة»: إنجليزي بعد السطر يبدأ بعد نهايته بمسافة كلمة
+        assertEquals(0.62f, AutoFont.joinedStart(false, 0.70f, 0.80f, 0.10f, 0.60f, width = 0.2f, gap = 0.02f), 1e-6f)
+        // عربي قبل السطر (يساره): حافته اليمنى قبل بداية السطر بمسافة كلمة
+        assertEquals(0.08f, AutoFont.joinedStart(true, 0.00f, 0.05f, 0.10f, 0.60f, width = 0.2f, gap = 0.02f), 1e-6f)
+    }
 }

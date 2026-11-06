@@ -281,7 +281,7 @@ object InkFill {
      * السطر المحوّل القديم الذي تكمله كتابة جديدة، أو null. تلتحق الكتابة بالسطر فقط إذا كانت:
      * - على ارتفاعه: الفرق المسموح بحجم الكتابة الجديدة، بين ربع ونصف حجم السطر القديم
      *   (فلا تُسحب كتابة بين سطرين كبيرين إلى أحدهما)،
-     * - بجانبه (قبله أو بعده بمسافة حرفين على الأكثر) لا فوق حروفه أو تحتها.
+     * - بجانبه (قبله أو بعده بمسافة حرفين على الأكثر) لا فوق حروفه أو تحتها ولا بين كلماته.
      * [size] حجم الكتابة اليدوية الجديدة كما كُتبت. يعيد خط قاعدة السطر وحجمه (الوسيط بين حروفه).
      */
     fun nearestLine(refs: List<LineRef>, l: Float, r: Float, base: Float, size: Float): LineRef? {
@@ -296,6 +296,8 @@ object InkFill {
         val em = ems[ems.size / 2]
         // فوق حروف السطر أو تحتها (لا بجانبها): كتابة مستقلة
         if (same.any { minOf(r, it.r) - maxOf(l, it.l) > 0.3f * em }) return null
+        // في فراغ بين كلمتين من السطر (حروف منه على الجانبين): تبقى في مكانها
+        if (same.any { it.r <= l + 0.3f * em } && same.any { it.l >= r - 0.3f * em }) return null
         val gap = same.minOf { maxOf(it.l - r, l - it.r, 0f) }
         if (gap > 2f * em) return null
         return LineRef(bases[bases.size / 2], em, same.minOf { it.l }, same.maxOf { it.r })

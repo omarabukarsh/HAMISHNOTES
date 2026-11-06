@@ -62,7 +62,7 @@ object AutoFont {
     /** الأسطر المتتالية تُجمع في فقرة واحدة (مربع نص واحد، في وضع النص فقط). */
     var joinLines by mutableStateOf(true); private set
     /** قوة جذب الكتابة إلى أسطر الدفتر: 0 بلا، 1 ضعيف، 2 عادي، 3 قوي. */
-    var snap by mutableStateOf(2); private set
+    var snap by mutableStateOf(0); private set
     val snapToLine get() = snap > 0
     /** لغة الكتابة للتحويل: عربي أو إنجليزي فقط (لا قراءة مختلطة). */
     var lang by mutableStateOf(HwLang.ARABIC); private set
@@ -78,6 +78,8 @@ object AutoFont {
     var unifySpacing by mutableStateOf(1.5f); private set
     /** الكتابة قرب جملة محوّلة قديمة تجلس على سطرها وبحجمها. */
     var continueLine by mutableStateOf(true); private set
+    /** بداية الكتابة الملحقة بجملة قديمة: false = حيث بدأت اليد، true = بعد آخر كلمة في الجملة (أو قبل أولها). */
+    var contAfter by mutableStateOf(false); private set
 
     const val OUT_INK = 0
     const val OUT_TEXT = 1
@@ -91,7 +93,8 @@ object AutoFont {
         font = p.getString("font", "Patrick Hand") ?: "Patrick Hand"
         delayMs = p.getInt("delay", 2000)
         joinLines = p.getBoolean("join", true)
-        snap = if (p.contains("snapLevel")) p.getInt("snapLevel", 2).coerceIn(0, 3) else if (p.getBoolean("snap", true)) 2 else 0
+        // الجذب لأسطر الدفتر مطفأ افتراضياً (يمنع الكتابة بين السطور)
+        snap = if (p.contains("snapLevel")) p.getInt("snapLevel", 0).coerceIn(0, 3) else if (p.getBoolean("snap", false)) 2 else 0
         lang = p.getInt("lang", if (I18n.english) HwLang.ENGLISH else HwLang.ARABIC)
             .let { if (it == HwLang.ENGLISH) HwLang.ENGLISH else HwLang.ARABIC }
         output = if (p.getInt("out", OUT_INK) == OUT_TEXT) OUT_TEXT else OUT_INK
@@ -100,6 +103,7 @@ object AutoFont {
         unifySize = p.getInt("usize", 20).coerceIn(SIZE_MIN, SIZE_MAX)
         unifySpacing = p.getFloat("uspace", 1.5f).coerceIn(1f, 3f)
         continueLine = p.getBoolean("cont", true)
+        contAfter = p.getBoolean("contAfter", false)
     }
 
     fun changeOn(v: Boolean) {
@@ -144,6 +148,11 @@ object AutoFont {
     fun changeBold(v: Boolean) {
         dynamicBold = v
         sp?.edit()?.putBoolean("bold", v)?.apply()
+    }
+
+    fun changeContAfter(v: Boolean) {
+        contAfter = v
+        sp?.edit()?.putBoolean("contAfter", v)?.apply()
     }
 
     fun changeContinueLine(v: Boolean) {
@@ -496,8 +505,22 @@ object AutoFont {
         return if (kotlin.math.abs(start - prevStart) <= 0.06f) prevStart else start
     }
 
-    /** كتابة أصغر من هذه النسبة من حجم السطر القديم تُعتبر أصغر عمداً فتحتفظ بحجمها عند المتابعة. */
-    internal const val SMALLER = 0.8f
+    /**
+     * حجم الكتابة الملحقة بسطر قديم: إن كان قريباً من حجم السطر (فرق اليد الطبيعي) تأخذ حجمه تماماً،
+     * وإن كانت أصغر أو أكبر بوضوح تبقى بحجمها.
+     */
+    internal fun joinedSize(hand: Float, lineEm: Float, own: Float): Float =
+        if (hand >= 0.8f * lineEm && hand <= 1.25f * lineEm) lineEm else own
+
+    /**
+     * بداية الكتابة الملحقة (يسار الإنجليزي، يمين العربي) عند اختيار «بعد آخر كلمة»: تُلصق بالسطر من جهة
+     * الكتابة بمسافة كلمة عادية. [width] عرض الكتابة المحوّلة و[gap] المسافة بين الكلمات.
+     */
+    internal fun joinedStart(rtl: Boolean, l: Float, r: Float, lineL: Float, lineR: Float, width: Float, gap: Float): Float {
+        val afterRight = (l + r) / 2f >= (lineL + lineR) / 2f
+        val left = if (afterRight) lineR + gap else lineL - gap - width
+        return if (rtl) left + width else left
+    }
 
     /** تتراكب الحدود مع حرف موجود (بعد تصغير الحدين قليلاً: الحروف المتجاورة تتلامس حدودها). */
     internal fun collides(a: FloatArray, others: List<FloatArray>): Boolean {
@@ -558,12 +581,12 @@ object AutoFont {
                 val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
                 return Triple(place(size, base, start), base, start)
             }
-            // متابعة جملة محوّلة قديمة بجانبها: نفس خط قاعدتها، ما لم تتراكب الحروف مع حروف موجودة.
-            // الحجم: حجمها إن كُتبت بحجم قريب منه أو أكبر، وإن كُتبت أصغر بوضوح تبقى بحجمها
+            // متابعة جملة محوّلة قديمة بجانبها: نفس خط قاعدتها، ما لم تتراكب الحروف مع حروف موجودة
             val old = if (continueLine) InkFill.nearestLine(oldLines, l, r, b - g.bottom * handSize, handSize) else null
             val (letters, base, start) = old?.let { o ->
-                val st = if (rtl) r else l
-                val sz = if (handSize < SMALLER * o.em) (if (unify) unifiedSize() else handSize) else o.em
+                val sz = joinedSize(handSize, o.em, if (unify) unifiedSize() else handSize)
+                val st = if (contAfter) joinedStart(rtl, l, r, o.l, o.r, (g.right - g.left) * sz, g.space * sz)
+                    else if (rtl) r else l
                 place(sz, o.base, st).takeIf { ls -> ls.none { k -> collides(InkFill.bounds(k.pts), occupied) } }
                     ?.let { Triple(it, o.base, st) }
             } ?: ownPlace()

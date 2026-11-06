@@ -281,9 +281,23 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                             if (ink) {
                                 SwitchRow(
                                     L("المتابعة على نفس السطر", "Continue on the same line"),
-                                    L("الكتابة بجانب جملة محوّلة تجلس على سطرها (والأصغر تبقى بحجمها)", "Writing beside a converted sentence sits on its line (smaller writing keeps its size)"),
+                                    L("الكتابة بجانب جملة محوّلة تجلس على سطرها، وتأخذ حجمها إن كانت قريبة منه", "Writing beside a converted sentence sits on its line, and takes its size when close to it"),
                                     checked = AutoFont.continueLine
                                 ) { AutoFont.changeContinueLine(it) }
+                                AnimatedVisibility(AutoFont.continueLine) {
+                                    Column {
+                                        RowDividerLine()
+                                        Text(
+                                            L("بداية الكتابة الملحقة", "Joined writing starts"),
+                                            fontSize = 14.sp, color = Muted,
+                                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp)
+                                        )
+                                        Segmented(
+                                            listOf(false to L("حيث بدأت يدي", "Where I started"), true to L("بعد آخر كلمة", "After the last word")),
+                                            AutoFont.contAfter
+                                        ) { AutoFont.changeContAfter(it) }
+                                    }
+                                }
                                 RowDividerLine()
                             }
                             SwitchRow(L("توحيد حجم الخط والمسافة بين الأسطر", "Unify font size & line spacing"), checked = AutoFont.unify) {

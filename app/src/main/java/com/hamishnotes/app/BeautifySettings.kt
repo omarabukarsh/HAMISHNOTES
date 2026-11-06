@@ -67,13 +67,13 @@ import kotlinx.coroutines.launch
  * والخط يُختار من نافذة مستقلة تُفتح من صف «خط الكتابة».
  */
 
-private val SheetBg = Color(0xFFF2F3F6)
-private val CardBg = Color.White
-private val RowDivider = Color(0xFFE9EBEF)
-private val Muted = Color(0xFF8A919E)
+internal val SheetBg = Color(0xFFF2F3F6)
+internal val CardBg = Color.White
+internal val RowDivider = Color(0xFFE9EBEF)
+internal val Muted = Color(0xFF8A919E)
 
 @Composable
-private fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(CardBg),
         content = content
@@ -81,7 +81,7 @@ private fun SettingsCard(modifier: Modifier = Modifier, content: @Composable Col
 }
 
 @Composable
-private fun CardTitle(text: String) {
+internal fun CardTitle(text: String) {
     Text(
         text, fontSize = 13.sp, color = Muted, fontWeight = FontWeight.Medium,
         modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 18.dp, bottom = 8.dp)
@@ -89,10 +89,10 @@ private fun CardTitle(text: String) {
 }
 
 @Composable
-private fun RowDividerLine() = HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.8.dp, color = RowDivider)
+internal fun RowDividerLine() = HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.8.dp, color = RowDivider)
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -114,7 +114,7 @@ private fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean,
 
 /** صف بقيمة وسهم (يفتح نافذة اختيار). */
 @Composable
-private fun NavRow(title: String, onClick: () -> Unit, value: @Composable () -> Unit) {
+internal fun NavRow(title: String, onClick: () -> Unit, value: @Composable () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -129,7 +129,7 @@ private fun NavRow(title: String, onClick: () -> Unit, value: @Composable () -> 
 
 /** شريط اختيارات متجاورة (مثل iOS): الخيار المختار بخلفية بيضاء تنزلق إليه. */
 @Composable
-private fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+internal fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     BoxWithConstraints(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
             .clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEF0F3)).padding(3.dp)
@@ -158,7 +158,7 @@ private fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect:
 }
 
 @Composable
-private fun StepperRow(title: String, value: Float, range: ClosedFloatingPointRange<Float>, step: Float, format: (Float) -> String, onChange: (Float) -> Unit) {
+internal fun StepperRow(title: String, value: Float, range: ClosedFloatingPointRange<Float>, step: Float, format: (Float) -> String, onChange: (Float) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontSize = 15.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
@@ -175,7 +175,7 @@ private fun StepperRow(title: String, value: Float, range: ClosedFloatingPointRa
 }
 
 @Composable
-private fun RoundButton(label: String, onClick: () -> Unit) {
+internal fun RoundButton(label: String, onClick: () -> Unit) {
     Box(
         Modifier.size(30.dp).clip(CircleShape).background(Color(0xFFEEF0F3)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center

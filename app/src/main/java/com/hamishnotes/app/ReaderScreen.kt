@@ -1009,7 +1009,7 @@ private fun ToolSlot(
             expanded = open && selected,
             onDismissRequest = onDismiss,
             shape = RoundedCornerShape(18.dp),
-            containerColor = Color.White,
+            containerColor = if (tool == Tool.LASER) SheetBg else Color.White,
             shadowElevation = 12.dp
         ) {
             ToolSettingsPanel(onCustomColor)
@@ -1022,6 +1022,11 @@ private fun ToolSlot(
 private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
     val c = AppController
     val t = c.tool
+    // الليزر: نافذة بتصميم البطاقات
+    if (t == Tool.LASER) {
+        LaserWindow(onCustomColor)
+        return
+    }
     Column(Modifier.width(264.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PhIcon(toolIcon(t, true), Palette.Navy, 18.dp)

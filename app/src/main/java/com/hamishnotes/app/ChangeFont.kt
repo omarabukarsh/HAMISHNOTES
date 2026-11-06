@@ -130,7 +130,7 @@ fun ChangeFontDialog(s: DocSession, onDismiss: () -> Unit) {
             TextButton(enabled = !busy && error == null && text.isNotBlank(), onClick = {
                 // نفس عرض الكتابة تقريباً وعلى سطرها
                 val lineTexts = text.trim().split('\n').filter { it.isNotBlank() }.ifEmpty { listOf(text.trim()) }
-                val f = AutoFont.fit(s, sel.page, sel.strokes, lineTexts, font, AutoFont.snapToLine)
+                val f = AutoFont.fit(s, sel.page, sel.strokes, lineTexts, font, unified = false)
                 val box = TextBox(
                     id = UUID.randomUUID().toString(), page = sel.page,
                     x = f.x, y = f.y, w = f.w,
@@ -139,6 +139,7 @@ fun ChangeFontDialog(s: DocSession, onDismiss: () -> Unit) {
                 )
                 FontStore.markUsed(font)
                 s.inkToTextBox(sel.page, sel.strokes, box)
+                AutoFont.alignBaseline(s, box.id, f.base)
                 onDismiss()
             }) { Text(L("تطبيق", "Apply"), fontWeight = FontWeight.Bold) }
         },

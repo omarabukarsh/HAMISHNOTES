@@ -1444,6 +1444,22 @@ class DocSession(entry: DocEntry) {
         endEdit()
     }
 
+    /** يستبدل خطوط كتابة بخطوط أخرى في الصفحة (خطوة تراجع واحدة): كتابة يد ← نفس الكلمات بخط آخر. */
+    fun replaceInk(page: Int, remove: List<Ink>, add: List<Ink>) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(remove) }
+        beginEdit()
+        annotations = annotations + (page to ((annotations[page] ?: emptyList()).filter { it !in gone } + add))
+        if (lassoSel?.strokes?.any { it in gone } == true) lassoSel = null
+        endEdit()
+    }
+
+    /** يحرّك مربع نص رأسياً بدون خطوة تراجع (تصحيح موضع بعد التحويل مباشرة). */
+    fun nudgeText(boxId: String, dy: Float) {
+        val tb = textBox(boxId) ?: return
+        texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).map { if (it.id == boxId) it.copy(y = (it.y + dy).coerceAtLeast(0f)) else it })
+        persist()
+    }
+
     /** يعيد الكتابة اليدوية الأصلية بدل مربع النص. */
     fun textBoxToInk(boxId: String) {
         val tb = textBox(boxId) ?: return

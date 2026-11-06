@@ -238,9 +238,7 @@ private fun ReaderContent(s: DocSession) {
     LaunchedEffect(s) {
         s.listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) s.activePage = -1 }
     }
-    val rootCoords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
-
-    Box(Modifier.fillMaxSize().onGloballyPositioned { rootCoords[0] = it }) {
+    Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Palette.Desk)) {
             if (!c.focusMode) {
               // حجم أشرطة الأدوات (من الإعدادات): كثافة مكبّرة/مصغّرة لهذه الأشرطة فقط
@@ -302,8 +300,8 @@ private fun ReaderContent(s: DocSession) {
             }
         }
         // درج الملصقات والصور الجانبي، وصورة العنصر المسحوب منه
-        if (!c.focusMode) SideTray(s, rootCoords[0])
-        TrayDragGhost(s, rootCoords[0])
+        if (!c.focusMode) SideTray(s)
+        TrayDragGhost(s)
     }
 
     val req = s.textDialog

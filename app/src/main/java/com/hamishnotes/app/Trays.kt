@@ -67,6 +67,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -112,7 +113,8 @@ object TrayDrag {
 }
 
 private object TrayPrefs {
-    private const val KEY_H = "tray_h"
+    // مفتاح جديد: الارتفاع المحفوظ أثناء خطأ مكان النافذة كان محصوراً في الحد الأدنى
+    private const val KEY_H = "tray_h2"
     fun loadH(ctx: Context): Float = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).getFloat(KEY_H, 380f)
     fun saveH(ctx: Context, v: Float) = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).edit().putFloat(KEY_H, v).apply()
 }
@@ -230,13 +232,44 @@ fun Modifier.dragToPage(
         }
 }
 
+/** مكان النافذة المنبثقة (بالبكسل داخل الشاشة) وأقصى ارتفاع لها ومكان السهم (0..1 من عرضها). */
+internal class TrayPlace(val x: Float, val y: Float, val maxH: Float, val pivot: Float)
+
+/**
+ * النافذة تحت زرها: وسطها على الزر، داخل الشاشة بهامش. بلا زر معروف: أعلى اليمين.
+ * anchorX/anchorBottom: وسط الزر وأسفله بإحداثيات الشاشة نفسها.
+ */
+internal fun trayPlacement(
+    hostW: Float, hostH: Float, anchorX: Float?, anchorBottom: Float?,
+    wPx: Float, margin: Float, gap: Float, fallbackTop: Float
+): TrayPlace {
+    val ax = anchorX ?: (hostW - margin - wPx / 2f)
+    val ay = (anchorBottom ?: fallbackTop) + gap
+    val x = (ax - wPx / 2f).coerceIn(margin, (hostW - wPx - margin).coerceAtLeast(margin))
+    val maxH = (hostH - ay - margin).coerceAtLeast(0f)
+    val pivot = if (wPx > 0f) ((ax - x) / wPx).coerceIn(0.06f, 0.94f) else 0.5f
+    return TrayPlace(x, ay, maxH, pivot)
+}
+
+/** حدود الصندوق الأب في النافذة كحالة: تتحدث عند أول قياس وعند كل تغيّر (دوران الشاشة مثلاً). */
+@Composable
+private fun BoxScope.rememberHostRect(): androidx.compose.ui.geometry.Rect {
+    var host by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    Box(Modifier.matchParentSize().onGloballyPositioned { c ->
+        val p = c.positionInWindow()
+        val r = androidx.compose.ui.geometry.Rect(p.x, p.y, p.x + c.size.width, p.y + c.size.height)
+        if (r != host) host = r
+    })
+    return host
+}
+
 /**
  * نافذة الملصقات والصور: تخرج من زرها بحركة وتستقر تحته مباشرة، وتبقى مفتوحة أثناء العمل.
  * نقرة تضع العنصر وسط الصفحة الحالية، وسحبه جانباً (أو ضغطة مطوّلة) يُخرجه تحت الإصبع إلى أي صفحة.
  * يُغيَّر ارتفاعها بسحب حافتها السفلية.
  */
 @Composable
-fun BoxScope.SideTray(s: DocSession, root: LayoutCoordinates?) {
+fun BoxScope.SideTray(s: DocSession) {
     val ctx = LocalContext.current
     val density = LocalDensity.current
     var lastMode by remember { mutableStateOf("stickers") }
@@ -252,21 +285,25 @@ fun BoxScope.SideTray(s: DocSession, root: LayoutCoordinates?) {
         if (!visible) TrayDrag.trayRect = androidx.compose.ui.geometry.Rect.Zero
     }
 
-    // المكان: تحت الزر مباشرة، وسطها على الزر قدر الإمكان
+    // المكان: تحت الزر مباشرة، وسطها على الزر قدر الإمكان. مقاس الشاشة ومكانها يُقرآن كحالة
+    // (لا من إحداثيات قديمة)، فتنتقل النافذة إلى مكانها الصحيح فور معرفتهما.
+    val host = rememberHostRect()
     val anchorWin = s.trayAnchors[if (mode == "photos") "photos" else "stickers"]
-    val r = root?.takeIf { it.isAttached }
-    val rootW = r?.size?.width?.toFloat() ?: 0f
-    val rootH = r?.size?.height?.toFloat() ?: 0f
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val hostW = if (host.width > 0f) host.width else with(density) { conf.screenWidthDp.dp.toPx() }
+    val hostH = if (host.height > 0f) host.height else with(density) { conf.screenHeightDp.dp.toPx() }
     val wPx = with(density) { widthDp.dp.toPx() }
-    val margin = with(density) { 8.dp.toPx() }
-    val anchor = if (anchorWin != null && r != null) r.windowToLocal(Offset(anchorWin.center.x, anchorWin.bottom)) else null
-    val ax = anchor?.x ?: (rootW - margin - wPx / 2f)
-    val ay = (anchor?.y ?: with(density) { 70.dp.toPx() }) + with(density) { 6.dp.toPx() }
-    val x = (ax - wPx / 2f).coerceIn(margin, (rootW - wPx - margin).coerceAtLeast(margin))
-    // أقصى ارتفاع بوحدة dp، ولا يقل عن 160 (قبل أن تُقاس الشاشة يكون المكان صفراً)
-    val maxH = with(density) { (rootH - ay - margin).coerceAtLeast(0f).toDp().value }.coerceAtLeast(160f)
+    val place = trayPlacement(
+        hostW, hostH,
+        anchorWin?.let { it.center.x - host.left }, anchorWin?.let { it.bottom - host.top },
+        wPx, with(density) { 8.dp.toPx() }, with(density) { 6.dp.toPx() }, with(density) { 70.dp.toPx() }
+    )
+    val x = place.x
+    val ay = place.y
+    // أقصى ارتفاع بوحدة dp، ولا يقل عن 160
+    val maxH = with(density) { place.maxH.toDp().value }.coerceAtLeast(160f)
     val hDp = heightDp.coerceIn(160f, maxH)
-    val pivot = if (wPx > 0f) ((ax - x) / wPx).coerceIn(0f, 1f) else 0.5f
+    val pivot = place.pivot
     val origin = androidx.compose.ui.graphics.TransformOrigin(pivot, 0f)
 
     androidx.compose.animation.AnimatedVisibility(
@@ -347,10 +384,10 @@ fun BoxScope.SideTray(s: DocSession, root: LayoutCoordinates?) {
  * في المكان الذي سيوضع فيه بالضبط، وخارج الصفحات يعود صغيراً.
  */
 @Composable
-fun BoxScope.TrayDragGhost(s: DocSession, root: LayoutCoordinates?) {
+fun BoxScope.TrayDragGhost(s: DocSession) {
+    val host = rememberHostRect()
     val p = TrayDrag.payload ?: return
-    val r = root ?: return
-    if (!r.isAttached) return
+    fun toLocal(o: Offset) = Offset(o.x - host.left, o.y - host.top)
     val density = LocalDensity.current
     val thumb = TrayDrag.thumb
     val green = Color(0xFF16A34A)
@@ -365,7 +402,7 @@ fun BoxScope.TrayDragGhost(s: DocSession, root: LayoutCoordinates?) {
         val pageH = pr.height / pw
         val x = (at.x - wu / 2f).coerceIn(0f, (1f - wu).coerceAtLeast(0f))
         val y = (at.y - hu / 2f).coerceIn(0f, (pageH - hu).coerceAtLeast(0f))
-        val local = r.windowToLocal(Offset(pr.left + x * pw, pr.top + y * pw))
+        val local = toLocal(Offset(pr.left + x * pw, pr.top + y * pw))
         Box(
             Modifier.align(AbsoluteAlignment.TopLeft)
                 .absoluteOffset { IntOffset(local.x.roundToInt(), local.y.roundToInt()) }
@@ -386,7 +423,7 @@ fun BoxScope.TrayDragGhost(s: DocSession, root: LayoutCoordinates?) {
         }
         return
     }
-    val local = r.windowToLocal(TrayDrag.pos)
+    val local = toLocal(TrayDrag.pos)
     val half = with(density) { 38.dp.toPx() }
     Box(
         Modifier.align(AbsoluteAlignment.TopLeft)

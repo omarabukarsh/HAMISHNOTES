@@ -31,7 +31,8 @@ object GlyphSkeleton {
 
         val raw = edges(sk, w, h, dist)
         val pruned = prune(raw, sk, w, h, avgThick * 0.9f)
-        val out = pruned.map { finish(it, sk, w, h, dist) }.filter { it.size > 0 }
+        val merged = mergeThroughJunctions(pruned, sk, w, h)
+        val out = merged.map { finish(it, sk, w, h, dist, avgThick) }.filter { it.size > 0 }
         return Result(out, avgThick)
     }
 
@@ -266,8 +267,91 @@ object GlyphSkeleton {
         }
     }
 
+    /**
+     * عند كل تفرّع (التقاء خطوط) يُوصل الجزءان اللذان يكمل أحدهما الآخر في نفس الاتجاه
+     * في خط واحد متصل، فلا ينكسر الحرف عند نقاط الالتقاء (ساق l وh مثلاً).
+     */
+    private fun mergeThroughJunctions(list: List<IntArray>, img: BooleanArray, w: Int, h: Int): List<IntArray> {
+        val deg = IntArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) if (img[y * w + x]) deg[y * w + x] = degree(img, w, h, x, y)
+        // مجموعات بكسلات التفرّع المتجاورة = عقدة واحدة
+        val cluster = IntArray(w * h) { -1 }
+        var nc = 0
+        for (i in img.indices) {
+            if (!img[i] || deg[i] < 3 || cluster[i] >= 0) continue
+            val stack = ArrayList<Int>()
+            stack.add(i)
+            cluster[i] = nc
+            while (stack.isNotEmpty()) {
+                val c = stack.removeAt(stack.lastIndex)
+                for (k in 0 until 8) {
+                    val nx = c % w + DX[k]
+                    val ny = c / w + DY[k]
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+                    val j = ny * w + nx
+                    if (img[j] && deg[j] >= 3 && cluster[j] < 0) { cluster[j] = nc; stack.add(j) }
+                }
+            }
+            nc++
+        }
+        if (nc == 0) return list
+        val edges = list.map { it.toMutableList() }.toMutableList()
+        fun dirAt(e: List<Int>, atStart: Boolean): Pair<Float, Float> {
+            val n = e.size
+            val k = minOf(n - 1, 8)
+            val a = if (atStart) e[0] else e[n - 1]
+            val b = if (atStart) e[k] else e[n - 1 - k]
+            val dx = (b % w - a % w).toFloat()
+            val dy = (b / w - a / w).toFloat()
+            val l = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1e-3f)
+            return dx / l to dy / l
+        }
+        while (true) {
+            var best = -0.80f // يجب أن يكمل الاتجاه تقريباً (زاوية أكبر من ~145°)
+            var bi = -1; var bj = -1; var bsi = false; var bsj = false
+            for (i in edges.indices) for (si in listOf(true, false)) {
+                val ei = edges[i]
+                if (ei.size < 3) continue
+                val ci = cluster[if (si) ei[0] else ei[ei.size - 1]]
+                if (ci < 0) continue
+                if (ei.first() == ei.last()) continue
+                val di = dirAt(ei, si)
+                for (j in i + 1 until edges.size) for (sj in listOf(true, false)) {
+                    val ej = edges[j]
+                    if (ej.size < 3) continue
+                    if (cluster[if (sj) ej[0] else ej[ej.size - 1]] != ci) continue
+                    val dj = dirAt(ej, sj)
+                    val dot = di.first * dj.first + di.second * dj.second
+                    if (dot < best) { best = dot; bi = i; bj = j; bsi = si; bsj = sj }
+                }
+            }
+            if (bi < 0) break
+            // a ينتهي عند العقدة، ثم b يبدأ منها
+            val a = if (bsi) edges[bi].asReversed().toMutableList() else edges[bi]
+            val b = if (bsj) edges[bj] else edges[bj].asReversed().toMutableList()
+            val joined = ArrayList<Int>(a.size + b.size)
+            joined.addAll(a)
+            joined.addAll(if (b.first() == a.last()) b.drop(1) else b)
+            edges.removeAt(bj)
+            edges.removeAt(bi)
+            edges.add(joined)
+        }
+        return edges.map { it.toIntArray() }
+    }
+
     /** نقاط الجزء بالبكسل: تنعيم الدرج، وتبسيط، ومدّ الأطراف الحرة إلى حافة الحرف. */
-    private fun finish(e: IntArray, img: BooleanArray, w: Int, h: Int, dist: FloatArray): Polyline {
+    private fun finish(e0: IntArray, img: BooleanArray, w: Int, h: Int, dist: FloatArray, avgThick: Float): Polyline {
+        // الطرف الحر من الهيكل ينحني عادةً نحو زاوية الحرف (خطاف صغير): نقصّه ثم نمدّ الخط مستقيماً
+        val trim = (avgThick * 0.5f).toInt()
+        fun freeEnd(i: Int) = degree(img, w, h, i % w, i / w) == 1
+        var e = e0
+        if (e.size > trim * 2 + 6 && e.first() != e.last()) {
+            val a = if (freeEnd(e.first())) trim else 0
+            val b = if (freeEnd(e.last())) trim else 0
+            if (a + b > 0) e = e.copyOfRange(a, e.size - b)
+        }
+        val trimmedStart = e !== e0 && freeEnd(e0.first())
+        val trimmedEnd = e !== e0 && freeEnd(e0.last())
         val n = e.size
         val xs = FloatArray(n) { (e[it] % w) + 0.5f }
         val ys = FloatArray(n) { (e[it] / w) + 0.5f }
@@ -277,39 +361,119 @@ object GlyphSkeleton {
             return Polyline(floatArrayOf(xs[0] - 0.25f, xs[0] + 0.25f), floatArrayOf(ys[0], ys[0]), floatArrayOf(th[0], th[0]))
         }
         val closed = n > 3 && e.first() == e.last()
-        // تنعيم (المتوسط مع الجارين) مع تثبيت الأطراف
+        // الزوايا الحادة المقصودة في الحرف (رأس M وA مثلاً) تبقى حادة: يُنعَّم ما بينها فقط
+        val corners = corners(xs, ys, closed, avgThick)
+        var ox = ArrayList<Float>()
+        var oy = ArrayList<Float>()
+        var ot = ArrayList<Float>()
+        val cuts = (listOf(0) + corners + listOf(n - 1)).distinct().sorted()
+        for (c in 0 until cuts.size - 1) {
+            val i0 = cuts[c]
+            val i1 = cuts[c + 1]
+            val piece = smoothPiece(
+                xs.copyOfRange(i0, i1 + 1), ys.copyOfRange(i0, i1 + 1), th.copyOfRange(i0, i1 + 1),
+                closed && corners.isEmpty(), avgThick
+            )
+            val from = if (ox.isEmpty()) 0 else 1
+            for (k in from until piece.size) { ox.add(piece.xs[k]); oy.add(piece.ys[k]); ot.add(piece.thick[k]) }
+        }
+        if (!closed) {
+            // الطرف الحر ينتهي قبل حافة الحرف بنصف السماكة: نمدّه قليلاً
+            fun extend(atStart: Boolean) {
+                val trimmed = if (atStart) trimmedStart else trimmedEnd
+                val endPx = e[if (atStart) 0 else n - 1]
+                if (!trimmed && degree(img, w, h, endPx % w, endPx / w) != 1) return
+                // الاتجاه من نقطة أبعد قليلاً (أثبت من النقطة المجاورة)
+                val i0 = if (atStart) 0 else ox.lastIndex
+                var i1 = i0
+                var l = 0f
+                while (l < avgThick && (if (atStart) i1 < ox.lastIndex else i1 > 0)) {
+                    i1 += if (atStart) 1 else -1
+                    l = kotlin.math.hypot(ox[i0] - ox[i1], oy[i0] - oy[i1])
+                }
+                if (l < 1e-3f) return
+                val dx = (ox[i0] - ox[i1]) / l
+                val dy = (oy[i0] - oy[i1]) / l
+                val ext = ot[i0] * 0.3f + (if (trimmed) trim.toFloat() else 0f)
+                val px = ox[i0] + dx * ext
+                val py = oy[i0] + dy * ext
+                if (atStart) { ox.add(0, px); oy.add(0, py); ot.add(0, ot[0]) } else { ox.add(px); oy.add(py); ot.add(ot.last()) }
+            }
+            extend(true)
+            extend(false)
+        }
+        return Polyline(ox.toFloatArray(), oy.toFloatArray(), ot.toFloatArray())
+    }
+
+    /** أماكن الزوايا الحادة على سلسلة البكسلات (انعطاف أكثر من ~65° على مسافة تقارب سماكة الحرف). */
+    private fun corners(xs: FloatArray, ys: FloatArray, closed: Boolean, avgThick: Float): List<Int> {
+        val n = xs.size
+        val k = (avgThick * 0.9f).toInt().coerceIn(3, 12)
+        if (n < k * 2 + 3) return emptyList()
+        val turn = FloatArray(n)
+        for (i in k until n - k) {
+            val ax = xs[i] - xs[i - k]; val ay = ys[i] - ys[i - k]
+            val bx = xs[i + k] - xs[i]; val by = ys[i + k] - ys[i]
+            val la = kotlin.math.hypot(ax, ay); val lb = kotlin.math.hypot(bx, by)
+            if (la < 1e-3f || lb < 1e-3f) continue
+            turn[i] = 1f - (ax * bx + ay * by) / (la * lb) // 0 مستقيم، 1 = 90°، 2 = رجوع
+        }
+        val out = ArrayList<Int>()
+        var i = k
+        while (i < n - k) {
+            if (turn[i] > 0.58f) {
+                // أقصى انعطاف في هذه المنطقة
+                var best = i
+                var j = i
+                while (j < n - k && turn[j] > 0.58f) { if (turn[j] > turn[best]) best = j; j++ }
+                out.add(best)
+                i = j + k
+            } else i++
+        }
+        return out
+    }
+
+    /** تنعيم جزء بين زاويتين: متوسط متحرك (الطرفان ثابتان)، تبسيط، ثم منحنيات Chaikin. */
+    private fun smoothPiece(xs: FloatArray, ys: FloatArray, th: FloatArray, closed: Boolean, avgThick: Float): Polyline {
+        val n = xs.size
+        if (n < 3) return Polyline(xs, ys, th)
+        val r = (avgThick * 0.4f).toInt().coerceIn(2, 5)
         val sx = xs.copyOf()
         val sy = ys.copyOf()
         repeat(2) {
             val tx = sx.copyOf()
             val ty = sy.copyOf()
-            for (i in 1 until n - 1) {
-                sx[i] = (tx[i - 1] + 2 * tx[i] + tx[i + 1]) / 4f
-                sy[i] = (ty[i - 1] + 2 * ty[i] + ty[i + 1]) / 4f
+            for (i in 0 until n) {
+                if (!closed && (i == 0 || i == n - 1)) continue
+                var ax = 0f; var ay = 0f; var c = 0
+                for (d in -r..r) {
+                    var j = i + d
+                    if (closed) j = ((j % (n - 1)) + (n - 1)) % (n - 1)
+                    else {
+                        // قرب الطرف تقصر النافذة حتى لا ينسحب الطرف الثابت
+                        if (j < 0 || j >= n) continue
+                        if (kotlin.math.abs(d) > minOf(i, n - 1 - i)) continue
+                    }
+                    ax += tx[j]; ay += ty[j]; c++
+                }
+                sx[i] = ax / c; sy[i] = ay / c
             }
+            if (closed) { sx[n - 1] = sx[0]; sy[n - 1] = sy[0] }
         }
-        val keep = rdp(sx, sy, 0.55f)
-        var ox = keep.map { sx[it] }.toMutableList()
-        var oy = keep.map { sy[it] }.toMutableList()
-        var ot = keep.map { th[it] }.toMutableList()
-        if (!closed) {
-            // الطرف الحر ينتهي قبل حافة الحرف بنصف السماكة: نمدّه قليلاً
-            fun extend(atStart: Boolean) {
-                val i0 = if (atStart) 0 else ox.lastIndex
-                val i1 = if (atStart) 1 else ox.lastIndex - 1
-                if (i1 < 0 || i1 >= ox.size) return
-                val endPx = e[if (atStart) 0 else n - 1]
-                if (degree(img, w, h, endPx % w, endPx / w) != 1) return
-                val dx = ox[i0] - ox[i1]
-                val dy = oy[i0] - oy[i1]
-                val l = kotlin.math.sqrt(dx * dx + dy * dy)
-                if (l < 1e-3f) return
-                val ext = ot[i0] * 0.3f
-                ox[i0] += dx / l * ext
-                oy[i0] += dy / l * ext
+        val keep = rdp(sx, sy, 0.35f)
+        var ox = keep.map { sx[it] }
+        var oy = keep.map { sy[it] }
+        var ot = keep.map { th[it] }
+        repeat(2) {
+            if (ox.size < 3) return@repeat
+            val nx = ArrayList<Float>(ox.size * 2); val ny = ArrayList<Float>(ox.size * 2); val nt = ArrayList<Float>(ox.size * 2)
+            if (!closed) { nx.add(ox[0]); ny.add(oy[0]); nt.add(ot[0]) }
+            for (i in 0 until ox.size - 1) {
+                nx.add(ox[i] * 0.75f + ox[i + 1] * 0.25f); ny.add(oy[i] * 0.75f + oy[i + 1] * 0.25f); nt.add(ot[i] * 0.75f + ot[i + 1] * 0.25f)
+                nx.add(ox[i] * 0.25f + ox[i + 1] * 0.75f); ny.add(oy[i] * 0.25f + oy[i + 1] * 0.75f); nt.add(ot[i] * 0.25f + ot[i + 1] * 0.75f)
             }
-            extend(true)
-            extend(false)
+            if (!closed) { nx.add(ox.last()); ny.add(oy.last()); nt.add(ot.last()) } else { nx.add(nx[0]); ny.add(ny[0]); nt.add(nt[0]) }
+            ox = nx; oy = ny; ot = nt
         }
         return Polyline(ox.toFloatArray(), oy.toFloatArray(), ot.toFloatArray())
     }

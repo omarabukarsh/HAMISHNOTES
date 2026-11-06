@@ -496,17 +496,13 @@ object AutoFont {
         if (lines.isEmpty()) return
         val ruled = ruledLines(s, pg)
         val first = alive.first()
-        val penW = alive.map { it.width }.sorted()[alive.size / 2]
-        val allP = alive.flatMap { k -> k.pts.map { it.p } }.sorted()
-        val penP = if (allP.isEmpty()) 0.6f else allP[allP.size / 2].coerceIn(0.2f, 1.2f)
         val bold = dynamicBold
-        val tool = if (bold) Tool.FOUNTAIN else first.tool
         var prev = lastLine?.takeIf { it.s === s && it.page == pg }
         val out = ArrayList<Ink>()
         for (line in lines) {
-            // السطر كله نص واحد بمسافات الخط العادية (كأنه مكتوب بالكيبورد)، ثم يُحوَّل إلى خطوط قلم
+            // السطر كله نص واحد بمسافات الخط العادية (كأنه مكتوب بالكيبورد)، ثم حروفه أشكال مملوءة من الخط
             val text = line.joinToString(" ") { it.text.trim() }.trim()
-            val g = withContext(Dispatchers.Default) { GlyphInk.word(text, fontName, tf) } ?: continue
+            val g = withContext(Dispatchers.Default) { GlyphInk.line(text, fontName, tf) } ?: continue
             val l = line.minOf { it.l }
             val t = line.minOf { it.t }
             val r = line.maxOf { it.r }
@@ -521,15 +517,11 @@ object AutoFont {
             val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
             // يبدأ السطر حيث بدأت الكتابة (يسار الإنجليزي، يمين العربي)
             val ox = if (rtl) start - g.right * size else start - g.left * size
-            val thick = g.thickness * size
-            val width = if (bold) maxOf(thick, penW) else penW
-            for (pl in g.strokes) {
-                val pts = ArrayList<Pt>(pl.size)
-                for (k in 0 until pl.size) {
-                    val p = if (bold) (pl.thick[k] * size / width - 0.4f).coerceIn(0.1f, 1.3f) else penP
-                    pts.add(Pt(ox + pl.xs[k] * size, base + pl.ys[k] * size, p))
-                }
-                out.add(Ink(pts, first.color, width, tool, t = first.t, style = LineStyle.SOLID))
+            // «سماكة متغيرة»: تعريض الحرف كله قليلاً
+            val outline = if (bold) size * 0.035f else 0f
+            for (piece in g.pieces) {
+                val placed = piece.map { c -> FloatArray(c.size) { i -> if (i % 2 == 0) ox + c[i] * size else base + c[i] * size } }
+                out.add(Ink(InkFill.encode(placed), first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true))
             }
             prev = LineInfo(s, pg, base, start, rtl)
         }
@@ -785,8 +777,8 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     if (ink) L(
-                        "اكتب بالقلم كالعادة؛ عند إنهاء الجملة تُعاد كتابتها في مكانها بالخط المختار، وتبقى كتابة قلم: تُمسح بالممحاة وتُحدَّد وتُلوَّن مثل أي كتابة.",
-                        "Write with the pen as usual; when you finish a sentence it is rewritten in place in the chosen font and stays pen ink: erase it, select it and recolor it like any writing."
+                        "اكتب بالقلم كالعادة؛ عند إنهاء الجملة تُعاد كتابتها في مكانها بالخط المختار تماماً، وتبقى حبراً لا نصاً: الممحاة تمسح الحرف الذي تمر عليه، وتُحدَّد وتُلوَّن مثل أي كتابة.",
+                        "Write with the pen as usual; when you finish a sentence it is rewritten in place in exactly the chosen font and stays ink, not text: the eraser removes each letter it touches, and you can select and recolor it like any writing."
                     ) else L(
                         "اكتب بالقلم كالعادة؛ عند إنهاء الجملة تتحول في مكانها إلى نص بالخط المختار. التراجع يعيدها لخط يدك.",
                         "Write with the pen as usual; when you finish a sentence it turns into text in the chosen font in place. Undo brings your handwriting back."
@@ -829,7 +821,7 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                     TextButton(onClick = { library = true }) {
                         Text(L("مكتبة الخطوط كاملة (${FontStore.catalog.size})…", "Full font library (${FontStore.catalog.size})…"), color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
                     }
-                    if (ink) AutoFontSwitch(L("سماكة متغيرة (خط عريض حسب الحروف)", "Dynamic bold"), bold) { bold = it }
+                    if (ink) AutoFontSwitch(L("خط أعرض", "Bolder"), bold) { bold = it }
                 }
                 AutoFontSection(L("لغة الكتابة", "Writing language")) {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

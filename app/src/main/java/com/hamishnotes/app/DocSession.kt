@@ -28,7 +28,10 @@ sealed interface SessionStatus {
 
 /** يمسح كل خط تلمسه الممحاة كاملًا. يعيد القائمة نفسها إن لم يتغير شيء. */
 fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink) -> Boolean = { true }): List<Ink> {
-    val next = list.filterNot { s -> canErase(s) && s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
+    val next = list.filterNot { s ->
+        canErase(s) && if (s.fill) InkFill.hit(s.pts, at.x, at.y, radius, s.width)
+        else s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius }
+    }
     return if (next.size == list.size) list else next
 }
 
@@ -43,6 +46,11 @@ fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink)
     for (s in list) {
         if (!canErase(s)) {
             out.add(s); continue
+        }
+        // حرف مملوء (تجميل الخط): يُمسح الحرف كاملاً
+        if (s.fill) {
+            if (InkFill.hit(s.pts, at.x, at.y, radius, s.width)) changed = true else out.add(s)
+            continue
         }
         // رفض سريع بالمستطيل المحيط
         var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE

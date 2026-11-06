@@ -60,8 +60,27 @@ internal fun dashEffect(style: Int, strokePx: Float): PathEffect? = when (style)
 }
 
 /** يرسم خطًا محفوظًا بكل خصائصه (النمط والشكل). */
-internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.width) =
-    drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
+internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.width) {
+    if (s.fill) drawFilled(s, color, scaleW) else drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
+}
+
+/** شكل حرف مملوء من حدوده (قاعدة nonzero كالخطوط)، مع تعريض اختياري حوله. */
+internal fun fillPath(pts: List<Pt>, w: Float): Path {
+    val path = Path()
+    for (c in InkFill.contours(pts)) {
+        if (c.size < 2) continue
+        path.moveTo(c[0].x * w, c[0].y * w)
+        for (i in 1 until c.size) path.lineTo(c[i].x * w, c[i].y * w)
+        path.close()
+    }
+    return path
+}
+
+internal fun DrawScope.drawFilled(s: Ink, color: Color, scaleW: Float = size.width) {
+    val path = fillPath(s.pts, scaleW)
+    drawPath(path, color)
+    if (s.width > 0f) drawPath(path, color, style = Stroke(width = s.width * scaleW, join = StrokeJoin.Round, cap = StrokeCap.Round))
+}
 
 /** يرسم خطًا واحدًا حسب نوع القلم. */
 internal fun DrawScope.drawInk(

@@ -268,6 +268,25 @@ object Exporter {
             // الكتابة اليدوية
             for (s in ink) {
                 if (s.pts.isEmpty()) continue
+                if (s.fill) {
+                    // حرف مملوء من خط: مسار مغلق لكل حد، يُملأ بقاعدة nonzero
+                    cs.saveGraphicsState()
+                    cs.setNonStrokingColor(s.color.red, s.color.green, s.color.blue)
+                    cs.setStrokingColor(s.color.red, s.color.green, s.color.blue)
+                    for (ct in InkFill.contours(s.pts)) {
+                        if (ct.size < 2) continue
+                        cs.moveTo(px(ct[0].x), py(ct[0].y))
+                        for (j in 1 until ct.size) cs.lineTo(px(ct[j].x), py(ct[j].y))
+                        cs.closePath()
+                    }
+                    if (s.width > 0f) {
+                        cs.setLineWidth(s.width * w)
+                        cs.setLineJoinStyle(1)
+                        cs.fillAndStroke()
+                    } else cs.fill()
+                    cs.restoreGraphicsState()
+                    continue
+                }
                 val alpha = when (s.tool) {
                     Tool.HIGHLIGHTER -> 0.35f
                     Tool.PENCIL -> 0.78f
@@ -374,6 +393,23 @@ object Exporter {
     private fun drawInk(c: Canvas, s: Ink, w: Float) {
         val pts = s.pts
         if (pts.isEmpty()) return
+        if (s.fill) {
+            // حرف مملوء من خط
+            val path = Path().apply { fillType = Path.FillType.WINDING }
+            for (ct in InkFill.contours(pts)) {
+                if (ct.size < 2) continue
+                path.moveTo(ct[0].x * w, ct[0].y * w)
+                for (i in 1 until ct.size) path.lineTo(ct[i].x * w, ct[i].y * w)
+                path.close()
+            }
+            val fp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = s.color.toArgb(); style = Paint.Style.FILL }
+            c.drawPath(path, fp)
+            if (s.width > 0f) {
+                fp.style = Paint.Style.STROKE; fp.strokeWidth = s.width * w; fp.strokeJoin = Paint.Join.ROUND
+                c.drawPath(path, fp)
+            }
+            return
+        }
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.style = Paint.Style.STROKE
         p.strokeJoin = Paint.Join.ROUND

@@ -1,80 +1,96 @@
 package com.hamishnotes.app
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Rect
+import android.graphics.Path
+import android.graphics.PathMeasure
+import android.graphics.RectF
 import android.graphics.Typeface
 
 /**
- * كلمة بخط من المكتبة على شكل خطوط قلم (لا نص): تُرسم الكلمة بالخط، ثم تُتبَّع حروفها إلى خطوط
- * تمر في وسطها. الإحداثيات بوحدة حجم الخط (1 = حجم الخط)، x من بداية الكلمة و y من خط القاعدة (موجب للأسفل).
+ * سطر بخط من المكتبة على شكل حروف مملوءة (لا نص): شكل كل حرف يؤخذ من الخط نفسه كما يرسمه،
+ * فيبقى ناعماً بسماكته الحقيقية مهما كُبّر. الإحداثيات بوحدة حجم الخط (1 = حجم الخط)،
+ * x من بداية السطر و y من خط القاعدة (موجب للأسفل).
  */
 object GlyphInk {
-    /** حجم الرسم بالبكسل لكل وحدة: دقة كافية لحروف ناعمة حتى بالأحجام الكبيرة. */
+    /** حجم القياس بالبكسل لكل وحدة (الحدود تُؤخذ كمنحنيات ثم تُقسَّم بدقة أقل من ربع بكسل). */
     private const val PX = 160f
 
-    class Word(
-        /** كل خط: نقاط x,y وسماكة الحرف عند النقطة (بوحدة حجم الخط). */
-        val strokes: List<GlyphSkeleton.Polyline>,
-        /** متوسط سماكة حروف الخط. */
-        val thickness: Float,
-        /** حدود الحبر الفعلي للكلمة. */
+    class Line(
+        /** القطع: كل قطعة حرف (أو حروف متصلة) = عدة حدود، كل حد قائمة x,y. */
+        val pieces: List<List<FloatArray>>,
+        /** حدود الحبر الفعلي للسطر. */
         val left: Float, val top: Float, val right: Float, val bottom: Float,
         /** عرض المسافة بين كلمتين بهذا الخط. */
         val space: Float
     )
 
-    private val cache = object : LinkedHashMap<String, Word>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Word>?) = size > 200
+    private val cache = object : LinkedHashMap<String, Line>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Line>?) = size > 100
     }
 
     fun paint(tf: Typeface?): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = PX
-        color = android.graphics.Color.BLACK
         if (tf != null) typeface = tf
     }
 
     /** حدود حبر نص بوحدة حجم الخط (يسار، أعلى، يمين، أسفل) من نقطة بدايته على خط القاعدة. */
     fun bounds(text: String, tf: Typeface?): FloatArray {
         val p = paint(tf)
-        val r = Rect()
+        val r = android.graphics.Rect()
         p.getTextBounds(text, 0, text.length, r)
         if (r.isEmpty) return floatArrayOf(0f, -0.7f, p.measureText(text) / PX, 0f)
         return floatArrayOf(r.left / PX, r.top / PX, r.right / PX, r.bottom / PX)
     }
 
-    fun word(text: String, fontName: String, tf: Typeface?): Word? {
+    /** شكل السطر حروفاً مملوءة (null لنص فارغ). */
+    fun line(text: String, fontName: String, tf: Typeface?): Line? {
         if (text.isBlank()) return null
         val key = "$fontName\u0000$text"
         synchronized(cache) { cache[key]?.let { return it } }
         val p = paint(tf)
-        val r = Rect()
-        p.getTextBounds(text, 0, text.length, r)
-        if (r.isEmpty) return null
-        val pad = 6
-        val w = r.width() + pad * 2
-        val h = r.height() + pad * 2
-        if (w <= 0 || h <= 0 || w.toLong() * h > 6_000_000L) return null
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val ox = (pad - r.left).toFloat()
-        val oy = (pad - r.top).toFloat()
-        Canvas(bmp).drawText(text, ox, oy, p)
-        val px = IntArray(w * h)
-        bmp.getPixels(px, 0, w, 0, 0, w, h)
-        bmp.recycle()
-        val mask = BooleanArray(w * h) { (px[it] ushr 24) > 110 }
-        val res = GlyphSkeleton.trace(mask, w, h)
-        val lines = res.lines.map { l ->
-            GlyphSkeleton.Polyline(
-                FloatArray(l.size) { (l.xs[it] - ox) / PX },
-                FloatArray(l.size) { (l.ys[it] - oy) / PX },
-                FloatArray(l.size) { l.thick[it] / PX }
-            )
+        val path = Path()
+        // getTextPath يشكّل النص (العربي متصلاً) ويرتّبه كما يُرسم
+        p.getTextPath(text, 0, text.length, 0f, 0f, path)
+        val box = RectF()
+        path.computeBounds(box, true)
+        if (box.isEmpty) return null
+        val contours = ArrayList<FloatArray>()
+        val pm = PathMeasure(path, false)
+        val pos = FloatArray(2)
+        do {
+            val len = pm.length
+            if (len <= 0.5f) continue
+            // عيّنة كل ربع بكسل تقريباً ثم تبسيط: منحنيات الحرف تبقى ناعمة
+            val n = (len / 0.25f).toInt().coerceIn(8, 20000)
+            val raw = FloatArray(n * 2)
+            for (i in 0 until n) {
+                pm.getPosTan(len * i / n, pos, null)
+                raw[i * 2] = pos[0] / PX
+                raw[i * 2 + 1] = pos[1] / PX
+            }
+            val simple = InkFill.simplify(raw, 0.15f / PX)
+            if (simple.size >= 6) contours.add(simple)
+        } while (pm.nextContour())
+        if (contours.isEmpty()) return null
+        val groups = InkFill.group(contours)
+        // حدود الحروف كما يضعها الخط (مع التشكيل والاتصال والاتجاه): لقص الحروف المتصلة حرفاً حرفاً
+        val rtl = text.any { it in '\u0590'..'\u08FF' }
+        val total = p.measureText(text)
+        val cuts = ArrayList<Float>()
+        for (i in 1 until text.length) {
+            val a = text[i - 1]
+            val b = text[i]
+            if (a.isWhitespace() || b.isWhitespace()) continue
+            // لا قص داخل الحرف الواحد (تشكيل، أو أزواج الحروف الخاصة)
+            if (Character.getType(b) == Character.NON_SPACING_MARK.toInt() || Character.isLowSurrogate(b)) continue
+            val adv = p.getRunAdvance(text, 0, text.length, 0, text.length, rtl, i)
+            cuts.add((if (rtl) total - adv else adv) / PX)
         }
-        val out = Word(
-            lines, res.thickness / PX,
-            r.left / PX, r.top / PX, r.right / PX, r.bottom / PX,
+        val avg = if (text.isNotEmpty()) total / PX / text.length else 0.5f
+        val pieces = groups.flatMap { g -> InkFill.slice(g.map { contours[it] }, cuts, avg * 0.25f, 0.6f / PX) }
+        val out = Line(
+            pieces,
+            box.left / PX, box.top / PX, box.right / PX, box.bottom / PX,
             p.measureText(" ") / PX
         )
         synchronized(cache) { cache[key] = out }

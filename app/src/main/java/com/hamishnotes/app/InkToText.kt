@@ -43,7 +43,7 @@ import com.google.mlkit.vision.digitalink.recognition.Ink as MlInk
 object InkToText {
     /** يقسم الخطوط إلى أسطر حسب موضعها الرأسي. */
     fun lines(strokes: List<Ink>): List<List<Ink>> {
-        val sorted = strokes.filter { it.pts.isNotEmpty() }.sortedBy { s -> s.pts.sumOf { it.y.toDouble() } / s.pts.size }
+        val sorted = strokes.filter { it.pts.isNotEmpty() && !it.fill }.sortedBy { s -> s.pts.sumOf { it.y.toDouble() } / s.pts.size }
         val out = ArrayList<MutableList<Ink>>()
         var top = 0f
         var bottom = 0f

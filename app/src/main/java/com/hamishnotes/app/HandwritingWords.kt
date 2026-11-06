@@ -40,7 +40,7 @@ object HandwritingLayout {
 
     /** الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال ولا الممحاة أو الليزر. */
     fun eligible(s: Ink): Boolean =
-        s.pts.isNotEmpty() && !s.shape && s.tool != Tool.HIGHLIGHTER && s.tool != Tool.ERASER && s.tool != Tool.LASER
+        s.pts.isNotEmpty() && !s.shape && !s.fill && s.tool != Tool.HIGHLIGHTER && s.tool != Tool.ERASER && s.tool != Tool.LASER
 
     /**
      * lang: HwLang. defaultRtl: اللغة عند تعذّر معرفة الاتجاه (كلمة من نقطة واحدة مثلًا).

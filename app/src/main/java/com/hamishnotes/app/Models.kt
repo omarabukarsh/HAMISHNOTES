@@ -79,7 +79,12 @@ data class Ink(
     /** نمط الخط (LineStyle). */
     val style: Int = LineStyle.SOLID,
     /** رُسم بأداة الأشكال أو حُوّل إلى شكل. */
-    val shape: Boolean = false
+    val shape: Boolean = false,
+    /**
+     * حرف مملوء من خط (تجميل خط اليد): النقاط حدود شكل الحرف (InkFill)، ويُرسم مملوءاً.
+     * width هنا تعريض إضافي حول الحرف (0 = بلا).
+     */
+    val fill: Boolean = false
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */

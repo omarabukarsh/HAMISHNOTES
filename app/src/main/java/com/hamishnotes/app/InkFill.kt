@@ -250,4 +250,47 @@ object InkFill {
         flush()
         return out
     }
+
+    /** سطر حروف محوّلة: خط القاعدة وحجم الخط وامتداده الأفقي (وحدات الصفحة). */
+    class LineRef(val base: Float, val em: Float, val l: Float, val r: Float)
+
+    /** حدود النقاط: يسار، أعلى، يمين، أسفل. */
+    fun bounds(pts: List<Pt>): FloatArray {
+        var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+        for (p in pts) { if (p.x < l) l = p.x; if (p.x > r) r = p.x; if (p.y < t) t = p.y; if (p.y > b) b = p.y }
+        return floatArrayOf(l, t, r, b)
+    }
+
+    /** خط القاعدة والحجم المحفوظان في الحرف (نسبةً لحدوده)، أو null إن لم يُحفظا. */
+    fun lineOf(pts: List<Pt>, lineF: Float, emF: Float): LineRef? {
+        if (lineF < 0f || emF <= 0f || pts.isEmpty()) return null
+        val bb = bounds(pts)
+        val h = bb[3] - bb[1]
+        if (h <= 0f) return null
+        return LineRef(bb[1] + lineF * h, emF * h, bb[0], bb[2])
+    }
+
+    /** نسبتا خط القاعدة والحجم لحدود هذه النقاط (للحفظ مع الحرف). */
+    fun fractions(pts: List<Pt>, base: Float, em: Float): Pair<Float, Float> {
+        val bb = bounds(pts)
+        val h = (bb[3] - bb[1]).coerceAtLeast(1e-6f)
+        return (base - bb[1]) / h to em / h
+    }
+
+    /**
+     * السطر المحوّل القديم الذي تكمله كتابة جديدة: على ارتفاعها تقريباً وقريب منها أفقياً.
+     * يعيد خط قاعدته وحجمه (الوسيط بين حروفه)، أو null.
+     */
+    fun nearestLine(refs: List<LineRef>, l: Float, r: Float, base: Float, size: Float): LineRef? {
+        val near = refs.filter { ref ->
+            kotlin.math.abs(ref.base - base) <= 0.6f * maxOf(ref.em, size) &&
+                ref.r >= l - 3f * ref.em && ref.l <= r + 3f * ref.em
+        }
+        if (near.isEmpty()) return null
+        val best = near.minByOrNull { kotlin.math.abs(it.base - base) }!!
+        val same = refs.filter { kotlin.math.abs(it.base - best.base) < 0.15f * best.em }
+        val bases = same.map { it.base }.sorted()
+        val ems = same.map { it.em }.sorted()
+        return LineRef(bases[bases.size / 2], ems[ems.size / 2], same.minOf { it.l }, same.maxOf { it.r })
+    }
 }

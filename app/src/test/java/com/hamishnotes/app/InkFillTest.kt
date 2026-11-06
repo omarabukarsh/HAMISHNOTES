@@ -114,4 +114,40 @@ class InkFillTest {
         assertEquals(6, cs[1].size)
         assertEquals(5f, cs[1][0], 0f)
     }
+
+    // ------------------------------------------------ المتابعة على نفس السطر
+
+    @Test
+    fun baselineAndSize_surviveMovingAndScalingTheLetter() {
+        val pts = InkFill.encode(listOf(rect(0.10f, 0.20f, 0.14f, 0.25f)))
+        val (lf, ef) = InkFill.fractions(pts, base = 0.24f, em = 0.06f)
+        val ref = InkFill.lineOf(pts, lf, ef)!!
+        assertEquals(0.24f, ref.base, 1e-5f)
+        assertEquals(0.06f, ref.em, 1e-5f)
+        // تحريك وتكبير ×2 حول نقطة: خط القاعدة والحجم يتحركان ويكبران معه
+        val moved = pts.map { Pt(0.5f + (it.x - 0.10f) * 2f, 0.6f + (it.y - 0.20f) * 2f, it.p) }
+        val ref2 = InkFill.lineOf(moved, lf, ef)!!
+        assertEquals(0.6f + (0.24f - 0.20f) * 2f, ref2.base, 1e-5f)
+        assertEquals(0.12f, ref2.em, 1e-5f)
+        // حرف قديم بلا معلومات سطر
+        assertEquals(null, InkFill.lineOf(pts, -1f, 0f))
+    }
+
+    @Test
+    fun newWriting_continuesTheNearbyOldLine() {
+        // جملة قديمة: خط قاعدتها 0.30 وحجمها 0.05، من x=0.10 إلى 0.40
+        val old = listOf(
+            InkFill.LineRef(0.300f, 0.05f, 0.10f, 0.18f),
+            InkFill.LineRef(0.301f, 0.05f, 0.20f, 0.30f),
+            InkFill.LineRef(0.299f, 0.05f, 0.32f, 0.40f)
+        )
+        // كتابة جديدة بعدها مباشرة وأسفل قليلاً (0.315) وبحجم آخر
+        val hit = InkFill.nearestLine(old, 0.43f, 0.60f, base = 0.315f, size = 0.07f)!!
+        assertEquals(0.300f, hit.base, 1e-5f)
+        assertEquals(0.05f, hit.em, 1e-5f)
+        // كتابة على السطر التالي (أبعد من نصف السطر): لا تُلحق بالقديم
+        assertEquals(null, InkFill.nearestLine(old, 0.43f, 0.60f, base = 0.37f, size = 0.05f))
+        // على نفس الارتفاع لكن بعيدة جداً أفقياً: لا تُلحق
+        assertEquals(null, InkFill.nearestLine(old, 0.80f, 0.95f, base = 0.30f, size = 0.05f))
+    }
 }

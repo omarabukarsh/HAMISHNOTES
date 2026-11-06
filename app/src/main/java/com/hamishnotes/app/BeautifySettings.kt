@@ -278,6 +278,14 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                         // التنسيق
                         CardTitle(L("التنسيق", "Layout"))
                         SettingsCard {
+                            if (ink) {
+                                SwitchRow(
+                                    L("المتابعة على نفس السطر", "Continue on the same line"),
+                                    L("الكتابة قرب جملة محوّلة تجلس على سطرها وبحجمها", "Writing next to a converted sentence sits on its line, at its size"),
+                                    checked = AutoFont.continueLine
+                                ) { AutoFont.changeContinueLine(it) }
+                                RowDividerLine()
+                            }
                             SwitchRow(L("توحيد حجم الخط والمسافة بين الأسطر", "Unify font size & line spacing"), checked = AutoFont.unify) {
                                 AutoFont.changeUnify(it, AutoFont.unifySize, AutoFont.unifySpacing)
                             }

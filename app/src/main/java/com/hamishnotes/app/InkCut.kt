@@ -55,6 +55,12 @@ object InkCut {
             FloatArray(c.size) { i -> c[i] / K }
         }.map { InkFill.simplify(it, 0.00003f) }.filter { it.size >= 6 && kotlin.math.abs(InkFill.area(it)) > 1e-9f }
         if (contours.isEmpty()) return emptyList()
-        return InkFill.group(contours).map { g -> s.copy(pts = InkFill.encode(g.map { contours[it] })) }
+        // خط القاعدة والحجم يبقيان كما كانا، بنسب جديدة لحدود كل جزء
+        val line = InkFill.lineOf(s.pts, s.lineF, s.emF)
+        return InkFill.group(contours).map { g ->
+            val pts = InkFill.encode(g.map { contours[it] })
+            if (line == null) s.copy(pts = pts)
+            else InkFill.fractions(pts, line.base, line.em).let { (lf, ef) -> s.copy(pts = pts, lineF = lf, emF = ef) }
+        }
     }
 }

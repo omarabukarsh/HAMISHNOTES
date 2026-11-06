@@ -76,6 +76,8 @@ object AutoFont {
     var unifySize by mutableStateOf(20); private set
     /** المسافة بين الأسطر الموحدة (مضاعف حجم الخط). */
     var unifySpacing by mutableStateOf(1.5f); private set
+    /** الكتابة قرب جملة محوّلة قديمة تجلس على سطرها وبحجمها. */
+    var continueLine by mutableStateOf(true); private set
 
     const val OUT_INK = 0
     const val OUT_TEXT = 1
@@ -97,6 +99,7 @@ object AutoFont {
         unify = p.getBoolean("unify", false)
         unifySize = p.getInt("usize", 20).coerceIn(SIZE_MIN, SIZE_MAX)
         unifySpacing = p.getFloat("uspace", 1.5f).coerceIn(1f, 3f)
+        continueLine = p.getBoolean("cont", true)
     }
 
     fun changeOn(v: Boolean) {
@@ -141,6 +144,11 @@ object AutoFont {
     fun changeBold(v: Boolean) {
         dynamicBold = v
         sp?.edit()?.putBoolean("bold", v)?.apply()
+    }
+
+    fun changeContinueLine(v: Boolean) {
+        continueLine = v
+        sp?.edit()?.putBoolean("cont", v)?.apply()
     }
 
     fun changeUnify(v: Boolean, size: Int, spacing: Float) {
@@ -497,6 +505,10 @@ object AutoFont {
         val ruled = ruledLines(s, pg)
         val first = alive.first()
         val bold = dynamicBold
+        // أسطر الحروف المحوّلة الموجودة في الصفحة (لمتابعة جملة قديمة على نفس مستواها)
+        val oldLines = if (continueLine) (s.annotations[pg] ?: emptyList()).mapNotNull { k ->
+            if (k.fill) InkFill.lineOf(k.pts, k.lineF, k.emF) else null
+        } else emptyList()
         var prev = lastLine?.takeIf { it.s === s && it.page == pg }
         val out = ArrayList<Ink>()
         for (line in lines) {
@@ -510,9 +522,16 @@ object AutoFont {
             // العرض من الكلمات نفسها لا من الفراغات بينها (المسافات بين كلمات اليد غير منتظمة)
             val handW = line.sumOf { (it.r - it.l).toDouble() }.toFloat()
             val emW = (g.right - g.left - g.space * (line.size - 1)).coerceAtLeast((g.right - g.left) * 0.5f)
-            val size = if (unify) unifiedSize() else sizeFor(handW, b - t, emW, g.bottom - g.top)
+            var size = if (unify) unifiedSize() else sizeFor(handW, b - t, emW, g.bottom - g.top)
             var base = b - g.bottom * size
-            base = snapBase(ruled, base, snap, size, prev?.base, if (unify) unifySpacing else null)
+            // متابعة جملة محوّلة قديمة قريبة: نفس خط قاعدتها ونفس حجمها
+            val old = if (continueLine) InkFill.nearestLine(oldLines, l, r, base, size) else null
+            if (old != null) {
+                size = old.em
+                base = old.base
+            } else {
+                base = snapBase(ruled, base, snap, size, prev?.base, if (unify) unifySpacing else null)
+            }
             val rtl = text.any { it in '\u0600'..'\u06FF' }
             val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
             // يبدأ السطر حيث بدأت الكتابة (يسار الإنجليزي، يمين العربي)
@@ -521,7 +540,9 @@ object AutoFont {
             val outline = if (bold) size * 0.035f else 0f
             for (piece in g.pieces) {
                 val placed = piece.map { c -> FloatArray(c.size) { i -> if (i % 2 == 0) ox + c[i] * size else base + c[i] * size } }
-                out.add(Ink(InkFill.encode(placed), first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true))
+                val pts = InkFill.encode(placed)
+                val (lf, ef) = InkFill.fractions(pts, base, size)
+                out.add(Ink(pts, first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true, lineF = lf, emF = ef))
             }
             prev = LineInfo(s, pg, base, start, rtl)
         }

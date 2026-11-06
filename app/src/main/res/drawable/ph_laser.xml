@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- مؤشر ليزر: قلم مائل يخرج منه شعاع إلى نقطة متوهجة (مرسوم بنفس سماكة أيقونات Phosphor) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="256" android:viewportHeight="256">
+    <group android:rotation="-45" android:pivotX="128" android:pivotY="128">
+        <path android:strokeColor="#FF000000" android:strokeWidth="16" android:strokeLineJoin="round"
+            android:pathData="M42,108 H136 A20,20 0 0 1 156,128 A20,20 0 0 1 136,148 H42 A20,20 0 0 1 22,128 A20,20 0 0 1 42,108 Z"/>
+        <path android:strokeColor="#FF000000" android:strokeWidth="16" android:strokeLineCap="round"
+            android:pathData="M156,128 H170"/>
+        <path android:strokeColor="#FF000000" android:strokeWidth="12" android:strokeLineCap="round"
+            android:pathData="M64,128 H84"/>
+    </group>
+    <path android:strokeColor="#FF000000" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M172,84 L180,76"/>
+    <path android:fillColor="#FF000000"
+        android:pathData="M196,60 m-16,0 a16,16 0 1 1 32,0 a16,16 0 1 1 -32,0"/>
+    <path android:strokeColor="#FF000000" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M232,60 H244 M196,24 V12 M222,34 L231,25 M222,86 L231,95 M170,34 L161,25"/>
+</vector>

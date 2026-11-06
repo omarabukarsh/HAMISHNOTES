@@ -1,0 +1,691 @@
+package com.hamishnotes.app
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * درج «ملخصات»: كل ما ظُلّل في هذا المستند فقط، كمستند واحد متصل على ورق عاجي.
+ * لا تظهر أسماء الصفحات؛ النص الأكبر على الصفحة يظهر عنوانًا، والجداول جداول،
+ * والنص المظلل مرتين يظهر بخط عريض وتظليل.
+ */
+@Composable
+fun SummaryDrawer(
+    s: DocSession,
+    onJump: (TextMark) -> Unit,
+    onExport: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val c = AppController
+    val context = LocalContext.current
+    val all = s.allMarks()
+    val tidy = c.summaryTidy
+    val edits = s.summaryEdits
+    var colorFilter by remember { mutableStateOf<Int?>(null) }
+    val byColor = c.summaryByColor
+    val blocks = remember(all, tidy, edits, colorFilter, byColor) {
+        Summary.display(all, tidy, edits, colorFilter, byColor) { c.labelOf(it) }
+    }
+    // الألوان المستخدمة في هذا المستند (للتصفية)
+    val usedColors = remember(all) {
+        val m = LinkedHashMap<Int, Color>()
+        all.forEach { m.putIfAbsent(Summary.argbOf(it.color), it.color) }
+        m.values.toList()
+    }
+    var editing by remember { mutableStateOf<TextMark?>(null) }
+    // وضع اختيار أجزاء لصنع جدول
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(listOf<String>()) }
+    // null = صنع جدول جديد، وإلا مفتاح جدول تُضم إليه النصوص المختارة
+    var tableTarget by remember { mutableStateOf<String?>(null) }
+    var tableCols by remember { mutableStateOf(2) }
+    var editingTable by remember { mutableStateOf<STable?>(null) }
+    var studying by remember { mutableStateOf(false) }
+    // البطاقات يصنعها المستخدم بنفسه فقط (عنوان ومحتوى)
+    val cards = s.customCards
+    var cardFrom by remember { mutableStateOf<SBlock?>(null) }
+
+    // الخريطة الذهنية: تُبنى من «كما التُقط»
+    var mapOpen by remember { mutableStateOf(false) }
+    var selectForMap by remember { mutableStateOf(false) }
+    // نصوص تُوضع الآن: تفتح الخريطة لاختيار مكانها
+    var placeKeys by remember { mutableStateOf<List<String>?>(null) }
+    // صنع بطاقة من النصوص المختارة: لكل نص دوره (true = عنوان). null = ليس في هذا الوضع
+    var cardRoles by remember { mutableStateOf<Map<String, Boolean>?>(null) }
+    var cardDraft by remember { mutableStateOf<Pair<String, String>?>(null) }
+    fun endSelecting() {
+        selecting = false
+        selectForMap = false
+        selected = emptyList()
+        cardRoles = null
+    }
+
+    Surface(
+        modifier.fillMaxHeight().width(420.dp),
+        color = Palette.DrawerBg,
+        shadowElevation = 14.dp
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SummaryGlyph(Palette.Navy, Palette.Gold, filled = true)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        L("ملخصات", "Summaries"), fontFamily = Fonts.Display, fontSize = 22.sp, lineHeight = 28.sp,
+                        fontWeight = FontWeight.Bold, color = Palette.Navy
+                    )
+                    Text(
+                        s.title, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1
+                    )
+                }
+                Row(
+                    Modifier.clip(RoundedCornerShape(16.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFFFFF6DD), Palette.GoldSoft)))
+                        .border(1.dp, Palette.Gold, RoundedCornerShape(16.dp))
+                        .clickable(enabled = all.isNotEmpty()) { mapOpen = true }.padding(horizontal = 11.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PhIcon(R.drawable.ph_mindmap, Palette.GoldDeep, 16.dp)
+                    Spacer(Modifier.width(5.dp))
+                    Text(L("خريطة", "Map"), fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(6.dp))
+                run {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, Palette.Gold, RoundedCornerShape(16.dp))
+                            .clickable { studying = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PhIcon(R.drawable.ph_books, Palette.GoldDeep, 16.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(L("بطاقات ${cards.size}", "Cards ${cards.size}"), fontSize = 13.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                    }
+                }
+                IconButton(onClick = { s.summaryOpen = false }) {
+                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق الملخصات", "Close summaries"))
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ChoiceChip(L("مرتّب", "Tidy"), tidy) { if (!tidy) c.toggleSummaryTidy() }
+                ChoiceChip(L("كما التُقط", "As captured"), !tidy) { if (tidy) c.toggleSummaryTidy() }
+                Spacer(Modifier.weight(1f))
+                TextButton(enabled = blocks.isNotEmpty(), onClick = {
+                    copy(context, Summary.plainText(s.title, blocks))
+                }) { Text(L("نسخ الكل", "Copy all"), fontSize = 13.sp) }
+                TextButton(enabled = blocks.isNotEmpty(), onClick = onExport) {
+                    Text("PDF", fontSize = 13.sp)
+                }
+            }
+            if (usedColors.size > 1 || colorFilter != null) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp).padding(bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ChoiceChip(L("كل الألوان", "All colors"), colorFilter == null) { colorFilter = null }
+                    usedColors.forEach { col ->
+                        val argb = Summary.argbOf(col)
+                        val sel = colorFilter == argb
+                        val shape = RoundedCornerShape(18.dp)
+                        Row(
+                            Modifier.clip(shape)
+                                .background(if (sel) Palette.Navy else Color.White)
+                                .border(1.dp, if (sel) Palette.Navy else Palette.Divider, shape)
+                                .clickable { colorFilter = if (sel) null else argb }
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(12.dp).clip(RoundedCornerShape(6.dp)).background(col))
+                            Spacer(Modifier.width(6.dp))
+                            Text(c.labelOf(col), fontSize = 13.sp, color = if (sel) Color.White else Palette.TextPrimary)
+                        }
+                    }
+                    ChoiceChip(L("تجميع حسب اللون", "Group by color"), byColor) { c.toggleSummaryByColor() }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Gold.copy(alpha = 0.45f)))
+            val roles = cardRoles
+            if (selecting && selectForMap && roles != null) {
+                CardRoleBar(
+                    titles = roles.values.count { it },
+                    contents = roles.values.count { !it },
+                    onBack = { cardRoles = null },
+                    onNext = {
+                        // العنوان: النصوص المختارة عنوانًا بترتيبها، والمحتوى نقاط بترتيب الاختيار
+                        val texts = selected.mapNotNull { k -> blocks.firstOrNull { it.key == k }?.let { k to Summary.plainText("", listOf(it)).trim() } }
+                            .filter { it.second.isNotEmpty() }
+                        val front = texts.filter { roles[it.first] == true }.joinToString(" · ") { it.second.replace('\n', ' ') }
+                        val body = texts.filter { roles[it.first] != true }.map { it.second }
+                        val back = if (body.size == 1) body[0] else body.joinToString("\n") { "• $it" }
+                        cardDraft = front to back
+                    },
+                    onCancel = { endSelecting() }
+                )
+            } else if (selecting && selectForMap) {
+                MapSelectBar(
+                    count = selected.size,
+                    onPlace = { placeKeys = selected.mapNotNull { MindMap.nodeKey(it) } },
+                    onCancel = { endSelecting() },
+                    // رقم ١ عنوان تلقائيًا، والباقي محتوى
+                    onCard = { cardRoles = selected.mapIndexed { i, k -> k to (i == 0) }.toMap() }
+                )
+            }
+            if (selecting && !selectForMap) {
+                Column(Modifier.fillMaxWidth().background(Palette.NavySoft).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    val target = tableTarget
+                    Text(
+                        when {
+                            target != null && selected.isEmpty() -> L("اختر النصوص التي تريد ضمها إلى الجدول", "Choose the texts to add to the table")
+                            target != null -> L("اخترت ${selected.size}، وستُضاف كصفوف في آخر الجدول", "${selected.size} selected; they will be added as rows at the end of the table")
+                            selected.isEmpty() -> L("اختر النصوص بالترتيب الذي تريده في الجدول", "Choose texts in the order you want in the table")
+                            else -> L("اخترت ${selected.size}. النصوص تملأ الصفوف بالترتيب حسب عدد الأعمدة", "${selected.size} selected. Texts fill the rows in order by column count")
+                        },
+                        fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Bold
+                    )
+                    if (target == null) {
+                        Row(
+                            Modifier.padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(L("الأعمدة:", "Columns:"), fontSize = 13.sp, color = Palette.TextSecondary)
+                            listOf(1, 2, 3, 4).forEach { n ->
+                                ChoiceChip("$n", tableCols == n) { tableCols = n }
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (target == null) {
+                            TextButton(enabled = selected.isNotEmpty(), onClick = {
+                                // ترتيب الاختيار نفسه هو ترتيب الخلايا
+                                s.makeTable(selected, cols = tableCols)
+                                selecting = false
+                                selected = emptyList()
+                            }) { Text(L("إنشاء الجدول", "Create table"), fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        } else {
+                            TextButton(enabled = selected.isNotEmpty(), onClick = {
+                                val newRows = selected.mapNotNull { k -> blocks.firstOrNull { it.key == k } }.flatMap { b ->
+                                    when (b) {
+                                        is STable -> b.rows
+                                        is SHeading -> listOf(listOf(b.text))
+                                        is SPara -> listOf(b.text.split('|').map { it.trim() })
+                                    }
+                                }
+                                s.addToTable(target, selected, newRows)
+                                selecting = false
+                                selected = emptyList()
+                                tableTarget = null
+                            }) { Text(L("إضافة إلى الجدول", "Add to table"), fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = {
+                            selecting = false
+                            selected = emptyList()
+                            tableTarget = null
+                        }) { Text(L("إلغاء", "Cancel"), fontSize = 13.sp, color = Palette.TextSecondary) }
+                    }
+                }
+            }
+
+            if (blocks.isEmpty()) {
+                EmptySummary()
+            } else {
+                // ورقة واحدة متصلة
+                val paper = RoundedCornerShape(8.dp)
+                LazyColumn(
+                    contentPadding = PaddingValues(14.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    item(key = "top") {
+                        Box(
+                            Modifier.fillMaxWidth().height(18.dp)
+                                .shadow(2.dp, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                .background(Palette.Ivory, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                        )
+                    }
+                    blocks.forEachIndexed { i, b ->
+                        item(key = "b$i") {
+                            val isSel = b.key in selected
+                            val cr = cardRoles
+                            val role = cr?.get(b.key)
+                            Box(
+                                Modifier.fillMaxWidth().background(Palette.Ivory)
+                                    .padding(horizontal = 14.dp)
+                                    .then(
+                                        when {
+                                            // صنع بطاقة: العنوان كحلي، والمحتوى أخضر، وغير المختار باهت
+                                            cr != null && role != null -> Modifier.clip(RoundedCornerShape(8.dp))
+                                                .background(if (role) Palette.NavySoft else CardTeal.copy(alpha = 0.08f))
+                                                .border(2.dp, if (role) Palette.Navy else CardTeal, RoundedCornerShape(8.dp))
+                                            cr != null -> Modifier.alpha(0.4f)
+                                            selecting -> Modifier.clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSel) Palette.GoldSoft else Color.Transparent)
+                                                .border(1.dp, if (isSel) Palette.Gold else Palette.Divider, RoundedCornerShape(8.dp))
+                                            else -> Modifier
+                                        }
+                                    )
+                                    .padding(horizontal = 6.dp)
+                            ) {
+                                BlockView(
+                                    s = s,
+                                    b = b,
+                                    shownKeys = blocks.map { it.key },
+                                    selecting = selecting,
+                                    onToggleSelect = {
+                                        if (cr != null) {
+                                            // لمسة على نص مختار تبدّل دوره
+                                            if (role != null) cardRoles = cr + (b.key to !role)
+                                        } else if (b.key != tableTarget && (!selectForMap || MindMap.nodeKey(b.key) != null)) {
+                                            selected = if (isSel) selected - b.key else selected + b.key
+                                        }
+                                    },
+                                    selectable = if (cr != null) role != null
+                                    else !(selecting && b.key == tableTarget) && !(selecting && selectForMap && MindMap.nodeKey(b.key) == null),
+                                    mapKey = if (tidy) null else MindMap.nodeKey(b.key),
+                                    onMapPlace = { k -> placeKeys = listOf(k) },
+                                    onMapSelect = {
+                                        selecting = true
+                                        selectForMap = true
+                                        tableTarget = null
+                                        selected = listOf(b.key)
+                                    },
+                                    selectionIndex = selected.indexOf(b.key),
+                                    onStartTable = {
+                                        selecting = true
+                                        selectForMap = false
+                                        tableTarget = null
+                                        selected = listOf(b.key)
+                                    },
+                                    onAddToTable = {
+                                        selecting = true
+                                        selectForMap = false
+                                        tableTarget = b.key
+                                        selected = emptyList()
+                                    },
+                                    onEditTable = { editingTable = it },
+                                    onMakeCard = { cardFrom = it },
+                                    onJump = onJump,
+                                    onEdit = { editing = it },
+                                    isTableTarget = tableTarget != null && b.key == tableTarget
+                                )
+                                if (cr != null && role != null) {
+                                    CardRoleChips(
+                                        title = role,
+                                        onSelect = { v -> cardRoles = cr + (b.key to v) },
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item(key = "end") {
+                        Box(
+                            Modifier.fillMaxWidth().height(22.dp)
+                                .background(Palette.Ivory, RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (studying) StudyDialog(s, cards, onDismiss = { studying = false })
+
+    if (mapOpen) MindMapDialog(s, onJump = { m -> mapOpen = false; onJump(m) }, onDismiss = { mapOpen = false })
+
+    val pk = placeKeys
+    if (pk != null && pk.isNotEmpty()) {
+        MindMapDialog(
+            s,
+            onJump = { m -> placeKeys = null; onJump(m) },
+            onDismiss = { placeKeys = null },
+            placing = pk,
+            onPlaced = { placeKeys = null; endSelecting() }
+        )
+    }
+
+    val cd = cardDraft
+    if (cd != null) {
+        AddCardDialog(
+            initialFront = cd.first,
+            initialBack = cd.second,
+            confirm = L("حفظ البطاقة", "Save card"),
+            dismissLabel = L("رجوع للاختيار", "Back to selection"),
+            onSave = { f, bk ->
+                s.addCustomCard(f, bk)
+                cardDraft = null
+                endSelecting()
+            },
+            onDismiss = { cardDraft = null }
+        )
+    }
+
+    val cf = cardFrom
+    if (cf != null) {
+        val body = Summary.plainText("", listOf(cf)).trim()
+        AddCardDialog(
+            initialFront = if (cf is SHeading) cf.text else "",
+            initialBack = if (cf is SHeading) "" else body,
+            onSave = { f, bk -> s.addCustomCard(f, bk); cardFrom = null },
+            onDismiss = { cardFrom = null }
+        )
+    }
+
+    val et = editingTable
+    if (et != null) {
+        TableEditorDialog(
+            initial = et.rows,
+            initialHeader = et.header,
+            onSave = { rows, header ->
+                s.saveTable(et.key, rows, header)
+                editingTable = null
+            },
+            onDismiss = { editingTable = null }
+        )
+    }
+
+    val e = editing
+    if (e != null) {
+        EditMarkDialog(
+            initial = e.text,
+            onSave = {
+                s.updateMarkText(e.id, it)
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
+}
+
+private fun copy(context: Context, text: String) {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
+    AppController.messages.tryEmit(L("تم النسخ", "Copied"))
+}
+
+/** نص الفقرة مع إبراز الأجزاء المهمة بخط عريض وتظليل ذهبي فاتح. */
+fun emphasized(text: String, emphasis: List<String>): AnnotatedString = buildAnnotatedString {
+    append(text)
+    for (r in Summary.emphasisRanges(text, emphasis)) {
+        addStyle(
+            SpanStyle(fontWeight = FontWeight.ExtraBold, background = Palette.GoldSoft, color = Palette.TextPrimary),
+            r.first, r.last + 1
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BlockView(
+    s: DocSession,
+    b: SBlock,
+    shownKeys: List<String>,
+    selecting: Boolean,
+    selectable: Boolean,
+    selectionIndex: Int,
+    onToggleSelect: () -> Unit,
+    onStartTable: () -> Unit,
+    onAddToTable: () -> Unit,
+    onEditTable: (STable) -> Unit,
+    onMakeCard: (SBlock) -> Unit,
+    onJump: (TextMark) -> Unit,
+    onEdit: (TextMark) -> Unit,
+    mapKey: String? = null,
+    onMapPlace: (String) -> Unit = {},
+    onMapSelect: () -> Unit = {},
+    isTableTarget: Boolean = false
+) {
+    val context = LocalContext.current
+    var menu by remember { mutableStateOf(false) }
+    val first = b.marks.firstOrNull()
+    val edits = s.summaryEdits
+    val userTable = b.key.startsWith("g:")
+    val overridden = userTable || edits.kinds.containsKey(b.key) || b.key in edits.order
+    val pos = shownKeys.indexOf(b.key)
+    Box {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                .combinedClickable(
+                    onClick = { if (selecting) onToggleSelect() else menu = true },
+                    // ضغط مطوّل في «كما التُقط»: اختيار عدة نصوص للخريطة
+                    onLongClick = { if (!selecting && mapKey != null) onMapSelect() else if (selecting) onToggleSelect() else menu = true }
+                )
+                .padding(vertical = 5.dp)
+        ) {
+            if (selecting && selectionIndex >= 0) {
+                Text(
+                    "${selectionIndex + 1}", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Palette.GoldDeep)
+                        .padding(horizontal = 7.dp, vertical = 1.dp)
+                )
+            }
+            if (selecting && isTableTarget) {
+                Text(L("الجدول الذي تضم إليه", "Table you are adding to"), fontSize = 11.sp, color = Palette.GoldDeep)
+            }
+            when (b) {
+                is SHeading -> Text(
+                    b.text, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp, lineHeight = 30.sp, color = Palette.Navy,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+                is SPara -> Text(
+                    emphasized(b.text, b.emphasis),
+                    fontSize = 15.sp, lineHeight = 25.sp, color = Palette.TextPrimary
+                )
+                is STable -> TableView(b.rows, b.header)
+            }
+        }
+        // تبويب صغير يظهر عند الضغط على الجزء
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (mapKey != null) {
+                Text(
+                    L("الخريطة الذهنية", "Mind map"), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                MenuRow(L("ضعه في الخريطة…", "Place on the map…"), R.drawable.ph_mindmap) { menu = false; onMapPlace(mapKey) }
+                MenuRow(L("اختيار عدة نصوص…", "Select several texts…"), R.drawable.ph_pages) { menu = false; onMapSelect() }
+                Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Palette.Divider))
+            }
+            when (b) {
+                is SHeading -> MenuRow(L("نص عادي", "Plain text"), R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
+                is SPara -> MenuRow(L("اجعله عنوانًا", "Make heading"), R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "h") }
+                is STable -> if (!userTable) {
+                    MenuRow(L("تحويل إلى نص", "Convert to text"), R.drawable.ph_text) { menu = false; s.setBlockKind(b.key, "p") }
+                }
+            }
+            if (b is STable) {
+                MenuRow(L("تحرير الجدول", "Edit table"), R.drawable.ph_sliders) { menu = false; onEditTable(b) }
+                MenuRow(L("ضم نصوص إلى هذا الجدول", "Add texts to this table"), R.drawable.ph_plus) { menu = false; onAddToTable() }
+            }
+            if (userTable) {
+                MenuRow(L("فك الجدول", "Unmake table"), R.drawable.ph_close) { menu = false; s.removeTable(b.key) }
+            } else if (b !is STable) {
+                MenuRow(L("ضعه في جدول…", "Put in a table…"), R.drawable.ph_pages) { menu = false; onStartTable() }
+            }
+            if (pos > 0) MenuRow(L("تحريك لأعلى", "Move up"), R.drawable.ph_caret_up) { menu = false; s.moveBlock(shownKeys, b.key, -1) }
+            if (pos >= 0 && pos < shownKeys.lastIndex) {
+                MenuRow(L("تحريك لأسفل", "Move down"), R.drawable.ph_caret_down) { menu = false; s.moveBlock(shownKeys, b.key, 1) }
+            }
+            if (overridden) {
+                MenuRow(L("كما اكتشفه البرنامج", "As detected"), R.drawable.ph_recent) { menu = false; s.resetBlock(b.key) }
+            }
+            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Palette.Divider))
+            if (first != null) {
+                MenuRow(L("انتقال إلى الموضع", "Go to location"), R.drawable.ph_search) { menu = false; onJump(first) }
+                MenuRow(L("تعديل النص", "Edit text"), R.drawable.ph_note) { menu = false; onEdit(first) }
+            }
+            MenuRow(L("اجعله بطاقة", "Make it a card"), R.drawable.ph_cards) { menu = false; onMakeCard(b) }
+            MenuRow(L("نسخ", "Copy"), R.drawable.ph_copy) {
+                menu = false
+                copy(context, Summary.plainText("", listOf(b)).trim())
+            }
+            MenuRow(L("حذف التمييز", "Delete highlight"), R.drawable.ph_trash, Palette.Danger) {
+                menu = false
+                b.marks.forEach { s.deleteMark(it.id) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuRow(label: String, icon: Int, color: Color = Palette.TextPrimary, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, fontSize = 14.sp, color = color) },
+        leadingIcon = { PhIcon(icon, if (color == Palette.TextPrimary) Palette.TextSecondary else color, 18.dp) },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun TableView(rows: List<List<String>>, header: Boolean = true) {
+    val cols = rows.maxOfOrNull { it.size } ?: 1
+    val line = Palette.Divider
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(6.dp)).border(1.dp, line, RoundedCornerShape(6.dp))
+    ) {
+        rows.forEachIndexed { ri, row ->
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+                    .background(if (header && ri == 0) Palette.NavySoft else Color.Transparent)
+            ) {
+                for (ci in 0 until cols) {
+                    Box(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .border(0.5.dp, line)
+                            .padding(horizontal = 6.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            row.getOrNull(ci) ?: "",
+                            fontSize = 12.sp, lineHeight = 17.sp,
+                            fontWeight = if (header && ri == 0) FontWeight.Bold else FontWeight.Normal,
+                            color = Palette.TextPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptySummary() {
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            L("لا توجد ملخصات بعد", "No summaries yet"),
+            fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            L("اختر الهايلايتر، واضغط عليه مرة ثانية وفعّل «التقاط النص»، ثم مرّر على أي سطر. ", "Pick the highlighter, tap it again and turn on “Text snap”, then run it over any line. ") +
+                L("ظلّل نفس النص مرتين ليظهر مهمًا بخط عريض.\nيعمل مع العربية والإنجليزية في ملفات PDF الرقمية.", "Highlight the same text twice to make it important in bold.\nWorks with Arabic and English in digital PDFs."),
+            fontSize = 13.sp, color = Palette.TextSecondary, lineHeight = 21.sp
+        )
+    }
+}
+
+/** تعديل نص تمييز، مع زر «ترتيب» يصلح الأسطر والترقيم. */
+@Composable
+private fun EditMarkDialog(initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("تعديل النص", "Edit text")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)
+                )
+                Text(
+                    L("سطر يبدأ بـ # يصبح عنوانًا. خلايا الجدول يفصلها |. سطر فارغ يبدأ فقرة جديدة.", "A line starting with # becomes a heading. Table cells are separated by |. A blank line starts a new paragraph."),
+                    fontSize = 12.sp, lineHeight = 18.sp, color = Palette.TextSecondary
+                )
+                Box(
+                    Modifier.clip(RoundedCornerShape(18.dp))
+                        .border(1.dp, Palette.Gold, RoundedCornerShape(18.dp))
+                        .clickable {
+                            text = text.split(Regex("\\n\\s*\\n")).joinToString("\n\n") { para ->
+                                val t = para.trim()
+                                if (t.startsWith("#") || t.split('\n').all { it.contains('|') }) t
+                                else TextTidy.sentences(TextTidy.clean(t)).joinToString(" ")
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text(L("ترتيب النص", "Tidy text"), fontSize = 14.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (text.isNotBlank()) onSave(text.trim()) }) { Text(L("حفظ", "Save")) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+    )
+}

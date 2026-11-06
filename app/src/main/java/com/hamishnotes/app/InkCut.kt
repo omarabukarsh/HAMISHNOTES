@@ -54,6 +54,8 @@ object InkCut {
         val contours = InkFill.splitApproximation(approx).map { c ->
             FloatArray(c.size) { i -> c[i] / K }
         }.map { InkFill.simplify(it, 0.00003f) }.filter { it.size >= 6 && kotlin.math.abs(InkFill.area(it)) > 1e-9f }
+            // ناتج القص لا يضمن اتجاه الحدود: يُوجَّه حسب التداخل حتى تبقى الفراغات داخل الحروف فارغة
+            .let { InkFill.orient(it) }
         if (contours.isEmpty()) return emptyList()
         // خط القاعدة والحجم يبقيان كما كانا، بنسب جديدة لحدود كل جزء
         val line = InkFill.lineOf(s.pts, s.lineF, s.emF)

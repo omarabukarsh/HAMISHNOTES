@@ -496,6 +496,16 @@ object AutoFont {
         return if (kotlin.math.abs(start - prevStart) <= 0.06f) prevStart else start
     }
 
+    /** تتراكب الحدود مع حرف موجود (بعد تصغير الحدين قليلاً: الحروف المتجاورة تتلامس حدودها). */
+    internal fun collides(a: FloatArray, others: List<FloatArray>): Boolean {
+        fun shrink(x: FloatArray): FloatArray {
+            val dx = (x[2] - x[0]) * 0.15f; val dy = (x[3] - x[1]) * 0.15f
+            return floatArrayOf(x[0] + dx, x[1] + dy, x[2] - dx, x[3] - dy)
+        }
+        val p = shrink(a)
+        return others.any { o -> val q = shrink(o); p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3] }
+    }
+
     /** يرسم الكلمات المقروءة بالخط المختار كخطوط قلم مكان الكتابة اليدوية (خطوة تراجع واحدة). */
     private suspend fun toInk(s: DocSession, pg: Int, alive: List<Ink>, words: List<OcrWord>) {
         val fontName = font
@@ -509,6 +519,8 @@ object AutoFont {
         val oldLines = if (continueLine) (s.annotations[pg] ?: emptyList()).mapNotNull { k ->
             if (k.fill) InkFill.lineOf(k.pts, k.lineF, k.emF) else null
         } else emptyList()
+        // حدود الحروف المحوّلة الموجودة (حتى لا تُوضع الكتابة الملحقة فوقها)
+        val occupied = if (continueLine) (s.annotations[pg] ?: emptyList()).filter { it.fill }.map { InkFill.bounds(it.pts) } else emptyList()
         var prev = lastLine?.takeIf { it.s === s && it.page == pg }
         val out = ArrayList<Ink>()
         for (line in lines) {
@@ -522,28 +534,35 @@ object AutoFont {
             // العرض من الكلمات نفسها لا من الفراغات بينها (المسافات بين كلمات اليد غير منتظمة)
             val handW = line.sumOf { (it.r - it.l).toDouble() }.toFloat()
             val emW = (g.right - g.left - g.space * (line.size - 1)).coerceAtLeast((g.right - g.left) * 0.5f)
-            var size = if (unify) unifiedSize() else sizeFor(handW, b - t, emW, g.bottom - g.top)
-            var base = b - g.bottom * size
-            // متابعة جملة محوّلة قديمة قريبة: نفس خط قاعدتها ونفس حجمها
-            val old = if (continueLine) InkFill.nearestLine(oldLines, l, r, base, size) else null
-            if (old != null) {
-                size = old.em
-                base = old.base
-            } else {
-                base = snapBase(ruled, base, snap, size, prev?.base, if (unify) unifySpacing else null)
-            }
+            // حجم الكتابة كما كُتبت (للمقارنة بالأسطر القديمة حتى لو كان الحجم موحداً)
+            val handSize = sizeFor(handW, b - t, emW, g.bottom - g.top)
             val rtl = text.any { it in '\u0600'..'\u06FF' }
-            val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
-            // يبدأ السطر حيث بدأت الكتابة (يسار الإنجليزي، يمين العربي)
-            val ox = if (rtl) start - g.right * size else start - g.left * size
             // «سماكة متغيرة»: تعريض الحرف كله قليلاً
-            val outline = if (bold) size * 0.035f else 0f
-            for (piece in g.pieces) {
-                val placed = piece.map { c -> FloatArray(c.size) { i -> if (i % 2 == 0) ox + c[i] * size else base + c[i] * size } }
-                val pts = InkFill.encode(placed)
-                val (lf, ef) = InkFill.fractions(pts, base, size)
-                out.add(Ink(pts, first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true, lineF = lf, emF = ef))
+            fun place(size: Float, base: Float, start: Float): List<Ink> {
+                // يبدأ السطر حيث بدأت الكتابة (يسار الإنجليزي، يمين العربي)
+                val ox = if (rtl) start - g.right * size else start - g.left * size
+                val outline = if (bold) size * 0.035f else 0f
+                return g.pieces.map { piece ->
+                    val placed = piece.map { c -> FloatArray(c.size) { i -> if (i % 2 == 0) ox + c[i] * size else base + c[i] * size } }
+                    val pts = InkFill.encode(placed)
+                    val (lf, ef) = InkFill.fractions(pts, base, size)
+                    Ink(pts, first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true, lineF = lf, emF = ef)
+                }
             }
+            fun ownPlace(): Triple<List<Ink>, Float, Float> {
+                val size = if (unify) unifiedSize() else handSize
+                val base = snapBase(ruled, b - g.bottom * size, snap, size, prev?.base, if (unify) unifySpacing else null)
+                val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
+                return Triple(place(size, base, start), base, start)
+            }
+            // متابعة جملة محوّلة قديمة بجانبها: نفس خط قاعدتها ونفس حجمها، ما لم تتراكب الحروف مع حروف موجودة
+            val old = if (continueLine) InkFill.nearestLine(oldLines, l, r, b - g.bottom * handSize, handSize) else null
+            val (letters, base, start) = old?.let { o ->
+                val st = if (rtl) r else l
+                place(o.em, o.base, st).takeIf { ls -> ls.none { k -> collides(InkFill.bounds(k.pts), occupied) } }
+                    ?.let { Triple(it, o.base, st) }
+            } ?: ownPlace()
+            out.addAll(letters)
             prev = LineInfo(s, pg, base, start, rtl)
         }
         if (out.isEmpty()) return

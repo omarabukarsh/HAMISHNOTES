@@ -278,19 +278,119 @@ object InkFill {
     }
 
     /**
-     * السطر المحوّل القديم الذي تكمله كتابة جديدة: على ارتفاعها تقريباً وقريب منها أفقياً.
-     * يعيد خط قاعدته وحجمه (الوسيط بين حروفه)، أو null.
+     * السطر المحوّل القديم الذي تكمله كتابة جديدة، أو null. تلتحق الكتابة بالسطر فقط إذا كانت:
+     * - على ارتفاعه (الفرق بحجم الكتابة الجديدة نفسها لا بحجم السطر القديم)،
+     * - بحجم قريب منه (ليست أصغر من نصفه ولا أكبر من ضعفه)،
+     * - بجانبه (قبله أو بعده بمسافة حرفين على الأكثر) لا فوق حروفه أو تحتها.
+     * [size] حجم الكتابة اليدوية الجديدة كما كُتبت. يعيد خط قاعدة السطر وحجمه (الوسيط بين حروفه).
      */
     fun nearestLine(refs: List<LineRef>, l: Float, r: Float, base: Float, size: Float): LineRef? {
         val near = refs.filter { ref ->
-            kotlin.math.abs(ref.base - base) <= 0.6f * maxOf(ref.em, size) &&
-                ref.r >= l - 3f * ref.em && ref.l <= r + 3f * ref.em
+            kotlin.math.abs(ref.base - base) <= 0.5f * size && size >= 0.5f * ref.em && size <= 2f * ref.em
         }
         if (near.isEmpty()) return null
         val best = near.minByOrNull { kotlin.math.abs(it.base - base) }!!
         val same = refs.filter { kotlin.math.abs(it.base - best.base) < 0.15f * best.em }
         val bases = same.map { it.base }.sorted()
         val ems = same.map { it.em }.sorted()
-        return LineRef(bases[bases.size / 2], ems[ems.size / 2], same.minOf { it.l }, same.maxOf { it.r })
+        val em = ems[ems.size / 2]
+        // فوق حروف السطر أو تحتها (لا بجانبها): كتابة مستقلة
+        if (same.any { minOf(r, it.r) - maxOf(l, it.l) > 0.3f * em }) return null
+        val gap = same.minOf { maxOf(it.l - r, l - it.r, 0f) }
+        if (gap > 2f * em) return null
+        return LineRef(bases[bases.size / 2], em, same.minOf { it.l }, same.maxOf { it.r })
+    }
+
+    // ------------------------------------------------ اتجاه الحدود (الفراغات داخل الحروف)
+
+    private fun inside(x: Float, y: Float, c: FloatArray): Boolean {
+        var inside = false
+        val n = c.size / 2
+        var j = n - 1
+        for (i in 0 until n) {
+            val xi = c[i * 2]; val yi = c[i * 2 + 1]; val xj = c[j * 2]; val yj = c[j * 2 + 1]
+            if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside
+            j = i
+        }
+        return inside
+    }
+
+    private fun box(c: FloatArray): FloatArray {
+        var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+        var i = 0
+        while (i + 1 < c.size) {
+            if (c[i] < l) l = c[i]; if (c[i] > r) r = c[i]; if (c[i + 1] < t) t = c[i + 1]; if (c[i + 1] > b) b = c[i + 1]
+            i += 2
+        }
+        return floatArrayOf(l, t, r, b)
+    }
+
+    private fun overlaps(a: FloatArray, b: FloatArray) = a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
+
+    /** عدد الحدود الأخرى المحيطة بالحد i (زوجي = شكل، فردي = فراغ). */
+    private fun depths(cs: List<FloatArray>): IntArray {
+        val boxes = cs.map { box(it) }
+        return IntArray(cs.size) { i ->
+            val x = cs[i][0]; val y = cs[i][1]
+            var d = 0
+            for (j in cs.indices) if (j != i && overlaps(boxes[i], boxes[j]) && inside(x, y, cs[j])) d++
+            d
+        }
+    }
+
+    private fun reversed(c: FloatArray): FloatArray {
+        val n = c.size / 2
+        return FloatArray(c.size) { k -> c[(n - 1 - k / 2) * 2 + k % 2] }
+    }
+
+    /**
+     * يوجّه الحدود حسب تداخلها: الشكل باتجاه، والفراغ داخله بالاتجاه المعاكس، والجزيرة داخل الفراغ
+     * بالاتجاه الأول... فتبقى الفراغات فارغة بقاعدة الملء (nonzero). للحدود التي لا تتقاطع
+     * (مثل ناتج قص الممحاة، الذي لا يضمن اتجاه حدوده).
+     */
+    fun orient(cs: List<FloatArray>): List<FloatArray> {
+        val d = depths(cs)
+        return cs.mapIndexed { i, c -> if ((area(c) > 0f) == (d[i] % 2 == 0)) c else reversed(c) }
+    }
+
+    private fun cross(ax: Float, ay: Float, bx: Float, by: Float, cx: Float, cy: Float, dx: Float, dy: Float): Boolean {
+        fun o(px: Float, py: Float, qx: Float, qy: Float, rx: Float, ry: Float) =
+            kotlin.math.sign((qx - px) * (ry - py) - (qy - py) * (rx - px))
+        return o(ax, ay, bx, by, cx, cy) * o(ax, ay, bx, by, dx, dy) < 0f &&
+            o(cx, cy, dx, dy, ax, ay) * o(cx, cy, dx, dy, bx, by) < 0f
+    }
+
+    private fun crosses(a: FloatArray, b: FloatArray): Boolean {
+        val n = a.size / 2; val m = b.size / 2
+        for (i in 0 until n) {
+            val i2 = (i + 1) % n
+            for (j in 0 until m) {
+                val j2 = (j + 1) % m
+                if (cross(a[i * 2], a[i * 2 + 1], a[i2 * 2], a[i2 * 2 + 1], b[j * 2], b[j * 2 + 1], b[j2 * 2], b[j2 * 2 + 1])) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * إصلاح حرف امتلأ فراغه بعد مسح جزئي قديم (قبل توجيه الحدود): إن كان فيه فراغ بنفس اتجاه
+     * الشكل المحيط به ولا تتقاطع حدوده، تُوجَّه حدوده من جديد. غير ذلك يبقى كما هو.
+     */
+    fun repairHoles(pts: List<Pt>): List<Pt> {
+        val cs = contours(pts)
+        if (cs.size < 2) return pts
+        val arr = cs.map { c -> FloatArray(c.size * 2) { k -> if (k % 2 == 0) c[k / 2].x else c[k / 2].y } }
+        val d = depths(arr)
+        // الوضع السليم: كل حد باتجاه يطابق عمقه، أو كلها بالاتجاه المعاكس معاً
+        val signs = arr.mapIndexed { i, c -> (area(c) > 0f) == (d[i] % 2 == 0) }
+        if (signs.all { it } || signs.none { it }) return pts
+        val boxes = arr.map { box(it) }
+        for (i in arr.indices) for (j in i + 1 until arr.size) {
+            if (overlaps(boxes[i], boxes[j]) && crosses(arr[i], arr[j])) return pts
+        }
+        // نحافظ على اتجاه الشكل الخارجي الأكبر كما كان
+        val outer = arr.indices.filter { d[it] == 0 }.maxByOrNull { kotlin.math.abs(area(arr[it])) } ?: return pts
+        val flip = !signs[outer]
+        return encode(orient(arr).map { if (flip) reversed(it) else it })
     }
 }

@@ -150,4 +150,49 @@ class InkFillTest {
         // على نفس الارتفاع لكن بعيدة جداً أفقياً: لا تُلحق
         assertEquals(null, InkFill.nearestLine(old, 0.80f, 0.95f, base = 0.30f, size = 0.05f))
     }
+
+    @Test
+    fun writingBetweenOrUnderOldLines_staysOnItsOwn() {
+        // سطر قديم كبير: قاعدته 0.30 وحجمه 0.10، من 0.10 إلى 0.60 (كما في «Ahmed» الكبيرة)
+        val old = listOf(
+            InkFill.LineRef(0.30f, 0.10f, 0.10f, 0.25f),
+            InkFill.LineRef(0.30f, 0.10f, 0.27f, 0.45f),
+            InkFill.LineRef(0.30f, 0.10f, 0.47f, 0.60f)
+        )
+        // كتابة صغيرة تحت السطر وبين السطرين: لا تُسحب إليه ولا تكبر لحجمه
+        assertEquals(null, InkFill.nearestLine(old, 0.30f, 0.45f, base = 0.36f, size = 0.03f))
+        // على نفس الارتفاع لكن فوق حروف السطر نفسه: ليست متابعة
+        assertEquals(null, InkFill.nearestLine(old, 0.20f, 0.40f, base = 0.30f, size = 0.10f))
+        // بجانبه لكن أصغر من نصف حجمه بوضوح: كتابة مستقلة
+        assertEquals(null, InkFill.nearestLine(old, 0.62f, 0.70f, base = 0.30f, size = 0.04f))
+        // بجانبه وبحجم قريب: تلتحق
+        assertEquals(0.30f, InkFill.nearestLine(old, 0.63f, 0.80f, base = 0.31f, size = 0.08f)!!.base, 1e-6f)
+    }
+
+    @Test
+    fun cutPieces_keepTheirHolesEmpty_whateverTheDirectionTheyCameIn() {
+        // ناتج القص قد يعطي الحد الداخلي بنفس اتجاه الخارجي: الفراغ يمتلئ لولا التوجيه
+        val same = listOf(circle(0.5f, 0.5f, 0.4f, true), circle(0.5f, 0.5f, 0.25f, true))
+        assertTrue(InkFill.winding(0.5f, 0.5f, InkFill.contours(InkFill.encode(same))) != 0)
+        val fixed = InkFill.contours(InkFill.encode(InkFill.orient(same)))
+        assertEquals(0, InkFill.winding(0.5f, 0.5f, fixed)) // الفراغ فارغ
+        assertTrue(InkFill.winding(0.82f, 0.5f, fixed) != 0) // الجسم مملوء
+        // جزيرة داخل الفراغ تبقى مملوءة
+        val island = InkFill.orient(same + listOf(circle(0.5f, 0.5f, 0.1f, false)))
+        assertTrue(InkFill.winding(0.5f, 0.5f, InkFill.contours(InkFill.encode(island))) != 0)
+    }
+
+    @Test
+    fun repairHoles_fixesOldDamagedLetters_andLeavesOthersAlone() {
+        val damaged = InkFill.encode(listOf(circle(0.5f, 0.5f, 0.4f, true), circle(0.5f, 0.5f, 0.25f, true)))
+        val repaired = InkFill.contours(InkFill.repairHoles(damaged))
+        assertEquals(0, InkFill.winding(0.5f, 0.5f, repaired))
+        assertTrue(InkFill.winding(0.82f, 0.5f, repaired) != 0)
+        // حرف سليم: لا يتغير
+        val good = InkFill.encode(listOf(circle(0.5f, 0.5f, 0.4f, true), circle(0.5f, 0.5f, 0.25f, false)))
+        assertTrue(InkFill.repairHoles(good) === good)
+        // أجزاء متقاطعة بنفس الاتجاه (حرف بخط متغير السماكة): الملء بينها مقصود، لا يُمس
+        val crossing = InkFill.encode(listOf(rect(0f, 0f, 2f, 1f), rect(1f, 0.2f, 3f, 0.8f)))
+        assertTrue(InkFill.repairHoles(crossing) === crossing)
+    }
 }

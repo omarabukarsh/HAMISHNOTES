@@ -413,7 +413,7 @@ class LibraryRepository(context: Context) {
                             Tool.FOUNTAIN
                         }
                         val safeKind = if (kind == Tool.ERASER || kind == Tool.LASER) Tool.FOUNTAIN else kind
-                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L), o.optInt("ls", 0), o.optBoolean("sh", false), o.optBoolean("fl", false), o.optDouble("lf", -1.0).toFloat(), o.optDouble("ef", 0.0).toFloat()))
+                        list.add(Ink(if (o.optBoolean("fl", false)) InkFill.repairHoles(pts) else pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L), o.optInt("ls", 0), o.optBoolean("sh", false), o.optBoolean("fl", false), o.optDouble("lf", -1.0).toFloat(), o.optDouble("ef", 0.0).toFloat()))
                     }
                     ink[key.toInt()] = list
                 }
@@ -568,7 +568,7 @@ class LibraryRepository(context: Context) {
                                     j += 3
                                 }
                                 val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
-                                inks.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat()))
+                                inks.add(Ink(if (so.optBoolean("fl", false)) InkFill.repairHoles(pts) else pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat()))
                             }
                         }
                         all.add(
@@ -817,7 +817,7 @@ class LibraryRepository(context: Context) {
                     j += 3
                 }
                 val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
-                out.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat()))
+                out.add(Ink(if (so.optBoolean("fl", false)) InkFill.repairHoles(pts) else pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat()))
             } catch (e: Throwable) {
             }
         }

@@ -461,7 +461,7 @@ fun SummaryDrawer(
 private fun copy(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-    AppController.messages.tryEmit(L("تم النسخ", "Copied"))
+    AppController.say(MsgKind.DONE, L("تم النسخ", "Copied"))
 }
 
 /** نص الفقرة مع إبراز الأجزاء المهمة بخط عريض وتظليل ذهبي فاتح. */

@@ -106,7 +106,7 @@ object StickerStore {
                 withContext(Dispatchers.Main) { save(out) }
                 true
             }
-            AppController.messages.tryEmit(if (ok) L("أُضيف إلى «ملصقاتي»", "Added to “My stickers”") else L("تعذر قراءة الصورة", "Could not read the image"))
+            AppController.say(MsgKind.DONE, if (ok) L("أُضيف إلى «ملصقاتي»", "Added to “My stickers”") else L("تعذر قراءة الصورة", "Could not read the image"))
         }
     }
 
@@ -115,7 +115,7 @@ object StickerStore {
         val sel = s.lassoSel ?: return
         val strokes = sel.strokes.filter { it.pts.isNotEmpty() }
         if (strokes.isEmpty()) {
-            AppController.messages.tryEmit(L("حدّد رسمًا أو كتابة بالقلم أولًا", "Select a drawing or pen writing first"))
+            AppController.say(MsgKind.ERROR, L("حدّد رسمًا أو كتابة بالقلم أولًا", "Select a drawing or pen writing first"))
             return
         }
         var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
@@ -156,7 +156,7 @@ object StickerStore {
         }
         save(bmp)
         s.lassoSel = null
-        AppController.messages.tryEmit(L("حُفظ الملصق في «ملصقاتي»، وتجده في أداة الملصقات", "Saved to “My stickers” — find it in the stickers tool"))
+        AppController.say(MsgKind.DONE, L("حُفظ الملصق في «ملصقاتي»، وتجده في أداة الملصقات", "Saved to “My stickers” — find it in the stickers tool"))
     }
 
     // ---------------------------------------------------------------- الملصقات الجاهزة
@@ -224,7 +224,7 @@ object StickerStore {
             }
             val w = if (bmp.width > bmp.height * 1.5f) 0.26f else 0.16f
             AppController.insertImage(s, Uri.fromFile(f), page, width = w, quiet = true, at = at, onDone = onDone)
-            AppController.messages.tryEmit(L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
+            AppController.say(MsgKind.TIP, L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
         }
     }
 
@@ -268,7 +268,7 @@ fun StickerDialog(s: DocSession, onDismiss: () -> Unit) {
                         item { AddTile("＋\n" + L("من صورة", "From photo")) { fromPhoto = true } }
                         item {
                             AddTile("＋\n" + L("من رسمي", "From my drawing")) {
-                                AppController.messages.tryEmit(
+                                AppController.say(MsgKind.TIP, 
                                     L("حدّد رسمك بأداة التحديد الحر، ثم اضغط «☺ حفظ كملصق»", "Select your drawing with the lasso, then tap “☺ Save as sticker”")
                                 )
                                 onDismiss()

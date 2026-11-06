@@ -165,7 +165,7 @@ fun TranslateDialog(text: String, onDismiss: () -> Unit) {
             TextButton(enabled = result != null, onClick = {
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("MyNotes", result ?: ""))
-                AppController.messages.tryEmit(L("تم النسخ", "Copied"))
+                AppController.say(MsgKind.DONE, L("تم النسخ", "Copied"))
             }) { Text(L("نسخ", "Copy")) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }

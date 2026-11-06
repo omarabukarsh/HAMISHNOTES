@@ -1295,7 +1295,7 @@ private fun DocCard(
                         leadingIcon = { PhIcon(R.drawable.ph_export, Palette.TextSecondary, 18.dp) },
                         onClick = {
                             menu = false
-                            if (entry.locked) AppController.messages.tryEmit(L("افتح قفل المستند أولًا", "Unlock the document first"))
+                            if (entry.locked) AppController.say(MsgKind.ERROR, L("افتح قفل المستند أولًا", "Unlock the document first"))
                             else shareOpen = true
                         }
                     )

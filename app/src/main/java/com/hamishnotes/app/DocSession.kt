@@ -211,7 +211,7 @@ class DocSession(entry: DocEntry) {
         if (f.isEmpty() || b.isEmpty()) return
         customCards = customCards + Card("u:" + UUID.randomUUID().toString(), f, b)
         persist()
-        AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
+        AppController.say(MsgKind.DONE, L("أُضيفت البطاقة", "Card added"))
     }
 
     fun updateCustomCard(cardId: String, front: String, back: String) {
@@ -236,7 +236,7 @@ class DocSession(entry: DocEntry) {
     fun toggleBookmark(page: Int) {
         bookmarks = if (page in bookmarks) bookmarks - page else bookmarks + page
         persist()
-        AppController.messages.tryEmit(if (page in bookmarks) L("أُضيفت علامة على الصفحة ${page + 1}", "Bookmarked page ${page + 1}") else L("أُزيلت العلامة", "Bookmark removed"))
+        AppController.say(MsgKind.DONE, if (page in bookmarks) L("أُضيفت علامة على الصفحة ${page + 1}", "Bookmarked page ${page + 1}") else L("أُزيلت العلامة", "Bookmark removed"))
     }
 
     /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
@@ -565,7 +565,7 @@ class DocSession(entry: DocEntry) {
         }.map { it.id }
         val sel = LassoSel(page, picked, imgs, txts)
         lassoSel = if (sel.isEmpty()) null else sel
-        if (sel.isEmpty()) AppController.messages.tryEmit(L("لم تحدد أي شيء", "Nothing selected"))
+        if (sel.isEmpty()) AppController.say(MsgKind.ERROR, L("لم تحدد أي شيء", "Nothing selected"))
     }
 
     /** المستطيل المحيط بالتحديد (l, t, r, b) بإحداثيات الصفحة. */
@@ -1195,7 +1195,7 @@ class DocSession(entry: DocEntry) {
             summaryEdits = summaryEdits.copy(map = MindMap.migrate(summaryEdits.map, removed, added[0]))
         }
         if (!nested) endEdit()
-        res.message?.let { AppController.messages.tryEmit(it) }
+        res.message?.let { AppController.say(MsgKind.DONE, it) }
     }
 
     /**
@@ -1212,7 +1212,7 @@ class DocSession(entry: DocEntry) {
                 if (!nested) beginEdit()
                 addInk(page, Ink(pts, color, width, Tool.HIGHLIGHTER))
                 if (!nested) endEdit()
-                AppController.messages.tryEmit(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
+                AppController.say(MsgKind.DONE, L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
             }
         }
         // القراءة المحفوظة قد تسبق ما كُتب بعدها؛ تُعاد قراءتها حينئذ (الأسطر الجديدة فقط تُقرأ فعلًا)
@@ -1243,7 +1243,7 @@ class DocSession(entry: DocEntry) {
         val b = maxOf(sel.start, sel.end)
         addMark(sel.page, words, (a..b).toList(), color)
         selection = null
-        AppController.messages.tryEmit(
+        AppController.say(MsgKind.DONE, 
             if (AppController.highlightToSummary && UiPrefs.summariesOn) L("أُضيف النص إلى الملخصات", "Text added to summaries") else L("مُيّز النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries")
         )
     }

@@ -56,7 +56,7 @@ private fun SetPinDialog(id: String) {
             TextButton(enabled = ok, onClick = {
                 c.setPin(p1)
                 c.setPinFor = null
-                if (id.isNotEmpty()) c.toggleLock(id) else c.messages.tryEmit(L("تم تغيير الرمز", "PIN changed"))
+                if (id.isNotEmpty()) c.toggleLock(id) else c.say(MsgKind.DONE, L("تم تغيير الرمز", "PIN changed"))
             }) { Text(L("حفظ", "Save")) }
         },
         dismissButton = { TextButton(onClick = { c.setPinFor = null }) { Text(L("إلغاء", "Cancel")) } }

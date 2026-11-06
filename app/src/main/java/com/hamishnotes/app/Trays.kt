@@ -608,7 +608,7 @@ private fun StickerTrayContent(s: DocSession) {
             item { TrayAddTile("＋\n" + L("من صورة", "Photo")) { s.trayMode = "stickerPhoto" } }
             item {
                 TrayAddTile("＋\n" + L("من رسمي", "Drawing")) {
-                    AppController.messages.tryEmit(
+                    AppController.say(MsgKind.TIP, 
                         L("حدّد رسمك بأداة التحديد الحر، ثم اضغط «☺ ملصق»", "Select your drawing with the lasso, then tap “☺ Sticker”")
                     )
                 }

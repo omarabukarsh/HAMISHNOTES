@@ -303,7 +303,7 @@ fun FontLibraryDialog(sample: String, current: String, onPick: (String) -> Unit,
                                         onPick(e.name)
                                         onDismiss()
                                     } else {
-                                        AppController.messages.tryEmit(L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection"))
+                                        AppController.say(MsgKind.ERROR, L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection"))
                                     }
                                 }
                             }

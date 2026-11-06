@@ -98,7 +98,7 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                 PanelDivider()
                 PanelRow(L("تكرار الصفحة", "Duplicate page"), R.drawable.ph_copy) {
                     s.rearrangePages(order { add(page + 1, page) })
-                    c.messages.tryEmit(L("كُرّرت الصفحة ${page + 1}", "Page ${page + 1} duplicated"))
+                    c.say(MsgKind.DONE, L("كُرّرت الصفحة ${page + 1}", "Page ${page + 1} duplicated"))
                 }
                 PanelDivider()
                 PanelRow(L("إضافة صفحة بعدها", "Add page after"), R.drawable.ph_add_page) { addPage = true }
@@ -155,7 +155,7 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
         OutlineTitleDialog(L("عنوان للصفحة ${page + 1}", "Heading for page ${page + 1}"), "", onDismiss = { outlineAdd = false }) { t ->
             outlineAdd = false
             s.addOutlineEntry(page, t)
-            c.messages.tryEmit(L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
+            c.say(MsgKind.DONE, L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
         }
     }
     if (addPage) {

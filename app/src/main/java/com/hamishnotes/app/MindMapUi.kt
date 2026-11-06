@@ -351,7 +351,7 @@ fun MindMapDialog(
         val k = keys ?: return
         val t = target ?: return
         s.mapPlace(k, t)
-        c.messages.tryEmit(if (k.size == 1) L("وُضع النص في الخريطة", "Placed on the map") else L("وُضعت ${k.size} نصوص في الخريطة", "${k.size} texts placed on the map"))
+        c.say(MsgKind.DONE, if (k.size == 1) L("وُضع النص في الخريطة", "Placed on the map") else L("وُضعت ${k.size} نصوص في الخريطة", "${k.size} texts placed on the map"))
         if (fromSummary) onPlaced() else {
             placingKeys = null
             target = null
@@ -396,7 +396,7 @@ fun MindMapDialog(
                                         else -> { addAsPage(s, bmp); onDismiss() }
                                     }
                                 } catch (t: Throwable) {
-                                    c.messages.tryEmit(L("تعذر تجهيز الخريطة", "Could not prepare the map"))
+                                    c.say(MsgKind.ERROR, L("تعذر تجهيز الخريطة", "Could not prepare the map"))
                                 }
                             }
                         }
@@ -483,7 +483,7 @@ fun MindMapDialog(
                                     val free = selected.isFree
                                     val n = s.mapRemove(selected.key)
                                     selectedKey = null
-                                    c.messages.tryEmit(
+                                    c.say(MsgKind.DONE, 
                                         when {
                                             free && n > 1 -> L("حُذف النص مع ما تحته (${n - 1})", "Deleted with ${n - 1} under it")
                                             free -> L("حُذف النص", "Text deleted")
@@ -1179,5 +1179,5 @@ private suspend fun addAsPage(s: DocSession, bmp: Bitmap) {
     val item = ImageItem(UUID.randomUUID().toString(), name, page, (1f - w) / 2f, (pageH - w / aspect) / 2f, w, aspect)
     s.addImage(item)
     s.selectedImageId = null
-    AppController.messages.tryEmit(L("أُضيفت الخريطة صفحةً في آخر المستند", "The map was added as the last page"))
+    AppController.say(MsgKind.DONE, L("أُضيفت الخريطة صفحةً في آخر المستند", "The map was added as the last page"))
 }

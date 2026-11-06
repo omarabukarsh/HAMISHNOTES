@@ -203,7 +203,7 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
                                 val e = AccountDeletion.delete(activity)
                                 busy = false
                                 if (e == null) {
-                                    AppController.messages.tryEmit(L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device"))
+                                    AppController.say(MsgKind.DONE, L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device"))
                                     onDismiss()
                                 } else error = e
                             }

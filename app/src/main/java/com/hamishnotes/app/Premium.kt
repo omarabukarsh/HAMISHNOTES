@@ -144,7 +144,7 @@ object Premium {
             AppController.scope.launch {
                 if (AppController.accountEmail != null) {
                     AppController.signOutAccount()
-                    AppController.messages.tryEmit(L("انتهت جلستك، سجّل الدخول بحساب Google مجددًا", "Your session ended, please sign in with Google again"))
+                    AppController.say(MsgKind.ERROR, L("انتهت جلستك، سجّل الدخول بحساب Google مجددًا", "Your session ended, please sign in with Google again"))
                 }
             }
         }
@@ -257,19 +257,19 @@ object Premium {
     fun startPurchase(a: Activity, onDone: () -> Unit = {}) {
         if (BuildConfig.TEST_PREMIUM) {
             activateTest()
-            AppController.messages.tryEmit(L("فُعّل Premium (وضع تجريبي)", "Premium activated (test mode)"))
+            AppController.say(MsgKind.DONE, L("فُعّل Premium (وضع تجريبي)", "Premium activated (test mode)"))
             onDone()
             return
         }
         AppController.scope.launch {
             if (!Cloud.configured) {
-                AppController.messages.tryEmit(L("الاشتراك غير متاح في هذه النسخة", "Subscriptions aren’t available in this build"))
+                AppController.say(MsgKind.ERROR, L("الاشتراك غير متاح في هذه النسخة", "Subscriptions aren’t available in this build"))
                 return@launch
             }
             val uid = Cloud.userId ?: signInForPurchase(a) ?: return@launch
             if (!PlayBilling.buy(a, uid)) {
                 // أجهزة بلا خدمات Google (مثل هواوي الحديثة): المجاني يبقى كما هو، والاشتراك يحتاج Google Play
-                AppController.messages.tryEmit(L("الاشتراك يحتاج Google Play على هذا الجهاز", "Subscribing needs Google Play on this device"))
+                AppController.say(MsgKind.ERROR, L("الاشتراك يحتاج Google Play على هذا الجهاز", "Subscribing needs Google Play on this device"))
             }
             onDone()
         }
@@ -277,10 +277,10 @@ object Premium {
 
     /** الاشتراك يُربط بحسابك (فينتقل معك إلى أي جهاز): نطلب الدخول بـ Google إن لم يكن. */
     private suspend fun signInForPurchase(a: Activity): String? {
-        AppController.messages.tryEmit(L("سجّل الدخول بحساب Google ليُربط اشتراكك به", "Sign in with Google so your subscription is linked to you"))
+        AppController.say(MsgKind.ERROR, L("سجّل الدخول بحساب Google ليُربط اشتراكك به", "Sign in with Google so your subscription is linked to you"))
         val r = GoogleAuth.signIn(a)
         r.onSuccess { (email, name) -> AppController.setAccount(email, name) }
-            .onFailure { AppController.messages.tryEmit(GoogleAuth.messageFor(it)) }
+            .onFailure { AppController.say(MsgKind.DONE, GoogleAuth.messageFor(it)) }
         return Cloud.userId
     }
 
@@ -297,12 +297,12 @@ object Premium {
     /** «استعادة الشراء»، وأيضًا تلقائيًا بعد إعادة التثبيت أو على جهاز جديد. */
     fun restore(quiet: Boolean) {
         if (BuildConfig.TEST_PREMIUM) {
-            if (!quiet) AppController.messages.tryEmit(L("الاستعادة تعمل في نسخة المتجر", "Restore works in the store version"))
+            if (!quiet) AppController.say(MsgKind.ERROR, L("الاستعادة تعمل في نسخة المتجر", "Restore works in the store version"))
             return
         }
         AppController.scope.launch {
             if (Cloud.userId == null) {
-                if (!quiet) AppController.messages.tryEmit(L("سجّل الدخول بحساب Google الذي اشتركت به", "Sign in with the Google account you subscribed with"))
+                if (!quiet) AppController.say(MsgKind.ERROR, L("سجّل الدخول بحساب Google الذي اشتركت به", "Sign in with the Google account you subscribed with"))
                 return@launch
             }
             val owned = PlayBilling.owned().firstOrNull()
@@ -369,20 +369,20 @@ object Premium {
     private suspend fun report(o: Outcome, success: String?) {
         val a = activity?.get()
         when (o) {
-            Outcome.OK -> success?.let { AppController.messages.tryEmit(it) }
-            Outcome.NONE -> if (success != null) AppController.messages.tryEmit(L("لا يوجد اشتراك فعّال في هذا الحساب", "No active subscription on this account"))
+            Outcome.OK -> success?.let { AppController.say(MsgKind.DONE, it) }
+            Outcome.NONE -> if (success != null) AppController.say(MsgKind.ERROR, L("لا يوجد اشتراك فعّال في هذا الحساب", "No active subscription on this account"))
             Outcome.UNLICENSED -> {
-                AppController.messages.tryEmit(L("Premium يعمل مع نسخة هامش من Google Play فقط", "Premium works only with Hamish from Google Play"))
+                AppController.say(MsgKind.ERROR, L("Premium يعمل مع نسخة هامش من Google Play فقط", "Premium works only with Hamish from Google Play"))
                 if (a != null) Integrity.showGetLicensed(a)
             }
             Outcome.DEVICE -> {
-                AppController.messages.tryEmit(L("تعذّر التحقق من سلامة هذا الجهاز", "This device couldn’t be verified"))
+                AppController.say(MsgKind.ERROR, L("تعذّر التحقق من سلامة هذا الجهاز", "This device couldn’t be verified"))
                 if (a != null) Integrity.showGetIntegrity(a)
             }
-            Outcome.OTHER_ACCOUNT -> AppController.messages.tryEmit(L("هذا الاشتراك مربوط بحساب هامش آخر", "This subscription is linked to another Hamish account"))
-            Outcome.OFFLINE -> if (success != null) AppController.messages.tryEmit(L("تحقق من اتصالك بالإنترنت", "Check your internet connection"))
-            Outcome.SIGN_IN -> if (success != null) AppController.messages.tryEmit(L("سجّل الدخول بحساب Google أولًا", "Sign in with Google first"))
-            Outcome.FAILED -> if (success != null) AppController.messages.tryEmit(L("تعذّر التحقق من الاشتراك، حاول لاحقًا", "Couldn’t verify the subscription, try later"))
+            Outcome.OTHER_ACCOUNT -> AppController.say(MsgKind.ERROR, L("هذا الاشتراك مربوط بحساب هامش آخر", "This subscription is linked to another Hamish account"))
+            Outcome.OFFLINE -> if (success != null) AppController.say(MsgKind.ERROR, L("تحقق من اتصالك بالإنترنت", "Check your internet connection"))
+            Outcome.SIGN_IN -> if (success != null) AppController.say(MsgKind.ERROR, L("سجّل الدخول بحساب Google أولًا", "Sign in with Google first"))
+            Outcome.FAILED -> if (success != null) AppController.say(MsgKind.ERROR, L("تعذّر التحقق من الاشتراك، حاول لاحقًا", "Couldn’t verify the subscription, try later"))
         }
     }
 }

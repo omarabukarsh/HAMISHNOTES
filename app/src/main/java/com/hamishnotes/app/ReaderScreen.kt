@@ -228,7 +228,7 @@ private fun ReaderContent(s: DocSession) {
     val safeTitle = s.title.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim().ifEmpty { L("مستند", "Document") }
     val exportDoc: () -> Unit = { docSaver.launch(L("$safeTitle - مع التعليقات.pdf", "$safeTitle - annotated.pdf")) }
     val exportSummary: () -> Unit = {
-        if (s.allMarks().isEmpty()) c.messages.tryEmit(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
+        if (s.allMarks().isEmpty()) c.say(MsgKind.ERROR, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
         else summarySaver.launch(L("ملخص $safeTitle.pdf", "Summary $safeTitle.pdf"))
     }
 
@@ -615,7 +615,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             } else {
                                 c.lassoActive = true
                                 PenPrefs.shapeActive = false
-                                c.messages.tryEmit(L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
+                                c.say(MsgKind.TIP, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, tintFor(c.lassoActive)) }
                         DropdownMenu(
@@ -649,7 +649,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     TBtn(selected = PenInput.fingerWrites, onClick = {
                         val on = !PenInput.fingerWrites
                         PenInput.chooseFingerWrites(on)
-                        c.messages.tryEmit(
+                        c.say(MsgKind.TIP, 
                             if (on) L("صار الإصبع يكتب · اسحب بإصبعين للتمرير", "Your finger now writes · drag with two fingers to scroll")
                             else L("القلم يكتب، والإصبع للتمرير", "The pen writes; your finger scrolls")
                         )
@@ -691,7 +691,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                                 PenPrefs.shapeActive = false
                                 PenPrefs.stickyActive = false
                                 PenPrefs.textActive = true
-                                c.messages.tryEmit(L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
+                                c.say(MsgKind.TIP, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
                         }) { TextGlyph(tintFor(PenPrefs.textActive || s.inlineEditId != null)) }
                         DropdownMenu(
@@ -716,7 +716,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             PenPrefs.shapeActive = false
                             PenPrefs.textActive = false
                             PenPrefs.stickyActive = true
-                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
+                            c.say(MsgKind.TIP, L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
                         }
                     }) { PhIcon(R.drawable.ph_sticky_note, tintFor(PenPrefs.stickyActive)) }
                 }
@@ -808,7 +808,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         s.drawerOpen = false
                         s.summaryOpen = false
                         c.focusMode = true
-                        c.messages.tryEmit(L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
+                        c.say(MsgKind.TIP, L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
                     }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
                 }
                 // الإعدادات: ظاهرة دائمًا
@@ -1797,7 +1797,7 @@ private fun SelectionBar(s: DocSession) {
                 if (text.isNotEmpty()) {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-                    AppController.messages.tryEmit(L("تم نسخ النص", "Text copied"))
+                    AppController.say(MsgKind.DONE, L("تم نسخ النص", "Text copied"))
                 }
             }) { Text(L("نسخ", "Copy")) }
             TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
@@ -3032,7 +3032,7 @@ private fun PageView(
                                     nx >= it.x && nx <= it.x + it.w && ny >= it.y && ny <= it.y + th
                                 }
                                 // كلمة متحولة لها قراءات أخرى: نقرة تعرض البدائل للتصحيح
-                                if (textHit != null && textHit.alts.isNotEmpty() && textHit.id != session.selectedTextId) {
+                                if (UiPrefs.wordAltsOn && textHit != null && textHit.alts.isNotEmpty() && textHit.id != session.selectedTextId) {
                                     val lw = session.textLayouts[textHit.id]
                                     if (lw != null) {
                                         val (lay, lwp) = lw
@@ -3358,7 +3358,7 @@ private fun LinkDialog(s: DocSession, cur: Int, onDismiss: () -> Unit) {
                         text = title, color = Palette.Navy, size = 0.02f, linkDoc = t.id, linkPage = p
                     )
                 )
-                c.messages.tryEmit(L("أُضيف الرابط: اسحبه لمكانه، وانقر عليه مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
+                c.say(MsgKind.TIP, L("أُضيف الرابط: اسحبه لمكانه، وانقر عليه مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
                 onDismiss()
             }) { Text(L("إضافة", "Add")) }
         },

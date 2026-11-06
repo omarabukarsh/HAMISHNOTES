@@ -388,7 +388,7 @@ object AutoFont {
         if (words == null) {
             if (!warned) {
                 warned = true
-                AppController.messages.tryEmit(
+                AppController.say(MsgKind.ERROR, 
                     L(
                         "حزمة قراءة خط اليد غير جاهزة؛ اتصل بالإنترنت مرة واحدة ليبدأ التحويل التلقائي.",
                         "The handwriting pack isn’t ready; connect to the internet once to start auto-convert."
@@ -721,7 +721,7 @@ object AutoFont {
                         s, pg, tb.id, pos.coerceIn(0, tb.text.length),
                         Rect(apex.x - 0.18f, b - lineH * 0.2f, apex.x + 0.18f, b + lineH * 2.4f)
                     )
-                    AppController.messages.tryEmit(L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box"))
+                    AppController.say(MsgKind.TIP, L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box"))
                     return true
                 }
             }

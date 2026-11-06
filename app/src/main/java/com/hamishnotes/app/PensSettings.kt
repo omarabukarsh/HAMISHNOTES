@@ -254,7 +254,7 @@ fun PensSection() {
             ) {
                 PenChipButton(L("إعادة", "Reset")) {
                     PenInput.recalibrate(pen.key)
-                    AppController.messages.tryEmit(L("ستُعاد المعايرة من كتابتك القادمة", "Calibration restarts from your next writing"))
+                    AppController.say(MsgKind.TIP, L("ستُعاد المعايرة من كتابتك القادمة", "Calibration restarts from your next writing"))
                 }
             }
             PenDivider()

@@ -228,7 +228,7 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                             on
                         ) { v ->
                             AutoFont.changeOn(v)
-                            if (v) AppController.messages.tryEmit(L("اكتب جملتك، وستتجمّل عند إنهائها", "Write your sentence; it is beautified when you finish"))
+                            if (v) AppController.say(MsgKind.TIP, L("اكتب جملتك، وستتجمّل عند إنهائها", "Write your sentence; it is beautified when you finish"))
                         }
                     }
                     Column(Modifier.alpha(if (on) 1f else 0.55f)) {
@@ -457,7 +457,7 @@ fun FontPickerSheet(current: String, lang: Int, onPick: (String) -> Unit, onDism
                                         onPick(e.name)
                                         onDismiss()
                                     } else {
-                                        AppController.messages.tryEmit(L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection"))
+                                        AppController.say(MsgKind.ERROR, L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection"))
                                     }
                                 }
                             }

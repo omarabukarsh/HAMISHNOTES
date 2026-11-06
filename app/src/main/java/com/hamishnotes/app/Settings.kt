@@ -431,6 +431,37 @@ private fun SettingsPane(
                             Segmented(listOf("العربية", "English"), if (I18n.english) 1 else 0) { c.setEnglish(it == 1) }
                         }
                     }
+                    // الرسائل المنبثقة أسفل الشاشة: كل نوع بمفتاح
+                    GroupLabel(L("الرسائل المنبثقة", "Pop-up messages"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_info, TileBlue,
+                            L("الإرشادات", "Tips"),
+                            L("تشرح كيف تستعمل الأداة، مثل «اضغط على الأداة مرة ثانية لفتح إعداداتها»", "Explain how to use a tool, like “Tap the tool again to open its settings”"),
+                            UiPrefs.tipsOn
+                        ) { UiPrefs.changeTips(!UiPrefs.tipsOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_check_circle, TileGreen,
+                            L("التأكيدات", "Confirmations"),
+                            L("تخبرك أن شيئاً تم، مثل «تم النسخ» و«أُضيفت البطاقة»", "Tell you something was done, like “Copied” and “Card added”"),
+                            UiPrefs.doneOn
+                        ) { UiPrefs.changeDone(!UiPrefs.doneOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_info, TileRed,
+                            L("الأخطاء والتنبيهات", "Errors & warnings"),
+                            L("شيء لم ينجح أو يحتاج منك فعلاً، مثل «تعذر تنزيل الخط»", "Something failed or needs you, like “Could not download the font”"),
+                            UiPrefs.errorsOn
+                        ) { UiPrefs.changeErrors(!UiPrefs.errorsOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_text, TileGray,
+                            L("قراءات الكلمة البديلة", "Other readings of a word"),
+                            L("النقر على كلمة محوّلة يعرض قراءات أخرى لها للتصحيح", "Tapping a converted word shows other readings to correct it"),
+                            UiPrefs.wordAltsOn
+                        ) { UiPrefs.changeWordAlts(!UiPrefs.wordAltsOn) }
+                    }
                     GroupLabel(L("المستندات", "Documents"))
                     SettingsGroup {
                         SwitchRow(
@@ -791,7 +822,7 @@ private fun PenKeyLearnRow() {
                 // نافذة الإعدادات تحجب إشارات القلم عن الشاشة الرئيسية، فنغلقها أثناء التعليم
                 c.learnPenKey(true)
                 c.settingsOpen = false
-                c.messages.tryEmit(L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
+                c.say(MsgKind.TIP, L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
             }
         }
     }
@@ -1813,7 +1844,7 @@ private fun ReminderRow() {
     val permission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { ok ->
-        if (!ok) c.messages.tryEmit(L("لن تظهر التذكيرات دون السماح بالإشعارات", "Reminders won’t show without notification permission"))
+        if (!ok) c.say(MsgKind.ERROR, L("لن تظهر التذكيرات دون السماح بالإشعارات", "Reminders won’t show without notification permission"))
     }
     fun hhmm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
     val shape = RoundedCornerShape(14.dp)

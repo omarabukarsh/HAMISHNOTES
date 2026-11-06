@@ -176,7 +176,7 @@ object AudioNotes {
             }
         } catch (t: Throwable) {
             p.release()
-            AppController.messages.tryEmit(L("تعذر تشغيل التسجيل", "Could not play the recording"))
+            AppController.say(MsgKind.ERROR, L("تعذر تشغيل التسجيل", "Could not play the recording"))
         }
     }
 
@@ -243,14 +243,14 @@ fun AudioDialog(s: DocSession, onDismiss: () -> Unit) {
     val busyElsewhere = AudioNotes.recordingDoc != null && !recHere
     fun begin() {
         if (AudioNotes.start(s.id)) {
-            AppController.messages.tryEmit(L("بدأ التسجيل — اكتب وسيُربط كل خط بلحظته", "Recording — every stroke is linked to its moment"))
+            AppController.say(MsgKind.TIP, L("بدأ التسجيل — اكتب وسيُربط كل خط بلحظته", "Recording — every stroke is linked to its moment"))
             onDismiss()
-        } else AppController.messages.tryEmit(L("تعذر بدء التسجيل", "Could not start recording"))
+        } else AppController.say(MsgKind.ERROR, L("تعذر بدء التسجيل", "Could not start recording"))
     }
     val perm = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { ok ->
-        if (ok) begin() else AppController.messages.tryEmit(L("يلزم إذن الميكروفون للتسجيل", "Microphone permission is required"))
+        if (ok) begin() else AppController.say(MsgKind.ERROR, L("يلزم إذن الميكروفون للتسجيل", "Microphone permission is required"))
     }
     val recs = AudioNotes.list(s.id)
     AlertDialog(

@@ -209,7 +209,7 @@ fun InkToTextDialog(s: DocSession, onDismiss: () -> Unit) {
                 TextButton(enabled = !busy && text.isNotBlank(), onClick = {
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-                    AppController.messages.tryEmit(L("تم النسخ", "Copied"))
+                    AppController.say(MsgKind.DONE, L("تم النسخ", "Copied"))
                 }) { Text(L("نسخ", "Copy")) }
                 TextButton(enabled = !busy && text.isNotBlank(), onClick = {
                     val bb = s.lassoBounds()

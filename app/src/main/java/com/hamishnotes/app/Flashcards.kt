@@ -368,7 +368,7 @@ fun NewLooseCardDialog(initialFolder: String, onDismiss: () -> Unit) {
                 }) { Text(L("حفظ وإضافة أخرى", "Save & add another"), color = CardTeal) }
                 TextButton(enabled = ok, onClick = {
                     if (CardDeck.addLoose(front, back, folder)) {
-                        AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
+                        AppController.say(MsgKind.DONE, L("أُضيفت البطاقة", "Card added"))
                         onDismiss()
                     }
                 }) { Text(L("حفظ", "Save"), fontWeight = FontWeight.Bold) }

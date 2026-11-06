@@ -132,7 +132,7 @@ internal object PlayBilling {
                 }
             BillingClient.BillingResponseCode.USER_CANCELED -> Unit
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> Premium.restore(quiet = false)
-            else -> AppController.messages.tryEmit(L("تعذّر إتمام الشراء، حاول مرة أخرى", "Purchase couldn’t be completed, please try again"))
+            else -> AppController.say(MsgKind.ERROR, L("تعذّر إتمام الشراء، حاول مرة أخرى", "Purchase couldn’t be completed, please try again"))
         }
     }
 }

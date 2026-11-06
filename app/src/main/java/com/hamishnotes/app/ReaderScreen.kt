@@ -2116,12 +2116,41 @@ private fun PageView(
     /** خطوط رُفع القلم عنها ولم تظهر بعد في صورة الخطوط: تبقى مرسومة هنا حتى تظهر هناك. */
     val pendingInk = remember { ArrayList<Ink>() }
     val strokesNow by rememberUpdatedState(strokes)
+    /**
+     * طبقتا الخطوط: الخلفية (الهايلايتر وملء الأشكال) تحت النص والكتابة، والكتابة فوقهما.
+     * تُعاد القائمة السابقة نفسها إن لم تتغير عناصرها (حتى لا تُعاد رسم صورة طبقة لم تتغير).
+     */
+    val layerCache = remember { arrayOfNulls<List<Ink>>(2) }
+    val (underInk, overInk) = remember(strokes) {
+        fun keep(i: Int, l: List<Ink>): List<Ink> {
+            val old = layerCache[i]
+            val r = if (old != null && old.size == l.size && old.indices.all { old[it] === l[it] }) old else l
+            layerCache[i] = r
+            return r
+        }
+        if (strokes.none { it.inUnderlay() }) keep(0, emptyList()) to keep(1, strokes)
+        else keep(0, strokes.filter { it.inUnderlay() }) to keep(1, strokes.filter { it.inOverlay() })
+    }
     /** الجزء الظاهر من الصفحة على الشاشة بإحداثياتها (بالبكسل). */
     val visRect = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val laser = remember { ArrayList<LaserPt>() }
     val lz = remember { LaserState() }
     var laserOn by remember { mutableStateOf(false) }
     var tick by remember { mutableStateOf(0) }
+    /** آخر ما رُسم في صورتي الطبقتين (0 = الخلفية، 1 = الكتابة). */
+    val layerDrawn = remember { arrayOfNulls<List<List<Ink>>>(2) }
+    /** بعد تحديث صورة طبقة: الخط المعلّق الذي ظهر في كل طبقاته لا يُرسم مؤقتاً بعد الآن. */
+    fun settlePending(drawnLists: List<List<Ink>>, under: Boolean) {
+        layerDrawn[if (under) 0 else 1] = drawnLists
+        if (pendingInk.isEmpty()) return
+        fun shown(i: Int, p: Ink) = layerDrawn[i]?.let { ls -> ls.isNotEmpty() && ls.all { l -> l.any { it === p } } } ?: false
+        val cur = strokesNow
+        val before = pendingInk.size
+        pendingInk.removeAll { p ->
+            ((!p.inUnderlay() || shown(0, p)) && (!p.inOverlay() || shown(1, p))) || cur.none { it === p }
+        }
+        if (pendingInk.size != before) tick++
+    }
 
     // تلاشي أثر الليزر وإبقاء نقطته حاضرة طالما القلم فوق الشاشة
     LaunchedEffect(laserOn) {
@@ -2283,6 +2312,9 @@ private fun PageView(
             }
         }
 
+        // الهايلايتر وملء الأشكال: تحت النص والكتابة
+        InkLayer("${session.id}:$index:u", underInk, night, visRect, Modifier.fillMaxSize(), under = true) { settlePending(it, under = true) }
+
         // مربعات النص المكتوب
         if (wPx > 0) {
             val wp = wPx.toFloat()
@@ -2362,14 +2394,7 @@ private fun PageView(
         }
 
         // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
-        InkLayer("${session.id}:$index", strokes, night, visRect, Modifier.fillMaxSize()) { drawnLists ->
-            if (pendingInk.isNotEmpty()) {
-                val cur = strokesNow
-                val before = pendingInk.size
-                pendingInk.removeAll { p -> drawnLists.all { l -> l.any { it === p } } || cur.none { it === p } }
-                if (pendingInk.size != before) tick++
-            }
-        }
+        InkLayer("${session.id}:$index", overInk, night, visRect, Modifier.fillMaxSize()) { settlePending(it, under = false) }
         // الملاحظات اللاصقة فوق الكتابة
         NotesLayer(session, index, night)
 
@@ -2399,6 +2424,8 @@ private fun PageView(
                         while (true) {
                             val ev = carry ?: awaitPointerEvent()
                             carry = null
+                            // لمس الورقة يغلق نافذة إعدادات الصفحة الجانبية
+                            if (ev.type == PointerEventType.Press && session.pageMenuOpen) session.pageMenuOpen = false
 
                             // التحديد والأشكال والملاحظات تتقدم على الليزر (الأداة تبقى ليزرًا عند تفعيلها)
                             if (toolNow == Tool.LASER && !lassoNow && !PenPrefs.shapeActive && !PenPrefs.stickyActive &&
@@ -2592,8 +2619,10 @@ private fun PageView(
                                         val parts = ShapeBuilder.build(kind, a, bEnd, PenPrefs.shapeRounded, PenPrefs.arrowStart, PenPrefs.arrowEnd, sw)
                                         session.beginEdit()
                                         val now = System.currentTimeMillis()
-                                        parts.forEach { pts ->
-                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true))
+                                        // الملء للشكل المغلق نفسه فقط (لا لرؤوس الأسهم)
+                                        val fillIt = PenPrefs.shapeFill && kind.closed()
+                                        parts.forEachIndexed { pi, pts ->
+                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true, shapeFill = fillIt && pi == 0))
                                         }
                                         session.endEdit()
                                     }
@@ -3071,8 +3100,12 @@ private fun PageView(
                 }
             } else {
                 // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط
-                pendingInk.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
+                drawStack(pendingInk, { if (night) nightOf(it.color) else it.color })
                 val lc = if (night) nightOf(live.color) else live.color
+                // معاينة ملء الشكل أثناء السحب
+                if (live.sharp && PenPrefs.shapeActive && PenPrefs.shapeFill && PenPrefs.shapeKind.closed() && livePts.size > 2) {
+                    drawUnder(Ink(livePts.toList(), live.color, live.width, Tool.BALLPOINT, shape = true, shapeFill = true), lc)
+                }
                 if (livePts.isNotEmpty() && extra == null && liveRaster.handles(live.style, live.sharp)) {
                     liveRaster.draw(this, livePts, lc, live.width, live.tool, visRect.value, liveGen[0])
                 } else {

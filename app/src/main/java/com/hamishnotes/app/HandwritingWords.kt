@@ -173,6 +173,13 @@ object HandwritingLayout {
     }
 
     fun toWord(w: Word, text: String, line: Int) = OcrWord(text, w.l, w.t, w.r, w.b, line)
+
+    /** نص بحروف لاتينية فقط (لا عربية): قراءة لكتابة إنجليزية. */
+    fun latinOnly(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        val letters = text.filter { it.isLetter() }
+        return letters.isNotEmpty() && letters.all { it in 'a'..'z' || it in 'A'..'Z' }
+    }
 }
 
 /**
@@ -305,11 +312,24 @@ object HandwritingReader {
             val lineNo = firstLine + i
             val lineT = line.runs.minOf { r -> r.words.minOf { it.t } }
             val lineB = line.runs.maxOf { r -> r.words.maxOf { it.b } }
-            for (run in line.runs) {
-                val tag = if (run.rtl) AR else EN
-                val all = run.words.flatMap { it.strokes }
+            for (run0 in line.runs) {
+                var run = run0
+                var tag = if (run.rtl) AR else EN
                 val w = run.words.maxOf { it.r } - run.words.minOf { it.l }
-                val cands = candidates(tag, all, w, lineB - lineT)
+                var cands = candidates(tag, run.words.flatMap { it.strokes }, w, lineB - lineT)
+                // كلمة إنجليزية قُرئت بقارئ العربية (لغة الكتابة «العربية»): حروفها لاتينية فقط،
+                // فتُقرأ من جديد من اليسار لليمين بقارئ الإنجليزية (وإلا تنقلب أجزاؤها مثل Omar ← arom)
+                if (run.rtl && HandwritingLayout.latinOnly(cands.firstOrNull()) && ensure(EN)) {
+                    val ltr = HandwritingLayout.Run(
+                        run.words.sortedBy { it.l }.map { HandwritingLayout.Word(it.strokes, it.l, it.t, it.r, it.b, false) }, false
+                    )
+                    val again = candidates(EN, ltr.words.flatMap { it.strokes }, w, lineB - lineT)
+                    if (again.isNotEmpty()) {
+                        run = ltr
+                        tag = EN
+                        cands = again
+                    }
+                }
                 val text = cands.firstOrNull() ?: ""
                 val pairs = HandwritingLayout.assign(run, text)
                 if (pairs != null) {

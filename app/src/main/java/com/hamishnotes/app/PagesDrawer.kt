@@ -513,7 +513,7 @@ private fun PageThumb(
                     val col = Exporter.markColor(m.color, strong = m.level >= 2)
                     m.rects.forEach { r -> drawMarkRect(col, r, w) }
                 }
-                strokes.forEach { drawStroke(it, it.color) }
+                drawStack(strokes, { it.color })
             }
             // علامة الصفحة في الزاوية: تُضاف أو تُزال بالنقر
             Box(

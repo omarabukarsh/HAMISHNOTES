@@ -60,6 +60,8 @@ object PenPrefs {
     var shapeStyle by mutableStateOf(LineStyle.SOLID); private set
     var shapeSize by mutableStateOf(2); private set
     var shapeRounded by mutableStateOf(true); private set
+    /** ملء خفيف بلون الشكل للأشكال المغلقة (تحت الكتابة). */
+    var shapeFill by mutableStateOf(false); private set
     var arrowStart by mutableStateOf(ArrowHead.NONE); private set
     var arrowEnd by mutableStateOf(ArrowHead.NONE); private set
     var shapeColor by mutableStateOf(0xFF000000.toInt()); private set
@@ -116,6 +118,7 @@ object PenPrefs {
         shapeStyle = sp.getInt("shape_style", 0)
         shapeSize = sp.getInt("shape_size", 2)
         shapeRounded = sp.getBoolean("shape_round", true)
+        shapeFill = sp.getBoolean("shape_fill", false)
         arrowStart = try { ArrowHead.valueOf(sp.getString("arrow_s", "NONE")!!) } catch (t: Throwable) { ArrowHead.NONE }
         arrowEnd = try { ArrowHead.valueOf(sp.getString("arrow_e", "NONE")!!) } catch (t: Throwable) { ArrowHead.NONE }
         shapeColor = sp.getInt("shape_color", 0xFF000000.toInt())
@@ -197,6 +200,7 @@ object PenPrefs {
     fun changeShapeStyle(v: Int) { shapeStyle = v; put("shape_style", v) }
     fun changeShapeSize(v: Int) { shapeSize = v; put("shape_size", v) }
     fun changeShapeRounded(v: Boolean) { shapeRounded = v; put("shape_round", v) }
+    fun changeShapeFill(v: Boolean) { shapeFill = v; put("shape_fill", v) }
     fun changeArrowStart(v: ArrowHead) { arrowStart = v; put("arrow_s", v.name) }
     fun changeArrowEnd(v: ArrowHead) { arrowEnd = v; put("arrow_e", v.name) }
     fun changeShapeColor(v: Int) { shapeColor = v; put("shape_color", v) }

@@ -64,6 +64,33 @@ internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.wid
     if (s.fill) drawFilled(s, color, scaleW) else drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
 }
 
+/** شفافية ملء الأشكال: تظليل خفيف بلون الشكل. */
+const val SHAPE_FILL_ALPHA = 0.18f
+
+/** طبقة الخلفية: الهايلايتر وملء الأشكال، تُرسم تحت النص والكتابة. */
+internal fun Ink.inUnderlay(): Boolean = tool == Tool.HIGHLIGHTER || shapeFill
+
+/** طبقة الكتابة: كل شيء عدا الهايلايتر (الشكل المملوء يُرسم إطاره هنا وملؤه في الخلفية). */
+internal fun Ink.inOverlay(): Boolean = tool != Tool.HIGHLIGHTER
+
+/** ما يُرسم من هذا الخط في طبقة الخلفية. */
+internal fun DrawScope.drawUnder(s: Ink, color: Color, scaleW: Float = size.width) {
+    if (s.tool == Tool.HIGHLIGHTER) drawStroke(s, color, scaleW)
+    else if (s.shapeFill && s.pts.size > 2) {
+        val path = Path()
+        path.moveTo(s.pts[0].x * scaleW, s.pts[0].y * scaleW)
+        for (i in 1 until s.pts.size) path.lineTo(s.pts[i].x * scaleW, s.pts[i].y * scaleW)
+        path.close()
+        drawPath(path, color.copy(alpha = color.alpha * SHAPE_FILL_ALPHA))
+    }
+}
+
+/** يرسم مجموعة خطوط بترتيب الطبقات: الخلفية (هايلايتر وملء أشكال) ثم الكتابة. */
+internal fun DrawScope.drawStack(strokes: List<Ink>, colorOf: (Ink) -> Color, scaleW: Float = size.width) {
+    for (s in strokes) if (s.inUnderlay()) drawUnder(s, colorOf(s), scaleW)
+    for (s in strokes) if (s.inOverlay()) drawStroke(s, colorOf(s), scaleW)
+}
+
 /** شكل حرف مملوء من حدوده (قاعدة nonzero كالخطوط)، مع تعريض اختياري حوله. */
 internal fun fillPath(pts: List<Pt>, w: Float): Path {
     val path = Path()

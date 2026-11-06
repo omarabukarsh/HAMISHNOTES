@@ -14,6 +14,9 @@ object LineStyle {
 /** أشكال أداة «الأشكال». */
 enum class ShapeKind { LINE, ELBOW, CURVE, RECT, CIRCLE, TRIANGLE, DIAMOND, ELLIPSE }
 
+/** شكل مغلق (له داخل يمكن ملؤه). */
+fun ShapeKind.closed(): Boolean = this != ShapeKind.LINE && this != ShapeKind.ELBOW && this != ShapeKind.CURVE
+
 /** رأس السهم في طرف الخط. */
 enum class ArrowHead { NONE, OPEN, CLOSED }
 
@@ -90,7 +93,9 @@ data class Ink(
      * (فتبقى صحيحة بعد تحريك الحرف أو تكبيره بالتحديد الحر). -1 = غير معروف.
      */
     val lineF: Float = -1f,
-    val emF: Float = 0f
+    val emF: Float = 0f,
+    /** شكل مغلق بملء خفيف بلونه (يُرسم تحت الكتابة). */
+    val shapeFill: Boolean = false
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */

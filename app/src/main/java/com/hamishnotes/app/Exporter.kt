@@ -68,14 +68,19 @@ object Exporter {
                     val c = Canvas(base)
                     drawMarks(c, snap.marks[i] ?: emptyList(), w)
                     drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
+                    val pageInk = snap.ink[i] ?: emptyList()
+                    // الهايلايتر وملء الأشكال تحت النص والكتابة
+                    pageInk.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
                     drawTexts(c, snap.texts[i] ?: emptyList(), w)
-                    (snap.ink[i] ?: emptyList()).forEach { drawInk(c, it, w) }
+                    pageInk.forEach { if (it.inOverlay()) drawInk(c, it, w) }
                     // الملاحظات اللاصقة فوق الصفحة
                     (snap.notes[i] ?: emptyList()).forEach { n ->
                         val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
                         val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
                         c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
-                        n.pageInk().forEach { drawInk(c, it, w) }
+                        val ni = n.pageInk()
+                        ni.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
+                        ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
                         n.textBox()?.let { drawTexts(c, listOf(it), w) }
                     }
 
@@ -244,9 +249,26 @@ object Exporter {
                     bmp.recycle()
                 }
             }
+            // الهايلايتر وملء الأشكال: تحت النص والكتابة
+            for (s in ink) {
+                if (!s.shapeFill || s.pts.size < 3) continue
+                cs.saveGraphicsState()
+                val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                gs.nonStrokingAlphaConstant = s.color.alpha * SHAPE_FILL_ALPHA
+                cs.setGraphicsStateParameters(gs)
+                cs.setNonStrokingColor(s.color.red, s.color.green, s.color.blue)
+                cs.moveTo(px(s.pts[0].x), py(s.pts[0].y))
+                for (j in 1 until s.pts.size) cs.lineTo(px(s.pts[j].x), py(s.pts[j].y))
+                cs.closePath()
+                cs.fill()
+                cs.restoreGraphicsState()
+            }
+            // الهايلايتر قبل مربعات النص، وبقية الكتابة بعدها
+            val ordered = ink.filter { it.tool == Tool.HIGHLIGHTER } + ink.filter { it.tool != Tool.HIGHLIGHTER }
+            val textAfter = ink.count { it.tool == Tool.HIGHLIGHTER }
             // مربعات النص: تُرسم كصورة شفافة حتى يبقى شكل الحروف العربية صحيحًا
-            for (tb in texts) {
-                if (tb.text.isBlank()) continue
+            fun drawTextBoxes() = texts.forEach { tb ->
+                if (tb.text.isBlank()) return@forEach
                 val scale = 3f
                 val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = tb.color.toArgb()
@@ -265,8 +287,9 @@ object Exporter {
                     bmp.recycle()
                 }
             }
-            // الكتابة اليدوية
-            for (s in ink) {
+            // الكتابة اليدوية (الهايلايتر أولاً، ثم مربعات النص، ثم بقية الكتابة)
+            for ((k, s) in ordered.withIndex()) {
+                if (k == textAfter) drawTextBoxes()
                 if (s.pts.isEmpty()) continue
                 if (s.fill) {
                     // حرف مملوء من خط: مسار مغلق لكل حد، يُملأ بقاعدة nonzero
@@ -333,6 +356,7 @@ object Exporter {
                 }
                 cs.restoreGraphicsState()
             }
+            if (textAfter >= ordered.size) drawTextBoxes()
         }
     }
 
@@ -388,6 +412,17 @@ object Exporter {
                 bmp.recycle()
             }
         }
+    }
+
+    /** ما يُرسم من الخط تحت النص: الهايلايتر كاملاً، أو ملء الشكل. */
+    private fun drawUnder(c: Canvas, s: Ink, w: Float) {
+        if (s.tool == Tool.HIGHLIGHTER) { drawInk(c, s, w); return }
+        if (!s.shapeFill || s.pts.size < 3) return
+        val path = Path()
+        path.moveTo(s.pts[0].x * w, s.pts[0].y * w)
+        for (j in 1 until s.pts.size) path.lineTo(s.pts[j].x * w, s.pts[j].y * w)
+        path.close()
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = s.color.copy(alpha = s.color.alpha * SHAPE_FILL_ALPHA).toArgb(); style = Paint.Style.FILL })
     }
 
     private fun drawInk(c: Canvas, s: Ink, w: Float) {

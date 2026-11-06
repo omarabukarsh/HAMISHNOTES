@@ -30,7 +30,9 @@ sealed interface SessionStatus {
 fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink) -> Boolean = { true }): List<Ink> {
     val next = list.filterNot { s ->
         canErase(s) && if (s.fill) InkFill.hit(s.pts, at.x, at.y, radius, s.width)
-        else s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius }
+        else s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } ||
+            // شكل مملوء: لمس داخله يمسحه أيضاً
+            (s.shapeFill && InkFill.winding(at.x, at.y, listOf(s.pts)) != 0)
     }
     return if (next.size == list.size) list else next
 }
@@ -84,13 +86,14 @@ fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink)
         var cur = ArrayList<Pt>()
         for (p in dense) {
             if (inside(p)) {
-                if (cur.size >= 2) out.add(s.copy(pts = cur))
+                // الشكل المقطوع لم يعد مغلقاً: بلا ملء
+                if (cur.size >= 2) out.add(s.copy(pts = cur, shapeFill = false))
                 cur = ArrayList()
             } else {
                 cur.add(p)
             }
         }
-        if (cur.size >= 2) out.add(s.copy(pts = cur))
+        if (cur.size >= 2) out.add(s.copy(pts = cur, shapeFill = false))
     }
     return if (changed) out else list
 }

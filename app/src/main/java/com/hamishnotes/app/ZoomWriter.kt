@@ -182,7 +182,7 @@ fun ZoomPanel(s: DocSession, pdf: PdfDoc) {
                 )
             }
             withTransform({ translate(-b.x * k, -b.y * k) }) {
-                for (st in strokes) drawStroke(st, if (night) nightOf(st.color) else st.color, scaleW = k)
+                drawStack(strokes, { st -> if (night) nightOf(st.color) else st.color }, scaleW = k)
                 if (live.isNotEmpty()) {
                     val tool = c.tool
                     val col = c.colorFor(tool)

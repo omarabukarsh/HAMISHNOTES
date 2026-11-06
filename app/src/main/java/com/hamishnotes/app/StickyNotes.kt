@@ -106,7 +106,7 @@ fun NotesLayer(s: DocSession, page: Int, night: Boolean) {
                                 while (y < size.height) { drawLine(lineCol, Offset(0f, y), Offset(size.width, y), 1f); y += step }
                             }
                         }
-                        n.ink.forEach { st -> drawStroke(st, if (night) nightOf(st.color) else st.color, scaleW = size.width) }
+                        drawStack(n.ink, { st -> if (night) nightOf(st.color) else st.color }, scaleW = size.width)
                     }
                     val pad = with(density) { (n.w * W * 0.06f).toDp() }
                     val fs = with(density) { (n.textSize() * W).toSp() }

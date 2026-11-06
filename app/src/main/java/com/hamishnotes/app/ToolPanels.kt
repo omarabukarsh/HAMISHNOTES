@@ -381,6 +381,10 @@ fun ShapeBar() {
                     TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
                 }
                 ToolbarSep()
+                // ملء خفيف بلون الشكل (للأشكال المغلقة)، تحت الكتابة
+                TBtn(selected = PenPrefs.shapeFill, onClick = { PenPrefs.changeShapeFill(!PenPrefs.shapeFill) }) {
+                    PhIcon(R.drawable.ph_shape_fill, tintFor(PenPrefs.shapeFill), description = L("ملء الشكل", "Fill shape"))
+                }
                 Box {
                     TBtn(onClick = { strokeMenu = true }) { LineStyleSample(PenPrefs.shapeStyle, Palette.TextPrimary, 4f) }
                     DropdownMenu(
@@ -443,6 +447,7 @@ private fun ShapeStrokePanel() {
         )
         Divider()
         PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
+        PanelSwitch(L("ملء خفيف بلون الشكل", "Light fill in the shape's color"), PenPrefs.shapeFill) { PenPrefs.changeShapeFill(it) }
         Spacer(Modifier.height(8.dp))
         PanelLabel(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

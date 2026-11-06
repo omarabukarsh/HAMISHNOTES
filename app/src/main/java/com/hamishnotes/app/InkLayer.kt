@@ -90,7 +90,7 @@ internal fun inkBitmapSize(w: Int, h: Int): IntSize {
 private data class Spec(val w: Int, val h: Int, val scale: Float, val dx: Float, val dy: Float)
 
 /** يرسم الخطوط فوق صورة موجودة (نفس drawInk المستعمل على الشاشة). */
-private fun drawStrokesInto(bmp: Bitmap, strokes: List<Ink>, night: Boolean, spec: Spec, check: () -> Unit = {}) {
+private fun drawStrokesInto(bmp: Bitmap, strokes: List<Ink>, night: Boolean, spec: Spec, under: Boolean, check: () -> Unit = {}) {
     val canvas = androidx.compose.ui.graphics.Canvas(bmp.asImageBitmap())
     CanvasDrawScope().draw(
         Density(1f), LayoutDirection.Ltr, canvas, Size(bmp.width.toFloat(), bmp.height.toFloat())
@@ -98,7 +98,8 @@ private fun drawStrokesInto(bmp: Bitmap, strokes: List<Ink>, night: Boolean, spe
         translate(spec.dx, spec.dy) {
             for (s in strokes) {
                 check()
-                drawStroke(s, if (night) nightOf(s.color) else s.color, scaleW = spec.scale)
+                val col = if (night) nightOf(s.color) else s.color
+                if (under) drawUnder(s, col, scaleW = spec.scale) else drawStroke(s, col, scaleW = spec.scale)
             }
         }
     }
@@ -140,6 +141,8 @@ private object InkStore {
 private class Raster(
     private val scope: CoroutineScope,
     private val settleMs: Long,
+    /** طبقة الخلفية (الهايلايتر وملء الأشكال) بدل الكتابة. */
+    private val under: Boolean,
     private val onDrawn: () -> Unit
 ) {
     var bitmap: Bitmap? = null
@@ -240,7 +243,7 @@ private class Raster(
                 val fresh = withContext(Dispatchers.Default) {
                     val b = blank(reuse, s)
                     android.graphics.Canvas(b).drawBitmap(cur, 0f, 0f, null)
-                    drawStrokesInto(b, added, night, s)
+                    drawStrokesInto(b, added, night, s, under)
                     b
                 }
                 if (disposed) {
@@ -266,7 +269,7 @@ private class Raster(
             val reuse = takeSpare(s)
             val fresh = withContext(Dispatchers.Default) {
                 val b = blank(reuse, s)
-                drawStrokesInto(b, strokes, night, s) { ensureActive() }
+                drawStrokesInto(b, strokes, night, s, under) { ensureActive() }
                 b
             }
             if (disposed) {
@@ -314,19 +317,20 @@ fun InkLayer(
     night: Boolean,
     visible: State<Rect>,
     modifier: Modifier = Modifier,
+    under: Boolean = false,
     onDrawn: (List<List<Ink>>) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var version by remember { mutableIntStateOf(0) }
     val onDrawnNow by rememberUpdatedState(onDrawn)
     val base = remember {
-        Raster(scope, RESIZE_DELAY_MS) { version++ }.also { r ->
+        Raster(scope, RESIZE_DELAY_MS, under) { version++ }.also { r ->
             InkStore.take(key)?.let { st ->
                 if (st.drawn === strokes || extends(st.drawn, strokes)) r.adopt(st) else st.bitmap.recycle()
             }
         }
     }
-    val sharp = remember { Raster(scope, SHARP_DELAY_MS) { version++ } }
+    val sharp = remember { Raster(scope, SHARP_DELAY_MS, under) { version++ } }
     var layout by remember { mutableStateOf(IntSize.Zero) }
 
     // بعد كل تحديث للصورة: إبلاغ الصفحة بالخطوط المرسومة الآن
@@ -378,7 +382,10 @@ fun InkLayer(
         val img = base.image
         if (img == null) {
             // قبل جهوز الصورة الأولى: الرسم المباشر
-            strokes.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
+            strokes.forEach {
+                val col = if (night) nightOf(it.color) else it.color
+                if (under) drawUnder(it, col) else drawStroke(it, col)
+            }
             return@Canvas
         }
         val full = IntSize(size.width.roundToInt(), size.height.roundToInt())

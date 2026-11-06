@@ -322,7 +322,7 @@ object AutoFont {
                     val rtl = text.any { it in '؀'..'ۿ' }
                     val right = maxOf(prev.x + prev.w, r)
                     val left = minOf(prev.x, l)
-                    val nw = (right - left).coerceIn(prev.w, 1f)
+                    val nw = (right - left).coerceIn(minOf(prev.w, 1f), 1f)
                     val nx = if (rtl) (right - nw) else prev.x
                     val merged = prev.copy(
                         text = prev.text.trimEnd() + " " + lineTexts.joinToString(" "),

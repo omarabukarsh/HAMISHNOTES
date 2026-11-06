@@ -263,7 +263,8 @@ fun BoxScope.SideTray(s: DocSession, root: LayoutCoordinates?) {
     val ax = anchor?.x ?: (rootW - margin - wPx / 2f)
     val ay = (anchor?.y ?: with(density) { 70.dp.toPx() }) + with(density) { 6.dp.toPx() }
     val x = (ax - wPx / 2f).coerceIn(margin, (rootW - wPx - margin).coerceAtLeast(margin))
-    val maxH = with(density) { ((rootH - ay - margin).coerceAtLeast(160f)).toDp().value }
+    // أقصى ارتفاع بوحدة dp، ولا يقل عن 160 (قبل أن تُقاس الشاشة يكون المكان صفراً)
+    val maxH = with(density) { (rootH - ay - margin).coerceAtLeast(0f).toDp().value }.coerceAtLeast(160f)
     val hDp = heightDp.coerceIn(160f, maxH)
     val pivot = if (wPx > 0f) ((ax - x) / wPx).coerceIn(0f, 1f) else 0.5f
     val origin = androidx.compose.ui.graphics.TransformOrigin(pivot, 0f)

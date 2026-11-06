@@ -281,7 +281,7 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                             if (ink) {
                                 SwitchRow(
                                     L("المتابعة على نفس السطر", "Continue on the same line"),
-                                    L("الكتابة قرب جملة محوّلة تجلس على سطرها وبحجمها", "Writing next to a converted sentence sits on its line, at its size"),
+                                    L("الكتابة بجانب جملة محوّلة تجلس على سطرها (والأصغر تبقى بحجمها)", "Writing beside a converted sentence sits on its line (smaller writing keeps its size)"),
                                     checked = AutoFont.continueLine
                                 ) { AutoFont.changeContinueLine(it) }
                                 RowDividerLine()

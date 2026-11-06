@@ -496,6 +496,9 @@ object AutoFont {
         return if (kotlin.math.abs(start - prevStart) <= 0.06f) prevStart else start
     }
 
+    /** كتابة أصغر من هذه النسبة من حجم السطر القديم تُعتبر أصغر عمداً فتحتفظ بحجمها عند المتابعة. */
+    internal const val SMALLER = 0.8f
+
     /** تتراكب الحدود مع حرف موجود (بعد تصغير الحدين قليلاً: الحروف المتجاورة تتلامس حدودها). */
     internal fun collides(a: FloatArray, others: List<FloatArray>): Boolean {
         fun shrink(x: FloatArray): FloatArray {
@@ -555,11 +558,13 @@ object AutoFont {
                 val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
                 return Triple(place(size, base, start), base, start)
             }
-            // متابعة جملة محوّلة قديمة بجانبها: نفس خط قاعدتها ونفس حجمها، ما لم تتراكب الحروف مع حروف موجودة
+            // متابعة جملة محوّلة قديمة بجانبها: نفس خط قاعدتها، ما لم تتراكب الحروف مع حروف موجودة.
+            // الحجم: حجمها إن كُتبت بحجم قريب منه أو أكبر، وإن كُتبت أصغر بوضوح تبقى بحجمها
             val old = if (continueLine) InkFill.nearestLine(oldLines, l, r, b - g.bottom * handSize, handSize) else null
             val (letters, base, start) = old?.let { o ->
                 val st = if (rtl) r else l
-                place(o.em, o.base, st).takeIf { ls -> ls.none { k -> collides(InkFill.bounds(k.pts), occupied) } }
+                val sz = if (handSize < SMALLER * o.em) (if (unify) unifiedSize() else handSize) else o.em
+                place(sz, o.base, st).takeIf { ls -> ls.none { k -> collides(InkFill.bounds(k.pts), occupied) } }
                     ?.let { Triple(it, o.base, st) }
             } ?: ownPlace()
             out.addAll(letters)

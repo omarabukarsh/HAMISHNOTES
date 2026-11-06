@@ -2120,6 +2120,8 @@ private fun PageView(
      * طبقتا الخطوط: الخلفية (الهايلايتر وملء الأشكال) تحت النص والكتابة، والكتابة فوقهما.
      * تُعاد القائمة السابقة نفسها إن لم تتغير عناصرها (حتى لا تُعاد رسم صورة طبقة لم تتغير).
      */
+    /** مستطيل مربع النص الذي يُرسم الآن بالقلم (يسار، أعلى، يمين، أسفل بإحداثيات الصفحة). */
+    var textDragRect by remember { mutableStateOf<FloatArray?>(null) }
     val layerCache = remember { arrayOfNulls<List<Ink>>(2) }
     val (underInk, overInk) = remember(strokes) {
         fun keep(i: Int, l: List<Ink>): List<Ink> {
@@ -2523,13 +2525,37 @@ private fun PageView(
                             // وأداة النص: نقرة القلم تضع مربع كتابة في مكانها
                             if ((session.inlineEditId != null || PenPrefs.textActive) && down.type != PointerType.Eraser) {
                                 down.consume()
-                                if (session.inlineEditId != null) session.finishInlineEdit()
-                                else placeOrEditText(session, index, down.position.x / w, down.position.y / w, textsNow, textHeights)
+                                if (session.inlineEditId != null) {
+                                    session.finishInlineEdit()
+                                    while (true) {
+                                        val e = awaitPointerEvent()
+                                        val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                        ch.consume()
+                                        if (!ch.pressed) break
+                                    }
+                                    continue
+                                }
+                                // أداة النص: سحب القلم يرسم مستطيل المربع بالحجم المطلوب، والنقرة تضعه بالحجم المعتاد
+                                val a = down.position
+                                var b = a
+                                var dragged = false
                                 while (true) {
                                     val e = awaitPointerEvent()
                                     val ch = e.changes.firstOrNull { it.id == id } ?: break
                                     ch.consume()
                                     if (!ch.pressed) break
+                                    b = ch.position
+                                    if (!dragged && (b - a).getDistance() > viewConfiguration.touchSlop * 2f) dragged = true
+                                    if (dragged) {
+                                        textDragRect = floatArrayOf(minOf(a.x, b.x) / w, minOf(a.y, b.y) / w, maxOf(a.x, b.x) / w, maxOf(a.y, b.y) / w)
+                                    }
+                                }
+                                val rect = textDragRect
+                                textDragRect = null
+                                if (dragged && rect != null && rect[2] - rect[0] > 0.04f) {
+                                    placeOrEditText(session, index, rect[0], rect[1], textsNow, textHeights, rect)
+                                } else {
+                                    placeOrEditText(session, index, a.x / w, a.y / w, textsNow, textHeights)
                                 }
                                 continue
                             }
@@ -3129,6 +3155,15 @@ private fun PageView(
                 }
             }
 
+            // مستطيل مربع النص أثناء رسمه
+            textDragRect?.let { r ->
+                val w = size.width
+                drawRect(
+                    Palette.Navy, Offset(r[0] * w, r[1] * w), Size((r[2] - r[0]) * w, (r[3] - r[1]) * w),
+                    style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                )
+            }
+
             // التحديد الحر: إطار متقطع حول الخطوط المحددة ومقبض للتكبير
             if (session.lassoSel?.page == index) {
                 session.lassoBounds()?.let { bb ->
@@ -3566,9 +3601,19 @@ internal fun textAlignOf(tb: TextBox): androidx.compose.ui.text.style.TextAlign 
 /** أداة النص: نقرة على مربع موجود تفتح الكتابة فيه، وإلا يوضع مربع جديد في مكان النقرة. */
 private fun placeOrEditText(
     session: DocSession, page: Int, nx: Float, ny: Float,
-    texts: List<TextBox>, heights: Map<String, Float>
+    texts: List<TextBox>, heights: Map<String, Float>,
+    /** مستطيل رسمه المستخدم بالقلم (يسار، أعلى، يمين): المربع بعرضه وفي مكانه. */
+    rect: FloatArray? = null
 ) {
     PenPrefs.textActive = false
+    if (rect != null) {
+        val c = AppController
+        val pen = if (c.tool.isPen()) c.tool else c.lastPen
+        val color = TextPrefs.color?.let { Color(it) } ?: c.colorFor(pen)
+        session.placeInlineText(page, rect[0], rect[1], color, TextPrefs.sizeUnits(), width = rect[2] - rect[0], top = true)
+        session.inlineEditId?.let { id -> session.updateTextBox(id) { TextPrefs.applyTo(it) } }
+        return
+    }
     val hit = texts.lastOrNull {
         !it.sticky && it.linkDoc == null &&
             nx >= it.x && nx <= it.x + it.w && ny >= it.y && ny <= it.y + (heights[it.id] ?: 0.03f)
@@ -3670,6 +3715,8 @@ private fun BoxScope.InlineTextEditor(
         InlineChip("Aa", bold = true, fg = Palette.Navy) { fontPick = true }
         InlineChip("A−") { s.updateTextBox(tb.id) { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) } }
         InlineChip("A+") { s.updateTextBox(tb.id) { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) } }
+        // حذف مربع النص
+        InlineChip(L("حذف", "Delete"), fg = Color(0xFFC62828)) { s.deleteInlineBox() }
         InlineChip("✓ " + L("تم", "Done"), bold = true, fg = Color.White, bg = Palette.Navy) { s.finishInlineEdit() }
     }
     if (fontPick) {

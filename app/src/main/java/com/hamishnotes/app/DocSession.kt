@@ -323,14 +323,24 @@ class DocSession(entry: DocEntry) {
         if (snapshot != null) endEdit() else persist()
     }
 
-    /** يضع مربع نص فارغاً في موضع النقر ويفتح الكتابة فيه مباشرة. */
-    fun placeInlineText(page: Int, x: Float, y: Float, color: Color, size: Float) {
+    /** يحذف مربع النص المفتوح للكتابة (خطوة تراجع واحدة مع ما كُتب فيه). */
+    fun deleteInlineBox() {
+        val id = inlineEditId ?: return
+        updateTextBox(id) { it.copy(text = "") }
+        finishInlineEdit()
+    }
+
+    /**
+     * يضع مربع نص فارغاً ويفتح الكتابة فيه مباشرة: عند النقر (y مستوى السطر) بعرض افتراضي،
+     * أو في المستطيل الذي رسمه المستخدم (top = true: y أعلى المربع، و[width] عرضه).
+     */
+    fun placeInlineText(page: Int, x: Float, y: Float, color: Color, size: Float, width: Float = 0.42f, top: Boolean = false) {
         finishInlineEdit()
         val ratio = pdf?.ratio(page) ?: 0.707f
-        val w = 0.42f
+        val w = width.coerceIn(0.04f, 1f)
         val tb = TextBox(
             UUID.randomUUID().toString(), page,
-            x.coerceIn(0f, 1f - w * 0.3f), (y - size * 0.6f).coerceIn(0f, maxOf(0f, 1f / ratio - size * 1.4f)),
+            x.coerceIn(0f, 1f - w * 0.3f), (if (top) y else y - size * 0.6f).coerceIn(0f, maxOf(0f, 1f / ratio - size * 1.4f)),
             w, "", color, size
         )
         beginEdit()

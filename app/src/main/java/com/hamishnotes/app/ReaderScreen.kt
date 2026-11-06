@@ -2704,7 +2704,17 @@ private fun PageView(
                                         // الملء للشكل المغلق نفسه فقط (لا لرؤوس الأسهم)
                                         val fillIt = PenPrefs.shapeFill && kind.closed()
                                         parts.forEachIndexed { pi, pts ->
-                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true, shapeFill = fillIt && pi == 0, fillAlpha = PenPrefs.shapeFillAlpha))
+                                            // رأس السهم المغلق: مثلث مملوء بلون الخط (ومتصل دائماً، لا متقطع)
+                                            val closedHead = pi > 0 && isClosedShape(pts)
+                                            session.addInk(
+                                                index,
+                                                Ink(
+                                                    pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now,
+                                                    if (pi > 0) LineStyle.SOLID else PenPrefs.shapeStyle, true,
+                                                    shapeFill = (fillIt && pi == 0) || closedHead,
+                                                    fillAlpha = if (closedHead) 1f else PenPrefs.shapeFillAlpha
+                                                )
+                                            )
                                         }
                                         session.endEdit()
                                     }

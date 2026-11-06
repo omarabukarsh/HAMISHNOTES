@@ -299,14 +299,25 @@ object ShapeBuilder {
             }
             ShapeKind.ELLIPSE -> ellipse(cx, cy, (r - l) / 2f, (bt - t) / 2f)
         }
-        val out = arrayListOf(body)
-        if (kind == ShapeKind.LINE || kind == ShapeKind.ELBOW || kind == ShapeKind.CURVE) {
-            if (body.size >= 2) {
-                if (end != ArrowHead.NONE) out.add(head(body[body.size - 2], body.last(), end, width, rounded))
-                if (start != ArrowHead.NONE) out.add(head(body[1], body[0], start, width, rounded))
+        if ((kind == ShapeKind.LINE || kind == ShapeKind.ELBOW || kind == ShapeKind.CURVE) && body.size >= 2 &&
+            (start != ArrowHead.NONE || end != ArrowHead.NONE)
+        ) {
+            val len = headLen(width)
+            var shaft = body
+            val heads = ArrayList<List<Pt>>()
+            // اتجاه الرأس من نقطة على الخط بعيدة بطول الرأس (لا من آخر نقطتين بعد تدوير الزاوية)
+            if (end != ArrowHead.NONE) {
+                heads.add(head(pointBack(body, len), body.last(), end, width))
+                if (end == ArrowHead.CLOSED) shaft = trimEnd(shaft, len * cos(SPREAD))
             }
+            if (start != ArrowHead.NONE) {
+                val rev = body.asReversed()
+                heads.add(head(pointBack(rev, len), body.first(), start, width))
+                if (start == ArrowHead.CLOSED) shaft = trimEnd(shaft.asReversed(), len * cos(SPREAD)).asReversed()
+            }
+            return listOf(shaft) + heads
         }
-        return out
+        return listOf(body)
     }
 
     private fun ellipse(cx: Float, cy: Float, rx: Float, ry: Float): List<Pt> =
@@ -337,13 +348,53 @@ object ShapeBuilder {
         return out
     }
 
-    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float, rounded: Boolean): List<Pt> {
+    /** نصف زاوية رأس السهم. */
+    private const val SPREAD = 0.45f
+
+    private fun headLen(width: Float) = 0.018f + width * 3f
+
+    /**
+     * رأس السهم عند tip، متجهاً من from. حاد دائماً (لا تدوير للزوايا)؛ المغلق مثلث مغلق
+     * (يُملأ بلون الخط عند الرسم).
+     */
+    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float): List<Pt> {
         val ang = atan2(tip.y - from.y, tip.x - from.x)
-        val len = (0.018f + width * 3f)
-        val spread = 0.45f
-        val l = p(tip.x - len * cos(ang - spread), tip.y - len * sin(ang - spread))
-        val r = p(tip.x - len * cos(ang + spread), tip.y - len * sin(ang + spread))
-        return if (kind == ArrowHead.CLOSED) closed(listOf(l, p(tip.x, tip.y), r), rounded)
-        else listOf(l, p(tip.x, tip.y), r).let { if (rounded) roundCorners(it, false) else it }
+        val len = headLen(width)
+        val l = p(tip.x - len * cos(ang - SPREAD), tip.y - len * sin(ang - SPREAD))
+        val r = p(tip.x - len * cos(ang + SPREAD), tip.y - len * sin(ang + SPREAD))
+        val t = p(tip.x, tip.y)
+        return if (kind == ArrowHead.CLOSED) listOf(l, t, r, l) else listOf(l, t, r)
+    }
+
+    /** نقطة على الخط تبعد dist عن آخره (مقيسة على طول الخط). */
+    internal fun pointBack(pts: List<Pt>, dist: Float): Pt {
+        var left = dist
+        for (i in pts.size - 1 downTo 1) {
+            val a = pts[i]
+            val b = pts[i - 1]
+            val d = hypot(b.x - a.x, b.y - a.y)
+            if (d >= left && d > 0f) {
+                val f = left / d
+                return p(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+            }
+            left -= d
+        }
+        return pts.first()
+    }
+
+    /** يقصّر الخط من آخره بمقدار dist (ليتوقف عند قاعدة رأس السهم المغلق). */
+    internal fun trimEnd(pts: List<Pt>, dist: Float): List<Pt> {
+        var left = dist
+        for (i in pts.size - 1 downTo 1) {
+            val a = pts[i]
+            val b = pts[i - 1]
+            val d = hypot(b.x - a.x, b.y - a.y)
+            if (d >= left && d > 0f) {
+                val f = left / d
+                return pts.subList(0, i) + p(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+            }
+            left -= d
+        }
+        return pts
     }
 }

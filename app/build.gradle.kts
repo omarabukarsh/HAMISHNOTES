@@ -155,7 +155,10 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     // اختبارات الواجهة على الحاسوب (سحب العناصر من النافذة إلى الصفحة) بلا جهاز
-    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.robolectric:robolectric:4.14.1") {
+        // مكتبة الرسم الأصلية (≈160MB) غير لازمة: الاختبارات تقيس المواضع لا البكسلات
+        exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
+    }
     testImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("junit:junit:4.13.2")

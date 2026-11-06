@@ -2314,6 +2314,22 @@ private fun PageView(
 
         // الهايلايتر وملء الأشكال: تحت النص والكتابة
         InkLayer("${session.id}:$index:u", underInk, night, visRect, Modifier.fillMaxSize(), under = true) { settlePending(it, under = true) }
+        // الحي منها (أثناء الرسم) وما لم يظهر بعد في صورتها: تحت النص والكتابة أيضاً
+        Canvas(Modifier.fillMaxSize()) {
+            @Suppress("UNUSED_VARIABLE")
+            val t = tick
+            if (lassoDrawing[0]) return@Canvas
+            pendingInk.forEach { if (it.inUnderlay()) drawUnder(it, if (night) nightOf(it.color) else it.color) }
+            val lc = if (night) nightOf(live.color) else live.color
+            // معاينة ملء الشكل أثناء السحب
+            if (live.sharp && PenPrefs.shapeActive && PenPrefs.shapeFill && PenPrefs.shapeKind.closed() && livePts.size > 2) {
+                drawUnder(Ink(livePts.toList(), live.color, live.width, Tool.BALLPOINT, shape = true, shapeFill = true), lc)
+            }
+            if (live.tool == Tool.HIGHLIGHTER && !live.sharp && livePts.isNotEmpty()) {
+                val extra = if (live.hasPred) Pt(live.predX, live.predY, live.predP) else null
+                drawInk(livePts, lc, live.width, live.tool, extra, style = live.style)
+            }
+        }
 
         // مربعات النص المكتوب
         if (wPx > 0) {
@@ -3099,14 +3115,12 @@ private fun PageView(
                     )
                 }
             } else {
-                // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط
-                drawStack(pendingInk, { if (night) nightOf(it.color) else it.color })
+                // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط (الهايلايتر وملء الأشكال في الطبقة السفلية)
+                pendingInk.forEach { if (it.inOverlay()) drawStroke(it, if (night) nightOf(it.color) else it.color) }
                 val lc = if (night) nightOf(live.color) else live.color
-                // معاينة ملء الشكل أثناء السحب
-                if (live.sharp && PenPrefs.shapeActive && PenPrefs.shapeFill && PenPrefs.shapeKind.closed() && livePts.size > 2) {
-                    drawUnder(Ink(livePts.toList(), live.color, live.width, Tool.BALLPOINT, shape = true, shapeFill = true), lc)
-                }
-                if (livePts.isNotEmpty() && extra == null && liveRaster.handles(live.style, live.sharp)) {
+                if (live.tool == Tool.HIGHLIGHTER && !live.sharp) {
+                    // الهايلايتر الحي يُرسم في الطبقة السفلية (تحت القلم والنص)
+                } else if (livePts.isNotEmpty() && extra == null && liveRaster.handles(live.style, live.sharp)) {
                     liveRaster.draw(this, livePts, lc, live.width, live.tool, visRect.value, liveGen[0])
                 } else {
                     drawInk(livePts, lc, live.width, live.tool, if (live.sharp) null else extra, style = live.style, sharp = live.sharp)

@@ -724,6 +724,7 @@ object AppController {
         FontStore.init(app)
         StickerStore.init(app)
         AutoFont.init(app)
+        TextPrefs.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {

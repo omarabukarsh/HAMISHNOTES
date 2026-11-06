@@ -678,18 +678,34 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         }
                     }
                 }
-                if (v("text")) TBtn(selected = PenPrefs.textActive, onClick = {
-                    if (PenPrefs.textActive) {
-                        PenPrefs.textActive = false
-                    } else {
-                        s.finishInlineEdit()
-                        c.lassoActive = false
-                        PenPrefs.shapeActive = false
-                        PenPrefs.stickyActive = false
-                        PenPrefs.textActive = true
-                        c.messages.tryEmit(L("انقر على الصفحة حيث تريد الكتابة", "Tap the page where you want to type"))
+                if (v("text")) {
+                    // نقرة تفعّل أداة النص، ونقرة ثانية (أو أثناء الكتابة في مربع) تفتح نافذة مربع النص
+                    var textMenu by remember { mutableStateOf(false) }
+                    Box {
+                        TBtn(selected = PenPrefs.textActive || s.inlineEditId != null, onClick = {
+                            if (PenPrefs.textActive || s.inlineEditId != null) {
+                                textMenu = true
+                            } else {
+                                s.finishInlineEdit()
+                                c.lassoActive = false
+                                PenPrefs.shapeActive = false
+                                PenPrefs.stickyActive = false
+                                PenPrefs.textActive = true
+                                c.messages.tryEmit(L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
+                            }
+                        }) { TextGlyph(tintFor(PenPrefs.textActive || s.inlineEditId != null)) }
+                        DropdownMenu(
+                            expanded = textMenu, onDismissRequest = { textMenu = false },
+                            shape = RoundedCornerShape(18.dp), containerColor = SheetBg, shadowElevation = 12.dp
+                        ) {
+                            TextToolWindow(s, onTurnOff = {
+                                textMenu = false
+                                PenPrefs.textActive = false
+                                s.finishInlineEdit()
+                            })
+                        }
                     }
-                }) { TextGlyph(tintFor(PenPrefs.textActive)) }
+                }
                 if (v("sticky")) {
                     // أداة الملاحظات اللاصقة: شريط ألوان، ثم نقرة على الصفحة تضع الملاحظة
                     TBtn(selected = PenPrefs.stickyActive, onClick = {
@@ -2314,6 +2330,10 @@ private fun PageView(
                         fontFamily = if (ready) FontStore.family(tb.font) else null,
                         fontSize = fs,
                         lineHeight = fs * 1.25f,
+                        fontWeight = if (tb.bold) FontWeight.Bold else null,
+                        fontStyle = if (tb.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
+                        textDecoration = if (tb.underline) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+                        textAlign = textAlignOf(tb),
                         onTextLayout = { lay -> session.textLayouts[tb.id] = lay to wp },
                         modifier = Modifier
                             .align(AbsoluteAlignment.TopLeft)
@@ -3488,6 +3508,12 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
 /** درج الأوراق أو درج الملخصات ظاهر الآن. */
 internal fun DocSession.sideOpen(): Boolean = drawerOpen || (summaryOpen && UiPrefs.summariesOn)
 
+internal fun textAlignOf(tb: TextBox): androidx.compose.ui.text.style.TextAlign = when (tb.align) {
+    1 -> androidx.compose.ui.text.style.TextAlign.Center
+    2 -> androidx.compose.ui.text.style.TextAlign.End
+    else -> androidx.compose.ui.text.style.TextAlign.Start
+}
+
 /** أداة النص: نقرة على مربع موجود تفتح الكتابة فيه، وإلا يوضع مربع جديد في مكان النقرة. */
 private fun placeOrEditText(
     session: DocSession, page: Int, nx: Float, ny: Float,
@@ -3507,7 +3533,10 @@ private fun placeOrEditText(
     // النص العربي يبدأ من يمين المربع: نقطة النقر تكون بدايته
     val w = 0.42f
     val left = if (I18n.english) nx else nx - w
-    session.placeInlineText(page, left, ny, c.colorFor(pen), 0.024f)
+    // إعدادات نافذة مربع النص (الخط والحجم والنمط واللون)
+    val color = TextPrefs.color?.let { Color(it) } ?: c.colorFor(pen)
+    session.placeInlineText(page, left, ny, color, TextPrefs.sizeUnits())
+    session.inlineEditId?.let { id -> session.updateTextBox(id) { TextPrefs.applyTo(it) } }
 }
 
 /**
@@ -3547,7 +3576,13 @@ private fun BoxScope.InlineTextEditor(
             value = v
             if (v.text != tb.text) s.updateTextBox(tb.id) { it.copy(text = v.text) }
         },
-        textStyle = TextStyle(color = col, fontSize = fs, lineHeight = fs * 1.25f, fontFamily = family),
+        textStyle = TextStyle(
+            color = col, fontSize = fs, lineHeight = fs * 1.25f, fontFamily = family,
+            fontWeight = if (tb.bold) FontWeight.Bold else null,
+            fontStyle = if (tb.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
+            textDecoration = if (tb.underline) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+            textAlign = textAlignOf(tb)
+        ),
         cursorBrush = SolidColor(Palette.Navy),
         modifier = Modifier
             .align(AbsoluteAlignment.TopLeft)

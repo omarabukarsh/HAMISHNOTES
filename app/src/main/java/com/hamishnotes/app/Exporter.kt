@@ -251,10 +251,10 @@ object Exporter {
                 val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = tb.color.toArgb()
                     textSize = tb.size * w * scale
-                    FontStore.typeface(tb.font)?.let { typeface = it }
+                    applyTextStyle(this, tb)
                 }
                 val lw = (tb.w * w * scale).toInt().coerceAtLeast(10)
-                val layout = layoutOf(tb.text, tp, lw, 1.25f)
+                val layout = layoutOf(tb.text, tp, lw, 1.25f, alignOf(tb))
                 val bmp = Bitmap.createBitmap(lw, layout.height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
                 try {
                     layout.draw(Canvas(bmp))
@@ -487,8 +487,8 @@ object Exporter {
             val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
             tp.color = tb.color.toArgb()
             tp.textSize = tb.size * w
-            FontStore.typeface(tb.font)?.let { tp.typeface = it }
-            val layout = layoutOf(tb.text, tp, (tb.w * w).toInt().coerceAtLeast(10), 1.25f)
+            applyTextStyle(tp, tb)
+            val layout = layoutOf(tb.text, tp, (tb.w * w).toInt().coerceAtLeast(10), 1.25f, alignOf(tb))
             c.save()
             c.translate(tb.x * w, tb.y * w)
             layout.draw(c)
@@ -496,9 +496,26 @@ object Exporter {
         }
     }
 
-    private fun layoutOf(text: CharSequence, tp: TextPaint, width: Int, spacing: Float): StaticLayout =
+    /** خط مربع النص ونمطه (عريض/مائل/تحته خط) على قلم الرسم. */
+    private fun applyTextStyle(tp: TextPaint, tb: TextBox) {
+        val base = FontStore.typeface(tb.font) ?: Typeface.DEFAULT
+        val style = (if (tb.bold) Typeface.BOLD else 0) or (if (tb.italic) Typeface.ITALIC else 0)
+        tp.typeface = if (style != 0) Typeface.create(base, style) else base
+        // الخطوط بلا نسخة عريضة/مائلة: محاكاة
+        if (tb.bold && !tp.typeface.isBold) tp.isFakeBoldText = true
+        if (tb.italic && !tp.typeface.isItalic) tp.textSkewX = -0.22f
+        tp.isUnderlineText = tb.underline
+    }
+
+    private fun alignOf(tb: TextBox): Layout.Alignment = when (tb.align) {
+        1 -> Layout.Alignment.ALIGN_CENTER
+        2 -> Layout.Alignment.ALIGN_OPPOSITE
+        else -> Layout.Alignment.ALIGN_NORMAL
+    }
+
+    private fun layoutOf(text: CharSequence, tp: TextPaint, width: Int, spacing: Float, align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
         StaticLayout.Builder.obtain(text, 0, text.length, tp, width)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setAlignment(align)
             .setLineSpacing(0f, spacing)
             .setIncludePad(false)
             .build()

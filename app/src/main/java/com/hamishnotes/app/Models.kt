@@ -149,7 +149,13 @@ data class TextBox(
     /** الكتابة اليدوية التي حُوّلت إلى هذا النص (لإرجاعها)؛ فارغة لمربعات النص العادية. */
     val ink: List<Ink> = emptyList(),
     /** بدائل القراءة لكل كلمة متحولة (للتصحيح بالنقر): الكلمة ← قراءات أخرى لها. */
-    val alts: Map<String, List<String>> = emptyMap()
+    val alts: Map<String, List<String>> = emptyMap(),
+    /** نمط النص: عريض، مائل، تحته خط. */
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    /** المحاذاة: 0 البداية، 1 الوسط، 2 النهاية. */
+    val align: Int = 0
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */

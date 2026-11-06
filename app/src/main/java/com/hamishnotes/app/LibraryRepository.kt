@@ -526,7 +526,11 @@ class LibraryRepository(context: Context) {
                                         val arr = ao.optJSONArray(k)
                                         if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
                                     }
-                                } ?: emptyMap()
+                                } ?: emptyMap(),
+                                bold = o.optBoolean("b", false),
+                                italic = o.optBoolean("i", false),
+                                underline = o.optBoolean("u", false),
+                                align = o.optInt("al", 0)
                             )
                         )
                     } catch (e: Throwable) {
@@ -676,6 +680,10 @@ class LibraryRepository(context: Context) {
                             .put("lp", tb.linkPage)
                             .apply {
                                 if (tb.font.isNotEmpty()) put("f", tb.font)
+                                if (tb.bold) put("b", true)
+                                if (tb.italic) put("i", true)
+                                if (tb.underline) put("u", true)
+                                if (tb.align != 0) put("al", tb.align)
                                 if (tb.ink.isNotEmpty()) put("ink", inkArray(tb.ink))
                                 if (tb.alts.isNotEmpty()) put("alts", JSONObject().apply {
                                     tb.alts.forEach { (k, v) -> put(k, JSONArray(v)) }

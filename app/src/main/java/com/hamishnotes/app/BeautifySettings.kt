@@ -2,13 +2,12 @@ package com.hamishnotes.app
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -61,6 +60,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 
 /*
  * إعدادات «تجميل خط اليد» بتصميم بطاقات إعدادات: كل تغيير يُطبَّق فوراً (لا زر حفظ)،
@@ -130,18 +133,24 @@ internal fun NavRow(title: String, onClick: () -> Unit, value: @Composable () ->
 /** شريط اختيارات متجاورة (مثل iOS): الخيار المختار بخلفية بيضاء تنزلق إليه. */
 @Composable
 internal fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    BoxWithConstraints(
+    // بلا BoxWithConstraints: النافذة قد تكون داخل قائمة منسدلة تقيس محتواها مسبقاً (لا يدعمه SubcomposeLayout)
+    var widthPx by remember { mutableStateOf(0) }
+    val n = options.size
+    val idx = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    val segPx = if (n > 0) widthPx / n.toFloat() else 0f
+    val off by animateFloatAsState(segPx * idx, label = "seg")
+    val density = LocalDensity.current
+    Box(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
             .clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEF0F3)).padding(3.dp)
+            .onSizeChanged { widthPx = it.width }
     ) {
-        val n = options.size
-        val segW = maxWidth / n
-        val idx = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
-        val off by animateDpAsState(segW * idx, label = "seg")
-        Box(
-            Modifier.offset(x = off).width(segW).height(36.dp)
-                .shadow(2.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp)).background(Color.White)
-        )
+        if (widthPx > 0) {
+            Box(
+                Modifier.offset { IntOffset(off.roundToInt(), 0) }.width(with(density) { segPx.toDp() }).height(36.dp)
+                    .shadow(2.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp)).background(Color.White)
+            )
+        }
         Row(Modifier.fillMaxWidth().height(36.dp)) {
             options.forEach { (v, label) ->
                 val sel = v == selected

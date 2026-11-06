@@ -520,7 +520,13 @@ class LibraryRepository(context: Context) {
                                 linkDoc = o.optString("ld", "").ifEmpty { null },
                                 linkPage = o.optInt("lp", 0),
                                 font = o.optString("f", ""),
-                                ink = parseInkArray(o.optJSONArray("ink"))
+                                ink = parseInkArray(o.optJSONArray("ink")),
+                                alts = o.optJSONObject("alts")?.let { ao ->
+                                    ao.keys().asSequence().associateWith { k ->
+                                        val arr = ao.optJSONArray(k)
+                                        if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
+                                    }
+                                } ?: emptyMap()
                             )
                         )
                     } catch (e: Throwable) {
@@ -671,6 +677,9 @@ class LibraryRepository(context: Context) {
                             .apply {
                                 if (tb.font.isNotEmpty()) put("f", tb.font)
                                 if (tb.ink.isNotEmpty()) put("ink", inkArray(tb.ink))
+                                if (tb.alts.isNotEmpty()) put("alts", JSONObject().apply {
+                                    tb.alts.forEach { (k, v) -> put(k, JSONArray(v)) }
+                                })
                             }
                     )
                 }

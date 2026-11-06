@@ -128,13 +128,13 @@ fun ChangeFontDialog(s: DocSession, onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(enabled = !busy && error == null && text.isNotBlank(), onClick = {
-                val bb = s.lassoBounds()
-                val size = if (bb != null) ((bb[3] - bb[1]) / lines * 0.6f).coerceIn(0.012f, 0.06f) else 0.024f
+                // نفس عرض الكتابة تقريباً وعلى سطرها
+                val lineTexts = text.trim().split('\n').filter { it.isNotBlank() }.ifEmpty { listOf(text.trim()) }
+                val f = AutoFont.fit(s, sel.page, sel.strokes, lineTexts, font, AutoFont.snapToLine)
                 val box = TextBox(
                     id = UUID.randomUUID().toString(), page = sel.page,
-                    x = bb?.get(0) ?: 0.1f, y = bb?.get(1) ?: 0.1f,
-                    w = ((bb?.let { it[2] - it[0] } ?: 0.5f) * 1.15f).coerceIn(0.15f, 0.95f),
-                    text = text.trim(), color = sel.strokes.firstOrNull()?.color ?: Palette.Navy, size = size,
+                    x = f.x, y = f.y, w = f.w,
+                    text = text.trim(), color = sel.strokes.firstOrNull()?.color ?: Palette.Navy, size = f.size,
                     font = font, ink = sel.strokes
                 )
                 FontStore.markUsed(font)

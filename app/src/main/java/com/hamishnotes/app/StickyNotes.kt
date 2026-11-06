@@ -163,8 +163,9 @@ fun StickyBar() {
                     Box(
                         Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (sel) Palette.NavySoft else Color.Transparent)
-                            .dragToPage(session, payload, null, onStart = { PenPrefs.changeStickyColor(col) })
-                            .clickable { PenPrefs.changeStickyColor(col) },
+                            .clickable { PenPrefs.changeStickyColor(col) }
+                            // اسحب اللون لأسفل نحو الصفحة: تخرج الملاحظة تحت إصبعك
+                            .dragToPage(session, payload, null, axis = DragAxis.Vertical, onStart = { PenPrefs.changeStickyColor(col) }),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(col)).border(1.dp, Palette.Divider, RoundedCornerShape(6.dp)))

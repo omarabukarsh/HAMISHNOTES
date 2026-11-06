@@ -327,6 +327,33 @@ class DocSession(entry: DocEntry) {
         activePage = page
     }
 
+    /** تخطيط النص المعروض لكل مربع نص وعرض الصفحة بالبكسل (لمعرفة الكلمة تحت الإصبع أو القلم). */
+    val textLayouts = HashMap<String, Pair<androidx.compose.ui.text.TextLayoutResult, Float>>()
+
+    /** بدائل كلمة متحولة معروضة للتصحيح: [start, end) موضع الكلمة في نص المربع. */
+    class AltPopup(val boxId: String, val page: Int, val start: Int, val end: Int, val alts: List<String>, val at: Offset)
+    var altPopup by mutableStateOf<AltPopup?>(null)
+
+    /** يستبدل الكلمة المعروضة ببديل (خطوة تراجع واحدة). */
+    fun applyAlt(p: AltPopup, word: String) {
+        altPopup = null
+        val tb = textBox(p.boxId) ?: return
+        if (p.end > tb.text.length || p.start > p.end) return
+        val old = tb.text.substring(p.start, p.end)
+        beginEdit()
+        updateTextBox(p.boxId) {
+            val others = (it.alts[old] ?: emptyList()) + old
+            it.copy(
+                text = it.text.substring(0, p.start) + word + it.text.substring(p.end),
+                alts = it.alts - old + (word to others.filter { o -> o != word }.distinct())
+            )
+        }
+        endEdit()
+    }
+
+    /** مكان زري الصور والملصقات في النافذة: درجهما يخرج من الزر ويستقر تحته. */
+    val trayAnchors = androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>()
+
     /** الدرج الجانبي المفتوح: "stickers" أو "photos" أو null. */
     var trayMode by mutableStateOf<String?>(null)
 
@@ -1405,6 +1432,15 @@ class DocSession(entry: DocEntry) {
         beginEdit()
         annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
         texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        endEdit()
+    }
+
+    /** يحذف خطوط الكتابة ويستبدل مربع نص موجود بنسخته المحدّثة (خطوة تراجع واحدة). */
+    fun autoReplace(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to (texts[page] ?: emptyList()).map { if (it.id == box.id) box else it })
         endEdit()
     }
 

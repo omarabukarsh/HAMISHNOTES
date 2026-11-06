@@ -11,7 +11,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -110,9 +112,9 @@ object TrayDrag {
 }
 
 private object TrayPrefs {
-    private const val KEY = "tray_w"
-    fun load(ctx: Context): Float = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).getFloat(KEY, 168f)
-    fun save(ctx: Context, v: Float) = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).edit().putFloat(KEY, v).apply()
+    private const val KEY_H = "tray_h"
+    fun loadH(ctx: Context): Float = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).getFloat(KEY_H, 380f)
+    fun saveH(ctx: Context, v: Float) = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).edit().putFloat(KEY_H, v).apply()
 }
 
 /** يضع العنصر على الصفحة: عند نقطة الإسقاط، أو وسط الجزء الظاهر من الصفحة الحالية. */
@@ -140,132 +142,200 @@ private fun placedSize(p: TrayPayload, thumb: ImageBitmap?): Pair<Float, Float> 
     }
 }
 
+/** اتجاه السحب الذي يُخرج العنصر فوراً (الاتجاه الآخر يبقى للتمرير). */
+enum class DragAxis { Horizontal, Vertical }
+
 /**
- * سحب عنصر إلى الصفحة: ضغطة مطوّلة ثم سحب، والإفلات على أي صفحة يضعه هناك.
- * ضغطة مطوّلة دون سحب = onLongStill. onStart يُستدعى عند بداية السحب.
+ * سحب عنصر إلى الصفحة: السحب في اتجاه axis يُخرجه فوراً تحت الإصبع، أو ضغطة مطوّلة ثم سحب في أي اتجاه.
+ * يتحرك مع الإصبع، والإفلات على أي صفحة يضعه هناك. ضغطة مطوّلة دون سحب = onLongStill.
+ * يوضع بعد clickable في سلسلة المعدِّلات حتى لا تُحسب نهاية السحب نقرة.
  */
 @Composable
 fun Modifier.dragToPage(
     s: DocSession?,
     payload: TrayPayload,
     img: ImageBitmap?,
+    axis: DragAxis = DragAxis.Horizontal,
     onStart: () -> Unit = {},
     onLongStill: (() -> Unit)? = null
 ): Modifier {
     val haptic = LocalHapticFeedback.current
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    val slop = with(LocalDensity.current) { 12.dp.toPx() }
     if (s == null) return this
     return this.onGloballyPositioned { coords[0] = it }
-        .pointerInput(payload, s) {
-            var start = Offset.Zero
-            var moved = false
-            detectDragGesturesAfterLongPress(
-                onDragStart = start@{ p ->
-                    val c = coords[0] ?: return@start
+        .pointerInput(payload, s, axis) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val c = coords[0] ?: return@awaitEachGesture
+                val slop = viewConfiguration.touchSlop
+                var started = false
+                var moved = false
+                var last = down.position
+                fun begin(at: Offset) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onStart()
-                    start = p
-                    moved = false
+                    started = true
                     TrayDrag.payload = payload
                     TrayDrag.thumb = img
-                    TrayDrag.pos = c.localToWindow(p)
+                    TrayDrag.pos = c.localToWindow(at)
                     TrayDrag.overPage = -1
-                },
-                onDrag = drag@{ ch, _ ->
-                    if (TrayDrag.payload !== payload) return@drag
-                    ch.consume()
-                    val c = coords[0] ?: return@drag
-                    if (!moved && (ch.position - start).getDistance() > slop) moved = true
-                    TrayDrag.pos = c.localToWindow(ch.position)
-                    TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
-                },
-                onDragEnd = end@{
-                    val p = TrayDrag.payload
+                }
+                // المرحلة الأولى: سحب في الاتجاه المطلوب يبدأ فوراً، وضغطة مطوّلة تبدأ أيضاً
+                val longAt = System.currentTimeMillis() + viewConfiguration.longPressTimeoutMillis
+                while (!started) {
+                    val left = longAt - System.currentTimeMillis()
+                    val ev = if (left > 0) withTimeoutOrNull(left) { awaitPointerEvent() } else null
+                    if (ev == null) {
+                        begin(last)
+                        break
+                    }
+                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                    if (!ch.pressed || ch.isConsumed) return@awaitEachGesture
+                    last = ch.position
+                    val d = ch.position - down.position
+                    if (d.getDistance() > slop) {
+                        val horiz = kotlin.math.abs(d.x) > kotlin.math.abs(d.y)
+                        if (horiz == (axis == DragAxis.Horizontal)) {
+                            begin(ch.position)
+                            ch.consume()
+                            moved = true
+                        } else {
+                            return@awaitEachGesture
+                        }
+                    }
+                }
+                // المرحلة الثانية: العنصر يتبع الإصبع
+                try {
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        ch.consume()
+                        if (!ch.pressed) break
+                        if (!moved && (ch.position - down.position).getDistance() > slop) moved = true
+                        TrayDrag.pos = c.localToWindow(ch.position)
+                        TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
+                    }
                     val hit = TrayDrag.target(s)
                     TrayDrag.cancel()
-                    if (p !== payload) return@end
                     if (!moved) {
                         onLongStill?.invoke()
                     } else if (hit != null) {
                         s.activePage = hit.first
                         placePayload(s, payload, hit.first, hit.second)
                     }
-                },
-                onDragCancel = { TrayDrag.cancel() }
-            )
+                } finally {
+                    if (TrayDrag.payload === payload) TrayDrag.cancel()
+                }
+            }
         }
 }
 
 /**
- * الدرج الجانبي للملصقات والصور: يبقى مفتوحًا أثناء العمل. نقرة تضع العنصر وسط الصفحة الحالية،
- * وضغطة مطوّلة ثم سحب تضعه حيث تُفلته على أي صفحة. يُغيَّر عرضه بسحب حافته.
+ * نافذة الملصقات والصور: تخرج من زرها بحركة وتستقر تحته مباشرة، وتبقى مفتوحة أثناء العمل.
+ * نقرة تضع العنصر وسط الصفحة الحالية، وسحبه جانباً (أو ضغطة مطوّلة) يُخرجه تحت الإصبع إلى أي صفحة.
+ * يُغيَّر ارتفاعها بسحب حافتها السفلية.
  */
 @Composable
-fun BoxScope.SideTray(s: DocSession) {
-    val mode = s.trayMode ?: return
+fun BoxScope.SideTray(s: DocSession, root: LayoutCoordinates?) {
     val ctx = LocalContext.current
     val density = LocalDensity.current
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    var widthDp by remember { mutableStateOf(TrayPrefs.load(ctx)) }
-    LaunchedEffect(Unit) { if (s.summaryOpen) s.summaryOpen = false }
-    // بعد إغلاق الدرج لا يمنع مكانه القديم الإفلات على الصفحة
-    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { TrayDrag.trayRect = androidx.compose.ui.geometry.Rect.Zero } }
+    var lastMode by remember { mutableStateOf("stickers") }
+    val cur = s.trayMode
+    androidx.compose.runtime.SideEffect { if (cur != null) lastMode = cur }
+    val mode = cur ?: lastMode
+    val visible = cur != null
+    var heightDp by remember { mutableStateOf(TrayPrefs.loadH(ctx)) }
+    val widthDp = 300f
+    LaunchedEffect(visible) {
+        if (visible && s.summaryOpen) s.summaryOpen = false
+        // بعد إغلاق النافذة لا يمنع مكانها القديم الإفلات على الصفحة
+        if (!visible) TrayDrag.trayRect = androidx.compose.ui.geometry.Rect.Zero
+    }
 
-    Surface(
-        Modifier.align(Alignment.CenterEnd)
-            .padding(top = 76.dp, bottom = 12.dp, end = 8.dp)
-            .fillMaxHeight()
-            .width(widthDp.dp)
-            .onGloballyPositioned { c ->
-                TrayDrag.trayRect = androidx.compose.ui.geometry.Rect(
-                    c.localToWindow(Offset.Zero),
-                    c.localToWindow(Offset(c.size.width.toFloat(), c.size.height.toFloat()))
-                )
-            },
-        shape = RoundedCornerShape(18.dp),
-        color = Palette.Background,
-        shadowElevation = 12.dp
+    // المكان: تحت الزر مباشرة، وسطها على الزر قدر الإمكان
+    val anchorWin = s.trayAnchors[if (mode == "photos") "photos" else "stickers"]
+    val r = root?.takeIf { it.isAttached }
+    val rootW = r?.size?.width?.toFloat() ?: 0f
+    val rootH = r?.size?.height?.toFloat() ?: 0f
+    val wPx = with(density) { widthDp.dp.toPx() }
+    val margin = with(density) { 8.dp.toPx() }
+    val anchor = if (anchorWin != null && r != null) r.windowToLocal(Offset(anchorWin.center.x, anchorWin.bottom)) else null
+    val ax = anchor?.x ?: (rootW - margin - wPx / 2f)
+    val ay = (anchor?.y ?: with(density) { 70.dp.toPx() }) + with(density) { 6.dp.toPx() }
+    val x = (ax - wPx / 2f).coerceIn(margin, (rootW - wPx - margin).coerceAtLeast(margin))
+    val maxH = with(density) { ((rootH - ay - margin).coerceAtLeast(160f)).toDp().value }
+    val hDp = heightDp.coerceIn(160f, maxH)
+    val pivot = if (wPx > 0f) ((ax - x) / wPx).coerceIn(0f, 1f) else 0.5f
+    val origin = androidx.compose.ui.graphics.TransformOrigin(pivot, 0f)
+
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier.align(AbsoluteAlignment.TopLeft).absoluteOffset { IntOffset(x.roundToInt(), ay.roundToInt()) },
+        enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(240), initialScale = 0.08f, transformOrigin = origin) +
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)),
+        exit = androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(200), targetScale = 0.08f, transformOrigin = origin) +
+            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160))
     ) {
-        Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        when (mode) {
-                            "stickers" -> L("الملصقات", "Stickers")
-                            "stickerPhoto" -> L("صورة للملصق", "Sticker photo")
-                            else -> L("الصور", "Photos")
-                        },
-                        fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Palette.Navy,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Box(
-                        Modifier.size(32.dp).clip(CircleShape).clickable {
-                            s.trayMode = if (mode == "stickerPhoto") "stickers" else null
-                        },
-                        contentAlignment = Alignment.Center
-                    ) { Text("✕", color = Palette.TextSecondary, fontSize = 15.sp) }
-                }
-                Text(
-                    L("انقر للوضع في الصفحة · اضغط مطوّلًا واسحب لمكان آخر", "Tap to add · long-press and drag to place"),
-                    fontSize = 10.sp, lineHeight = 13.sp, color = Palette.TextSecondary
-                )
-                Spacer(Modifier.height(6.dp))
-                if (mode == "stickers") StickerTrayContent(s) else PhotoTrayContent(s, forSticker = mode == "stickerPhoto")
-            }
-            // حافة تغيير العرض (جهة الصفحة)
+        Box(Modifier.width(widthDp.dp).height((hDp + 8f).dp)) {
+            // سهم صغير يشير إلى الزر
             Box(
-                Modifier.align(Alignment.CenterStart).width(14.dp).fillMaxHeight()
-                    .pointerInput(rtl) {
-                        detectHorizontalDragGestures(onDragEnd = { TrayPrefs.save(ctx, widthDp) }) { ch, dx ->
-                            ch.consume()
-                            val d = with(density) { dx.toDp().value }
-                            widthDp = (widthDp + if (rtl) d else -d).coerceIn(120f, 340f)
-                        }
+                Modifier.align(AbsoluteAlignment.TopLeft)
+                    .absoluteOffset { IntOffset((pivot * wPx - with(density) { 7.dp.toPx() }).roundToInt(), 0) }
+                    .size(14.dp).graphicsLayer { rotationZ = 45f; translationY = 4.dp.toPx() }
+                    .background(Palette.Background)
+            )
+            Surface(
+                Modifier.padding(top = 8.dp).fillMaxSize()
+                    .onGloballyPositioned { c ->
+                        TrayDrag.trayRect = androidx.compose.ui.geometry.Rect(
+                            c.localToWindow(Offset.Zero),
+                            c.localToWindow(Offset(c.size.width.toFloat(), c.size.height.toFloat()))
+                        )
                     },
-                contentAlignment = Alignment.Center
+                shape = RoundedCornerShape(18.dp),
+                color = Palette.Background,
+                shadowElevation = 12.dp
             ) {
-                Box(Modifier.width(4.dp).height(44.dp).clip(RoundedCornerShape(2.dp)).background(Palette.TextSecondary.copy(alpha = 0.35f)))
+                Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                when (mode) {
+                                    "stickers" -> L("الملصقات", "Stickers")
+                                    "stickerPhoto" -> L("صورة للملصق", "Sticker photo")
+                                    else -> L("الصور", "Photos")
+                                },
+                                fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Palette.Navy,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Box(
+                                Modifier.size(32.dp).clip(CircleShape).clickable {
+                                    s.trayMode = if (mode == "stickerPhoto") "stickers" else null
+                                },
+                                contentAlignment = Alignment.Center
+                            ) { Text("✕", color = Palette.TextSecondary, fontSize = 15.sp) }
+                        }
+                        Text(
+                            L("انقر للوضع في الصفحة · اسحب جانباً إلى المكان", "Tap to add · drag sideways to place"),
+                            fontSize = 10.sp, lineHeight = 13.sp, color = Palette.TextSecondary
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        if (mode == "stickers") StickerTrayContent(s) else PhotoTrayContent(s, forSticker = mode == "stickerPhoto")
+                    }
+                    // الحافة السفلية: تكبير النافذة وتصغيرها
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(16.dp)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(onDragEnd = { TrayPrefs.saveH(ctx, heightDp) }) { ch, dy ->
+                                    ch.consume()
+                                    heightDp = (heightDp.coerceAtMost(maxH) + with(density) { dy.toDp().value }).coerceIn(160f, maxH)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.width(44.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Palette.TextSecondary.copy(alpha = 0.35f)))
+                    }
+                }
             }
         }
     }
@@ -319,9 +389,9 @@ fun BoxScope.TrayDragGhost(s: DocSession, root: LayoutCoordinates?) {
     val half = with(density) { 38.dp.toPx() }
     Box(
         Modifier.align(AbsoluteAlignment.TopLeft)
-            .absoluteOffset { IntOffset((local.x - half).roundToInt(), (local.y - half * 1.6f).roundToInt()) }
+            .absoluteOffset { IntOffset((local.x - half).roundToInt(), (local.y - half).roundToInt()) }
             .size(76.dp)
-            .graphicsLayer { alpha = 0.6f }
+            .graphicsLayer { alpha = 0.9f; scaleX = 1.08f; scaleY = 1.08f }
             .shadow(10.dp, RoundedCornerShape(12.dp))
             .clip(RoundedCornerShape(12.dp))
             .background(stickyColor ?: if (p is TrayPayload.Photo) Color(0xFFEEF0F4) else Color.White.copy(alpha = 0.85f))
@@ -354,8 +424,8 @@ private fun TrayTile(
             .background(if (photo) Color(0xFFEEF0F4) else Color.White)
             .then(if (photo) Modifier else Modifier.border(1.dp, Palette.Divider, RoundedCornerShape(12.dp)))
             .graphicsLayer { alpha = if (TrayDrag.payload === payload) 0.35f else 1f }
-            .dragToPage(s, payload, img, onLongStill = onLongStill)
-            .combinedClickable(onClick = onTap),
+            .combinedClickable(onClick = onTap)
+            .dragToPage(s, payload, img, onLongStill = onLongStill),
         contentAlignment = Alignment.Center
     ) {
         img?.let {

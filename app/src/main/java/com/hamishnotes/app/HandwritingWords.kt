@@ -191,8 +191,8 @@ object HandwritingReader {
     private val lastTry = HashMap<String, Long>()
 
     /** ذاكرة لنتائج القراءة: إعادة قراءة صفحة لا تعيد إلا الأسطر التي تغيّرت. */
-    private val cache = object : LinkedHashMap<String, String>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 800
+    private val cache = object : LinkedHashMap<String, List<String>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?) = size > 800
     }
 
     fun tagsFor(lang: Int): List<String> = when (lang) {
@@ -262,10 +262,14 @@ object HandwritingReader {
         return "$tag:$h"
     }
 
-    private suspend fun recognize(tag: String, strokes: List<Ink>, w: Float, h: Float): String {
+    private suspend fun recognize(tag: String, strokes: List<Ink>, w: Float, h: Float): String =
+        candidates(tag, strokes, w, h).firstOrNull() ?: ""
+
+    /** قراءات القارئ مرتبة من الأرجح (الأولى هي النتيجة). */
+    private suspend fun candidates(tag: String, strokes: List<Ink>, w: Float, h: Float): List<String> {
         val k = key(tag, strokes)
         synchronized(lock) { cache[k] }?.let { return it }
-        val rec = recognizer(tag) ?: return ""
+        val rec = recognizer(tag) ?: return emptyList()
         val b = MlInk.builder()
         for (st in strokes) {
             val sb = MlInk.Stroke.builder()
@@ -278,16 +282,20 @@ object HandwritingReader {
             .setWritingArea(WritingArea(max(w * 1000f, 1f), max(h * 1000f, 1f)))
             .build()
         val r = rec.recognize(b.build(), ctx).result()
-        val text = r?.candidates?.firstOrNull()?.text?.trim() ?: ""
-        synchronized(lock) { cache[k] = text }
-        return text
+        val list = r?.candidates?.map { it.text.trim() }?.filter { it.isNotEmpty() }?.distinct() ?: emptyList()
+        synchronized(lock) { cache[k] = list }
+        return list
     }
 
     /**
      * كلمات خط اليد في الصفحة، بأرقام أسطر تبدأ من firstLine.
      * null = حزمة لغة لازمة غير جاهزة بعد. قائمة فارغة = لا خط يد.
      */
-    suspend fun read(strokes: List<Ink>, lang: Int, firstLine: Int): List<OcrWord>? {
+    suspend fun read(
+        strokes: List<Ink>, lang: Int, firstLine: Int,
+        /** إن أُعطيت: تُملأ ببدائل كل كلمة (بنفس ترتيب الكلمات المُرجعة). */
+        altsOut: MutableList<List<String>>? = null
+    ): List<OcrWord>? {
         val lines = HandwritingLayout.lines(strokes, lang, defaultRtl = !I18n.english)
         if (lines.isEmpty()) return emptyList()
         val needed = lines.flatMap { l -> l.runs.map { if (it.rtl) AR else EN } }.toSet()
@@ -301,15 +309,29 @@ object HandwritingReader {
                 val tag = if (run.rtl) AR else EN
                 val all = run.words.flatMap { it.strokes }
                 val w = run.words.maxOf { it.r } - run.words.minOf { it.l }
-                val text = recognize(tag, all, w, lineB - lineT)
+                val cands = candidates(tag, all, w, lineB - lineT)
+                val text = cands.firstOrNull() ?: ""
                 val pairs = HandwritingLayout.assign(run, text)
                 if (pairs != null) {
-                    pairs.forEach { (wd, s) -> out.add(HandwritingLayout.toWord(wd, s, lineNo)) }
+                    pairs.forEachIndexed { j, (wd, s) ->
+                        out.add(HandwritingLayout.toWord(wd, s, lineNo))
+                        // بديل الكلمة j: كلمتها في كل قراءة أخرى لها نفس عدد الكلمات
+                        altsOut?.add(
+                            cands.drop(1).mapNotNull { c ->
+                                val tk = c.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                                if (tk.size == pairs.size) tk[j] else null
+                            }.filter { it != s }.distinct().take(4)
+                        )
+                    }
                 } else {
                     // عدد الكلمات لم يطابق: تُقرأ كل كلمة وحدها في مكانها
                     for (wd in run.words) {
-                        val s = recognize(tag, wd.strokes, wd.r - wd.l, lineB - lineT)
-                        if (s.isNotBlank()) out.add(HandwritingLayout.toWord(wd, s, lineNo))
+                        val cs = candidates(tag, wd.strokes, wd.r - wd.l, lineB - lineT)
+                        val s = cs.firstOrNull() ?: ""
+                        if (s.isNotBlank()) {
+                            out.add(HandwritingLayout.toWord(wd, s, lineNo))
+                            altsOut?.add(cs.drop(1).filter { it != s && !it.contains(' ') }.take(4))
+                        }
                     }
                 }
             }

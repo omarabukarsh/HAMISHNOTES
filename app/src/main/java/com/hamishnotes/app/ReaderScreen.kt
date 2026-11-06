@@ -302,7 +302,7 @@ private fun ReaderContent(s: DocSession) {
             }
         }
         // درج الملصقات والصور الجانبي، وصورة العنصر المسحوب منه
-        if (!c.focusMode) SideTray(s)
+        if (!c.focusMode) SideTray(s, rootCoords[0])
         TrayDragGhost(s, rootCoords[0])
     }
 
@@ -667,13 +667,17 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
                 if (v("image")) {
                     // معرض صور الجهاز داخل التطبيق (و«من الملفات» داخله)
-                    TBtn(selected = s.trayMode == "photos", onClick = { s.trayMode = if (s.trayMode == "photos") null else "photos" }) {
-                        ImageGlyph(tintFor(s.trayMode == "photos"))
+                    Box(Modifier.onGloballyPositioned { val r = it.boundsInWindow(); if (s.trayAnchors["photos"] != r) s.trayAnchors["photos"] = r }) {
+                        TBtn(selected = s.trayMode == "photos", onClick = { s.trayMode = if (s.trayMode == "photos") null else "photos" }) {
+                            ImageGlyph(tintFor(s.trayMode == "photos"))
+                        }
                     }
                 }
                 if (v("stickers")) {
-                    TBtn(selected = s.trayMode == "stickers", onClick = { s.trayMode = if (s.trayMode == "stickers") null else "stickers" }) {
-                        PhIcon(R.drawable.ph_sticker, tintFor(s.trayMode == "stickers"))
+                    Box(Modifier.onGloballyPositioned { val r = it.boundsInWindow(); if (s.trayAnchors["stickers"] != r) s.trayAnchors["stickers"] = r }) {
+                        TBtn(selected = s.trayMode == "stickers", onClick = { s.trayMode = if (s.trayMode == "stickers") null else "stickers" }) {
+                            PhIcon(R.drawable.ph_sticker, tintFor(s.trayMode == "stickers"))
+                        }
                     }
                 }
                 if (v("text")) TBtn(selected = PenPrefs.textActive, onClick = {
@@ -2307,6 +2311,7 @@ private fun PageView(
                         fontFamily = if (ready) FontStore.family(tb.font) else null,
                         fontSize = fs,
                         lineHeight = fs * 1.25f,
+                        onTextLayout = { lay -> session.textLayouts[tb.id] = lay to wp },
                         modifier = Modifier
                             .align(AbsoluteAlignment.TopLeft)
                             .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
@@ -2743,10 +2748,15 @@ private fun PageView(
                                         val pts = shaped ?: raw
                                         val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
                                         if (noteTarget != null) session.addNoteInk(noteTarget, ink) else {
-                                            pendingInk.add(ink)
-                                            session.addInk(index, ink)
-                                            // «Aa تلقائي»: الجملة تتحول إلى الخط المختار عند إنهائها
-                                            if (shaped == null) AutoFont.onStroke(session, index, ink)
+                                            // على النص المتحول: شخبطة/خط = حذف كلمة، ∧ = مكان إضافة (لا تُحفظ كحبر)
+                                            if (shaped == null && AutoFont.gesture(session, index, ink)) {
+                                                Unit
+                                            } else {
+                                                pendingInk.add(ink)
+                                                session.addInk(index, ink)
+                                                // «Aa تلقائي»: الجملة تتحول إلى الخط المختار عند إنهائها
+                                                if (shaped == null) AutoFont.onStroke(session, index, ink)
+                                            }
                                         }
                                     }
                                 }
@@ -2925,6 +2935,28 @@ private fun PageView(
                                     val th = textHeights[it.id] ?: 0.03f
                                     nx >= it.x && nx <= it.x + it.w && ny >= it.y && ny <= it.y + th
                                 }
+                                // كلمة متحولة لها قراءات أخرى: نقرة تعرض البدائل للتصحيح
+                                if (textHit != null && textHit.alts.isNotEmpty() && textHit.id != session.selectedTextId) {
+                                    val lw = session.textLayouts[textHit.id]
+                                    if (lw != null) {
+                                        val (lay, lwp) = lw
+                                        val o = lay.getOffsetForPosition(Offset((nx - textHit.x) * lwp, (ny - textHit.y) * lwp))
+                                        val wb = lay.getWordBoundary(o.coerceIn(0, textHit.text.length))
+                                        val word = if (wb.end > wb.start) textHit.text.substring(wb.start, wb.end) else ""
+                                        val alts = textHit.alts[word] ?: emptyList()
+                                        if (alts.isNotEmpty()) {
+                                            val li = lay.getLineForOffset(wb.start)
+                                            val bx = lay.getBoundingBox(wb.start.coerceAtMost((textHit.text.length - 1).coerceAtLeast(0)))
+                                            session.altPopup = DocSession.AltPopup(
+                                                textHit.id, index, wb.start, wb.end, alts,
+                                                Offset(textHit.x + bx.left / lwp, textHit.y + lay.getLineBottom(li) / lwp)
+                                            )
+                                            session.selectedTextId = null
+                                            return@awaitEachGesture
+                                        }
+                                    }
+                                }
+                                if (session.altPopup != null) session.altPopup = null
                                 if (textHit != null) {
                                     session.selectedTextId = textHit.id
                                     session.selectedImageId = null
@@ -3135,6 +3167,27 @@ private fun PageView(
                 Spacer(Modifier.width(8.dp))
                 Text(L("جارٍ قراءة الصفحة…", "Reading page…"), fontSize = 13.sp, color = Palette.TextPrimary)
             }
+        }
+
+        // بدائل الكلمة للتصحيح، ومربع الإضافة المنقط (فوق كل الطبقات)
+        val ap = session.altPopup?.takeIf { it.page == index }
+        if (ap != null && wPx > 0) AltWordPopup(session, ap, wPx.toFloat())
+        val insT = AutoFont.insertTarget?.takeIf { it.s === session && it.page == index }
+        if (insT != null && wPx > 0) {
+            val wpf = wPx.toFloat()
+            Box(
+                Modifier.align(AbsoluteAlignment.TopLeft)
+                    .absoluteOffset { IntOffset((insT.area.left * wpf).roundToInt(), (insT.area.top * wpf).roundToInt()) }
+                    .size(with(density) { (insT.area.width * wpf).toDp() }, with(density) { (insT.area.height * wpf).toDp() })
+                    .drawWithContent {
+                        drawRect(
+                            Palette.Navy.copy(alpha = 0.7f),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 9f))
+                            )
+                        )
+                    }
+            )
         }
 
         // الكتابة المباشرة فوق كل الطبقات (حتى تصل لمسات حقل النص إليه)
@@ -3536,6 +3589,27 @@ private fun BoxScope.InlineTextEditor(
         FontLibraryDialog(tb.text.ifBlank { L("هامش", "Hamish") }, tb.font, onPick = { f ->
             s.updateTextBox(tb.id) { it.copy(font = f) }
         }, onDismiss = { fontPick = false })
+    }
+}
+
+/** نافذة صغيرة تحت الكلمة: قراءات أخرى لها، و✎ للكتابة يدوياً. */
+@Composable
+private fun BoxScope.AltWordPopup(s: DocSession, p: DocSession.AltPopup, wp: Float) {
+    var bw by remember { mutableStateOf(0) }
+    val x = (p.at.x * wp).coerceIn(0f, (wp - bw).coerceAtLeast(0f))
+    val y = p.at.y * wp + with(LocalDensity.current) { 4.dp.toPx() }
+    Row(
+        Modifier.align(AbsoluteAlignment.TopLeft)
+            .absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
+            .onSizeChanged { bw = it.width }
+            .shadow(8.dp, RoundedCornerShape(12.dp))
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        p.alts.forEach { a -> InlineChip(a, bg = Palette.NavySoft) { s.applyAlt(p, a) } }
+        InlineChip("✎", fg = Palette.Navy) { s.altPopup = null; s.startInlineEdit(p.boxId) }
+        InlineChip("✕", fg = Palette.TextSecondary) { s.altPopup = null }
     }
 }
 

@@ -702,7 +702,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             PenPrefs.stickyActive = true
                             c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
                         }
-                    }) { PhIcon(R.drawable.ph_note, tintFor(PenPrefs.stickyActive)) }
+                    }) { PhIcon(R.drawable.ph_sticky_note, tintFor(PenPrefs.stickyActive)) }
                 }
                 if (v("link")) {
                     TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
@@ -2286,7 +2286,7 @@ private fun PageView(
                                 .background(Color(0xFFFFE27A), RoundedCornerShape(6.dp))
                                 .then(if (selected) Modifier.border(1.5.dp, Palette.Navy, RoundedCornerShape(6.dp)) else Modifier),
                             contentAlignment = Alignment.Center
-                        ) { PhIcon(R.drawable.ph_note, Color(0xFF6B4E00), side * 0.6f) }
+                        ) { PhIcon(R.drawable.ph_sticky_note, Color(0xFF6B4E00), side * 0.6f) }
                     } else if (tb.linkDoc != null) {
                         // رابط إلى صفحة: شارة بعنوانه (نقرة تحدده، ونقرة ثانية تفتحه)
                         Row(

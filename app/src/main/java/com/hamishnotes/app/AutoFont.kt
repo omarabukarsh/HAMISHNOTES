@@ -472,7 +472,21 @@ object AutoFont {
     class InkSwap(val s: DocSession, val page: Int, val made: List<Ink>, val original: List<Ink>)
     var lastInk by mutableStateOf<InkSwap?>(null); private set
     /** خط قاعدة آخر سطر تحوّل (للمسافة الموحدة بين الأسطر). */
-    private var lastLine: Triple<DocSession, Int, Float>? = null
+    private var lastLine: LineInfo? = null
+
+    /** آخر سطر تجمّل: خط قاعدته وبدايته (لمسافة موحدة بين الأسطر ولمحاذاة بداية السطر التالي). */
+    private class LineInfo(val s: DocSession, val page: Int, val base: Float, val start: Float, val rtl: Boolean)
+
+    /**
+     * بداية السطر (يسار للإنجليزي، يمين للعربي): إن بدأ قريباً من بداية السطر السابق تحته
+     * يُحاذى معها، فتبدو الأسطر مرتبة كنص مكتوب.
+     */
+    internal fun alignStart(start: Float, rtl: Boolean, base: Float, prevStart: Float?, prevRtl: Boolean?, prevBase: Float?, size: Float): Float {
+        if (prevStart == null || prevBase == null || prevRtl != rtl) return start
+        val below = base - prevBase
+        if (below <= 0f || below > size * 4f) return start
+        return if (kotlin.math.abs(start - prevStart) <= 0.06f) prevStart else start
+    }
 
     /** يرسم الكلمات المقروءة بالخط المختار كخطوط قلم مكان الكتابة اليدوية (خطوة تراجع واحدة). */
     private suspend fun toInk(s: DocSession, pg: Int, alive: List<Ink>, words: List<OcrWord>) {
@@ -487,49 +501,37 @@ object AutoFont {
         val penP = if (allP.isEmpty()) 0.6f else allP[allP.size / 2].coerceIn(0.2f, 1.2f)
         val bold = dynamicBold
         val tool = if (bold) Tool.FOUNTAIN else first.tool
-        var prevBase = lastLine?.takeIf { it.first === s && it.second == pg }?.third
+        var prev = lastLine?.takeIf { it.s === s && it.page == pg }
         val out = ArrayList<Ink>()
         for (line in lines) {
-            val glyphs = withContext(Dispatchers.Default) { line.map { GlyphInk.word(it.text, fontName, tf) } }
-            val ok = line.indices.filter { glyphs[it] != null }
-            if (ok.isEmpty()) continue
+            // السطر كله نص واحد بمسافات الخط العادية (كأنه مكتوب بالكيبورد)، ثم يُحوَّل إلى خطوط قلم
+            val text = line.joinToString(" ") { it.text.trim() }.trim()
+            val g = withContext(Dispatchers.Default) { GlyphInk.word(text, fontName, tf) } ?: continue
             val l = line.minOf { it.l }
             val t = line.minOf { it.t }
             val r = line.maxOf { it.r }
             val b = line.maxOf { it.b }
-            val emTop = ok.minOf { glyphs[it]!!.top }
-            val emBot = ok.maxOf { glyphs[it]!!.bottom }
-            val space = glyphs[ok.first()]!!.space
-            val emW = ok.sumOf { (glyphs[it]!!.right - glyphs[it]!!.left).toDouble() }.toFloat() + space * (ok.size - 1)
-            val size = if (unify) unifiedSize() else sizeFor(r - l, b - t, emW, emBot - emTop)
-            var base = b - emBot * size
-            base = snapBase(ruled, base, snap, size, prevBase, if (unify) unifySpacing else null)
-            prevBase = base
-            val rtl = line.any { w -> w.text.any { it in '؀'..'ۿ' } }
-            val gap = space * size * 0.8f
-            // كل كلمة في مكان كتابتها، وإن كانت أعرض من الكتابة تُزاح الكلمة التالية
-            var cursor = if (rtl) Float.MAX_VALUE else -Float.MAX_VALUE
-            for (i in ok) {
-                val wd = line[i]
-                val g = glyphs[i]!!
-                val ox = if (rtl) {
-                    val right = minOf(wd.r, cursor)
-                    (right - g.right * size).also { cursor = it + g.left * size - gap }
-                } else {
-                    val left = maxOf(wd.l, cursor)
-                    (left - g.left * size).also { cursor = it + g.right * size + gap }
+            // العرض من الكلمات نفسها لا من الفراغات بينها (المسافات بين كلمات اليد غير منتظمة)
+            val handW = line.sumOf { (it.r - it.l).toDouble() }.toFloat()
+            val emW = (g.right - g.left - g.space * (line.size - 1)).coerceAtLeast((g.right - g.left) * 0.5f)
+            val size = if (unify) unifiedSize() else sizeFor(handW, b - t, emW, g.bottom - g.top)
+            var base = b - g.bottom * size
+            base = snapBase(ruled, base, snap, size, prev?.base, if (unify) unifySpacing else null)
+            val rtl = text.any { it in '\u0600'..'\u06FF' }
+            val start = alignStart(if (rtl) r else l, rtl, base, prev?.start, prev?.rtl, prev?.base, size)
+            // يبدأ السطر حيث بدأت الكتابة (يسار الإنجليزي، يمين العربي)
+            val ox = if (rtl) start - g.right * size else start - g.left * size
+            val thick = g.thickness * size
+            val width = if (bold) maxOf(thick, penW) else penW
+            for (pl in g.strokes) {
+                val pts = ArrayList<Pt>(pl.size)
+                for (k in 0 until pl.size) {
+                    val p = if (bold) (pl.thick[k] * size / width - 0.4f).coerceIn(0.1f, 1.3f) else penP
+                    pts.add(Pt(ox + pl.xs[k] * size, base + pl.ys[k] * size, p))
                 }
-                val thick = g.thickness * size
-                val width = if (bold) maxOf(thick, penW) else penW
-                for (pl in g.strokes) {
-                    val pts = ArrayList<Pt>(pl.size)
-                    for (k in 0 until pl.size) {
-                        val p = if (bold) (pl.thick[k] * size / width - 0.4f).coerceIn(0.1f, 1.3f) else penP
-                        pts.add(Pt(ox + pl.xs[k] * size, base + pl.ys[k] * size, p))
-                    }
-                    out.add(Ink(pts, first.color, width, tool, t = first.t, style = LineStyle.SOLID))
-                }
+                out.add(Ink(pts, first.color, width, tool, t = first.t, style = LineStyle.SOLID))
             }
+            prev = LineInfo(s, pg, base, start, rtl)
         }
         if (out.isEmpty()) return
         // داخل حدود الصفحة
@@ -543,7 +545,7 @@ object AutoFont {
         val made = if (dx == 0f) out else out.map { k -> k.copy(pts = k.pts.map { Pt(it.x + dx, it.y, it.p) }) }
         s.replaceInk(pg, alive, made)
         FontStore.markUsed(fontName)
-        lastLine = prevBase?.let { Triple(s, pg, it) }
+        lastLine = prev
         val swap = InkSwap(s, pg, made, alive)
         lastInk = swap
         delay(3500)

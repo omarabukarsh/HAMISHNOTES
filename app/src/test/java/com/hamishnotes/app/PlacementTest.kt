@@ -119,4 +119,20 @@ class PlacementTest {
         assertTrue(edgeSpeed(Offset(400f, 999f), vp, 72f, 18f) > edgeSpeed(Offset(400f, 940f), vp, 72f, 18f))
         assertTrue(edgeSpeed(Offset(400f, 999f), vp, 72f, 18f) <= 18f)
     }
+
+    // ------------------------------------------------ أسطر مرتبة
+
+    @Test
+    fun nextLine_startsWhereThePreviousLineStarted() {
+        // السطر التالي بدأ أبعد قليلاً: يُحاذى مع بداية السطر السابق
+        assertEquals(0.07f, AutoFont.alignStart(0.10f, false, 0.16f, 0.07f, false, 0.1135f, 0.03f), 1e-6f)
+        // عربي: البداية من اليمين
+        assertEquals(0.93f, AutoFont.alignStart(0.95f, true, 0.16f, 0.93f, true, 0.1135f, 0.03f), 1e-6f)
+        // بعيد عن بداية السابق (مسافة بادئة مقصودة) أو بعيد عنه رأسياً أو فوقه: يبقى كما كُتب
+        assertEquals(0.30f, AutoFont.alignStart(0.30f, false, 0.16f, 0.07f, false, 0.1135f, 0.03f), 1e-6f)
+        assertEquals(0.10f, AutoFont.alignStart(0.10f, false, 0.60f, 0.07f, false, 0.1135f, 0.03f), 1e-6f)
+        assertEquals(0.10f, AutoFont.alignStart(0.10f, false, 0.05f, 0.07f, false, 0.1135f, 0.03f), 1e-6f)
+        // لغة مختلفة عن السطر السابق
+        assertEquals(0.10f, AutoFont.alignStart(0.10f, false, 0.16f, 0.07f, true, 0.1135f, 0.03f), 1e-6f)
+    }
 }

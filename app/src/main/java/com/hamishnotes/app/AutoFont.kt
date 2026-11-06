@@ -60,6 +60,8 @@ object AutoFont {
     var joinLines by mutableStateOf(true); private set
     /** النص يجلس على أقرب سطر من أسطر الدفتر. */
     var snapToLine by mutableStateOf(true); private set
+    /** لغة الكتابة للتحويل: عربي أو إنجليزي فقط (لا قراءة مختلطة). */
+    var lang by mutableStateOf(HwLang.ARABIC); private set
 
     fun init(ctx: Context) {
         val p = ctx.getSharedPreferences("hamish_autofont", Context.MODE_PRIVATE)
@@ -69,12 +71,14 @@ object AutoFont {
         delayMs = p.getInt("delay", 2000)
         joinLines = p.getBoolean("join", true)
         snapToLine = p.getBoolean("snap", true)
+        lang = p.getInt("lang", if (I18n.english) HwLang.ENGLISH else HwLang.ARABIC)
+            .let { if (it == HwLang.ENGLISH) HwLang.ENGLISH else HwLang.ARABIC }
     }
 
     fun changeOn(v: Boolean) {
         on = v
         sp?.edit()?.putBoolean("on", v)?.apply()
-        if (v) HandwritingReader.prefetch(PenPrefs.hwLang) else discard()
+        if (v) HandwritingReader.prefetch(lang) else discard()
     }
 
     fun changeFont(v: String) {
@@ -92,6 +96,12 @@ object AutoFont {
     fun changeJoin(v: Boolean) {
         joinLines = v
         sp?.edit()?.putBoolean("join", v)?.apply()
+    }
+
+    fun changeLang(v: Int) {
+        lang = if (v == HwLang.ENGLISH) HwLang.ENGLISH else HwLang.ARABIC
+        sp?.edit()?.putInt("lang", lang)?.apply()
+        HandwritingReader.prefetch(lang)
     }
 
     fun changeSnap(v: Boolean) {
@@ -254,7 +264,7 @@ object AutoFont {
     private suspend fun convert(s: DocSession, pg: Int, batch: List<Ink>) {
         val altsList = ArrayList<List<String>>()
         val words = try {
-            HandwritingReader.read(batch, PenPrefs.hwLang, 0, altsList)
+            HandwritingReader.read(batch, lang, 0, altsList)
         } catch (t: Throwable) {
             null
         }
@@ -527,9 +537,9 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
     var delayMs by remember { mutableStateOf(AutoFont.delayMs) }
     var join by remember { mutableStateOf(AutoFont.joinLines) }
     var snap by remember { mutableStateOf(AutoFont.snapToLine) }
-    var lang by remember { mutableStateOf(PenPrefs.hwLang) }
+    var lang by remember { mutableStateOf(AutoFont.lang) }
     var library by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { HandwritingReader.prefetch(PenPrefs.hwLang) }
+    LaunchedEffect(lang) { HandwritingReader.prefetch(lang) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Aa " + L("تحويل الكتابة تلقائياً", "Auto-convert handwriting"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, color = Palette.Navy) },
@@ -588,7 +598,6 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
-                        HwLang.BOTH to L("عربي + إنجليزي معاً", "Arabic + English"),
                         HwLang.ARABIC to L("عربي", "Arabic"),
                         HwLang.ENGLISH to L("إنجليزي", "English")
                     ).forEach { (v, label) -> ChoiceChip(label, lang == v) { lang = v } }
@@ -609,7 +618,7 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                 AutoFont.changeDelay(delayMs)
                 AutoFont.changeJoin(join)
                 AutoFont.changeSnap(snap)
-                if (lang != PenPrefs.hwLang) PenPrefs.changeHwLang(lang)
+                AutoFont.changeLang(lang)
                 AutoFont.changeOn(true)
                 AppController.messages.tryEmit(L("اكتب جملتك، وستتحول عند إنهائها", "Write your sentence; it converts when you finish"))
                 onDismiss()

@@ -64,8 +64,8 @@ internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.wid
     if (s.fill) drawFilled(s, color, scaleW) else drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
 }
 
-/** شفافية ملء الأشكال: تظليل خفيف بلون الشكل. */
-const val SHAPE_FILL_ALPHA = 0.18f
+/** شفافية ملء الأشكال الافتراضية: تظليل خفيف بلون الشكل. */
+const val SHAPE_FILL_ALPHA = 0.2f
 
 /** طبقة الخلفية: الهايلايتر وملء الأشكال، تُرسم تحت النص والكتابة. */
 internal fun Ink.inUnderlay(): Boolean = tool == Tool.HIGHLIGHTER || shapeFill
@@ -81,7 +81,7 @@ internal fun DrawScope.drawUnder(s: Ink, color: Color, scaleW: Float = size.widt
         path.moveTo(s.pts[0].x * scaleW, s.pts[0].y * scaleW)
         for (i in 1 until s.pts.size) path.lineTo(s.pts[i].x * scaleW, s.pts[i].y * scaleW)
         path.close()
-        drawPath(path, color.copy(alpha = color.alpha * SHAPE_FILL_ALPHA))
+        drawPath(path, color.copy(alpha = color.alpha * s.fillAlpha))
     }
 }
 

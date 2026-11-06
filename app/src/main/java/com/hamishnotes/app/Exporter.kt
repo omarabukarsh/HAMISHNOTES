@@ -254,7 +254,7 @@ object Exporter {
                 if (!s.shapeFill || s.pts.size < 3) continue
                 cs.saveGraphicsState()
                 val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
-                gs.nonStrokingAlphaConstant = s.color.alpha * SHAPE_FILL_ALPHA
+                gs.nonStrokingAlphaConstant = s.color.alpha * s.fillAlpha
                 cs.setGraphicsStateParameters(gs)
                 cs.setNonStrokingColor(s.color.red, s.color.green, s.color.blue)
                 cs.moveTo(px(s.pts[0].x), py(s.pts[0].y))
@@ -422,7 +422,7 @@ object Exporter {
         path.moveTo(s.pts[0].x * w, s.pts[0].y * w)
         for (j in 1 until s.pts.size) path.lineTo(s.pts[j].x * w, s.pts[j].y * w)
         path.close()
-        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = s.color.copy(alpha = s.color.alpha * SHAPE_FILL_ALPHA).toArgb(); style = Paint.Style.FILL })
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = s.color.copy(alpha = s.color.alpha * s.fillAlpha).toArgb(); style = Paint.Style.FILL })
     }
 
     private fun drawInk(c: Canvas, s: Ink, w: Float) {

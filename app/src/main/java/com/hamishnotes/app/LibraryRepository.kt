@@ -413,7 +413,7 @@ class LibraryRepository(context: Context) {
                             Tool.FOUNTAIN
                         }
                         val safeKind = if (kind == Tool.ERASER || kind == Tool.LASER) Tool.FOUNTAIN else kind
-                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L), o.optInt("ls", 0), o.optBoolean("sh", false), o.optBoolean("fl", false), o.optDouble("lf", -1.0).toFloat(), o.optDouble("ef", 0.0).toFloat(), o.optBoolean("sf", false)))
+                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L), o.optInt("ls", 0), o.optBoolean("sh", false), o.optBoolean("fl", false), o.optDouble("lf", -1.0).toFloat(), o.optDouble("ef", 0.0).toFloat(), o.optBoolean("sf", false), o.optDouble("sfa", SHAPE_FILL_ALPHA.toDouble()).toFloat()))
                     }
                     ink[key.toInt()] = list
                 }
@@ -568,7 +568,7 @@ class LibraryRepository(context: Context) {
                                     j += 3
                                 }
                                 val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
-                                inks.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat(), so.optBoolean("sf", false)))
+                                inks.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat(), so.optBoolean("sf", false), so.optDouble("sfa", SHAPE_FILL_ALPHA.toDouble()).toFloat()))
                             }
                         }
                         all.add(
@@ -611,7 +611,7 @@ class LibraryRepository(context: Context) {
                                 .put("w", s.width.toDouble())
                                 .put("k", s.tool.name)
                                 .put("t", s.t)
-                                .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) put("sf", true) }
+                                .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) } }
                                 .put("p", flat)
                         )
                     }
@@ -714,7 +714,7 @@ class LibraryRepository(context: Context) {
                                                 put(
                                                     JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble())
                                                         .put("k", s.tool.name).put("t", s.t)
-                                                        .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) put("sf", true) }
+                                                        .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) } }
                                                         .put("p", flat)
                                                 )
                                             }
@@ -797,7 +797,7 @@ class LibraryRepository(context: Context) {
             s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
             put(
                 JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble()).put("k", s.tool.name).put("t", s.t)
-                    .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) put("sf", true) }
+                    .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) } }
                     .put("p", flat)
             )
         }
@@ -817,7 +817,7 @@ class LibraryRepository(context: Context) {
                     j += 3
                 }
                 val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
-                out.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat(), so.optBoolean("sf", false)))
+                out.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat(), so.optBoolean("sf", false), so.optDouble("sfa", SHAPE_FILL_ALPHA.toDouble()).toFloat()))
             } catch (e: Throwable) {
             }
         }

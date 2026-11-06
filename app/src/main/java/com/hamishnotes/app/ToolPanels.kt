@@ -381,10 +381,6 @@ fun ShapeBar() {
                     TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
                 }
                 ToolbarSep()
-                // ملء خفيف بلون الشكل (للأشكال المغلقة)، تحت الكتابة
-                TBtn(selected = PenPrefs.shapeFill, onClick = { PenPrefs.changeShapeFill(!PenPrefs.shapeFill) }) {
-                    PhIcon(R.drawable.ph_shape_fill, tintFor(PenPrefs.shapeFill), description = L("ملء الشكل", "Fill shape"))
-                }
                 Box {
                     TBtn(onClick = { strokeMenu = true }) { LineStyleSample(PenPrefs.shapeStyle, Palette.TextPrimary, 4f) }
                     DropdownMenu(
@@ -403,20 +399,10 @@ fun ShapeBar() {
                         expanded = colorMenu, onDismissRequest = { colorMenu = false },
                         shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) {
-                        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            (c.penPalette + c.customColors.toList()).take(10).forEach { col ->
-                                val sel = col.toArgb() == PenPrefs.shapeColor
-                                Box(
-                                    Modifier.size(32.dp).clip(CircleShape).background(col)
-                                        .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
-                                        .clickable { PenPrefs.changeShapeColor(col.toArgb()); colorMenu = false }
-                                )
-                            }
-                            Box(
-                                Modifier.size(32.dp).clip(CircleShape).clickable { colorMenu = false; picker = true },
-                                contentAlignment = Alignment.Center
-                            ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp) }
-                        }
+                        ShapeColorMenu(
+                            onPick = { col -> PenPrefs.changeShapeColor(col.toArgb()); colorMenu = false },
+                            onCustom = { colorMenu = false; picker = true }
+                        )
                     }
                 }
                 ToolbarSep()
@@ -435,6 +421,39 @@ fun ShapeBar() {
     }
 }
 
+/** نافذة لون الأشكال: الألوان، ثم «ملء بلون الشكل» وشفافيته (تفتح داخل قائمة منسدلة). */
+@Composable
+internal fun ShapeColorMenu(onPick: (Color) -> Unit, onCustom: () -> Unit) {
+    val c = AppController
+    Column {
+        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (c.penPalette + c.customColors.toList()).take(10).forEach { col ->
+                val sel = col.toArgb() == PenPrefs.shapeColor
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).background(col)
+                        .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
+                        .clickable { onPick(col) }
+                )
+            }
+            Box(
+                Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onCustom),
+                contentAlignment = Alignment.Center
+            ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp) }
+        }
+        // ملء الشكل المغلق بلونه (تحت الكتابة) وشفافيته
+        Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
+            Divider()
+            PanelSwitch(L("ملء بلون الشكل", "Fill with color"), PenPrefs.shapeFill, R.drawable.ph_shape_fill) { PenPrefs.changeShapeFill(it) }
+            if (PenPrefs.shapeFill) {
+                Spacer(Modifier.height(4.dp))
+                PercentSlider(L("الشفافية", "Opacity"), PenPrefs.shapeFillAlpha, steps = 8) {
+                    PenPrefs.changeShapeFillAlpha(kotlin.math.round(it * 10f) / 10f)
+                }
+            }
+        }
+    }
+}
+
 /** إعدادات خط الأشكال: النمط، السماكة، الزوايا المستديرة، رؤوس الأسهم. */
 @Composable
 private fun ShapeStrokePanel() {
@@ -447,7 +466,6 @@ private fun ShapeStrokePanel() {
         )
         Divider()
         PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
-        PanelSwitch(L("ملء خفيف بلون الشكل", "Light fill in the shape's color"), PenPrefs.shapeFill) { PenPrefs.changeShapeFill(it) }
         Spacer(Modifier.height(8.dp))
         PanelLabel(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

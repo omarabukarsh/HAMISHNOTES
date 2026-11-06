@@ -2323,7 +2323,7 @@ private fun PageView(
             val lc = if (night) nightOf(live.color) else live.color
             // معاينة ملء الشكل أثناء السحب
             if (live.sharp && PenPrefs.shapeActive && PenPrefs.shapeFill && PenPrefs.shapeKind.closed() && livePts.size > 2) {
-                drawUnder(Ink(livePts.toList(), live.color, live.width, Tool.BALLPOINT, shape = true, shapeFill = true), lc)
+                drawUnder(Ink(livePts.toList(), live.color, live.width, Tool.BALLPOINT, shape = true, shapeFill = true, fillAlpha = PenPrefs.shapeFillAlpha), lc)
             }
             if (live.tool == Tool.HIGHLIGHTER && !live.sharp && livePts.isNotEmpty()) {
                 val extra = if (live.hasPred) Pt(live.predX, live.predY, live.predP) else null
@@ -2638,7 +2638,7 @@ private fun PageView(
                                         // الملء للشكل المغلق نفسه فقط (لا لرؤوس الأسهم)
                                         val fillIt = PenPrefs.shapeFill && kind.closed()
                                         parts.forEachIndexed { pi, pts ->
-                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true, shapeFill = fillIt && pi == 0))
+                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true, shapeFill = fillIt && pi == 0, fillAlpha = PenPrefs.shapeFillAlpha))
                                         }
                                         session.endEdit()
                                     }
@@ -2814,7 +2814,9 @@ private fun PageView(
                                         } else null
                                         // بلا تدبيب عند الحفظ: الخط المحفوظ يطابق ما كان ظاهرًا أثناء الكتابة
                                         val pts = shaped ?: raw
-                                        val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
+                                        // شكل مغلق مرتب بالقلم: يُملأ ملئاً خفيفاً بلونه إن كان «ملء الشكل» مفعّلاً
+                                        val fillIt = shaped != null && PenPrefs.shapeFill && isClosedShape(pts)
+                                        val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null, shapeFill = fillIt, fillAlpha = PenPrefs.shapeFillAlpha)
                                         if (noteTarget != null) session.addNoteInk(noteTarget, ink) else {
                                             // على النص المتحول: شخبطة/خط = حذف كلمة، ∧ = مكان إضافة (لا تُحفظ كحبر)
                                             if (shaped == null && AutoFont.gesture(session, index, ink)) {

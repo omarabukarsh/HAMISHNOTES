@@ -1014,7 +1014,7 @@ class DocSession(entry: DocEntry) {
         if (existing != null && isFresh(existing, strokes)) return existing
         val lang = PenPrefs.hwLang
 
-        val result: OcrPage? = try {
+        val found: OcrPage? = try {
             withContext(Dispatchers.Default) {
                 val ref = doc.pages.getOrNull(page) ?: return@withContext null
                 // 1) النص الرقمي داخل الملف: دقيق ويدعم العربية
@@ -1084,6 +1084,18 @@ class DocSession(entry: DocEntry) {
             null
         }
 
+        // الكتابة المحوّلة (تجميل الخط): كلماتها محفوظة مع حروفها، فتُضاف بأماكنها
+        // (وتحل محل ما قرأته القراءة الضوئية في نفس المكان)
+        val converted = ConvertedWords.read(strokes)
+        val result = if (converted.isEmpty()) found else {
+            val others = (found?.words ?: emptyList()).filter { w ->
+                val cx = (w.l + w.r) / 2f
+                val cy = (w.t + w.b) / 2f
+                converted.none { c -> cx >= c.l && cx <= c.r && cy >= c.t && cy <= c.b }
+            }
+            val offset = (others.maxOfOrNull { it.line } ?: -1) + 1
+            OcrPage(others + converted.map { it.copy(line = it.line + offset) }, found?.version ?: ver)
+        }
         if (result != null) {
             ocr[page] = result
             withContext(Dispatchers.IO) { AppController.repo.saveOcrPage(id, page, result) }

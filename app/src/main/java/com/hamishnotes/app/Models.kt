@@ -97,7 +97,10 @@ data class Ink(
     /** شكل مغلق بملء خفيف بلونه (يُرسم تحت الكتابة). */
     val shapeFill: Boolean = false,
     /** شفافية ملء الشكل (0..1). */
-    val fillAlpha: Float = SHAPE_FILL_ALPHA
+    val fillAlpha: Float = SHAPE_FILL_ALPHA,
+    /** للحروف المحوّلة: الكلمة التي ينتمي إليها الحرف ورقمها (لقراءة الصفحة والتمييز والبحث). */
+    val word: String = "",
+    val wid: Long = 0L
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */

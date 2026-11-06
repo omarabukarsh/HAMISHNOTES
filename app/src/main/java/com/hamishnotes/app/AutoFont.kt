@@ -564,6 +564,8 @@ object AutoFont {
             val handSize = sizeFor(handW, b - t, emW, g.bottom - g.top)
             val rtl = text.any { it in '\u0600'..'\u06FF' }
             // «سماكة متغيرة»: تعريض الحرف كله قليلاً
+            // رقم لكل كلمة: كل حرف يحمل كلمته (فيقرؤها الهايلايتر والبحث والملخصات)
+            val wordIds = LongArray(g.words.size) { java.util.UUID.randomUUID().mostSignificantBits or 1L }
             fun place(size: Float, base: Float, start: Float): List<Ink> {
                 // يبدأ السطر حيث بدأت الكتابة (يسار الإنجليزي، يمين العربي)
                 val ox = if (rtl) start - g.right * size else start - g.left * size
@@ -572,7 +574,11 @@ object AutoFont {
                     val placed = piece.map { c -> FloatArray(c.size) { i -> if (i % 2 == 0) ox + c[i] * size else base + c[i] * size } }
                     val pts = InkFill.encode(placed)
                     val (lf, ef) = InkFill.fractions(pts, base, size)
-                    Ink(pts, first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true, lineF = lf, emF = ef)
+                    val wi = ConvertedWords.wordOf(piece, g.words)
+                    Ink(
+                        pts, first.color, outline, first.tool, t = first.t, style = LineStyle.SOLID, fill = true, lineF = lf, emF = ef,
+                        word = if (wi >= 0) g.words[wi].first else "", wid = if (wi >= 0) wordIds[wi] else 0L
+                    )
                 }
             }
             fun ownPlace(): Triple<List<Ink>, Float, Float> {

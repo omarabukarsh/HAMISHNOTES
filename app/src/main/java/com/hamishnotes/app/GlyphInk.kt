@@ -21,7 +21,9 @@ object GlyphInk {
         /** حدود الحبر الفعلي للسطر. */
         val left: Float, val top: Float, val right: Float, val bottom: Float,
         /** عرض المسافة بين كلمتين بهذا الخط. */
-        val space: Float
+        val space: Float,
+        /** كلمات السطر وامتدادها الأفقي (يسار، يمين) بوحدة الحجم: لربط كل حرف بكلمته. */
+        val words: List<Triple<String, Float, Float>> = emptyList()
     )
 
     private val cache = object : LinkedHashMap<String, Line>(64, 0.75f, true) {
@@ -88,10 +90,20 @@ object GlyphInk {
         }
         val avg = if (text.isNotEmpty()) total / PX / text.length else 0.5f
         val pieces = groups.flatMap { g -> InkFill.slice(g.map { contours[it] }, cuts, avg * 0.25f, 0.6f / PX) }
+        // امتداد كل كلمة كما يضعها الخط
+        val words = ArrayList<Triple<String, Float, Float>>()
+        Regex("\\S+").findAll(text).forEach { m ->
+            val a = p.getRunAdvance(text, 0, text.length, 0, text.length, rtl, m.range.first)
+            val b = p.getRunAdvance(text, 0, text.length, 0, text.length, rtl, m.range.last + 1)
+            val xa = (if (rtl) total - a else a) / PX
+            val xb = (if (rtl) total - b else b) / PX
+            words.add(Triple(m.value, minOf(xa, xb), maxOf(xa, xb)))
+        }
         val out = Line(
             pieces,
             box.left / PX, box.top / PX, box.right / PX, box.bottom / PX,
-            p.measureText(" ") / PX
+            p.measureText(" ") / PX,
+            words
         )
         synchronized(cache) { cache[key] = out }
         return out

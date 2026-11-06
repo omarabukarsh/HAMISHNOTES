@@ -1,7 +1,6 @@
 package com.hamishnotes.app
 
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getBoundsInRoot
-import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
@@ -30,7 +29,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -41,7 +39,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w800dp-h1000dp")
 class TrayDragTest {
-    @get:Rule val rule = createEmptyComposeRule()
+    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var s: DocSession
     private val payload = TrayPayload.Sticky(0xFFFFE27A.toInt())
@@ -57,8 +55,7 @@ class TrayDragTest {
         s = DocSession(DocEntry("t", "t", DocType.PDF, "t.pdf", 0, 1, 0, 0, false, 0))
         oldPlacer = TrayDrag.placer
         TrayDrag.placer = { _, _, page, at, done -> placed.add(Placed(page, at, done)) }
-        val act = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        act.setContent {
+        rule.setContent {
             Box(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize()) {
                     // «النافذة»: مربع ملصق واحد

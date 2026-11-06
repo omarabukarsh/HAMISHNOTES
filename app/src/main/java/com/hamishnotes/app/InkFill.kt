@@ -222,4 +222,32 @@ object InkFill {
         }
         return s / 2f
     }
+
+    /**
+     * يقسم ناتج Path.approximate (موضع، x، y لكل نقطة) إلى حدود: نقطتان متتاليتان بنفس الموضع
+     * = قفزة إلى حد جديد. تُحذف نقطة الإغلاق المكررة في آخر كل حد.
+     */
+    fun splitApproximation(a: FloatArray): List<FloatArray> {
+        val out = ArrayList<FloatArray>()
+        var cur = ArrayList<Float>()
+        fun flush() {
+            if (cur.size >= 4) {
+                val n = cur.size
+                if (n >= 6 && cur[0] == cur[n - 2] && cur[1] == cur[n - 1]) { cur.removeAt(n - 1); cur.removeAt(n - 2) }
+            }
+            if (cur.size >= 6) out.add(cur.toFloatArray())
+            cur = ArrayList()
+        }
+        var i = 0
+        var prevF = Float.NaN
+        while (i + 2 < a.size) {
+            val f = a[i]
+            if (cur.isNotEmpty() && f == prevF) flush()
+            cur.add(a[i + 1]); cur.add(a[i + 2])
+            prevF = f
+            i += 3
+        }
+        flush()
+        return out
+    }
 }

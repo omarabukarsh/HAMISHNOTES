@@ -47,9 +47,10 @@ fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink)
         if (!canErase(s)) {
             out.add(s); continue
         }
-        // حرف مملوء (تجميل الخط): يُمسح الحرف كاملاً
+        // حرف مملوء (تجميل الخط): يُقص منه ما مرت عليه الممحاة فقط
         if (s.fill) {
-            if (InkFill.hit(s.pts, at.x, at.y, radius, s.width)) changed = true else out.add(s)
+            val parts = InkCut.cut(s, at.x, at.y, radius)
+            if (parts == null) out.add(s) else { changed = true; out.addAll(parts) }
             continue
         }
         // رفض سريع بالمستطيل المحيط

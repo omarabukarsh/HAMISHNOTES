@@ -100,4 +100,18 @@ class InkFillTest {
         // حرف منفصل لا يمر به حد (أو حد قريب من طرفه فقط): لا يُقص
         assertEquals(1, InkFill.slice(listOf(rect(0f, 0f, 1f, 1f)), listOf(0.1f, 5f), 0.2f, 0.01f).size)
     }
+
+    @Test
+    fun cutResult_isSplitIntoItsContours() {
+        // ناتج approximate لحدين: مربع ثم مثلث (نقطتان بنفس الموضع = قفزة لحد جديد)
+        val a = floatArrayOf(
+            0f, 0f, 0f, 0.1f, 1f, 0f, 0.2f, 1f, 1f, 0.3f, 0f, 1f, 0.4f, 0f, 0f,
+            0.4f, 5f, 5f, 0.6f, 6f, 5f, 0.8f, 5f, 6f, 1f, 5f, 5f
+        )
+        val cs = InkFill.splitApproximation(a)
+        assertEquals(2, cs.size)
+        assertEquals(8, cs[0].size) // 4 نقاط بلا نقطة الإغلاق المكررة
+        assertEquals(6, cs[1].size)
+        assertEquals(5f, cs[1][0], 0f)
+    }
 }

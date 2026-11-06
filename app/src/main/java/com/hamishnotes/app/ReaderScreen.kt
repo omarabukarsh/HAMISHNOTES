@@ -113,6 +113,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.toArgb
@@ -1331,7 +1332,9 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     session: DocSession,
     index: Int,
     down: PointerInputChange,
-    w: Float
+    w: Float,
+    /** الخطوط بعد تعديلها عند الرفع (تبقى مرسومة حتى تظهر في صورة الصفحة). */
+    onCommitted: (List<Ink>) -> Unit = {}
 ): Boolean {
     if (session.lassoSel?.page != index) return false
     val bb = session.lassoBounds() ?: return false
@@ -1343,6 +1346,11 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     down.consume()
     session.beginEdit()
     var last = down.position
+    // الخطوط لا تُعدَّل أثناء السحب: يُعرض تحريكها فوق الصفحة، وتُعدَّل مرة واحدة عند الرفع
+    var dxT = 0f
+    var dyT = 0f
+    var kT = 1f
+    session.lassoPreview = DocSession.LassoPreview(0f, 0f, 1f, bb[0], bb[1])
     try {
         while (true) {
             val e = awaitPointerEvent()
@@ -1358,15 +1366,25 @@ private suspend fun AwaitPointerEventScope.dragLasso(
                     val k = (d1 / d0).coerceIn(0.8f, 1.25f)
                     val cur = session.lassoBounds()
                     val size = if (cur != null) (cur[2] - cur[0]) else 1f
-                    if (!(k < 1f && size < 0.03f)) session.lassoTransform(0f, 0f, k, bb[0], bb[1])
+                    if (!(k < 1f && size < 0.03f)) {
+                        kT *= k
+                        session.lassoMoveObjects(0f, 0f, k, bb[0], bb[1])
+                        session.lassoPreview = DocSession.LassoPreview(0f, 0f, kT, bb[0], bb[1])
+                    }
                 }
             } else {
-                session.lassoTransform((ch.position.x - last.x) / w, (ch.position.y - last.y) / w)
+                val dx = (ch.position.x - last.x) / w
+                val dy = (ch.position.y - last.y) / w
+                dxT += dx
+                dyT += dy
+                session.lassoMoveObjects(dx, dy)
+                session.lassoPreview = DocSession.LassoPreview(dxT, dyT, 1f, bb[0], bb[1])
             }
             last = ch.position
             ch.consume()
         }
     } finally {
+        onCommitted(session.lassoCommitPreview())
         session.endEdit()
     }
     return true
@@ -2123,7 +2141,17 @@ private fun PageView(
     /** مستطيل مربع النص الذي يُرسم الآن بالقلم (يسار، أعلى، يمين، أسفل بإحداثيات الصفحة). */
     var textDragRect by remember { mutableStateOf<FloatArray?>(null) }
     val layerCache = remember { arrayOfNulls<List<Ink>>(2) }
-    val (underInk, overInk) = remember(strokes) {
+    // أثناء سحب التحديد: خطوطه تُرسم متحركة فوق الصفحة، فتُخفى من صورة الصفحة
+    val dragging = session.lassoPreview != null && session.lassoSel?.page == index
+    val dragSel = if (dragging) session.lassoSel else null
+    val layerStrokes = remember(strokes, dragSel) {
+        if (dragSel == null) strokes else {
+            val picked = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(dragSel.strokes) }
+            strokes.filter { it !in picked }
+        }
+    }
+    val (underInk, overInk) = remember(layerStrokes) {
+        val strokes = layerStrokes
         fun keep(i: Int, l: List<Ink>): List<Ink> {
             val old = layerCache[i]
             val r = if (old != null && old.size == l.size && old.indices.all { old[it] === l[it] }) old else l
@@ -2563,7 +2591,7 @@ private fun PageView(
                             // التحديد الحر: تحريك/تكبير التحديد، أو رسم حلقة تحديد جديدة
                             if (lassoNow && down.type != PointerType.Eraser) {
                                 down.consume()
-                                if (dragLasso(session, index, down, w)) continue
+                                if (dragLasso(session, index, down, w) { pendingInk.addAll(it); tick++ }) continue
                                 session.lassoSel = null
                                 livePts.clear()
                                 livePts.add(Pt(down.position.x / w, down.position.y / w, 0.5f))
@@ -2915,7 +2943,7 @@ private fun PageView(
                         }
 
                         // تحريك التحديد الحر بالإصبع أيضًا
-                        if (session.lassoSel?.page == index && dragLasso(session, index, down, w)) return@awaitEachGesture
+                        if (session.lassoSel?.page == index && dragLasso(session, index, down, w) { pendingInk.addAll(it); tick++ }) return@awaitEachGesture
 
                         // صورة أو ملصق اختير من الدرج بنقرة: نقرة الإصبع تضعه هنا
                         if (TrayDrag.armed != null) {
@@ -3161,6 +3189,18 @@ private fun PageView(
                     )
                 }
             } else {
+                // التحديد أثناء سحبه: يُرسم متحركاً هنا (الخطوط تُعدَّل عند الرفع فقط)
+                val pv = session.lassoPreview
+                val ls = session.lassoSel
+                if (pv != null && ls != null && ls.page == index) {
+                    val w = size.width
+                    withTransform({
+                        translate(pv.dx * w, pv.dy * w)
+                        scale(pv.k, pv.k, Offset(pv.px * w, pv.py * w))
+                    }) {
+                        drawStack(ls.strokes, { if (night) nightOf(it.color) else it.color })
+                    }
+                }
                 // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط (الهايلايتر وملء الأشكال في الطبقة السفلية)
                 pendingInk.forEach { if (it.inOverlay()) drawStroke(it, if (night) nightOf(it.color) else it.color) }
                 val lc = if (night) nightOf(live.color) else live.color

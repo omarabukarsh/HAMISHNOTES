@@ -568,13 +568,38 @@ class DocSession(entry: DocEntry) {
         if (sel.isEmpty()) AppController.say(MsgKind.ERROR, L("لم تحدد أي شيء", "Nothing selected"))
     }
 
+    /**
+     * تحريك/تكبير التحديد أثناء السحب: يُعرض فقط (طبقة فوق الصفحة)، والخطوط تُعدَّل مرة واحدة عند الرفع.
+     * x' = px + (x - px)·k + dx.
+     */
+    class LassoPreview(val dx: Float, val dy: Float, val k: Float, val px: Float, val py: Float) {
+        fun x(v: Float) = px + (v - px) * k + dx
+        fun y(v: Float) = py + (v - py) * k + dy
+    }
+    var lassoPreview by mutableStateOf<LassoPreview?>(null)
+
+    /** حدود خطوط التحديد محفوظة لكل تحديد (لا تُحسب من آلاف النقاط في كل إطار أثناء السحب). */
+    private var strokeBoxOf: LassoSel? = null
+    private var strokeBox: FloatArray? = null
+
     /** المستطيل المحيط بالتحديد (l, t, r, b) بإحداثيات الصفحة. */
     fun lassoBounds(): FloatArray? {
         val sel = lassoSel ?: return null
-        var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
-        for (s in sel.strokes) for (p in s.pts) {
-            if (p.x < l) l = p.x; if (p.x > r) r = p.x
-            if (p.y < t) t = p.y; if (p.y > b) b = p.y
+        if (strokeBoxOf !== sel) {
+            var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+            for (s in sel.strokes) for (p in s.pts) {
+                if (p.x < l) l = p.x; if (p.x > r) r = p.x
+                if (p.y < t) t = p.y; if (p.y > b) b = p.y
+            }
+            strokeBox = floatArrayOf(l, t, r, b)
+            strokeBoxOf = sel
+        }
+        val sb = strokeBox!!
+        var l = sb[0]; var t = sb[1]; var r = sb[2]; var b = sb[3]
+        // أثناء السحب: حدود الخطوط بعد التحريك المعروض
+        val pv = lassoPreview
+        if (pv != null && l <= r) {
+            l = pv.x(l); r = pv.x(r); t = pv.y(t); b = pv.y(b)
         }
         fun box(x0: Float, y0: Float, x1: Float, y1: Float) {
             if (x0 < l) l = x0; if (x1 > r) r = x1
@@ -614,6 +639,28 @@ class DocSession(entry: DocEntry) {
 
     /** تحريك بمقدار (dx, dy) وتكبير بنسبة k حول النقطة (px, py). */
     fun lassoTransform(dx: Float, dy: Float, k: Float = 1f, px: Float = 0f, py: Float = 0f) {
+        lassoMoveObjects(dx, dy, k, px, py)
+        lassoReplace { s ->
+            s.copy(
+                pts = s.pts.map { p -> Pt(px + (p.x - px) * k + dx, py + (p.y - py) * k + dy, p.p) },
+                width = s.width * k
+            )
+        }
+    }
+
+    /** ينهي السحب: يطبّق التحريك المعروض على الخطوط مرة واحدة، ويعيد الخطوط بعد التعديل. */
+    fun lassoCommitPreview(): List<Ink> {
+        val pv = lassoPreview ?: return emptyList()
+        lassoPreview = null
+        if (pv.dx == 0f && pv.dy == 0f && pv.k == 1f) return emptyList()
+        lassoReplace { s ->
+            s.copy(pts = s.pts.map { p -> Pt(pv.x(p.x), pv.y(p.y), p.p) }, width = s.width * pv.k)
+        }
+        return lassoSel?.strokes ?: emptyList()
+    }
+
+    /** يحرّك صور ومربعات نص التحديد فقط (عناصر خفيفة تتحرك مباشرة أثناء السحب). */
+    fun lassoMoveObjects(dx: Float, dy: Float, k: Float = 1f, px: Float = 0f, py: Float = 0f) {
         val sel = lassoSel ?: return
         if (sel.imageIds.isNotEmpty()) {
             val list = images[sel.page] ?: emptyList()
@@ -629,12 +676,6 @@ class DocSession(entry: DocEntry) {
                     w = tb.w * k, size = if (tb.sticky) tb.size else tb.size * k
                 ) else tb
             })
-        }
-        lassoReplace { s ->
-            s.copy(
-                pts = s.pts.map { p -> Pt(px + (p.x - px) * k + dx, py + (p.y - py) * k + dy, p.p) },
-                width = s.width * k
-            )
         }
     }
 

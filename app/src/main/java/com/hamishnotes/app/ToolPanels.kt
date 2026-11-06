@@ -1,5 +1,6 @@
 package com.hamishnotes.app
 
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -268,7 +269,9 @@ fun EraserAdvancedSection() {
 
 /** نوع التحديد (حر/مستطيل) وما يدخل فيه. */
 @Composable
-fun LassoMenuContent(onOff: () -> Unit) {
+fun LassoMenuContent(s: DocSession?, onOff: () -> Unit) {
+    var changeFont by remember { mutableStateOf(false) }
+    var toText by remember { mutableStateOf(false) }
     Column(Modifier.width(260.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Text(L("التحديد", "Lasso selection"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
         Spacer(Modifier.height(6.dp))
@@ -289,9 +292,55 @@ fun LassoMenuContent(onOff: () -> Unit) {
         PanelSwitch(L("الصور", "Images"), PenPrefs.lassoImages) { PenPrefs.changeLassoImages(it) }
         PanelSwitch(L("مربعات النص", "Text boxes"), PenPrefs.lassoTexts) { PenPrefs.changeLassoTexts(it) }
         PanelSwitch(L("الملاحظات اللاصقة", "Sticky notes"), PenPrefs.lassoStickies) { PenPrefs.changeLassoStickies(it) }
+        // أوامر ما بعد التحديد (نفس أوامر الشريط الذي يظهر فوق التحديد)
+        Spacer(Modifier.height(12.dp))
+        PanelLabel(L("بعد التحديد", "After selecting"))
+        val has = s?.lassoSel?.isEmpty() == false
+        if (!has) {
+            Text(
+                L("أحِط بالقلم حول شيء أولاً لتعمل هذه الأوامر.", "Draw around something first to use these."),
+                fontSize = 12.sp, color = Palette.TextSecondary, lineHeight = 16.sp
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        Column(Modifier.alpha(if (has) 1f else 0.45f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LassoAction("Aa " + L("تغيير الخط", "Change font"), has, Modifier.weight(1f)) { if (Premium.require(PremiumFeature.TO_TEXT)) changeFont = true }
+                LassoAction(L("إلى نص", "To text"), has, Modifier.weight(1f)) { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LassoAction("☺ " + L("ملصق", "Sticker"), has, Modifier.weight(1f)) { s?.let { StickerStore.saveFromLasso(it) } }
+                LassoAction(L("نسخ", "Duplicate"), has, Modifier.weight(1f)) { s?.lassoDuplicate() }
+                LassoAction(L("حذف", "Delete"), has, Modifier.weight(1f), Color(0xFFC62828)) { s?.lassoDelete() }
+            }
+            // تلوين المحدد
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(L("تلوين", "Recolor"), fontSize = 13.sp, color = Palette.TextPrimary, modifier = Modifier.padding(end = 4.dp))
+                AppController.penPalette.take(6).forEach { col ->
+                    Box(
+                        Modifier.size(32.dp).clip(CircleShape).clickable(enabled = has) { s?.lassoRecolor(col) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.size(22.dp).clip(CircleShape).background(col).border(1.dp, Palette.Divider, CircleShape))
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(6.dp))
         TextButton(onClick = onOff) { Text(L("إيقاف التحديد", "Turn off lasso"), color = Palette.Navy, fontWeight = FontWeight.Bold) }
     }
+    if (s != null && changeFont) ChangeFontDialog(s) { changeFont = false }
+    if (s != null && toText) InkToTextDialog(s) { toText = false }
+}
+
+/** زر أمر من أوامر ما بعد التحديد (بنفس شكل خيارات النافذة). */
+@Composable
+private fun LassoAction(label: String, enabled: Boolean, modifier: Modifier, color: Color = Palette.TextPrimary, onClick: () -> Unit) {
+    Box(
+        modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
+            .clickable(enabled = enabled, onClick = onClick).padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, fontSize = 12.5.sp, color = color, maxLines = 1) }
 }
 
 // ---------------------------------------------------------------- الأشكال

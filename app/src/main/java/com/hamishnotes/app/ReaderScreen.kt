@@ -621,7 +621,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         DropdownMenu(
                             expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
                             shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
-                        ) { LassoMenuContent(onOff = { lassoMenu = false; c.lassoActive = false }) }
+                        ) { LassoMenuContent(s, onOff = { lassoMenu = false; c.lassoActive = false }) }
                     }
                 }
                 // الأشكال

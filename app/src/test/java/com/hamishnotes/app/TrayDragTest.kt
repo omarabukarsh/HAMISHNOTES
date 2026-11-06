@@ -68,7 +68,7 @@ class TrayDragTest {
                     LazyColumn(state = s.listState, modifier = Modifier.fillMaxSize().onGloballyPositioned { s.pagesViewport = it.boundsInWindow() }) {
                         item {
                             Box(
-                                Modifier.fillMaxWidth().height(700.dp).background(Color(0xFFFFF7E3)).onGloballyPositioned { c ->
+                                Modifier.fillMaxWidth().height(1600.dp).background(Color(0xFFFFF7E3)).onGloballyPositioned { c ->
                                     val p = c.localToWindow(Offset.Zero)
                                     pageRect = Rect(p, c.size.toSize())
                                     s.pageWindowRects[0] = pageRect
@@ -146,7 +146,8 @@ class TrayDragTest {
         assertEquals(fingerWin.y, landed.center.y, 2f)
 
         // بعد الإضافة يختفي الظل
-        placed[0].done()
+        // في التطبيق تصل إشارة الإضافة على خيط الواجهة
+        rule.runOnUiThread { placed[0].done() }
         rule.mainClock.advanceTimeBy(500)
         rule.waitForIdle()
         rule.onNodeWithTag("trayGhost").assertDoesNotExist()

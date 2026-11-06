@@ -68,6 +68,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -102,6 +104,18 @@ object TrayDrag {
     /** مكان الدرج في النافذة: الإفلات فوقه يلغي السحب. */
     var trayRect = androidx.compose.ui.geometry.Rect.Zero
 
+    /**
+     * بعد الإفلات: العنصر يبقى ظاهراً حيث أُفلت حتى يُضاف فعلاً إلى الصفحة
+     * (نسخ الصورة يأخذ لحظة)، فلا يختفي ثم يظهر فجأة.
+     */
+    class Landing(val payload: TrayPayload, val thumb: ImageBitmap?, val page: Int, val at: Offset) {
+        var done by mutableStateOf(false)
+    }
+    var landing by mutableStateOf<Landing?>(null)
+
+    /** يضع العنصر على الصفحة ثم يستدعي onDone (يُستبدل في الاختبارات). */
+    internal var placer: (DocSession, TrayPayload, Int, Offset, () -> Unit) -> Unit = ::placePayload
+
     /** الصفحة ونقطة الإسقاط تحت الإصبع (null فوق الدرج أو خارج الصفحات). */
     fun target(s: DocSession): Pair<Int, Offset>? = if (trayRect.contains(pos)) null else s.pageAt(pos)
 
@@ -109,6 +123,15 @@ object TrayDrag {
         payload = null
         thumb = null
         overPage = -1
+    }
+
+    /** إفلات العنصر على الصفحة: يبقى ظاهراً في مكانه حتى تكتمل إضافته. */
+    fun drop(s: DocSession, p: TrayPayload, img: ImageBitmap?, page: Int, at: Offset) {
+        val land = Landing(p, img, page, at)
+        landing = land
+        cancel()
+        s.activePage = page
+        placer(s, p, page, at) { land.done = true }
     }
 }
 
@@ -119,16 +142,17 @@ private object TrayPrefs {
     fun saveH(ctx: Context, v: Float) = ctx.getSharedPreferences("hamish_ui", Context.MODE_PRIVATE).edit().putFloat(KEY_H, v).apply()
 }
 
-/** يضع العنصر على الصفحة: عند نقطة الإسقاط، أو وسط الجزء الظاهر من الصفحة الحالية. */
-private fun placePayload(s: DocSession, p: TrayPayload, page: Int, at: Offset) {
+/** يضع العنصر على الصفحة عند نقطة الإسقاط (وسطه عندها)، ثم onDone بعد إضافته فعلاً. */
+private fun placePayload(s: DocSession, p: TrayPayload, page: Int, at: Offset, onDone: () -> Unit) {
     when (p) {
-        is TrayPayload.BuiltinSticker -> StickerStore.render(p.b, 400)?.let { StickerStore.place(s, it, page, at) }
-        is TrayPayload.MySticker -> StickerStore.place(s, p.f, page, at)
-        is TrayPayload.Photo -> AppController.insertImage(s, p.uri, page, width = 0.45f, at = at)
+        is TrayPayload.BuiltinSticker -> StickerStore.render(p.b, 400)?.let { StickerStore.place(s, it, page, at, onDone) } ?: onDone()
+        is TrayPayload.MySticker -> StickerStore.place(s, p.f, page, at, onDone)
+        is TrayPayload.Photo -> AppController.insertImage(s, p.uri, page, width = 0.45f, at = at, onDone = onDone)
         is TrayPayload.Sticky -> {
             val pageH = 1f / (s.pdf?.ratio(page) ?: 0.707f)
             s.addNote(newStickyAt(page, at.x, at.y, pageH))
             PenPrefs.stickyActive = false
+            onDone()
         }
     }
 }
@@ -218,12 +242,13 @@ fun Modifier.dragToPage(
                         TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
                     }
                     val hit = TrayDrag.target(s)
-                    TrayDrag.cancel()
                     if (!moved) {
+                        TrayDrag.cancel()
                         onLongStill?.invoke()
                     } else if (hit != null) {
-                        s.activePage = hit.first
-                        placePayload(s, payload, hit.first, hit.second)
+                        TrayDrag.drop(s, payload, TrayDrag.thumb ?: img, hit.first, hit.second)
+                    } else {
+                        TrayDrag.cancel()
                     }
                 } finally {
                     if (TrayDrag.payload === payload) TrayDrag.cancel()
@@ -379,37 +404,104 @@ fun BoxScope.SideTray(s: DocSession) {
     }
 }
 
+/** مستطيل العنصر المسحوب بإحداثيات النافذة: وسطه تحت الإصبع دائماً. */
+internal fun ghostRect(finger: Offset, w: Float, h: Float) =
+    androidx.compose.ui.geometry.Rect(finger.x - w / 2f, finger.y - h / 2f, finger.x + w / 2f, finger.y + h / 2f)
+
+/** مكان العنصر بعد وضعه على الصفحة (كما تضعه insertImage): وسطه عند النقطة، داخل حدود الصفحة. */
+internal fun landedRect(page: androidx.compose.ui.geometry.Rect, at: Offset, wu: Float, hu: Float): androidx.compose.ui.geometry.Rect {
+    val pw = page.width
+    val pageH = page.height / pw
+    val x = (at.x - wu / 2f).coerceIn(0f, (1f - wu).coerceAtLeast(0f))
+    val y = (at.y - hu / 2f).coerceIn(0f, (pageH - hu).coerceAtLeast(0f))
+    return androidx.compose.ui.geometry.Rect(page.left + x * pw, page.top + y * pw, page.left + (x + wu) * pw, page.top + (y + hu) * pw)
+}
+
 /**
- * العنصر المسحوب يتبع الإصبع (فوق كل شيء في شاشة القراءة): فوق صفحة يظهر بحجمه الحقيقي
- * في المكان الذي سيوضع فيه بالضبط، وخارج الصفحات يعود صغيراً.
+ * العنصر المسحوب يبقى تحت الإصبع من لحظة خروجه من النافذة إلى أن يُوضع (فوق كل شيء في شاشة القراءة):
+ * فوق صفحة يكبر بسلاسة إلى حجمه الحقيقي، وخارجها يعود صغيراً. بعد الإفلات يبقى في مكانه حتى يظهر
+ * العنصر الحقيقي على الصفحة. وقرب أعلى أو أسفل الصفحات تتحرك الصفحات وحدها.
  */
 @Composable
 fun BoxScope.TrayDragGhost(s: DocSession) {
     val host = rememberHostRect()
-    val p = TrayDrag.payload ?: return
-    fun toLocal(o: Offset) = Offset(o.x - host.left, o.y - host.top)
     val density = LocalDensity.current
-    val thumb = TrayDrag.thumb
+    val dragging = TrayDrag.payload
+    val land = TrayDrag.landing
+
+    // تمرير تلقائي قرب حافتي الصفحات أثناء السحب (مفيد في الهاتف والشاشات الصغيرة)
+    LaunchedEffect(dragging != null) {
+        if (dragging == null) return@LaunchedEffect
+        val zone = with(density) { 72.dp.toPx() }
+        val maxSpeed = with(density) { 18.dp.toPx() }
+        while (TrayDrag.payload != null) {
+            androidx.compose.runtime.withFrameNanos { }
+            val vp = s.pagesViewport
+            val y = TrayDrag.pos.y
+            if (vp.height <= 0f || TrayDrag.trayRect.contains(TrayDrag.pos) || TrayDrag.pos.x !in vp.left..vp.right) continue
+            val dy = when {
+                y > vp.bottom - zone -> maxSpeed * ((y - (vp.bottom - zone)) / zone).coerceIn(0f, 1f)
+                y < vp.top + zone -> -maxSpeed * (((vp.top + zone) - y) / zone).coerceIn(0f, 1f)
+                else -> 0f
+            }
+            if (dy != 0f) {
+                s.listState.scrollBy(dy)
+                TrayDrag.overPage = TrayDrag.target(s)?.first ?: -1
+            }
+        }
+    }
+    // بعد إضافة العنصر: لحظة قصيرة حتى تُرسم صورته على الصفحة، ثم يختفي الظل (وحد أقصى إن تأخرت الإضافة)
+    if (land != null) {
+        LaunchedEffect(land, land.done) {
+            kotlinx.coroutines.delay(if (land.done) 300L else 8000L)
+            if (TrayDrag.landing === land) TrayDrag.landing = null
+        }
+    }
+
+    val p = dragging ?: land?.payload ?: return
+    val thumb = if (dragging != null) TrayDrag.thumb else land?.thumb
+    val (wu, aspect) = placedSize(p, thumb)
+    val hu = wu / aspect
+    val small = with(density) { 76.dp.toPx() }
+    val target: androidx.compose.ui.geometry.Rect
+    val onPage: Boolean
+    if (dragging != null) {
+        val pr = TrayDrag.overPage.takeIf { it >= 0 }?.let { s.pageWindowRects[it] }
+        onPage = pr != null && pr.width > 0f
+        target = if (onPage) ghostRect(TrayDrag.pos, wu * pr!!.width, hu * pr.width)
+        else ghostRect(TrayDrag.pos, small, small)
+    } else {
+        val pr = s.pageWindowRects[land!!.page] ?: return
+        if (pr.width <= 0f) return
+        onPage = true
+        target = landedRect(pr, land.at, wu, hu)
+    }
+    // الحجم يتغير بسلاسة، والموضع يتبع الإصبع فوراً أثناء السحب ثم ينزلق إلى مكانه بعد الإفلات
+    val sizeSpec = androidx.compose.animation.core.spring<Float>(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)
+    val posSpec: androidx.compose.animation.core.AnimationSpec<Float> =
+        if (dragging != null) androidx.compose.animation.core.snap() else androidx.compose.animation.core.tween(160)
+    val gw by androidx.compose.animation.core.animateFloatAsState(target.width, sizeSpec, label = "ghostW")
+    val gh by androidx.compose.animation.core.animateFloatAsState(target.height, sizeSpec, label = "ghostH")
+    val cx by androidx.compose.animation.core.animateFloatAsState(target.center.x, posSpec, label = "ghostX")
+    val cy by androidx.compose.animation.core.animateFloatAsState(target.center.y, posSpec, label = "ghostY")
+    val left = cx - gw / 2f - host.left
+    val top = cy - gh / 2f - host.top
+
     val green = Color(0xFF16A34A)
     val stickyColor = (p as? TrayPayload.Sticky)?.let { Color(it.color) }
-    val page = TrayDrag.overPage
-    val pr = if (page >= 0) s.pageWindowRects[page] else null
-    val at = if (pr != null) TrayDrag.target(s)?.second else null
-    if (pr != null && at != null && pr.width > 0f) {
-        val pw = pr.width
-        val (wu, aspect) = placedSize(p, thumb)
-        val hu = wu / aspect
-        val pageH = pr.height / pw
-        val x = (at.x - wu / 2f).coerceIn(0f, (1f - wu).coerceAtLeast(0f))
-        val y = (at.y - hu / 2f).coerceIn(0f, (pageH - hu).coerceAtLeast(0f))
-        val local = toLocal(Offset(pr.left + x * pw, pr.top + y * pw))
-        Box(
-            Modifier.align(AbsoluteAlignment.TopLeft)
-                .absoluteOffset { IntOffset(local.x.roundToInt(), local.y.roundToInt()) }
-                .size(with(density) { (wu * pw).toDp() }, with(density) { (hu * pw).toDp() })
-                .graphicsLayer { alpha = 0.85f }
-                .then(if (stickyColor != null) Modifier.shadow(4.dp, RoundedCornerShape(4.dp)).background(stickyColor, RoundedCornerShape(4.dp)) else Modifier)
-                .drawWithContent {
+    val shape = RoundedCornerShape(if (onPage) 4.dp else 12.dp)
+    Box(
+        Modifier.align(AbsoluteAlignment.TopLeft)
+            .absoluteOffset { IntOffset(left.roundToInt(), top.roundToInt()) }
+            .size(with(density) { gw.toDp() }, with(density) { gh.toDp() })
+            .testTag("trayGhost")
+            .graphicsLayer { alpha = if (dragging != null) 0.9f else 1f }
+            .shadow(if (dragging != null) 10.dp else 0.dp, shape)
+            .clip(shape)
+            .background(stickyColor ?: if (onPage) Color.Transparent else if (p is TrayPayload.Photo) Color(0xFFEEF0F4) else Color.White.copy(alpha = 0.85f))
+            .then(
+                if (dragging == null) Modifier
+                else if (onPage) Modifier.drawWithContent {
                     drawContent()
                     drawRect(
                         green,
@@ -417,27 +509,20 @@ fun BoxScope.TrayDragGhost(s: DocSession) {
                             2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 8f))
                         )
                     )
-                }
-        ) {
-            if (thumb != null && stickyColor == null) Image(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-        }
-        return
-    }
-    val local = toLocal(TrayDrag.pos)
-    val half = with(density) { 38.dp.toPx() }
-    Box(
-        Modifier.align(AbsoluteAlignment.TopLeft)
-            .absoluteOffset { IntOffset((local.x - half).roundToInt(), (local.y - half).roundToInt()) }
-            .size(76.dp)
-            .graphicsLayer { alpha = 0.9f; scaleX = 1.08f; scaleY = 1.08f }
-            .shadow(10.dp, RoundedCornerShape(12.dp))
-            .clip(RoundedCornerShape(12.dp))
-            .background(stickyColor ?: if (p is TrayPayload.Photo) Color(0xFFEEF0F4) else Color.White.copy(alpha = 0.85f))
-            .border(2.dp, Palette.Navy, RoundedCornerShape(12.dp)),
+                } else Modifier.border(2.dp, Palette.Navy, shape)
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (thumb != null && stickyColor == null) {
-            Image(thumb, null, Modifier.fillMaxSize().padding(if (p is TrayPayload.Photo) 0.dp else 6.dp), contentScale = if (p is TrayPayload.Photo) ContentScale.Crop else ContentScale.Fit)
+            Image(
+                thumb, null,
+                Modifier.fillMaxSize().padding(if (onPage || p is TrayPayload.Photo) 0.dp else 6.dp),
+                contentScale = when {
+                    onPage -> ContentScale.FillBounds
+                    p is TrayPayload.Photo -> ContentScale.Crop
+                    else -> ContentScale.Fit
+                }
+            )
         }
     }
 }

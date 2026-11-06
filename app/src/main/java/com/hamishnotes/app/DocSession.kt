@@ -274,6 +274,8 @@ class DocSession(entry: DocEntry) {
 
     /** مواضع الصفحات الظاهرة في النافذة (لإسقاط الصور والملصقات المسحوبة عليها). */
     val pageWindowRects = HashMap<Int, androidx.compose.ui.geometry.Rect>()
+    /** الجزء الظاهر من قائمة الصفحات في النافذة (للتمرير التلقائي أثناء سحب عنصر إليها). */
+    var pagesViewport = androidx.compose.ui.geometry.Rect.Zero
 
     /** الصفحة التي تقع تحت نقطة في النافذة، وموضعها داخل الصفحة بوحدات عرض الصفحة. */
     fun pageAt(win: Offset): Pair<Int, Offset>? {

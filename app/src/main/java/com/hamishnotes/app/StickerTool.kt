@@ -209,19 +209,30 @@ object StickerStore {
     }
 
     /** يضع الملصق على الصفحة (الحالية افتراضياً) في نقطة at (افتراضياً وسط الجزء الظاهر). */
-    fun place(s: DocSession, bmp: Bitmap, page: Int = s.currentPage(), at: androidx.compose.ui.geometry.Offset? = s.visibleCenter(page)) {
+    fun place(
+        s: DocSession, bmp: Bitmap, page: Int = s.currentPage(), at: androidx.compose.ui.geometry.Offset? = s.visibleCenter(page),
+        onDone: (() -> Unit)? = null
+    ) {
         AppController.scope.launch {
-            val f = withContext(Dispatchers.IO) {
-                File(app.cacheDir, "sticker-" + UUID.randomUUID() + ".png").also { out -> out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            val f = try {
+                withContext(Dispatchers.IO) {
+                    File(app.cacheDir, "sticker-" + UUID.randomUUID() + ".png").also { out -> out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+                }
+            } catch (t: Throwable) {
+                onDone?.invoke()
+                return@launch
             }
             val w = if (bmp.width > bmp.height * 1.5f) 0.26f else 0.16f
-            AppController.insertImage(s, Uri.fromFile(f), page, width = w, quiet = true, at = at)
+            AppController.insertImage(s, Uri.fromFile(f), page, width = w, quiet = true, at = at, onDone = onDone)
             AppController.messages.tryEmit(L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
         }
     }
 
-    fun place(s: DocSession, f: File, page: Int = s.currentPage(), at: androidx.compose.ui.geometry.Offset? = s.visibleCenter(page)) {
-        AppController.insertImage(s, Uri.fromFile(f), page, width = 0.16f, quiet = true, at = at)
+    fun place(
+        s: DocSession, f: File, page: Int = s.currentPage(), at: androidx.compose.ui.geometry.Offset? = s.visibleCenter(page),
+        onDone: (() -> Unit)? = null
+    ) {
+        AppController.insertImage(s, Uri.fromFile(f), page, width = 0.16f, quiet = true, at = at, onDone = onDone)
     }
 }
 

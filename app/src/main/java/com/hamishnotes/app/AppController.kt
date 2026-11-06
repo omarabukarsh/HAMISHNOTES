@@ -1129,7 +1129,9 @@ object AppController {
      */
     fun insertImage(
         s: DocSession, uri: Uri, page: Int, index: Int = 0, width: Float = 0.45f, quiet: Boolean = false,
-        at: androidx.compose.ui.geometry.Offset? = null
+        at: androidx.compose.ui.geometry.Offset? = null,
+        /** بعد إضافة الصورة إلى الصفحة (أو فشلها). */
+        onDone: (() -> Unit)? = null
     ) {
         scope.launch {
             try {
@@ -1155,6 +1157,8 @@ object AppController {
                 if (!quiet) messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
             } catch (t: Throwable) {
                 messages.tryEmit(L("تعذر إضافة الصورة", "Could not add the image"))
+            } finally {
+                onDone?.invoke()
             }
         }
     }

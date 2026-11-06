@@ -32,6 +32,7 @@ fun certSha256(file: File, password: String, alias: String): String {
 
 android {
     namespace = "com.hamishnotes.app"
+    testOptions { unitTests { isIncludeAndroidResources = true } }
     compileSdk = 36
     defaultConfig {
         // اسم التطبيق في المتجر (لا يتغير بعد أول رفع)، وهو نفسه لنسخ التجربة
@@ -153,6 +154,10 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     testImplementation("junit:junit:4.13.2")
+    // اختبارات الواجهة على الحاسوب (سحب العناصر من النافذة إلى الصفحة) بلا جهاز
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:core:1.6.1")

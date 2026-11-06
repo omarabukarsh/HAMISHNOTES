@@ -1650,7 +1650,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         ) {
             LazyColumn(
                 state = s.listState,
-                modifier = Modifier.graphicsLayer {
+                modifier = Modifier.onGloballyPositioned { s.pagesViewport = it.boundsInWindow() }.graphicsLayer {
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                     scaleX = pinchK
                     scaleY = pinchK

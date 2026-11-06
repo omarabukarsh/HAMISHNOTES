@@ -109,4 +109,27 @@ class HandwritingLayoutTest {
         )
         assertEquals("Cardiac output\n= HR", handwritingText(words))
     }
+
+    @Test
+    fun dotAboveTheWord_staysOnItsLine_notASeparateLine() {
+        // نقطة صغيرة فوق الكلمة كُتبت أعلى من كل الحروف: كانت تصير سطراً وحدها (تُقرأ «r» فوق الجملة)
+        val dot = st(0.215f, 0.218f, 0.085f, 0.089f)
+        val strokes = en(0.10f) + en(0.20f) + dot
+        assertEquals(1, InkToText.lines(strokes).size)
+        assertEquals(1, HandwritingLayout.lines(strokes, HwLang.ENGLISH, defaultRtl = false).size)
+    }
+
+    @Test
+    fun aRealSecondLine_staysSeparate() {
+        val strokes = en(0.10f, top = 0.10f) + en(0.10f, top = 0.16f)
+        assertEquals(2, InkToText.lines(strokes).size)
+    }
+
+    @Test
+    fun aSmallWordFarAway_isNotMergedIntoTheLine() {
+        // كلمة صغيرة بعيدة أفقياً عن السطر تبقى سطراً مستقلاً
+        val small = st(0.80f, 0.81f, 0.02f, 0.025f)
+        val strokes = en(0.10f) + small
+        assertEquals(2, InkToText.lines(strokes).size)
+    }
 }

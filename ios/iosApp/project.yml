@@ -1,10 +1,10 @@
 # مشروع Xcode لنسخة iPad (يولَّد بأداة XcodeGen: xcodegen generate)
-# الكود كله في إطار Kotlin (ios/shared)؛ هذا التطبيق يعرضه فقط.
+# التطبيق كله مكتوب بـ Swift (SwiftUI + PDFKit + PencilKit) في iosApp/Sources.
 name: Hamish
 options:
   bundleIdPrefix: com.omarabukarsh
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "17.4"
   developmentLanguage: ar
 settings:
   base:
@@ -26,9 +26,6 @@ targets:
       - path: ../../app/src/main/assets/licenses
         type: folder
         buildPhase: resources
-    dependencies:
-      - framework: ../shared/build/bin/iosArm64/releaseFramework/Shared.framework
-        embed: true
     settings:
       base:
         PRODUCT_NAME: Hamish
@@ -38,8 +35,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.0"
         ENABLE_BITCODE: NO
-        FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../shared/build/bin/iosArm64/releaseFramework
         LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks
+        # نسخة التجربة (مثل نسخة أندرويد الموقّعة بمفتاح التجربة): زر الاشتراك يفتح Premium محليًا
+        # احذف TEST_PREMIUM عند البناء لمتجر App Store فيعمل الشراء عبر StoreKit فقط
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) TEST_PREMIUM
         CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO

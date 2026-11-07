@@ -17,21 +17,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.14.3
-      - name: Build Kotlin framework for the simulator
-        working-directory: ios
-        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64
-      - name: Put the simulator framework where the Xcode project expects it
-        run: |
-          mkdir -p ios/shared/build/bin/iosArm64/releaseFramework
-          rm -rf ios/shared/build/bin/iosArm64/releaseFramework/Shared.framework
-          cp -R ios/shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework ios/shared/build/bin/iosArm64/releaseFramework/
       - name: Generate Xcode project
         working-directory: ios/iosApp
         run: |
@@ -44,6 +29,7 @@ jobs:
           set -o pipefail
           xcodebuild -project Hamish.xcodeproj -target Hamish -configuration Debug -sdk iphonesimulator -arch arm64 \
             SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcode.log | grep -E 'error:|BUILD' || true
+          grep -E 'error:' -A3 xcode.log | head -80 | sed 's/^/::error::/' || true
           grep -q "BUILD SUCCEEDED" xcode.log
       - name: Run on iPad simulator and take screenshots
         shell: bash
@@ -60,7 +46,6 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           APP=$(find ios/iosApp/build/Debug-iphonesimulator -maxdepth 1 -name "*.app" | head -1)
           # المحاكي يرفض تشغيل تطبيق بلا توقيع: توقيع محلي (ad-hoc) يكفي
-          codesign --force --sign - "$APP/Frameworks/Shared.framework"
           codesign --force --sign - "$APP"
           xcrun simctl install "$UDID" "$APP"
           BID=com.omarabukarsh.hamish

@@ -1,7 +1,4 @@
-.gradle/
-.kotlin/
 build/
-shared/build/
 iosApp/build/
 iosApp/*.xcodeproj/
 xcuserdata/

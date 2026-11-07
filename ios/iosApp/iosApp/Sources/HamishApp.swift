@@ -16,6 +16,10 @@ struct HamishApp: App {
                 .environment(\.layoutDirection, .leftToRight)
                 .environment(\.locale, Locale(identifier: app.english ? "en" : "ar"))
                 .onOpenURL { url in
+                    if url.scheme == "hamish" {
+                        if url.host == "open-last" { WidgetBridge.openLast() }
+                        return
+                    }
                     let scoped = url.startAccessingSecurityScopedResource()
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                     // نسخة مؤقتة: الملف المفتوح من تطبيق آخر قد لا يبقى متاحًا
@@ -26,6 +30,7 @@ struct HamishApp: App {
         }
         .onChange(of: phase) { p in
             app.setVisible(p == .active)
+            if p != .active { WidgetBridge.update(force: true) }
         }
     }
 }

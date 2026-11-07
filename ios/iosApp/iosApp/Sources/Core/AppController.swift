@@ -669,9 +669,10 @@ final class AppController: ObservableObject {
         // وقت كل مستند في كل يوم (للتقرير حسب المادة)، بنفس مفاتيح أندرويد: «اليوم|المستند»
         stats["\(k)|\(id)", default: 0] += add
         if Int.random(in: 0..<6) == 0 { prefs.set(stats, forKey: "stats") }
+        WidgetBridge.update()
     }
 
-    func setGoal(_ minutes: Int) { goalMinutes = max(5, min(24 * 60, minutes)) }
+    func setGoal(_ minutes: Int) { goalMinutes = max(5, min(24 * 60, minutes)); WidgetBridge.update(force: true) }
 
     /// عدد الأيام المتتالية التي قرأت فيها دقيقة أو أكثر (حتى اليوم أو أمس).
     func studyStreak() -> Int {

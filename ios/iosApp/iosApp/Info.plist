@@ -68,6 +68,17 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>لإضافة صور إلى صفحاتك.</string>
 	<!-- فتح ملفات PDF من «الملفات» والتطبيقات الأخرى -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.omarabukarsh.hamish</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>hamish</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

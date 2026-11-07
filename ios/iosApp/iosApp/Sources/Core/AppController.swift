@@ -71,6 +71,19 @@ final class AppController: ObservableObject {
     @Published var drawAndHold = true { didSet { prefs.set(drawAndHold, forKey: "draw_hold") } }
     /// نمط خط الأقلام (متصل، متقطع، منقّط).
     @Published var penStyle: LineStyle = .solid { didSet { prefs.set(penStyle.rawValue, forKey: "pen_style") } }
+    // إعدادات القلم المتقدمة (كما في أندرويد): حدة الطرف، حساسية الضغط، تثبيت الخط
+    @Published var penSharpness: Double = 0.25 { didSet { prefs.set(penSharpness, forKey: "pen_sharp") } }
+    @Published var penPressure: Double = 0.5 { didSet { prefs.set(penPressure, forKey: "pen_pressure") } }
+    @Published var penStabilize: Double = 0 { didSet { prefs.set(penStabilize, forKey: "pen_stab") } }
+    // الهايلايتر: تثبيت الخط والرسم بخط مستقيم
+    @Published var hlStabilize: Double = 0.3 { didSet { prefs.set(hlStabilize, forKey: "hl_stab") } }
+    @Published var hlStraight = true { didSet { prefs.set(hlStraight, forKey: "hl_straight") } }
+    // فلتر الممحاة: ما تمسحه الممحاة، والرجوع إلى القلم بعد المسح
+    @Published var erasePen = true { didSet { prefs.set(erasePen, forKey: "er_pen") } }
+    @Published var erasePencil = true { didSet { prefs.set(erasePencil, forKey: "er_pencil") } }
+    @Published var eraseHighlighter = true { didSet { prefs.set(eraseHighlighter, forKey: "er_hl") } }
+    @Published var eraseShapes = true { didSet { prefs.set(eraseShapes, forKey: "er_shapes") } }
+    @Published var autoDeselect = false { didSet { prefs.set(autoDeselect, forKey: "er_auto") } }
     /// لغة قراءة خط اليد: 0 عربي، 1 إنجليزي، 2 كلاهما.
     @Published var hwLang = 2 { didSet { prefs.set(hwLang, forKey: "hw_lang"); if started { InkReader.prefetch(hwLang) } } }
     /// انتهى تحميل الإعدادات (لا تنزيل لحزم خط اليد أثناء التحميل).
@@ -162,6 +175,16 @@ final class AppController: ObservableObject {
         drawAndHold = p.object(forKey: "draw_hold") as? Bool ?? true
         penStyle = LineStyle(rawValue: p.integer(forKey: "pen_style")) ?? .solid
         hwLang = p.object(forKey: "hw_lang") as? Int ?? 2
+        penSharpness = p.object(forKey: "pen_sharp") as? Double ?? 0.25
+        penPressure = p.object(forKey: "pen_pressure") as? Double ?? 0.5
+        penStabilize = p.object(forKey: "pen_stab") as? Double ?? 0
+        hlStabilize = p.object(forKey: "hl_stab") as? Double ?? 0.3
+        hlStraight = p.object(forKey: "hl_straight") as? Bool ?? true
+        erasePen = p.object(forKey: "er_pen") as? Bool ?? true
+        erasePencil = p.object(forKey: "er_pencil") as? Bool ?? true
+        eraseHighlighter = p.object(forKey: "er_hl") as? Bool ?? true
+        eraseShapes = p.object(forKey: "er_shapes") as? Bool ?? true
+        autoDeselect = p.object(forKey: "er_auto") as? Bool ?? false
         defer { started = true }
         lassoInk = p.object(forKey: "lasso_ink") as? Bool ?? true
         lassoHighlight = p.object(forKey: "lasso_hl") as? Bool ?? true
@@ -543,6 +566,25 @@ final class AppController: ObservableObject {
         textActive = false
         stickyActive = false
         prefs.set(t.rawValue, forKey: "tool")
+    }
+
+    /// استعادة إعدادات القلم الافتراضية.
+    func resetPen() {
+        penStyle = .solid
+        penSharpness = 0.25
+        penPressure = 0.5
+        penStabilize = 0
+        setSize(2)
+    }
+
+    /// هل تمسح الممحاة هذا الخط؟ (فلتر الممحاة)
+    func canErase(_ s: PKStroke) -> Bool {
+        if s.randomSeed == shapeSeed { return eraseShapes }
+        switch s.ink.inkType {
+        case .marker: return eraseHighlighter
+        case .pencil: return erasePencil
+        default: return erasePen
+        }
     }
 
     func selectToolWithHint(_ t: Tool) {

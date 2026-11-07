@@ -130,6 +130,8 @@ private struct ReaderContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
+        // القوائم المنسدلة تحت أزرار الأدوات (إعدادات الأداة، الأحجام، التحديد، الأشكال)
+        .dropdownHost()
         .background(Palette.desk)
         .onChange(of: app.lassoActive) { on in if !on { s.lassoSel = nil } }
         .sheet(item: $sheet) { sh in
@@ -307,7 +309,7 @@ private struct ReaderTopBar: View {
                                 app.message(L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", tintFor(app.lassoActive)) }
-                        .popover(isPresented: $lassoMenu) {
+                        .dropdown(isPresented: $lassoMenu) {
                             LassoMenuContent(onOff: { lassoMenu = false; app.lassoActive = false; s.lassoSel = nil }).environmentObject(app)
                         }
                     }
@@ -446,10 +448,9 @@ private struct ReaderTopBar: View {
         TBtn(selected: selected, action: {
             if selected { settingsFor = id } else { app.selectToolWithHint(t) }
         }) { ToolGlyph(tool: t, selected: selected) }
-        .popover(isPresented: Binding(get: { settingsFor == id && selected }, set: { if !$0 { settingsFor = nil } })) {
+        .dropdown(isPresented: Binding(get: { settingsFor == id && selected }, set: { if !$0 { settingsFor = nil } })) {
             ToolSettingsPanel(onCustomColor: { settingsFor = nil; sheet = .colorPicker })
                 .environmentObject(app)
-                .environment(\.layoutDirection, .leftToRight)
         }
     }
 }
@@ -472,7 +473,6 @@ struct ToolGlyph: View {
 
 // ---------------------------------------------------------------- شريط الأقلام
 
-private let InkPens: [Tool] = [.fountain, .ballpoint, .brush]
 
 private struct PenBar: View {
     @EnvironmentObject var app: AppController
@@ -480,48 +480,61 @@ private struct PenBar: View {
     @State private var more = false
 
     var body: some View {
-        let t = app.tool
-        let inkPen = InkPens.contains(t) ? t : (InkPens.contains(app.lastPen) ? app.lastPen : .fountain)
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach([inkPen, .pencil, .highlighter], id: \.self) { pt in
-                    let sel = pt == t
-                    TBtn(selected: sel, action: { if sel { more = true } else { app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
-                        .popover(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } })) {
-                            ToolSettingsPanel(onCustomColor: { more = false; sheet = .colorPicker })
-                                .environmentObject(app)
-                                .environment(\.layoutDirection, .leftToRight)
-                        }
-                }
-                ToolbarSep()
-                ForEach(app.presets) { p in
-                    let active = app.tool == p.tool && app.colorFor(p.tool) == p.color && app.sizeFor(p.tool) == p.size
-                    Button { app.applyPreset(p) } label: {
-                        ZStack(alignment: .bottom) {
-                            PhIcon(filledIcon(p.tool.icon), Color(hex: p.color), 20).frame(width: 40, height: 40)
-                            RoundedRectangle(cornerRadius: 2).fill(Color(hex: p.color)).frame(width: CGFloat(6 + p.size * 2), height: 3).padding(.bottom, 4)
-                        }
-                        .background(RoundedRectangle(cornerRadius: 12).fill(active ? Palette.navySoft : Color.clear))
-                    }
-                    .contextMenu { Button(role: .destructive) { app.presets.removeAll { $0.id == p.id } } label: { Text(L("حذف القلم المفضل", "Remove favorite pen")) } }
-                }
-                TBtn(action: { app.addPreset() }) { PhIcon("ph_star_plus", Palette.goldDeep, 20, L("حفظ كقلم مفضل", "Save as favorite pen")) }
-                ToolbarSep()
-                ColorDots(onCustom: { sheet = .colorPicker })
-                ToolbarSep()
-                SizeSlots(tool: t)
-                ToolbarSep()
-                TBtn(action: { app.penBarOpen = false }) { PhIcon("ph_caret_up", Palette.textSecondary, 20, L("إخفاء شريط الأقلام", "Hide pen bar")) }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 4)
+        // كبسولة عائمة في المنتصف بقدر أدواتها (كما في أندرويد)، وتتمرر فقط إن لم تتسع الشاشة
+        ViewThatFits(in: .horizontal) {
+            row.fixedSize().modifier(BarCapsule())
+            ScrollView(.horizontal, showsIndicators: false) { row }.modifier(BarCapsule())
         }
         .fixedSize(horizontal: false, vertical: true)
-        .background(Capsule().fill(Color.white))
-        .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-        .clipShape(Capsule())
-        .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
         .padding(.horizontal, 64).padding(.bottom, 6)
         .frame(maxWidth: .infinity)
+    }
+
+    private var row: some View {
+        let t = app.tool
+        let inkPen = InkPens.contains(t) ? t : (InkPens.contains(app.lastPen) ? app.lastPen : .fountain)
+        return HStack(spacing: 0) {
+            // نقرة ثانية على الأداة المختارة تفتح إعداداتها تحتها مباشرة
+            ForEach([inkPen, .pencil, .highlighter], id: \.self) { pt in
+                let sel = pt == t
+                TBtn(selected: sel, action: { if sel { more = true } else { app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
+                    .dropdown(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } })) {
+                        ToolSettingsPanel(onCustomColor: { more = false; sheet = .colorPicker })
+                            .environmentObject(app)
+                    }
+            }
+            ToolbarSep()
+            ForEach(app.presets) { p in
+                let active = app.tool == p.tool && app.colorFor(p.tool) == p.color && app.sizeFor(p.tool) == p.size
+                Button { app.applyPreset(p) } label: {
+                    ZStack(alignment: .bottom) {
+                        PhIcon(filledIcon(p.tool.icon), Color(hex: p.color), 20).frame(width: 40, height: 40)
+                        RoundedRectangle(cornerRadius: 2).fill(Color(hex: p.color)).frame(width: CGFloat(6 + p.size * 2), height: 3).padding(.bottom, 4)
+                    }
+                    .background(RoundedRectangle(cornerRadius: 12).fill(active ? Palette.navySoft : Color.clear))
+                }
+                .contextMenu { Button(role: .destructive) { app.presets.removeAll { $0.id == p.id } } label: { Text(L("حذف القلم المفضل", "Remove favorite pen")) } }
+            }
+            TBtn(action: { app.addPreset() }) { PhIcon("ph_star_plus", Palette.goldDeep, 20, L("حفظ كقلم مفضل", "Save as favorite pen")) }
+            ToolbarSep()
+            ColorDots(onCustom: { sheet = .colorPicker })
+            ToolbarSep()
+            SizeSlots(tool: t)
+            ToolbarSep()
+            TBtn(action: { app.penBarOpen = false }) { PhIcon("ph_caret_up", Palette.textSecondary, 20, L("إخفاء شريط الأقلام", "Hide pen bar")) }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+    }
+}
+
+/// كبسولة بيضاء بإطار وظل للأشرطة العائمة.
+struct BarCapsule: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Capsule().fill(Color.white))
+            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
+            .clipShape(Capsule())
+            .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
     }
 }
 
@@ -576,7 +589,7 @@ struct SizeSlots: View {
                         .frame(width: 46, height: 40)
                         .background(RoundedRectangle(cornerRadius: 12).fill(sel ? Palette.navySoft : Color.clear))
                 }
-                .popover(isPresented: Binding(get: { editing == i }, set: { if !$0 { editing = nil } })) {
+                .dropdown(isPresented: Binding(get: { editing == i }, set: { if !$0 { editing = nil } })) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(L("الحجم \(i + 1)", "Size \(i + 1)")).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary)
@@ -594,83 +607,6 @@ struct SizeSlots: View {
                 }
             }
         }
-    }
-}
-
-/// إعدادات الأداة الحالية: النوع، اللون، الحجم، وخيارات خاصة.
-struct ToolSettingsPanel: View {
-    @EnvironmentObject var app: AppController
-    let onCustomColor: () -> Void
-
-    var body: some View {
-        let t = app.tool
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                PhIcon(filledIcon(t.icon), Palette.navy, 18)
-                Text(t.title).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary)
-            }
-            let penTypes: [Tool] = app.toolbarStyle == .penBar ? InkPens : InkPens + [.pencil]
-            if penTypes.contains(t) {
-                HStack(spacing: 6) {
-                    ForEach(penTypes, id: \.self) { pt in
-                        let sel = pt == t
-                        Button { app.selectTool(pt) } label: {
-                            VStack(spacing: 2) {
-                                PhIcon(sel ? filledIcon(pt.icon) : pt.icon, sel ? .white : Palette.textPrimary, 18)
-                                Text(pt.title).font(Fonts.sans(10)).foregroundColor(sel ? .white : Palette.textPrimary).lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity).padding(.vertical, 6)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navy : Palette.background))
-                        }
-                    }
-                }
-            }
-            if t != .eraser {
-                Text(L("اللون", "Color")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 6), count: 7), spacing: 6) {
-                    ForEach(app.paletteFor(t) + app.customColors, id: \.self) { col in
-                        let sel = col == app.colorFor(t)
-                        Button { app.setColor(col) } label: {
-                            Circle().fill(Color(hex: col)).frame(width: 26, height: 26)
-                                .overlay(Circle().stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2.5 : 1))
-                        }
-                    }
-                    Button(action: onCustomColor) { PhIcon("ph_plus", Palette.textSecondary, 18) }
-                }
-            }
-            Text(L("الحجم", "Size")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-            HStack {
-                Slider(value: Binding(get: { Double(app.sizeFor(t)) }, set: { app.setSize(Int($0.rounded())) }), in: 0...Double(Sizes.count - 1), step: 1)
-                    .tint(Palette.navy)
-                Circle().fill(t == .eraser ? Palette.textSecondary.opacity(0.3) : Color(hex: app.colorFor(t)))
-                    .frame(width: min(34, max(4, Sizes.width(t, app.sizeFor(t)) * 0.6)), height: min(34, max(4, Sizes.width(t, app.sizeFor(t)) * 0.6)))
-                    .frame(width: 36, height: 36)
-            }
-            if t.isPen {
-                StrokeStyleSection(style: $app.penStyle)
-            }
-            if t == .eraser {
-                HStack(spacing: 6) {
-                    ChoiceChip(label: L("الخط كاملًا", "Whole stroke"), selected: app.eraserMode == .stroke) { app.eraserMode = .stroke }
-                    ChoiceChip(label: L("ما تلمسه فقط", "Only what it touches"), selected: app.eraserMode == .area) { app.eraserMode = .area }
-                }
-            }
-            if t == .laser {
-                HStack(spacing: 6) {
-                    ChoiceChip(label: L("نقطة", "Dot"), selected: app.laserMode == .dot) { app.laserMode = .dot }
-                    ChoiceChip(label: L("خط يتلاشى", "Fading line"), selected: app.laserMode == .line) { app.laserMode = .line }
-                }
-            }
-            if t == .highlighter {
-                Toggle(isOn: Binding(get: { app.highlightSnap }, set: { v in if !v || Premium.shared.require(.snap) { app.highlightSnap = v } })) {
-                    Text(L("التقاط النص", "Text snap")).font(Fonts.sans(13))
-                }.tint(Palette.navy)
-                Toggle(isOn: $app.highlightToSummary) { Text(L("إضافة إلى الملخص", "Add to summary")).font(Fonts.sans(13)) }.tint(Palette.navy)
-            }
-        }
-        .padding(14)
-        .frame(width: 280)
-        .background(Color.white)
     }
 }
 
@@ -724,12 +660,12 @@ private struct ShapeBar: View {
             }
             ToolbarSep()
             TBtn(action: { strokeMenu = true }) { LineStyleSample(style: app.shapeStyle, color: Palette.textPrimary, width: 4) }
-                .popover(isPresented: $strokeMenu) { ShapeStrokePanel().environmentObject(app) }
+                .dropdown(isPresented: $strokeMenu) { ShapeStrokePanel().environmentObject(app) }
             Button { colorMenu = true } label: {
                 Circle().fill(Color(hex: app.shapeColor)).frame(width: 24, height: 24)
                     .overlay(Circle().stroke(Palette.divider, lineWidth: 1)).frame(width: 42, height: 42)
             }
-            .popover(isPresented: $colorMenu) {
+            .dropdown(isPresented: $colorMenu) {
                 HStack(spacing: 6) {
                     ForEach(Array((app.penPalette + app.customColors).prefix(10)), id: \.self) { col in
                         Button { app.shapeColor = col; colorMenu = false } label: {

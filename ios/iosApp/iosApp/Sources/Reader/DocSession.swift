@@ -219,6 +219,24 @@ final class DocSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
+    /// مسح الصفحة: الكتابة والتمييز والنصوص والملاحظات والصور، خطوةً واحدة قابلة للتراجع.
+    func clearPage(_ page: Int) {
+        guard let pid = pageId(page) else { return }
+        let oldInk = drawing(for: pid)
+        let before = data
+        data.marks.removeAll { $0.page == pid }
+        data.boxes.removeAll { $0.page == pid }
+        data.notes.removeAll { $0.page == pid }
+        data.images.removeAll { $0.page == pid }
+        drawings[pid] = PKDrawing()
+        dirtyInk.insert(pid)
+        applyInkHook?(pid, PKDrawing())
+        inkVersion += 1
+        push(.both(.ink(page: pid, before: oldInk, after: PKDrawing()), .data(before: before, after: data)))
+        dataDirty = true
+        scheduleSave()
+    }
+
     // ---------- العلامات المرجعية ----------
 
     func toggleBookmark(_ page: Int) {

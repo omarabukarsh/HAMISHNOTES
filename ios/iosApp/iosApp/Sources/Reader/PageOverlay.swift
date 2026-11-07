@@ -294,7 +294,28 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         guard !applying, let s = session else { return }
-        AppController.shared.noteInteraction()
+        let app = AppController.shared
+        app.noteInteraction()
+        // فلتر الممحاة: ما يحميه المستخدم لا يُمسح
+        if app.tool == .eraser {
+            let old = s.drawing(for: pageId)
+            if let kept = PenProcessing.protect(old: old, new: pageDrawing, canErase: app.canErase) {
+                setDrawing(kept)
+                if kept.dataRepresentation() == old.dataRepresentation() { return }
+            }
+        }
+        // خط جديد: تثبيت الخط، حساسية الضغط، حدة الطرف، وخط الهايلايتر المستقيم
+        if canvas.drawing.strokes.count == lastStrokeCount + 1, let last = canvas.drawing.strokes.last,
+           (app.tool.isPen || app.tool == .highlighter), !app.shapeActive, last.randomSeed != shapeSeed,
+           let ns = PenProcessing.apply(last, tool: app.tool, pageW: pageSize.width * k,
+                                        stabilize: app.tool == .highlighter ? app.hlStabilize : app.penStabilize,
+                                        pressure: app.penPressure, sharpness: app.penSharpness, straight: app.hlStraight) {
+            var d = canvas.drawing
+            d.strokes[d.strokes.count - 1] = ns
+            applying = true
+            canvas.drawing = d
+            applying = false
+        }
         let strokes = canvas.drawing.strokes
         // خط هايلايتر جديد: يُلتقط النص تحته
         if strokes.count == lastStrokeCount + 1, let last = strokes.last, last.ink.inkType == .marker,
@@ -353,7 +374,14 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     }
 
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) { AutoFont.shared.penDown() }
-    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) { AutoFont.shared.penUp() }
+    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+        AutoFont.shared.penUp()
+        // الرجوع إلى القلم تلقائيًا بعد المسح
+        let c = AppController.shared
+        if c.tool == .eraser && c.autoDeselect {
+            DispatchQueue.main.async { c.selectTool(c.lastWriting == .eraser ? c.lastPen : c.lastWriting) }
+        }
+    }
 
     private func commitShape(_ strokes: [PKStroke]) {
         guard let s = session else { return }

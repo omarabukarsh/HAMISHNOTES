@@ -228,3 +228,90 @@ struct StrokeStyleSection: View {
         }
     }
 }
+
+// ---------------------------------------------------------------- معالجة الخط بعد كتابته
+
+/// تثبيت الخط، حساسية الضغط، حدة الطرف، وخط الهايلايتر المستقيم (نفس PenPrefs في أندرويد).
+enum PenProcessing {
+    /// الخط بعد المعالجة، أو nil إن لم يتغير شيء. pageW = عرض الصفحة بوحدات الكانفاس.
+    static func apply(_ s: PKStroke, tool: Tool, pageW: CGFloat,
+                      stabilize: Double, pressure: Double, sharpness: Double, straight: Bool) -> PKStroke? {
+        let pts = Array(s.path)
+        guard pts.count >= 2 else { return nil }
+        let isPen = tool.isPen
+        let sharp = CGFloat((tool == .fountain || tool == .brush) ? sharpness : 0)
+        let doStab = stabilize > 0.01
+        let doPressure = isPen && abs(pressure - 0.5) > 0.01
+        let doTaper = isPen && sharp > 0.01 && pts.count >= 4
+        let doStraight = tool == .highlighter && straight
+        guard doStab || doPressure || doTaper || doStraight else { return nil }
+
+        var out = pts
+        if doStraight {
+            let a = pts.first!, b = pts.last!
+            let w = pts.map { $0.size.width }.sorted()[pts.count / 2]
+            let h = pts.map { $0.size.height }.sorted()[pts.count / 2]
+            out = (0...12).map { i in
+                let f = CGFloat(i) / 12
+                return PKStrokePoint(location: CGPoint(x: a.location.x + (b.location.x - a.location.x) * f,
+                                                       y: a.location.y + (b.location.y - a.location.y) * f),
+                                     timeOffset: a.timeOffset + (b.timeOffset - a.timeOffset) * Double(f),
+                                     size: CGSize(width: w, height: h), opacity: a.opacity, force: a.force,
+                                     azimuth: a.azimuth, altitude: a.altitude)
+            }
+        } else if doStab {
+            // كل نقطة تقترب من موضع القلم بنسبة (أقل = أنعم)
+            let follow = CGFloat(1 - stabilize * 0.85)
+            var sx = pts[0].location.x, sy = pts[0].location.y
+            out = pts.map { p in
+                sx += (p.location.x - sx) * follow
+                sy += (p.location.y - sy) * follow
+                return point(p, at: CGPoint(x: sx, y: sy), size: p.size)
+            }
+            // آخر نقطة في موضع القلم الحقيقي حتى لا يقصر الخط
+            if let l = pts.last { out[out.count - 1] = l }
+        }
+        if doPressure {
+            let k = CGFloat(pressure * 2)
+            let mw = out.reduce(0) { $0 + $1.size.width } / CGFloat(out.count)
+            let mh = out.reduce(0) { $0 + $1.size.height } / CGFloat(out.count)
+            out = out.map { p in
+                let w = max(mw * 0.1, mw + (p.size.width - mw) * k)
+                let h = max(mh * 0.1, mh + (p.size.height - mh) * k)
+                return point(p, at: p.location, size: CGSize(width: w, height: h))
+            }
+        }
+        if doTaper {
+            var total: CGFloat = 0
+            for i in 1..<out.count { total += hypot(out[i].location.x - out[i - 1].location.x, out[i].location.y - out[i - 1].location.y) }
+            if total > 0 {
+                let span = min(total * 0.3, (0.02 + sharp * 0.03) * pageW)
+                var d: CGFloat = 0
+                for i in out.indices {
+                    if i > 0 { d += hypot(out[i].location.x - out[i - 1].location.x, out[i].location.y - out[i - 1].location.y) }
+                    let f = min(1, min(d, total - d) / max(0.001, span))
+                    let k = (1 - sharp) + sharp * f
+                    out[i] = point(out[i], at: out[i].location, size: CGSize(width: out[i].size.width * k, height: out[i].size.height * k))
+                }
+            }
+        }
+        let path = PKStrokePath(controlPoints: out, creationDate: s.path.creationDate)
+        return PKStroke(ink: s.ink, path: path, transform: s.transform, mask: s.mask, randomSeed: s.randomSeed)
+    }
+
+    private static func point(_ p: PKStrokePoint, at l: CGPoint, size: CGSize) -> PKStrokePoint {
+        PKStrokePoint(location: l, timeOffset: p.timeOffset, size: size, opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+    }
+
+    /// فلتر الممحاة: ما مسحته الممحاة من خطوط محمية يعود كما كان. nil = لا شيء محمي.
+    static func protect(old: PKDrawing, new: PKDrawing, canErase: (PKStroke) -> Bool) -> PKDrawing? {
+        let kept = old.strokes.filter { !canErase($0) }
+        guard !kept.isEmpty else { return nil }
+        let rest = new.strokes.filter { canErase($0) }
+        let merged = (kept + rest).enumerated().sorted { a, b in
+            a.element.path.creationDate != b.element.path.creationDate
+                ? a.element.path.creationDate < b.element.path.creationDate : a.offset < b.offset
+        }.map { $0.element }
+        return PKDrawing(strokes: merged)
+    }
+}

@@ -329,7 +329,11 @@ struct ToastView: View {
 /// نافذة كبيرة في وسط الشاشة (مثل نوافذ أندرويد: 94% من العرض حتى 900 نقطة).
 struct BigSheet<C: View>: ViewModifier {
     @Binding var isPresented: Bool
-    var maxWidth: CGFloat = 900
+    /// نسبة العرض والارتفاع من الشاشة (كما في نوافذ أندرويد: fillMaxWidth / fillMaxHeight).
+    var widthFraction: CGFloat = 0.94
+    var heightFraction: CGFloat = 0.92
+    var maxHeight: CGFloat = .infinity
+    var minHeight: CGFloat = 0
     let sheet: () -> C
 
     func body(content: Content) -> some View {
@@ -338,7 +342,8 @@ struct BigSheet<C: View>: ViewModifier {
                 Color.black.opacity(0.32).ignoresSafeArea().onTapGesture { isPresented = false }
                 GeometryReader { g in
                     sheet()
-                        .frame(width: min(g.size.width * 0.94, maxWidth), height: g.size.height * 0.92)
+                        .frame(width: g.size.width * widthFraction,
+                               height: min(g.size.height * 0.96, max(minHeight, min(maxHeight, g.size.height * heightFraction))))
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
                         .position(x: g.size.width / 2, y: g.size.height / 2)
@@ -350,8 +355,9 @@ struct BigSheet<C: View>: ViewModifier {
 }
 
 extension View {
-    func bigSheet<C: View>(isPresented: Binding<Bool>, maxWidth: CGFloat = 900, @ViewBuilder _ sheet: @escaping () -> C) -> some View {
-        modifier(BigSheet(isPresented: isPresented, maxWidth: maxWidth, sheet: sheet))
+    func bigSheet<C: View>(isPresented: Binding<Bool>, width: CGFloat = 0.94, height: CGFloat = 0.92, maxHeight: CGFloat = .infinity,
+                           minHeight: CGFloat = 0, @ViewBuilder _ sheet: @escaping () -> C) -> some View {
+        modifier(BigSheet(isPresented: isPresented, widthFraction: width, heightFraction: height, maxHeight: maxHeight, minHeight: minHeight, sheet: sheet))
     }
 
     /// إطار مستدير بخط رفيع.

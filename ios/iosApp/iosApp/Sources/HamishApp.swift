@@ -78,13 +78,13 @@ struct RootView: View {
             if let t = app.toast { ToastView(text: t) }
             PremiumHost()
         }
-        .bigSheet(isPresented: $app.settingsOpen, maxWidth: 880) {
+        .bigSheet(isPresented: $app.settingsOpen) {
             SettingsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
-        .bigSheet(isPresented: $app.statsOpen) {
+        .bigSheet(isPresented: $app.statsOpen, width: 0.92, height: 0.92, maxHeight: 800) {
             StatsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
-        .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } })) {
+        .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } }), width: 0.82, height: 0.85, maxHeight: 700, minHeight: 460) {
             DeckView(deck: app.openDeck == "*" ? nil : app.openDeck).environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .sheet(item: Binding(get: { app.setPinFor.map { IdString(id: $0) } }, set: { app.setPinFor = $0?.id })) { t in

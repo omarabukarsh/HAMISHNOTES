@@ -287,7 +287,7 @@ struct PaywallView: View {
     var body: some View {
         GeometryReader { g in
             let wide = g.size.width >= 640
-            let w = min(900, g.size.width * 0.94), h = g.size.height * 0.92
+            let w = g.size.width * 0.94, h = g.size.height * 0.92
             Group {
                 if wide {
                     HStack(spacing: 0) {

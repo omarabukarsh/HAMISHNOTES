@@ -57,6 +57,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
             guard let self = self else { return }
             self.elapsed = nowMs() - self.startedAt
         }
+        AppController.shared.message(L("بدأ التسجيل — اكتب وسيُربط كل خط بلحظته", "Recording — every stroke is linked to its moment"))
     }
 
     func stop() {
@@ -133,35 +134,61 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
 }
 
 /// نافذة التسجيل.
-struct AudioSheet: View {
+struct AudioDialog: View {
     @ObservedObject var session: DocSession
     @ObservedObject var audio = AudioNotes.shared
-    @Environment(\.dismiss) private var dismiss
+    let dismiss: () -> Void
 
     var body: some View {
         let recHere = audio.recordingDoc == session.id
-        SheetScaffold(title: L("تسجيل المحاضرة", "Lecture recording")) {
-            VStack(spacing: 16) {
-                Text(recHere ? mmss(audio.elapsed) : L("سجّل المحاضرة واكتب كالمعتاد؛ كل سطر تكتبه يُربط بلحظته في التسجيل.", "Record the lecture and write as usual; every line you write is linked to its moment in the recording."))
-                    .font(recHere ? Fonts.display(40) : Fonts.sans(14)).foregroundColor(recHere ? Palette.danger : Palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                HStack(spacing: 12) {
-                    if recHere {
-                        NavyButton(label: L("إيقاف وحفظ", "Stop and save"), danger: true) { audio.stop(); dismiss() }
-                    } else if audio.recordingDoc != nil {
-                        Text(L("يجري تسجيل في مستند آخر", "A recording is running in another document")).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
-                    } else {
-                        NavyButton(label: L("ابدأ التسجيل", "Start recording")) { audio.start(session); dismiss() }
+        let busyElsewhere = audio.recordingDoc != nil && !recHere
+        let recs = session.data.recordings.sorted { $0.start > $1.start }
+        AlertDialogCard(title: L("تسجيل المحاضرة", "Lecture recording"), width: 460) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L("سجّل الصوت أثناء الكتابة. لاحقًا حدّد أي كتابة بأداة التحديد الحر واضغط «▶ الصوت» لتسمع ما قيل لحظة كتابتها.",
+                           "Record audio while you write. Later, lasso any writing and tap “▶ Audio” to hear what was said when you wrote it."))
+                        .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if busyElsewhere {
+                        Text(L("يوجد تسجيل يعمل في مستند آخر", "A recording is running in another document")).font(Fonts.sans(13)).foregroundColor(Palette.danger)
                     }
-                    if !session.data.recordings.isEmpty {
-                        NavyButton(label: L("اسمع ما قيل عند آخر سطر", "Hear what was said at the last line"), filled: false) { audio.playFromInk(session); dismiss() }
+                    if recs.isEmpty {
+                        Text(L("لا توجد تسجيلات بعد", "No recordings yet")).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary).padding(.top, 4)
+                    }
+                    ForEach(recs) { r in
+                        HStack(spacing: 4) {
+                            Text(AudioDialog.fmt.string(from: Date(timeIntervalSince1970: Double(r.start) / 1000)) + "  ·  " + mmss(r.durationMs))
+                                .font(Fonts.sans(14)).foregroundColor(Palette.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            DialogButton(label: "▶") { audio.play(session, r); dismiss() }
+                            DialogButton(label: L("حذف", "Delete"), color: Palette.danger) { audio.delete(session, r) }
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 22).padding(.bottom, 20)
+            .frame(maxHeight: 420)
+            .fixedSize(horizontal: false, vertical: true)
+        } buttons: {
+            DialogButton(label: L("إغلاق", "Close")) { dismiss() }
+            if recHere {
+                DialogButton(label: L("إيقاف التسجيل", "Stop recording") + "  " + mmss(audio.elapsed), color: Palette.danger, bold: true) {
+                    audio.stop(); dismiss()
+                }
+            } else {
+                DialogButton(label: L("● بدء التسجيل", "● Start recording"), color: Palette.danger, bold: true, enabled: !busyElsewhere) {
+                    audio.start(session); dismiss()
+                }
+            }
         }
-        .presentationDetents([.height(260)])
     }
+
+    static let fmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d/M  HH:mm"
+        return f
+    }()
 }
 
 /// مشغّل التسجيل أسفل القارئ.

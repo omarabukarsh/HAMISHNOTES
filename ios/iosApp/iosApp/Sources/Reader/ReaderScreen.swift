@@ -146,7 +146,7 @@ private struct ReaderContent: View {
                         s.addBlankPage(after: atEnd ? s.pageCount - 1 : s.currentPage, kind: choice.kind, color: choice.color, size: choice.points)
                     }
                 case .link: LinkSheet(session: s)
-                case .audio: AudioSheet(session: s)
+                case .audio: EmptyView()
                 case .split: SplitPickerSheet(session: s)
                 case .export: ShareExportSheet(docIds: [s.id])
                 case .colorPicker: ColorPickerSheet()
@@ -188,6 +188,7 @@ private struct ReaderTopBar: View {
     @State private var settingsFor: String? = nil
     @State private var lassoMenu = false
     @State private var autoFont = false
+    @State private var audioOpen = false
 
     var body: some View {
         ZStack {
@@ -233,6 +234,8 @@ private struct ReaderTopBar: View {
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
+        // تسجيل المحاضرة: نافذة مثل أندرويد، والعدّاد يبقى في زر الميكروفون بشريط الأدوات
+        .appDialog(isPresented: $audioOpen) { close in AudioDialog(session: s, dismiss: close) }
     }
 
     private var toolsRow: some View {
@@ -385,7 +388,7 @@ private struct ReaderTopBar: View {
                     }
                     if v("record") {
                         let recHere = audio.recordingDoc == s.id
-                        TBtn(selected: recHere, locked: !pm.active && !recHere, action: { if recHere || pm.require(.record) { sheet = .audio } }) {
+                        TBtn(selected: recHere, locked: !pm.active && !recHere, action: { if recHere || pm.require(.record) { audioOpen = true } }) {
                             if recHere { Text(mmss(audio.elapsed)).font(Fonts.sans(12, .bold)).foregroundColor(Palette.danger) }
                             else { PhIcon("ph_mic") }
                         }

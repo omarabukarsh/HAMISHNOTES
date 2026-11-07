@@ -125,18 +125,22 @@ let CardTeal = Color(hex: 0xFF0F766E)
 
 /// الخط: Almarai لكل التطبيق (عربي ولاتيني بتصميم واحد)، وCaveat للعبارات اليدوية.
 enum Fonts {
+    /// حجم النص الذي يختاره المستخدم.
     static var scale: CGFloat = 1
+    /// شاشة iPad (1376×1032 نقطة) أوسع من الجهاز اللوحي في أندرويد (1280×800):
+    /// نكبّر النص بنفس النسبة فتبدو الواجهة بنفس تناسبها.
+    static let base: CGFloat = 1.08
 
     static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom(name(for: weight), size: size * scale)
+        .custom(name(for: weight), size: size * scale * base)
     }
 
     /// العناوين وأسماء المستندات.
     static func display(_ size: CGFloat, bold: Bool = true) -> Font {
-        .custom(bold ? "Almarai-ExtraBold" : "Almarai-Bold", size: size * scale)
+        .custom(bold ? "Almarai-ExtraBold" : "Almarai-Bold", size: size * scale * base)
     }
 
-    static func script(_ size: CGFloat) -> Font { .custom("Caveat-Medium", size: size * scale) }
+    static func script(_ size: CGFloat) -> Font { .custom("Caveat-Medium", size: size * scale * base) }
 
     static func name(for weight: Font.Weight) -> String {
         switch weight {

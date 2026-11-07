@@ -40,6 +40,10 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             mkdir -p android-shots
+            # نوافذ «لا يستجيب» من المحاكي نفسه (مثل Pixel Launcher) تغطي الصور: تُخفى
+            adb shell settings put global hide_error_dialogs 1 || true
+            adb shell settings put global anr_show_background 0 || true
+            sleep 20
             ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.hamishnotes.app.ScreenTourTest -Pandroid.testInstrumentationRunnerArguments.tour=true -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true || echo "::warning::tour test failed"
             adb pull /sdcard/Android/data/com.hamishnotes.app/files/test-reports android-shots/ || true
             adb logcat -d > android-shots/logcat.txt || true

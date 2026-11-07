@@ -76,6 +76,8 @@ struct DeckView: View {
                 pager(cards)
                 Spacer().frame(height: 14)
                 navRow(cards.count)
+                Text(L("انقر البطاقة لقلبها، واسحب للتنقل", "Tap a card to flip it, swipe to move"))
+                    .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).frame(maxWidth: .infinity)
             }
             Spacer(minLength: 0)
         }
@@ -161,7 +163,7 @@ struct DeckView: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(minHeight: 300, maxHeight: 460)
+        .frame(height: 300)
     }
 
     private func cardPage(_ c: Card) -> some View {

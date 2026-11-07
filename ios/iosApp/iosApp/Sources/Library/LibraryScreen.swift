@@ -191,7 +191,7 @@ struct LibraryScreen: View {
         } else {
             let resume: DocEntry? = (app.libraryFilter == .recent && query.isEmpty) ? docs.first(where: { $0.lastOpened > 0 }) : nil
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: wide ? 164 : 140), spacing: 24)], alignment: .leading, spacing: 26) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: (wide ? 164 : 140) * Fonts.base), spacing: 24)], alignment: .leading, spacing: 26) {
                     if resume != nil || (wide && app.libraryFolder == nil && !app.folders.isEmpty && query.isEmpty) {
                         Section {
                             EmptyView()
@@ -342,7 +342,7 @@ private struct Spine: View {
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 22)
-        .frame(width: 248)
+        .frame(width: 248 * Fonts.base)
         .frame(maxHeight: .infinity)
         .background(Lib.side.ignoresSafeArea())
     }

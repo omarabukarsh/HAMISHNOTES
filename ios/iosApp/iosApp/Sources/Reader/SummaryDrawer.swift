@@ -119,7 +119,7 @@ struct SummaryDrawer: View {
                 }
             }
         }
-        .frame(width: 420)
+        .frame(width: 420 * Fonts.base)
         .frame(maxHeight: .infinity)
         .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
         .sheet(item: $editing) { m in MarkEditSheet(session: s, mark: m) }

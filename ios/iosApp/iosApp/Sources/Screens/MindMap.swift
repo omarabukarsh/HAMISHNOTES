@@ -311,7 +311,10 @@ private struct MapPlan {
         return CGSize(width: ceil(min(maxW, r.width)) + 1, height: ceil(r.height))
     }
 
-    static let displayFont = { (s: CGFloat) in UIFont(name: "Almarai-ExtraBold", size: s) ?? .boldSystemFont(ofSize: s) }
+    /// نفس تكبير خط الواجهة (Fonts.scale × Fonts.base) حتى يطابق القياس ما يُرسم.
+    static var k: CGFloat { Fonts.scale * Fonts.base }
+    static let displayFont = { (s: CGFloat) in UIFont(name: "Almarai-ExtraBold", size: s * k) ?? .boldSystemFont(ofSize: s * k) }
+    static func uiFont(_ s: CGFloat, bold: Bool = false) -> UIFont { Fonts.ui(s * k, bold: bold) }
 
     init(model: MindMapModel, placing: Bool, ghosts: Set<String>) {
         var out: [MapEntry] = [MapEntry(kind: .center, node: nil, branch: -1, parent: -1)]
@@ -350,25 +353,25 @@ private struct MapPlan {
         for e in out {
             switch e.kind {
             case .center:
-                let t = MapPlan.textSize(model.title, MapPlan.displayFont(22), lineHeight: 28, maxW: 280 - 48)
+                let t = MapPlan.textSize(model.title, MapPlan.displayFont(22), lineHeight: 28 * MapPlan.k, maxW: 280 - 48)
                 let w = max(t.width, model.total > 0 ? 60 : 0)
                 tsz.append(t)
                 sizes.append(CGSize(width: w + 48, height: t.height + 28 + (model.total > 0 ? 16 : 0)))
             case .branch:
-                let t = MapPlan.textSize(e.node!.text, MapPlan.displayFont(15), lineHeight: 23, maxW: 260 - 32)
+                let t = MapPlan.textSize(e.node!.text, MapPlan.displayFont(15), lineHeight: 23 * MapPlan.k, maxW: 260 - 32)
                 tsz.append(t)
                 sizes.append(CGSize(width: t.width + 32, height: t.height + 20 + 6))
             case .point:
                 let maxW: CGFloat = e.depth <= 1 ? 250 : max(160, 220 - 15 * CGFloat(e.depth - 2))
                 let txt = e.node!.text + (e.node!.collapsed && !e.node!.children.isEmpty ? "  (+\(e.node!.count()))" : "")
-                let t = MapPlan.textSize(txt, Fonts.ui(e.depth >= 2 ? 12.5 : 13.5), lineHeight: 20, maxW: maxW - 24)
+                let t = MapPlan.textSize(txt, MapPlan.uiFont(e.depth >= 2 ? 12.5 : 13.5), lineHeight: 20 * MapPlan.k, maxW: maxW - 24)
                 tsz.append(t)
                 sizes.append(CGSize(width: t.width + 24, height: t.height + 14))
             case .plusCenter, .plusRow:
                 let big = e.kind == .plusCenter
                 let circle: CGFloat = big ? 28 : (e.label == nil ? 20 : 24)
                 var w = circle + 8
-                if let l = e.label { w += 6 + MapPlan.textSize(l, Fonts.ui(big ? 14 : 12, bold: true), lineHeight: 18, maxW: 200).width + 8 }
+                if let l = e.label { w += 6 + MapPlan.textSize(l, MapPlan.uiFont(big ? 14 : 12, bold: true), lineHeight: 18 * MapPlan.k, maxW: 200).width + 8 }
                 tsz.append(.zero)
                 sizes.append(CGSize(width: w, height: circle + 8))
             }
@@ -504,7 +507,7 @@ private struct MapCanvas: View {
     }
 
     private func nodeText(_ s: String, _ font: Font, lineHeight: CGFloat, base: CGFloat, color: Color) -> some View {
-        Text(s).font(font).foregroundColor(color).lineSpacing(max(0, lineHeight - base * 1.2)).fixedSize(horizontal: false, vertical: true)
+        Text(s).font(font).foregroundColor(color).lineSpacing(max(0, (lineHeight - base * 1.2) * MapPlan.k)).fixedSize(horizontal: false, vertical: true)
     }
 
     private func branchNode(_ n: MapNode, col: Color, right: Bool, ghost: Bool, ts: CGSize) -> some View {
@@ -600,6 +603,7 @@ struct MindMapView: View {
     @State private var baseOffset: CGSize = .zero
     @State private var viewport: CGSize = .zero
     @State private var fitted = false
+    @State private var userMoved = false
     @State private var share: [Any]? = nil
     @State private var started = false
 
@@ -657,18 +661,24 @@ struct MindMapView: View {
                     SimultaneousGesture(
                         MagnificationGesture()
                             .onChanged { v in
+                                userMoved = true
                                 let ns = min(3, max(0.2, baseScale * v))
                                 scale = ns
                             }
                             .onEnded { _ in baseScale = scale },
                         DragGesture(minimumDistance: 4)
-                            .onChanged { g in offset = CGSize(width: baseOffset.width + g.translation.width, height: baseOffset.height + g.translation.height) }
+                            .onChanged { g in
+                                userMoved = true
+                                offset = CGSize(width: baseOffset.width + g.translation.width, height: baseOffset.height + g.translation.height)
+                            }
                             .onEnded { _ in baseOffset = offset }
                     )
                 )
                 .onAppear { viewport = geo.size; if !fitted { fit(plan); fitted = true } }
                 .onChange(of: geo.size) { s in viewport = s; fit(plan) }
-                .onChange(of: fitted) { f in if !f { fit(plan); fitted = true } }
+                .onChange(of: fitted) { f in if !f { userMoved = false; fit(plan); fitted = true } }
+                // الخريطة تتوسط من جديد كلما تغيّر حجمها (ما لم يحرّكها المستخدم بيده)
+                .onChange(of: plan.size) { _ in if !userMoved { fit(plan) } }
             }
         }
         .background(Palette.ivory.ignoresSafeArea())

@@ -217,27 +217,39 @@ private struct ReaderTopBar: View {
                     }
                 }
             }
-            // الأدوات في المنتصف
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    navGroup
-                    coreGroup
-                    insertGroupA
-                    insertGroupB
-                    viewGroup
-                }
-                .padding(.horizontal, 10).padding(.vertical, 4)
+            // الأدوات في المنتصف: كبسولة بقدر محتواها (كما في أندرويد)، وتتمرر فقط إن لم تتسع الشاشة
+            ViewThatFits(in: .horizontal) {
+                toolsCapsule
+                ScrollView(.horizontal, showsIndicators: false) { toolsRow }
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
+                    .clipShape(Capsule())
+                    .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
             }
             .fixedSize(horizontal: false, vertical: true)
-            .background(Capsule().fill(Color.white))
-            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-            .clipShape(Capsule())
-            .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
             .padding(.horizontal, 58)
             .frame(maxWidth: .infinity)
-            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
+    }
+
+    private var toolsRow: some View {
+        HStack(spacing: 0) {
+            navGroup
+            coreGroup
+            insertGroupA
+            insertGroupB
+            viewGroup
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+    }
+
+    private var toolsCapsule: some View {
+        toolsRow
+            .fixedSize()
+            .background(Capsule().fill(Color.white))
+            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
+            .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
     }
 
     private var s: DocSession { session }

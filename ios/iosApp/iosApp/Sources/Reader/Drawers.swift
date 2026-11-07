@@ -133,7 +133,7 @@ struct PagesDrawer: View {
                 }
             }
         }
-        .frame(width: 300)
+        .frame(width: 300 * Fonts.base)
         .frame(maxHeight: .infinity)
         .background(Palette.drawerBg.shadow(color: .black.opacity(0.16), radius: 10))
         .alert(L("حذف الصفحة \((confirmDelete ?? 0) + 1)؟", "Delete page \((confirmDelete ?? 0) + 1)?"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
@@ -412,7 +412,7 @@ struct PageMenuDrawer: View {
             }
             .padding(.bottom, 24)
         }
-        .frame(width: 380)
+        .frame(width: 380 * Fonts.base)
         .frame(maxHeight: .infinity)
         .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
         .alert(L("مسح الصفحة \(p + 1)؟", "Clear page \(p + 1)?"), isPresented: $confirmClear) {
@@ -587,7 +587,7 @@ struct SideTray: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .frame(width: 290)
+        .frame(width: 290 * Fonts.base)
         .frame(maxHeight: 520)
         .background(RoundedRectangle(cornerRadius: 22).fill(Palette.drawerBg))
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)

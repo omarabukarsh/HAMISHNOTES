@@ -40,7 +40,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             mkdir -p android-shots
-            ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.hamishnotes.app.ScreenTourTest -Pandroid.testInstrumentationRunnerArguments.tour=true || echo "::warning::tour test failed"
+            ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.hamishnotes.app.ScreenTourTest -Pandroid.testInstrumentationRunnerArguments.tour=true -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true || echo "::warning::tour test failed"
             adb pull /sdcard/Android/data/com.hamishnotes.app/files/test-reports android-shots/ || true
             adb logcat -d > android-shots/logcat.txt || true
       - uses: actions/upload-artifact@v4

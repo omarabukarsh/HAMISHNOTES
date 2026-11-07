@@ -10,6 +10,15 @@ enum EditStep {
 }
 
 /// مستند مفتوح في تبويب: الملف، وما كُتب عليه، وحالة الواجهة.
+/// منطقة نافذة الكتابة المكبّرة على صفحة (بنقاط الصفحة).
+struct ZoomBox: Equatable {
+    var page: Int
+    var x: CGFloat
+    var y: CGFloat
+    var w: CGFloat
+    var h: CGFloat
+}
+
 final class DocSession: ObservableObject, Identifiable {
     let id: String
     @Published var title: String
@@ -41,6 +50,8 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var editingBox: TextBox? = nil
     @Published var editingNote: StickyNote? = nil
     @Published var selectedImage: String? = nil
+    /// نافذة الكتابة المكبّرة: المنطقة المعروضة من الصفحة (بنقاط الصفحة).
+    @Published var zoomBox: ZoomBox? = nil
 
     // ---------- التراجع ----------
     @Published private(set) var undoStack: [EditStep] = []

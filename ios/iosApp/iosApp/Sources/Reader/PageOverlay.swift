@@ -141,22 +141,27 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             canvas.tool = PKLassoTool()
             return
         }
+        if let tool = PageOverlayView.pkTool(scale: k) { canvas.tool = tool }
+        if shapeOn {
+            shapes.ink = shapeInk()
+            shapes.kind = c.shapeKind
+        }
+    }
+
+    /// أداة PencilKit للأداة المختارة، بعرض مضروب في scale (نسبة الشاشة إلى نقاط الصفحة).
+    static func pkTool(scale k: CGFloat) -> PKTool? {
+        let c = AppController.shared
         let t = c.tool
         let col = UIColor(argb: c.colorFor(t))
         let w = Sizes.width(t, c.sizeFor(t)) * k
         switch t {
-        case .ballpoint: canvas.tool = PKInkingTool(.monoline, color: col, width: w)
-        case .fountain: canvas.tool = PKInkingTool(.fountainPen, color: col, width: w * 1.4)
-        case .pencil: canvas.tool = PKInkingTool(.pencil, color: col, width: w * 1.6)
-        case .brush: canvas.tool = PKInkingTool(.watercolor, color: col, width: w * 3)
-        case .highlighter: canvas.tool = PKInkingTool(.marker, color: col.withAlphaComponent(0.6), width: w)
-        case .eraser:
-            canvas.tool = c.eraserMode == .stroke ? PKEraserTool(.vector) : PKEraserTool(.bitmap, width: w)
-        case .laser: break
-        }
-        if shapeOn {
-            shapes.ink = shapeInk()
-            shapes.kind = c.shapeKind
+        case .ballpoint: return PKInkingTool(.monoline, color: col, width: w)
+        case .fountain: return PKInkingTool(.fountainPen, color: col, width: w * 1.4)
+        case .pencil: return PKInkingTool(.pencil, color: col, width: w * 1.6)
+        case .brush: return PKInkingTool(.watercolor, color: col, width: w * 3)
+        case .highlighter: return PKInkingTool(.marker, color: col.withAlphaComponent(0.6), width: w)
+        case .eraser: return c.eraserMode == .stroke ? PKEraserTool(.vector) : PKEraserTool(.bitmap, width: w)
+        case .laser: return nil
         }
     }
 
@@ -326,6 +331,15 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let p = g.location(in: self)
         let pp = CGPoint(x: p.x / k, y: p.y / k)
         if let idx = s.index(of: pageId) { s.setCurrent(idx) }
+        // نافذة الكتابة المكبّرة مفتوحة: النقر ينقل منطقتها إلى هنا
+        if let zb = s.zoomBox, let idx = s.index(of: pageId) {
+            var b = zb
+            b.page = idx
+            b.x = min(max(0, pp.x - b.w / 2), max(0, pageSize.width - b.w))
+            b.y = min(max(0, pp.y - b.h / 2), max(0, pageSize.height - b.h))
+            s.zoomBox = b
+            return
+        }
         if c.textActive {
             let box = TextBox(id: UUID().uuidString, page: pageId, x: pp.x, y: pp.y, w: pageSize.width * 0.4, text: "",
                               size: max(12, pageSize.width * 0.024))

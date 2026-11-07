@@ -72,6 +72,12 @@ private struct ReaderContent: View {
                 }
                 ZStack {
                     PDFReaderView(session: s)
+                    if !s.summaryOpen && !s.pageMenuOpen {
+                        PageScrubber(session: s).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    }
+                    if !s.drawerOpen && app.toolVisible("readtimer") {
+                        ReaderTimerBadge(docId: s.id).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    }
                     // الأدراج
                     HStack(spacing: 0) {
                         if s.drawerOpen { PagesDrawer(session: s).transition(.move(edge: .leading)) }
@@ -84,6 +90,7 @@ private struct ReaderContent: View {
                     .animation(Motion.enter, value: s.pageMenuOpen)
                     if let mode = s.trayMode { SideTray(session: s, mode: mode) }
                 }
+                if s.zoomBox != nil && !app.focusMode { ZoomPanel(session: s) }
             }
             if app.focusMode {
                 HStack(spacing: 4) {
@@ -299,7 +306,7 @@ private struct ReaderTopBar: View {
                     }
     }
     @ViewBuilder private var insertGroupA: some View {
-                    if ["image", "stickers", "text", "sticky", "addpage", "ocr", "search", "export"].contains(where: v) { ToolbarSep() }
+                    if ["image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export"].contains(where: v) { ToolbarSep() }
                     if v("image") {
                         TBtn(selected: s.trayMode == "photos", action: { s.trayMode = s.trayMode == "photos" ? nil : "photos"; s.summaryOpen = false }) {
                             PhIcon("ph_image", tintFor(s.trayMode == "photos"))
@@ -327,6 +334,15 @@ private struct ReaderTopBar: View {
                                 app.message(L("اختر لونًا ثم انقر على الصفحة", "Pick a color and tap the page"))
                             }
                         }) { PhIcon("ph_note", tintFor(app.stickyActive)) }
+                    }
+                    if v("zoomwin") {
+                        TBtn(selected: s.zoomBox != nil, action: {
+                            if s.zoomBox != nil { s.zoomBox = nil } else {
+                                let size = s.pageSize(s.currentPage)
+                                let w = size.width * 0.4
+                                s.zoomBox = ZoomBox(page: s.currentPage, x: size.width * (I18n.english ? 0.04 : 0.56), y: size.width * 0.12, w: w, h: w * 0.3)
+                            }
+                        }) { PhIcon("ph_zoom_write", tintFor(s.zoomBox != nil)) }
                     }
     }
     @ViewBuilder private var insertGroupB: some View {

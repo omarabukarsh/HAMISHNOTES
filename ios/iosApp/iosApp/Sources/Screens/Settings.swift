@@ -564,7 +564,9 @@ struct ToolbarCustomizeSheet: View {
         ("zoom", "ph_zoom_in", L("التكبير", "Zoom")),
         ("fit", "ph_fit", L("ملاءمة الصفحة", "Fit page")),
         ("night", "ph_moon", L("القراءة الليلية", "Night reading")),
-        ("focus", "ph_eye", L("وضع التركيز", "Focus mode"))
+        ("focus", "ph_eye", L("وضع التركيز", "Focus mode")),
+        ("zoomwin", "ph_zoom_write", L("نافذة الكتابة المكبّرة", "Zoom writing window")),
+        ("readtimer", "ph_timer", L("عداد وقت القراءة", "Reading time counter"))
     ] }
 
     var body: some View {

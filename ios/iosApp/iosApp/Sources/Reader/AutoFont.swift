@@ -51,6 +51,116 @@ enum HandwritingReader {
 /// مكان النص المتحول وحجمه ليأخذ عرض الكتابة اليدوية تقريبًا ويجلس على سطرها.
 struct TextFit { let x: CGFloat, y: CGFloat, w: CGFloat, size: CGFloat }
 
+// ---------------------------------------------------------------- الحذف والإضافة بالقلم
+
+extension AutoFont {
+    private enum Gesture { case scribble, strike, caret }
+
+    private static func classify(_ p: [CGPoint], size: CGFloat) -> Gesture? {
+        guard p.count >= 3 else { return nil }
+        let xs = p.map { $0.x }, ys = p.map { $0.y }
+        let l = xs.min()!, r = xs.max()!, t = ys.min()!, b = ys.max()!
+        let w = r - l, h = b - t
+        var len: CGFloat = 0, rev = 0, lastSign = 0, acc: CGFloat = 0
+        for i in 1..<p.count {
+            let dx = p[i].x - p[i - 1].x, dy = p[i].y - p[i - 1].y
+            len += hypot(dx, dy)
+            acc += dx
+            if abs(acc) > size * 0.12 {
+                let sg = acc > 0 ? 1 : -1
+                if lastSign != 0 && sg != lastSign { rev += 1 }
+                lastSign = sg
+                acc = 0
+            }
+        }
+        if w > size * 0.4 && len > w * 2.8 && rev >= 3 && h < size * 2 { return .scribble }
+        if h < size * 0.45 && w > size * 0.6 && len < w * 1.25 { return .strike }
+        guard let apex = p.min(by: { $0.y < $1.y }) else { return nil }
+        if w < size * 1.5 && w > size * 0.15 && h > size * 0.25 && h < size * 1.5 &&
+            apex.x > l + w * 0.2 && apex.x < r - w * 0.2 &&
+            p.first!.y - t > h * 0.6 && p.last!.y - t > h * 0.6 && len < (w + h) * 2.6 { return .caret }
+        return nil
+    }
+
+    /// تخطيط نص المربع بنقاط الصفحة (نفس ما يرسمه المربع على الصفحة).
+    private static func layout(_ b: TextBox) -> (NSLayoutManager, NSTextContainer, CGFloat) {
+        let font = FontStore.shared.uiFont(b.font, size: b.size) ?? Fonts.ui(b.size)
+        let storage = NSTextStorage(string: b.text, attributes: [.font: font])
+        let lm = NSLayoutManager()
+        let tc = NSTextContainer(size: CGSize(width: b.w, height: .greatestFiniteMagnitude))
+        tc.lineFragmentPadding = 0
+        lm.addTextContainer(tc)
+        storage.addLayoutManager(lm)
+        lm.ensureLayout(for: tc)
+        return (lm, tc, lm.usedRect(for: tc).height)
+    }
+
+    private static func offset(_ lm: NSLayoutManager, _ tc: NSTextContainer, _ p: CGPoint, _ n: Int) -> Int {
+        var f: CGFloat = 0
+        let i = lm.characterIndex(for: p, in: tc, fractionOfDistanceBetweenInsertionPoints: &f)
+        return min(n, f > 0.5 ? i + 1 : i)
+    }
+
+    /// خط القلم فوق نص متحوّل: شخبطة أو خط فوق كلمة = حذفها، و∧ بين كلمتين = مكان لإضافة.
+    /// true = الخط إشارة نُفذت (لا يُحفظ كحبر).
+    func gesture(_ s: DocSession, pageId pid: String, stroke: PKStroke) -> Bool {
+        guard stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed else { return false }
+        let boxes = s.data.boxes.filter { $0.page == pid && $0.ink != nil && $0.linkDoc == nil }
+        guard !boxes.isEmpty else { return false }
+        let p = stroke.path.interpolatedPoints(by: .distance(1.5)).map { $0.location.applying(stroke.transform) }
+        guard p.count >= 3 else { return false }
+        let xs = p.map { $0.x }, ys = p.map { $0.y }
+        let l = xs.min()!, r = xs.max()!, t = ys.min()!, b = ys.max()!
+        let cx = (l + r) / 2, cy = (t + b) / 2
+        if let it = insertTarget, it.docId == s.id, it.pageId == pid, it.area.contains(CGPoint(x: cx, y: cy)) { return false }
+        let pw = s.pageSize(s.index(of: pid) ?? 0).width
+        for tb in boxes.reversed() {
+            let (lm, tc, bh) = Self.layout(tb)
+            let lineH = tb.size * 1.25
+            if cx < tb.x - pw * 0.01 || cx > tb.x + tb.w + pw * 0.01 || cy < tb.y - lineH * 0.3 || cy > tb.y + bh + lineH * 0.7 { continue }
+            guard let kind = Self.classify(p, size: tb.size) else { return false }
+            let chars = Array(tb.text)
+            switch kind {
+            case .scribble, .strike:
+                if cy > tb.y + bh { return false }
+                if kind == .strike {
+                    let gi = lm.glyphIndex(for: CGPoint(x: cx - tb.x, y: cy - tb.y), in: tc)
+                    let line = lm.lineFragmentRect(forGlyphAt: gi, effectiveRange: nil)
+                    let top = tb.y + line.minY, bot = tb.y + line.maxY
+                    if cy < top + (bot - top) * 0.2 || cy > top + (bot - top) * 0.8 { return false }
+                }
+                let a = Self.offset(lm, tc, CGPoint(x: l + tb.size * 0.1 - tb.x, y: cy - tb.y), chars.count)
+                let z = Self.offset(lm, tc, CGPoint(x: r - tb.size * 0.1 - tb.x, y: cy - tb.y), chars.count)
+                var st = min(a, z), en = max(a, z)
+                if st >= chars.count { return false }
+                while st > 0 && !chars[st - 1].isWhitespace { st -= 1 }
+                en = max(en, st + 1)
+                while en < chars.count && !chars[en - 1].isWhitespace && !chars[en].isWhitespace { en += 1 }
+                en = min(en, chars.count)
+                if en <= st { return false }
+                let nt = (String(chars[0..<st]) + String(chars[en...])).replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
+                s.edit { d in
+                    if nt.isEmpty { d.boxes.removeAll { $0.id == tb.id } }
+                    else if let i = d.boxes.firstIndex(where: { $0.id == tb.id }) { d.boxes[i].text = nt }
+                }
+                return true
+            case .caret:
+                guard let apex = p.min(by: { $0.y < $1.y }) else { return false }
+                let o = Self.offset(lm, tc, CGPoint(x: apex.x - tb.x, y: t - lineH * 0.35 - tb.y), chars.count)
+                var ws = o, we = o
+                while ws > 0 && !chars[ws - 1].isWhitespace { ws -= 1 }
+                while we < chars.count && !chars[we].isWhitespace { we += 1 }
+                let pos = (o - ws < we - o) ? ws : we
+                insertTarget = InsertTarget(docId: s.id, pageId: pid, boxId: tb.id, offset: min(max(0, pos), chars.count),
+                                            area: CGRect(x: apex.x - pw * 0.18, y: b - lineH * 0.2, width: pw * 0.36, height: lineH * 2.6))
+                AppController.shared.message(L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box"))
+                return true
+            }
+        }
+        return false
+    }
+}
+
 extension DocSession {
     func fitText(page: Int, strokes: [PKStroke], lines: [String], font: String, snap: Bool) -> TextFit {
         let bb = strokes.reduce(CGRect.null) { $0.union($1.renderBounds) }
@@ -143,6 +253,11 @@ final class AutoFont: ObservableObject {
     @Published private(set) var preview: (Int, String)? = nil
     @Published private(set) var lastBox: (String, String)? = nil      // (المستند، المربع)
 
+    /// مكان إضافة كلمة رُسم بعلامة ∧: الكتابة التالية في المنطقة تُدرج في النص هنا.
+    struct InsertTarget { let docId: String; let pageId: String; let boxId: String; let offset: Int; let area: CGRect }
+    @Published var insertTarget: InsertTarget? = nil
+    func cancelInsert() { insertTarget = nil }
+
     private weak var session: DocSession?
     private var pageId = ""
     private var pending: [PKStroke] = []
@@ -173,13 +288,16 @@ final class AutoFont: ObservableObject {
 
     /// خط قلم جديد حُفظ على الصفحة (بنقاط الصفحة).
     func onStroke(_ s: DocSession, pageId pid: String, stroke: PKStroke) {
-        guard on, Premium.shared.active, stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed else { return }
+        let ins = insertTarget.flatMap { $0.docId == s.id && $0.pageId == pid ? $0 : nil }
+        guard ins != nil || (on && Premium.shared.active), stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed else { return }
         if !pending.isEmpty && (s !== session || pid != pageId || startsNewLine(stroke, page: s.index(of: pid) ?? 0, s)) { flush() }
         session = s
         pageId = pid
         pending.append(stroke)
         pendingCount = pending.count
-        if delayMs > 0 { schedule(delayMs) }
+        // الإضافة بعلامة ∧ تتحول بعد توقف قصير حتى في الوضع اليدوي
+        let d = ins != nil && delayMs == 0 ? 1500 : delayMs
+        if d > 0 { schedule(d) }
     }
 
     private func schedule(_ ms: Int) {
@@ -218,6 +336,7 @@ final class AutoFont: ObservableObject {
         pendingCount = 0
         if let p = preview { cancelledId = p.0 }
         preview = nil
+        insertTarget = nil
     }
 
     func cancelPreview() {
@@ -243,6 +362,24 @@ final class AutoFont: ObservableObject {
         let bb = alive.reduce(CGRect.null) { $0.union($1.renderBounds) }
         let color = alive.first.map { $0.ink.color.argb } ?? 0xFF1A2230
         let lineTexts = text.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+
+        // 1) إضافة بعلامة ∧: تُدرج الكلمة في مكانها داخل النص
+        if let ins = insertTarget, ins.docId == s.id, ins.pageId == pid,
+           ins.area.contains(CGPoint(x: bb.midX, y: bb.midY)), var tb = s.data.boxes.first(where: { $0.id == ins.boxId }) {
+            insertTarget = nil
+            let chars = Array(tb.text)
+            let o = min(max(0, ins.offset), chars.count)
+            let head = String(chars[0..<o]).trimmingCharacters(in: .whitespaces)
+            let tail = String(chars[o...]).trimmingCharacters(in: .whitespaces)
+            tb.text = [head, lineTexts.joined(separator: " "), tail].filter { !$0.isEmpty }.joined(separator: " ")
+            var ink = (tb.ink.flatMap { try? PKDrawing(data: $0) }) ?? PKDrawing()
+            ink.strokes.append(contentsOf: alive)
+            tb.ink = ink.dataRepresentation()
+            s.edit { d in d.boxes.removeAll { $0.id == tb.id } }
+            s.inkToTextBox(pageId: pid, strokes: alive, box: tb)
+            FontStore.shared.markUsed(tb.font)
+            return
+        }
 
         // فقرة واحدة: السطر الجديد تحت آخر مربع متحول مباشرة يُضاف إليه
         if joinLines, let la = lastAuto, la.0 == s.id, la.1 == pid,
@@ -298,7 +435,8 @@ struct AutoFontChip: View {
     var body: some View {
         let last = af.lastBox.flatMap { $0.0 == session.id ? $0 : nil }
         let manual = af.on && af.delayMs == 0 && af.pendingCount > 0
-        if af.preview != nil || last != nil || manual {
+        let ins = af.insertTarget.flatMap { $0.docId == session.id ? $0 : nil }
+        if af.preview != nil || last != nil || manual || ins != nil {
             HStack(spacing: 6) {
                 if let pv = af.preview {
                     ProgressView().scaleEffect(0.7).tint(Palette.navy)
@@ -306,6 +444,9 @@ struct AutoFontChip: View {
                     Button { af.cancelPreview() } label: {
                         Text("✕ " + L("إبقاء بخط يدي", "Keep handwriting")).font(Fonts.sans(13)).foregroundColor(Palette.danger)
                     }
+                } else if ins != nil {
+                    Text("∧ " + L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box")).font(Fonts.sans(13)).foregroundColor(Palette.navy)
+                    Button { af.cancelInsert() } label: { Text(L("إلغاء", "Cancel")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary) }
                 } else if manual {
                     Button { af.flush() } label: {
                         Text("✓ " + L("حوّل إلى \(af.font)", "Convert to \(af.font)")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)

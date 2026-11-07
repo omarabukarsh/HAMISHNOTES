@@ -92,7 +92,7 @@ struct SettingsView: View {
         }
         .background(Palette.background.ignoresSafeArea())
         .sheet(item: $doc) { LegalSheet(doc: $0) }
-        .sheet(isPresented: $toolbarOpen) { ToolbarCustomizeSheet().environmentObject(app).environment(\.layoutDirection, .leftToRight) }
+        .bigSheet(isPresented: $toolbarOpen, width: 0.92, height: 0.9) { ToolbarCustomizeSheet().environmentObject(app).environment(\.layoutDirection, .leftToRight) }
         .sheet(isPresented: $templateOpen) { TemplatePickerSheet(mode: .defaultTemplate) { _, _, _ in app.objectWillChange.send() } }
     }
 
@@ -563,89 +563,6 @@ private struct ThemeCard: View {
     }
 }
 
-// ---------------------------------------------------------------- تخصيص شريط الأدوات
-
-struct ToolbarCustomizeSheet: View {
-    @EnvironmentObject var app: AppController
-
-    private var tools: [(String, String, String)] { [
-        ("nav", "ph_caret_down", L("التنقل بين الصفحات", "Page navigation")),
-        ("bookmark", "ph_bookmark", L("العلامة المرجعية", "Bookmark")),
-        ("timer", "ph_timer", L("مؤقت الدراسة", "Study timer")),
-        ("snap", "ph_snap", L("التقاط النص", "Text snap")),
-        ("lasso", "ph_lasso", L("التحديد الحر", "Lasso")),
-        ("shapetool", "ph_shapes", L("الأشكال", "Shapes")),
-        ("autofont", "ph_text_scan", L("Aa تحويل الكتابة تلقائياً", "Aa Auto-convert handwriting")),
-        ("image", "ph_image", L("الصور", "Photos")),
-        ("stickers", "ph_sticker", L("الملصقات", "Stickers")),
-        ("text", "ph_text", L("مربع نص", "Text box")),
-        ("sticky", "ph_note", L("ملاحظة لاصقة", "Sticky note")),
-        ("link", "ph_link", L("رابط", "Link")),
-        ("split", "ph_split", L("مستندان جنبًا إلى جنب", "Split view")),
-        ("record", "ph_mic", L("تسجيل المحاضرة", "Lecture recording")),
-        ("addpage", "ph_add_page", L("إضافة صفحة", "Add page")),
-        ("ocr", "ph_scan", L("قراءة النص", "Read text")),
-        ("search", "ph_search", L("البحث", "Search")),
-        ("export", "ph_export", L("المشاركة والحفظ", "Share and save")),
-        ("undo", "ph_undo", L("تراجع وإعادة", "Undo and redo")),
-        ("zoom", "ph_zoom_in", L("التكبير", "Zoom")),
-        ("fit", "ph_fit", L("ملاءمة الصفحة", "Fit page")),
-        ("night", "ph_moon", L("القراءة الليلية", "Night reading")),
-        ("focus", "ph_eye", L("وضع التركيز", "Focus mode")),
-        ("zoomwin", "ph_zoom_write", L("نافذة الكتابة المكبّرة", "Zoom writing window")),
-        ("readtimer", "ph_timer", L("عداد وقت القراءة", "Reading time counter"))
-    ] }
-
-    var body: some View {
-        SheetScaffold(title: L("تخصيص شريط الأدوات", "Toolbar customization")) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(L("الشكل", "Style")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.textSecondary)
-                    HStack(spacing: 12) {
-                        style(.penBar, L("شريط الأقلام", "Pen bar"), L("زر قلم واحد يفتح شريطًا بكل الأقلام والألوان", "One pen button opens a bar with every pen and color"))
-                        style(.classic, L("كلاسيكي", "Classic"), L("القلم والهايلايتر زرّان، ونقرة ثانية للإعدادات", "Pen and highlighter are two buttons; tap again for settings"))
-                    }
-                    Text(L("الأدوات الظاهرة", "Visible tools")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.textSecondary)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 10)], spacing: 10) {
-                        ForEach(tools, id: \.0) { t in
-                            let on = app.toolVisible(t.0)
-                            Button { app.setToolVisible(t.0, !on) } label: {
-                                HStack(spacing: 10) {
-                                    PhIcon(t.1, on ? Palette.navy : Palette.textSecondary, 20)
-                                    Text(t.2).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary).lineLimit(1)
-                                    Spacer()
-                                    PhIcon(on ? "ph_check_circle" : "ph_close", on ? Palette.navy : Palette.textSecondary.opacity(0.5), 18)
-                                }
-                                .padding(12)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(on ? Palette.navySoft : Color.white))
-                                .roundedBorder(Palette.divider, radius: 12)
-                            }
-                        }
-                    }
-                    HStack {
-                        Spacer()
-                        NavyButton(label: L("استعادة الافتراضي", "Restore default"), filled: false) { app.resetToolbar() }
-                    }
-                }
-                .padding(.horizontal, 22).padding(.bottom, 22)
-            }
-        }
-    }
-
-    private func style(_ s: ToolbarStyle, _ t: String, _ d: String) -> some View {
-        let sel = app.toolbarStyle == s
-        return Button { app.toolbarStyle = s } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(t).font(Fonts.sans(15, .bold)).foregroundColor(sel ? Palette.navy : Palette.textPrimary)
-                Text(d).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).multilineTextAlignment(.leading)
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
-            .roundedBorder(sel ? Palette.gold : Palette.divider, radius: 14, width: sel ? 2.5 : 1)
-        }
-    }
-}
 
 /// حذف الحساب نهائيًا (نفس DeleteAccountDialog في أندرويد).
 private struct DeleteAccountSheet: View {

@@ -55,6 +55,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private let lasso = LassoView()
     private let searchLayer = CAShapeLayer()
     private let searchCurrent = CAShapeLayer()
+    private let insertLayer = CAShapeLayer()
     private var selectionFrame: ImageSelectionView?
     private var applying = false
     private var lastStrokeCount = 0
@@ -102,6 +103,11 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         searchCurrent.fillColor = UIColor(argb: 0xFFFFAB40).withAlphaComponent(0.55).cgColor
         marksView.layer.addSublayer(searchLayer)
         marksView.layer.addSublayer(searchCurrent)
+        insertLayer.fillColor = UIColor(Palette.gold).withAlphaComponent(0.08).cgColor
+        insertLayer.strokeColor = UIColor(Palette.goldDeep).cgColor
+        insertLayer.lineWidth = 1.5
+        insertLayer.lineDashPattern = [6, 5]
+        marksView.layer.addSublayer(insertLayer)
         lasso.isHidden = true
         lasso.session = session
         lasso.pageId = pageId
@@ -155,6 +161,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         searchLayer.frame = marksView.bounds
         searchCurrent.frame = marksView.bounds
         if !lastHits.isEmpty { showSearch(lastHits, current: lastHitIndex) }
+        showInsert()
     }
 
     private var lastHits: [SearchHit] = []
@@ -173,6 +180,17 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
         searchLayer.path = all.cgPath
         searchCurrent.path = cur.cgPath
+    }
+
+    /// مربع الإضافة المنقط (بعد ∧).
+    func showInsert() {
+        insertLayer.frame = marksView.bounds
+        if let it = AutoFont.shared.insertTarget, it.pageId == pageId, it.docId == session?.id {
+            let r = it.area
+            insertLayer.path = UIBezierPath(roundedRect: CGRect(x: r.minX * k, y: r.minY * k, width: r.width * k, height: r.height * k), cornerRadius: 10).cgPath
+        } else {
+            insertLayer.path = nil
+        }
     }
 
     func refreshLasso() {
@@ -279,6 +297,17 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         var converted = false
         if added, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = strokes.last {
             converted = restyle(last)
+            // شخبطة أو خط فوق كلمة متحوّلة = حذفها، و∧ = مكان إضافة: الخط لا يُحفظ
+            if !converted, let pl = pageDrawing.strokes.last, AutoFont.shared.gesture(s, pageId: pageId, stroke: pl) {
+                var d = canvas.drawing
+                d.strokes.removeLast()
+                applying = true
+                canvas.drawing = d
+                applying = false
+                lastStrokeCount = d.strokes.count
+                hold.consume()
+                return
+            }
         }
         lastStrokeCount = canvas.drawing.strokes.count
         let pd = pageDrawing

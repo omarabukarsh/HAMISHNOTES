@@ -378,15 +378,19 @@ final class MarksView: UIView {
         guard let c = UIGraphicsGetCurrentContext() else { return }
         c.setBlendMode(.multiply)
         for m in marks {
-            c.setFillColor(UIColor(argb: m.color).withAlphaComponent(m.level > 1 ? 0.62 : 0.42).cgColor)
+            c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
             for r in m.rects {
-                c.addPath(UIBezierPath(roundedRect: r.scaled(k), cornerRadius: k * 0.003).cgPath)
+                let rr = r.scaled(k)
+                c.addPath(UIBezierPath(roundedRect: rr, cornerRadius: rr.height * 0.32).cgPath)
                 c.fillPath()
             }
-            // الأجزاء المظللة مرة ثانية: تظليل أقوى
-            if m.level < 2 && !m.strongRects.isEmpty {
-                c.setFillColor(UIColor(argb: m.color).withAlphaComponent(0.4).cgColor)
-                for r in m.strongRects { c.fill(r.scaled(k)) }
+            if m.level < 2 {
+                c.setFillColor(markColor(m.color, strong: true).cgColor)
+                for r in m.strongRects {
+                    let rr = r.scaled(k)
+                    c.addPath(UIBezierPath(roundedRect: rr, cornerRadius: rr.height * 0.32).cgPath)
+                    c.fillPath()
+                }
             }
         }
     }

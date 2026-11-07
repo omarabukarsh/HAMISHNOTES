@@ -46,7 +46,7 @@ enum Exporter {
         c.saveGState()
         c.setBlendMode(.multiply)
         for m in data.marks where m.page == pid && !m.free {
-            c.setFillColor(UIColor(argb: m.color).withAlphaComponent(m.level > 1 ? 0.62 : 0.42).cgColor)
+            c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
             for r in m.rects { c.fill(r.scaled(size.width)) }
         }
         c.restoreGState()

@@ -39,7 +39,7 @@ struct PageThumb: View {
             let c = ctx.cgContext
             c.setBlendMode(.multiply)
             for m in marks {
-                c.setFillColor(UIColor(argb: m.color).withAlphaComponent(0.42).cgColor)
+                c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
                 for r in m.rects { c.fill(r.scaled(tw)) }
             }
             c.setBlendMode(.normal)
@@ -53,64 +53,106 @@ struct PageThumb: View {
 
 // ---------------------------------------------------------------- درج الصفحات
 
+/// درج الصفحات (نفس أندرويد): رأس فيه زر التحديد، وأربعة تبويبات (الصفحات، الفهرس، العلامات، التسجيلات)،
+/// وقائمة خيارات؛ ثم شبكة صور الصفحات برقم الصفحة وزر «⋯» وعلامة في الزاوية، وبطاقة «إضافة صفحة».
 struct PagesDrawer: View {
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
     @ObservedObject var audio = AudioNotes.shared
     @State private var tab = 0
-    @State private var cols = 1
+    @State private var cols = 2
+    @State private var selecting = false
+    @State private var picked: Set<Int> = []
     @State private var confirmDelete: Int? = nil
+    @State private var confirmDeleteMany = false
+    @State private var addPage = false
     @State private var outlineEdit: OutlineEntry? = nil
 
     var body: some View {
         let s = session
         VStack(spacing: 0) {
-            let tabs: [(String, String)] = [("ph_pages", L("الصفحات", "Pages")), ("ph_list", L("الفهرس", "Outline")),
-                                            ("ph_bookmark", L("العلامات", "Bookmarks")), ("ph_waveform", L("التسجيلات", "Recordings"))]
-            HStack(spacing: 4) {
-                ForEach(0..<tabs.count, id: \.self) { k in
-                    Button { tab = k } label: {
-                        PhIcon(tab == k ? filledIcon(tabs[k].0) : tabs[k].0, tab == k ? .white : Palette.textSecondary, 18, tabs[k].1)
-                            .frame(width: 38, height: 32)
-                            .background(Capsule().fill(tab == k ? Palette.navy : Color.clear))
+            HStack(spacing: 0) {
+                Button { if tab == 0 { selecting.toggle(); picked.removeAll() } } label: {
+                    PhIcon("ph_check_circle", selecting ? Palette.navy : Palette.textSecondary, 22)
+                        .frame(width: 38, height: 38).background(Circle().fill(selecting ? Palette.navySoft : Color.clear))
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 2) {
+                    ForEach(Array(["ph_grid", "ph_list", "ph_bookmark", "ph_waveform"].enumerated()), id: \.offset) { k, icon in
+                        Button {
+                            tab = k
+                            if k != 0 { selecting = false; picked.removeAll() }
+                        } label: {
+                            PhIcon(icon, tab == k ? Palette.navy : Palette.textSecondary, 20)
+                                .frame(width: 46, height: 34)
+                                .background(RoundedRectangle(cornerRadius: 9).fill(tab == k ? Color.white : Color.clear))
+                        }
                     }
                 }
+                .padding(3)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Palette.textSecondary.opacity(0.12)))
                 Spacer(minLength: 0)
                 Menu {
                     Button(L("صور كبيرة (عمود واحد)", "Large thumbnails (1 column)")) { cols = 1 }
                     Button(L("صور متوسطة (عمودان)", "Medium thumbnails (2 columns)")) { cols = 2 }
                     Button(L("صور صغيرة (3 أعمدة)", "Small thumbnails (3 columns)")) { cols = 3 }
-                    Button(L("إضافة صفحة في النهاية", "Add page at the end")) {
-                        let c = Templates.defaultChoice()
-                        s.addBlankPage(after: s.pageCount - 1, kind: c.kind, color: c.color)
-                    }
+                    Button(L("إضافة صفحة في النهاية", "Add page at the end")) { addPage = true }
                     Button(L("إغلاق الشريط", "Close sidebar")) { s.drawerOpen = false }
-                } label: { PhIcon("ph_more", Palette.textSecondary, 20).frame(width: 32, height: 32) }
+                } label: { PhIcon("ph_more", Palette.textSecondary, 22).frame(width: 38, height: 38) }
             }
-            .padding(.horizontal, 12).padding(.top, 10)
-            Text(tabs[tab].1).font(Fonts.sans(15, .bold)).foregroundColor(Palette.navy)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 6)
-            Divider()
-            switch tab {
-            case 0: pagesGrid((0..<s.pageCount).map { $0 })
-            case 1: outline
-            case 2:
-                let marks = s.data.pages.indices.filter { s.data.bookmarks.contains(s.data.pages[$0].id) }
-                if marks.isEmpty {
-                    empty(L("لا توجد علامات بعد", "No bookmarks yet"),
-                          L("ضع علامة على صفحة من زر العلامة في الشريط أو من قائمة الصفحة لتجدها هنا بسرعة.", "Bookmark a page from the toolbar or the page menu to find it here quickly."))
-                } else { pagesGrid(marks) }
-            default: recordings
+            .padding(8)
+            Rectangle().fill(Palette.divider).frame(height: 1)
+            ZStack(alignment: .bottom) {
+                switch tab {
+                case 1: outline
+                case 3: recordings
+                default:
+                    let shown = tab == 2 ? s.data.pages.indices.filter { s.data.bookmarks.contains(s.data.pages[$0].id) } : Array(0..<s.pageCount)
+                    if tab == 2 && shown.isEmpty {
+                        EmptyPanel(icon: "ph_bookmark", title: L("لا توجد علامات بعد", "No bookmarks yet"),
+                                   message: L("ضع علامة على صفحة من زاوية صورتها أو من قائمة الصفحة لتجدها هنا بسرعة.", "Mark a page from its thumbnail corner or the page menu to find it here quickly."))
+                    } else {
+                        grid(shown)
+                    }
+                }
+                if selecting {
+                    HStack(spacing: 4) {
+                        Text(L("\(picked.count) محددة", "\(picked.count) selected")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.horizontal, 8)
+                        Button {
+                            let all = picked.allSatisfy { s.isBookmarked($0) }
+                            picked.forEach { p in if s.isBookmarked(p) == all { s.toggleBookmark(p) } }
+                        } label: { PhIcon("ph_bookmark", Palette.navy, 20).frame(width: 40, height: 40) }
+                        .disabled(picked.isEmpty)
+                        Button { confirmDeleteMany = true } label: { PhIcon("ph_trash", Palette.danger, 20).frame(width: 40, height: 40) }
+                            .disabled(picked.isEmpty || picked.count >= s.pageCount)
+                        Button(L("تم", "Done")) { selecting = false; picked.removeAll() }.font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 10)
+                    }
+                    .padding(.horizontal, 6)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.15), radius: 6, y: 2))
+                    .padding(12)
+                }
             }
         }
-        .frame(width: cols == 1 ? 240 : cols == 2 ? 310 : 370)
+        .frame(width: 300)
         .frame(maxHeight: .infinity)
-        .background(Palette.drawerBg)
-        .overlay(Rectangle().fill(Palette.divider).frame(width: 1), alignment: .trailing)
+        .background(Palette.drawerBg.shadow(color: .black.opacity(0.16), radius: 10))
         .alert(L("حذف الصفحة \((confirmDelete ?? 0) + 1)؟", "Delete page \((confirmDelete ?? 0) + 1)?"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
             Button(L("حذف", "Delete"), role: .destructive) { if let i = confirmDelete { s.deletePage(i) }; confirmDelete = nil }
             Button(L("إلغاء", "Cancel"), role: .cancel) { confirmDelete = nil }
-        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها. يمكنك التراجع.", "The page and everything written on it will be deleted. You can undo.")) }
+        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) }
+        .alert(L("حذف \(picked.count) صفحة؟", "Delete \(picked.count) pages?"), isPresented: $confirmDeleteMany) {
+            Button(L("حذف", "Delete"), role: .destructive) {
+                for i in picked.sorted(by: >) { s.deletePage(i) }
+                picked.removeAll()
+                selecting = false
+            }
+            Button(L("إلغاء", "Cancel"), role: .cancel) {}
+        } message: { Text(L("ستُحذف الصفحات المحددة وكل ما كتبته عليها.", "The selected pages and everything written on them will be deleted.")) }
+        .sheet(isPresented: $addPage) {
+            TemplatePickerSheet(mode: .addPage) { choice, _, _ in
+                s.addBlankPage(after: s.pageCount - 1, kind: choice.kind, color: choice.color, size: choice.points)
+            }
+        }
         .sheet(item: $outlineEdit) { e in
             NameSheet(title: L("إعادة تسمية العنوان", "Rename heading"), initial: e.title) { t in
                 s.edit { d in if let i = d.outline.firstIndex(where: { $0.id == e.id }) { d.outline[i].title = t } }
@@ -118,60 +160,74 @@ struct PagesDrawer: View {
         }
     }
 
-    private func pagesGrid(_ indices: [Int]) -> some View {
+    private func grid(_ indices: [Int]) -> some View {
         let s = session
-        let w: CGFloat = cols == 1 ? 150 : cols == 2 ? 118 : 94
+        let w = (300 - 28 - CGFloat(cols - 1) * 14) / CGFloat(cols)
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: cols), spacing: 14) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(w), spacing: 14), count: cols), spacing: 14) {
                     ForEach(indices, id: \.self) { i in
                         let cur = i == s.currentPage
-                        VStack(spacing: 4) {
+                        let isPicked = picked.contains(i)
+                        VStack(spacing: 2) {
                             ZStack(alignment: .topTrailing) {
                                 PageThumb(session: s, index: i, width: w)
-                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(cur ? Palette.gold : Color.clear, lineWidth: 3))
-                                if s.isBookmarked(i) { PhIcon("ph_bookmark_fill", Palette.goldDeep, 18).padding(4) }
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(selecting && isPicked ? Palette.navy : (!selecting && cur ? Color(hex: 0xFF3B82F6) : Palette.divider),
+                                                                                      lineWidth: (selecting && isPicked) || (!selecting && cur) ? 3 : 1))
+                                Button { if !selecting { s.toggleBookmark(i) } } label: {
+                                    PhIcon(s.isBookmarked(i) ? "ph_bookmark_fill" : "ph_bookmark", s.isBookmarked(i) ? Palette.gold : Palette.textSecondary.opacity(0.55), 18)
+                                        .frame(width: 32, height: 32)
+                                }
+                                if selecting {
+                                    ZStack {
+                                        Circle().fill(isPicked ? Palette.navy : Color.white)
+                                        Circle().stroke(isPicked ? Palette.navy : Palette.textSecondary, lineWidth: 1.5)
+                                        if isPicked { PhIcon("ph_check", .white, 15) }
+                                    }
+                                    .frame(width: 24, height: 24).padding(6)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                                }
                             }
-                            Text("\(i + 1)").font(Fonts.sans(13, cur ? .bold : .regular)).foregroundColor(cur ? Palette.navy : Palette.textSecondary)
+                            .onTapGesture {
+                                if selecting { if isPicked { picked.remove(i) } else { picked.insert(i) } } else { s.goTo(page: i) }
+                            }
+                            HStack {
+                                Text("\(i + 1)").font(Fonts.sans(13, cur ? .bold : .regular)).foregroundColor(cur ? Palette.navy : Palette.textSecondary).padding(.leading, 2)
+                                Spacer()
+                                if !selecting {
+                                    Menu { pageMenu(i) } label: { PhIcon("ph_more", Palette.textSecondary, 18).frame(width: 36, height: 28) }
+                                }
+                            }
                         }
                         .id(i)
-                        .onTapGesture { s.goTo(page: i) }
-                        .contextMenu { pageMenu(i) }
                     }
-                    if tab == 0 {
-                        Button {
-                            let c = Templates.defaultChoice()
-                            s.addBlankPage(after: s.pageCount - 1, kind: c.kind, color: c.color)
-                        } label: {
+                    if tab == 0 && !selecting {
+                        Button { addPage = true } label: {
                             VStack(spacing: 6) {
-                                PhIcon("ph_add_page", Palette.navy, 26)
-                                Text(L("إضافة صفحة", "Add page")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
+                                PhIcon("ph_plus", Palette.textPrimary, 26)
+                                Text(L("إضافة صفحة", "Add page")).font(Fonts.sans(14)).foregroundColor(Palette.textPrimary)
                             }
-                            .frame(width: w, height: w * 1.2)
-                            .background(RoundedRectangle(cornerRadius: 8).stroke(Palette.divider, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+                            .frame(width: w, height: w * 1.414)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Palette.textSecondary.opacity(0.10)))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.divider, lineWidth: 1))
                         }
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 80)
             }
-            .onAppear { proxy.scrollTo(s.currentPage, anchor: .center) }
+            .onAppear { proxy.scrollTo(max(0, s.currentPage - 2), anchor: .top) }
+            .onChange(of: s.currentPage) { p in withAnimation { proxy.scrollTo(max(0, p - 2), anchor: .top) } }
         }
     }
 
     @ViewBuilder private func pageMenu(_ i: Int) -> some View {
         let s = session
         let n = s.pageCount
-        Button { s.toggleBookmark(i) } label: { Text(s.isBookmarked(i) ? L("إزالة العلامة المرجعية", "Remove bookmark") : L("علامة مرجعية للصفحة", "Bookmark page")) }
         if i > 0 { Button(L("تحريك لأعلى", "Move up")) { s.movePage(i, to: i - 1) } }
         if i < n - 1 { Button(L("تحريك لأسفل", "Move down")) { s.movePage(i, to: i + 1) } }
         if i > 0 { Button(L("نقل إلى البداية", "Move to start")) { s.movePage(i, to: 0) } }
         if i < n - 1 { Button(L("نقل إلى النهاية", "Move to end")) { s.movePage(i, to: n - 1) } }
         Button(L("نسخ الصفحة", "Duplicate page")) { s.duplicatePage(i) }
-        Button(L("تدوير الصفحة", "Rotate page")) { s.rotatePage(i) }
-        Button(L("إضافة الصفحة إلى الفهرس", "Add page to outline")) {
-            s.edit { $0.outline.append(OutlineEntry(title: L("الصفحة \(i + 1)", "Page \(i + 1)"), level: 0, page: i)) }
-            tab = 1
-        }
         if n > 1 { Button(role: .destructive) { confirmDelete = i } label: { Text(L("حذف الصفحة", "Delete page")) } }
     }
 
@@ -180,38 +236,39 @@ struct PagesDrawer: View {
         let list = s.data.outline
         return Group {
             if list.isEmpty {
-                VStack(spacing: 12) {
-                    empty(L("لا توجد عناوين بعد", "No headings yet"), L("أضف عناوين لتنظيم مستندك والتنقل فيه بسرعة.", "Add headings to organize your document and move around quickly."))
-                    NavyButton(label: L("عنوان للصفحة \(s.currentPage + 1)", "Heading for page \(s.currentPage + 1)")) {
-                        s.edit { $0.outline.append(OutlineEntry(title: L("الصفحة \(s.currentPage + 1)", "Page \(s.currentPage + 1)"), level: 0, page: s.currentPage)) }
+                VStack(spacing: 0) {
+                    EmptyPanel(icon: "ph_list", title: L("لا توجد عناوين بعد", "No headings yet"),
+                               message: L("أضف عناوين لتنظيم مستندك والتنقل فيه بسرعة.", "Add headings to organize your document and move around quickly."))
+                    Button { s.edit { $0.outline.append(OutlineEntry(title: L("الصفحة \(s.currentPage + 1)", "Page \(s.currentPage + 1)"), level: 0, page: s.currentPage)) } } label: {
+                        Text("+ " + L("عنوان للصفحة \(s.currentPage + 1)", "Heading for page \(s.currentPage + 1)")).font(Fonts.sans(14)).foregroundColor(Palette.navy).padding(14)
                     }
                 }
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(list.enumerated()), id: \.element.id) { k, e in
-                            Button { s.goTo(page: e.page) } label: {
-                                HStack {
-                                    Text(e.title).font(Fonts.sans(e.level == 0 ? 14 : 13, e.level == 0 ? .bold : .regular))
-                                        .foregroundColor(Palette.textPrimary).lineLimit(2)
-                                    Spacer()
-                                    Text("\(e.page + 1)").font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-                                }
-                                .padding(.leading, CGFloat(e.level) * 14 + 10).padding(.trailing, 10).padding(.vertical, 8)
+                            let cur = e.page == s.currentPage
+                            HStack {
+                                Text(e.title).font(Fonts.sans(e.level == 0 ? 14 : 13, e.level == 0 || cur ? .bold : .regular))
+                                    .foregroundColor(cur ? Palette.navy : Palette.textPrimary).lineLimit(2)
+                                Spacer()
+                                if e.page >= 0 { Text("\(e.page + 1)").font(Fonts.sans(12)).foregroundColor(Palette.textSecondary) }
+                                Menu {
+                                    Button(L("إعادة تسمية", "Rename")) { outlineEdit = e }
+                                    if e.level < 3 { Button(L("عنوان فرعي (إزاحة للداخل)", "Make subheading (indent)")) { s.edit { $0.outline[k].level += 1 } } }
+                                    if e.level > 0 { Button(L("عنوان رئيسي (إزاحة للخارج)", "Promote (outdent)")) { s.edit { $0.outline[k].level -= 1 } } }
+                                    if k > 0 { Button(L("تحريك لأعلى", "Move up")) { s.edit { $0.outline.swapAt(k, k - 1) } } }
+                                    if k < list.count - 1 { Button(L("تحريك لأسفل", "Move down")) { s.edit { $0.outline.swapAt(k, k + 1) } } }
+                                    Button(role: .destructive) { s.edit { $0.outline.remove(at: k) } } label: { Text(L("حذف", "Delete")) }
+                                } label: { PhIcon("ph_more", Palette.textSecondary, 18).frame(width: 30, height: 30) }
                             }
-                            .contextMenu {
-                                Button(L("إعادة تسمية", "Rename")) { outlineEdit = e }
-                                if e.level < 3 { Button(L("عنوان فرعي (إزاحة للداخل)", "Make subheading (indent)")) { s.edit { $0.outline[k].level += 1 } } }
-                                if e.level > 0 { Button(L("عنوان رئيسي (إزاحة للخارج)", "Promote (outdent)")) { s.edit { $0.outline[k].level -= 1 } } }
-                                if k > 0 { Button(L("تحريك لأعلى", "Move up")) { s.edit { $0.outline.swapAt(k, k - 1) } } }
-                                if k < list.count - 1 { Button(L("تحريك لأسفل", "Move down")) { s.edit { $0.outline.swapAt(k, k + 1) } } }
-                                Button(role: .destructive) { s.edit { $0.outline.remove(at: k) } } label: { Text(L("حذف", "Delete")) }
-                            }
+                            .padding(.leading, CGFloat(e.level) * 16 + 14).padding(.trailing, 6).padding(.vertical, 6)
+                            .background(cur ? Palette.navySoft : Color.clear)
+                            .contentShape(Rectangle())
+                            .onTapGesture { s.goTo(page: e.page) }
                         }
-                        Button {
-                            s.edit { $0.outline.append(OutlineEntry(title: L("الصفحة \(s.currentPage + 1)", "Page \(s.currentPage + 1)"), level: 0, page: s.currentPage)) }
-                        } label: {
-                            Text("+ " + L("عنوان للصفحة \(s.currentPage + 1)", "Heading for page \(s.currentPage + 1)")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy).padding(10)
+                        Button { s.edit { $0.outline.append(OutlineEntry(title: L("الصفحة \(s.currentPage + 1)", "Page \(s.currentPage + 1)"), level: 0, page: s.currentPage)) } } label: {
+                            Text("+ " + L("عنوان للصفحة \(s.currentPage + 1)", "Heading for page \(s.currentPage + 1)")).font(Fonts.sans(14)).foregroundColor(Palette.navy).padding(14)
                         }
                     }
                     .padding(.vertical, 8)
@@ -221,118 +278,160 @@ struct PagesDrawer: View {
     }
 
     private var recordings: some View {
-        let recs = session.data.recordings
+        let recs = session.data.recordings.sorted { $0.start > $1.start }
         return Group {
             if recs.isEmpty {
-                empty(L("تسجيلات المحاضرة", "Lecture recordings"), L("سجّل من زر الميكروفون في الشريط؛ كل ما تكتبه أثناء التسجيل يُربط بلحظته.", "Record from the microphone button; everything you write while recording is linked to that moment."))
+                EmptyPanel(icon: "ph_waveform", title: L("تسجيلات المحاضرة", "Lecture recordings"),
+                           message: L("سجّل من زر الميكروفون في الشريط؛ كل ما تكتبه أثناء التسجيل يُربط بلحظته.", "Record with the microphone button in the toolbar; everything you write is linked to its moment."))
             } else {
                 ScrollView {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 0) {
                         ForEach(recs) { r in
-                            Button { audio.play(session, r) } label: {
-                                HStack {
-                                    PhIcon("ph_play", Palette.navy, 18)
-                                    VStack(alignment: .leading) {
-                                        Text(Date(timeIntervalSince1970: Double(r.start) / 1000).formatted(date: .abbreviated, time: .shortened))
-                                            .font(Fonts.sans(14)).foregroundColor(Palette.textPrimary)
-                                        Text(mmss(r.durationMs)).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-                                    }
-                                    Spacer()
+                            let playing = audio.playing?.1.id == r.id
+                            HStack(spacing: 12) {
+                                PhIcon(playing ? "ph_stop" : "ph_play", Palette.navy, 20)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(Date(timeIntervalSince1970: Double(r.start) / 1000).formatted(.dateTime.day().month(.defaultDigits).hour().minute()))
+                                        .font(Fonts.sans(14)).foregroundColor(Palette.textPrimary)
+                                    Text(mmss(r.durationMs)).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                                 }
-                                .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Color.white))
+                                Spacer()
+                                Button { audio.delete(session, r) } label: { PhIcon("ph_trash", Palette.textSecondary, 18).frame(width: 34, height: 34) }
                             }
-                            .contextMenu { Button(role: .destructive) { audio.delete(session, r) } label: { Text(L("حذف", "Delete")) } }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if playing { audio.stopPlayback() } else { audio.play(session, r) } }
                         }
                     }
-                    .padding(12)
+                    .padding(.vertical, 8)
                 }
             }
         }
     }
+}
 
-    private func empty(_ t: String, _ b: String) -> some View {
-        VStack(spacing: 6) {
-            Text(t).font(Fonts.sans(17, .bold)).foregroundColor(Palette.textPrimary).multilineTextAlignment(.center)
-            Text(b).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary).multilineTextAlignment(.center).lineSpacing(3)
+/// لوحة فارغة: أيقونة في مربع وعنوان وشرح.
+struct EmptyPanel: View {
+    let icon: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PhIcon(icon, Palette.navy, 44).frame(width: 96, height: 96).background(RoundedRectangle(cornerRadius: 24).fill(Palette.navySoft))
+            Spacer().frame(height: 18)
+            Text(title).font(Fonts.sans(17, .bold)).foregroundColor(Palette.textPrimary).multilineTextAlignment(.center)
+            Spacer().frame(height: 6)
+            Text(message).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary).multilineTextAlignment(.center).lineSpacing(3)
         }
-        .padding(24)
+        .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 // ---------------------------------------------------------------- خيارات الصفحة
 
+/// درج «خيارات الصفحة» (نفس PagePanel في أندرويد): مجموعات بطاقات بيضاء على ورق عاجي،
+/// والخيارات الخطرة بالأحمر في قسم منفصل.
 struct PageMenuDrawer: View {
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
     @Binding var sheet: ReaderSheet?
+    @State private var moveOpen = false
     @State private var confirmClear = false
     @State private var confirmDelete = false
     @State private var changeTemplate = false
+    @State private var outlineAdd = false
+    @State private var itemsDialog = false
 
     var body: some View {
         let s = session
-        let p = s.currentPage
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L("الصفحة \(p + 1)", "Page \(p + 1)")).font(Fonts.display(18)).foregroundColor(Palette.navy)
-                    Text((s.isBlank(p) ? Templates.labelOf(Templates.parse(s.data.pages[p].src).0) : L("صفحة من الملف", "Page from the file")) + L(" · من \(s.pageCount)", " · of \(s.pageCount)"))
-                        .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+        let n = s.pageCount
+        let p = max(0, min(n - 1, s.currentPage))
+        let blank = s.isBlank(p)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(L("الصفحة \(p + 1)", "Page \(p + 1)")).font(Fonts.display(24)).foregroundColor(Palette.navy)
+                        Text((blank ? Templates.labelOf(Templates.parse(s.data.pages[p].src).0) : L("صفحة من الملف", "Page from the file")) + L(" · من \(n)", " · of \(n)"))
+                            .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                    }
+                    Spacer()
+                    Button { s.pageMenuOpen = false } label: { PhIcon("ph_close", Palette.textSecondary, 20, L("إغلاق", "Close")).frame(width: 44, height: 44) }
                 }
-                Spacer()
-                Button { s.pageMenuOpen = false } label: { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق", "Close")).frame(width: 34, height: 34) }
-            }
-            .padding(16)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    Group {
-                    row("ph_bookmark", s.isBookmarked(p) ? L("إزالة العلامة المرجعية", "Remove bookmark") : L("علامة مرجعية للصفحة", "Bookmark page")) { s.toggleBookmark(p) }
-                    row("ph_copy", L("تكرار الصفحة", "Duplicate page")) { s.duplicatePage(p); app.message(L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated")) }
-                    row("ph_add_page", L("إضافة صفحة بعدها", "Add a page after")) { sheet = .addPage }
-                    row("ph_list", L("إضافة الصفحة إلى الفهرس", "Add page to outline")) {
-                        s.edit { $0.outline.append(OutlineEntry(title: L("الصفحة \(p + 1)", "Page \(p + 1)"), level: 0, page: p)) }
-                        app.message(L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
+                .padding(.leading, 20).padding(.trailing, 6).padding(.top, 14).padding(.bottom, 8)
+                Rectangle().fill(Palette.gold.opacity(0.45)).frame(height: 1)
+
+                group {
+                    let marked = s.isBookmarked(p)
+                    row(marked ? L("إزالة العلامة المرجعية", "Remove bookmark") : L("علامة مرجعية للصفحة", "Bookmark page"),
+                        marked ? "ph_bookmark_fill" : "ph_bookmark", tint: marked ? Palette.goldDeep : Palette.navy) { s.toggleBookmark(p) }
+                    divider
+                    row(L("تكرار الصفحة", "Duplicate page"), "ph_copy") {
+                        s.duplicatePage(p)
+                        app.message(L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated"))
                     }
-                    if s.isBlank(p) { row("ph_grid", L("تغيير القالب", "Change template")) { changeTemplate = true } }
-                    row("ph_mindmap", L("الخريطة الذهنية", "Mind map")) { s.mapOpen = true }
-                    row("ph_text_scan", L("تحويل الكتابة إلى نص", "Handwriting to text")) { if Premium.shared.require(.toText) { sheet = .toText } }
+                    divider
+                    row(L("إضافة صفحة بعدها", "Add page after"), "ph_add_page") { sheet = .addPage }
+                    divider
+                    row(L("إضافة الصفحة إلى الفهرس", "Add page to outline"), "ph_list") { outlineAdd = true }
+                    divider
+                    row(L("تغيير القالب", "Change template"), "ph_pages", sub: blank ? nil : L("لصفحات الملاحظات الفارغة فقط", "Blank note pages only"), enabled: blank) { changeTemplate = true }
+                    divider
+                    row(L("نقل الصفحة", "Move page"), "ph_caret_down", trailing: moveOpen ? "▴" : "▾") { moveOpen.toggle() }
+                    if moveOpen {
+                        HStack(spacing: 6) {
+                            small(L("للأعلى", "Up"), p > 0) { s.movePage(p, to: p - 1); s.goTo(page: p - 1) }
+                            small(L("للأسفل", "Down"), p < n - 1) { s.movePage(p, to: p + 1); s.goTo(page: p + 1) }
+                            small(L("للبداية", "Start"), p > 0) { s.movePage(p, to: 0); s.goTo(page: 0) }
+                            small(L("للنهاية", "End"), p < n - 1) { s.movePage(p, to: n - 1); s.goTo(page: n - 1) }
+                        }
+                        .padding(.horizontal, 14).padding(.bottom, 10)
                     }
-                    Group {
-                    label(L("نقل الصفحة", "Move page"))
-                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) {
-                        ChoiceChip(label: L("للأعلى", "Up"), selected: false) { s.movePage(p, to: p - 1); s.goTo(page: max(0, p - 1)) }
-                        ChoiceChip(label: L("للأسفل", "Down"), selected: false) { s.movePage(p, to: p + 1); s.goTo(page: min(s.pageCount - 1, p + 1)) }
-                        ChoiceChip(label: L("للبداية", "Start"), selected: false) { s.movePage(p, to: 0); s.goTo(page: 0) }
-                        ChoiceChip(label: L("للنهاية", "End"), selected: false) { s.movePage(p, to: s.pageCount - 1); s.goTo(page: s.pageCount - 1) }
-                    }
-                    .padding(.horizontal, 12) }
-                    row("ph_hand_pointing", L("الانتقال إلى صفحة", "Go to page")) { sheet = .jump }
-                    label(L("مسح أو حذف", "Clear or delete"))
-                    row("ph_eraser", L("مسح الصفحة", "Clear page")) { confirmClear = true }
-                    row("ph_trash", L("حذف الصفحة", "Delete page"), danger: true) { confirmDelete = true }
-                    label(L("الإعدادات", "Settings"))
-                    row("ph_sliders", L("كل الإعدادات وتخصيص الأدوات", "All settings and toolbar")) { app.settingsOpen = true }
+                    divider
+                    row(L("الانتقال إلى صفحة", "Go to page"), "ph_list", trailing: "\(p + 1) / \(n)") { sheet = .jump }
+                }
+
+                section(L("مسح أو حذف", "Clear or delete"))
+                group {
+                    row(L("حذف عناصر محددة", "Delete specific items"), "ph_shapes") { itemsDialog = true }
+                    divider
+                    row(L("مسح الصفحة", "Clear page"), "ph_eraser", tint: Palette.danger, textColor: Palette.danger) { confirmClear = true }
+                    divider
+                    row(L("حذف الصفحة", "Delete page"), "ph_trash", tint: Palette.danger, textColor: Palette.danger, enabled: n > 1) { confirmDelete = true }
+                }
+
+                section(L("الإعدادات", "Settings"))
+                group {
+                    row(L("كل الإعدادات وتخصيص الأدوات", "All settings and tool customization"), "ph_sliders") {
+                        s.pageMenuOpen = false
+                        app.settingsOpen = true
                     }
                 }
-                .padding(.bottom, 20)
             }
+            .padding(.bottom, 24)
         }
-        .frame(width: 290)
+        .frame(width: 380)
         .frame(maxHeight: .infinity)
-        .background(Palette.drawerBg)
-        .overlay(Rectangle().fill(Palette.divider).frame(width: 1), alignment: .leading)
+        .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
         .alert(L("مسح الصفحة \(p + 1)؟", "Clear page \(p + 1)?"), isPresented: $confirmClear) {
-            Button(L("مسح", "Clear"), role: .destructive) { clearPage(p) }
+            Button(L("مسح", "Clear"), role: .destructive) { clear(p, ink: true, hl: true, tx: true, im: true) }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
-        } message: { Text(L("تُمسح الكتابة والتظليل والنصوص والصور من هذه الصفحة، وتبقى الصفحة نفسها. يمكنك التراجع.", "Handwriting, highlights, text and images are cleared from this page; the page itself stays. You can undo.")) }
+        } message: { Text(L("تُمسح الكتابة والتظليل والنصوص والصور من هذه الصفحة، وتبقى الصفحة نفسها. يمكنك التراجع.", "Writing, highlights, text and images are removed from this page; the page itself stays. You can undo.")) }
         .alert(L("حذف الصفحة \(p + 1)؟", "Delete page \(p + 1)?"), isPresented: $confirmDelete) {
             Button(L("حذف", "Delete"), role: .destructive) { s.deletePage(p) }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
-        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها.", "The page and everything written on it will be deleted.")) }
+        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) }
+        .sheet(isPresented: $outlineAdd) {
+            NameSheet(title: L("عنوان للصفحة \(p + 1)", "Heading for page \(p + 1)"), initial: "") { t in
+                s.edit { $0.outline.append(OutlineEntry(title: t, level: 0, page: p)) }
+                app.message(L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
+            }
+        }
+        .sheet(isPresented: $itemsDialog) { ClearItemsSheet(page: p) { ink, hl, tx, im in clear(p, ink: ink, hl: hl, tx: tx, im: im) } }
         .sheet(isPresented: $changeTemplate) {
             TemplatePickerSheet(mode: .defaultTemplate) { choice, _, _ in
-                // صفحة جديدة بالقالب مكان الحالية، مع بقاء الكتابة عليها
                 guard let pid = s.pageId(p), let doc = s.pdf,
                       let page = Templates.makePage(kind: choice.kind, bg: choice.color, size: s.pageSize(p)) else { return }
                 doc.removePage(at: p)
@@ -343,32 +442,86 @@ struct PageMenuDrawer: View {
         }
     }
 
-    private func clearPage(_ p: Int) {
+    private func clear(_ p: Int, ink: Bool, hl: Bool, tx: Bool, im: Bool) {
         let s = session
         guard let pid = s.pageId(p) else { return }
-        s.setInk(pid, PKDrawing())
+        if ink { s.setInk(pid, PKDrawing()) }
         s.edit { d in
-            d.marks.removeAll { $0.page == pid }
-            d.boxes.removeAll { $0.page == pid }
-            d.images.removeAll { $0.page == pid }
-            d.notes.removeAll { $0.page == pid }
+            if hl { d.marks.removeAll { $0.page == pid } }
+            if tx { d.boxes.removeAll { $0.page == pid }; d.notes.removeAll { $0.page == pid } }
+            if im { d.images.removeAll { $0.page == pid } }
         }
     }
 
-    private func label(_ t: String) -> some View {
-        Text(t).font(Fonts.sans(12, .bold)).foregroundColor(Palette.textSecondary).padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
+    private func group<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        VStack(spacing: 0) { content() }
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .roundedBorder(Palette.divider, radius: 16)
+            .padding(.horizontal, 14).padding(.top, 12)
     }
 
-    private func row(_ icon: String, _ t: String, danger: Bool = false, _ a: @escaping () -> Void) -> some View {
-        Button(action: a) {
-            HStack(spacing: 12) {
-                PhIcon(icon, danger ? Palette.danger : Palette.navy, 19)
-                Text(t).font(Fonts.sans(14)).foregroundColor(danger ? Palette.danger : Palette.textPrimary)
+    private func section(_ t: String) -> some View {
+        Text(t).font(Fonts.sans(17, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 20).padding(.top, 22)
+    }
+
+    private var divider: some View { Rectangle().fill(Palette.divider).frame(height: 1).padding(.leading, 52) }
+
+    private func row(_ label: String, _ icon: String, tint: Color = Palette.navy, textColor: Color = Palette.textPrimary,
+                     sub: String? = nil, trailing: String? = nil, enabled: Bool = true, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                PhIcon(icon, tint.opacity(enabled ? 1 : 0.4), 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label).font(Fonts.sans(16)).foregroundColor(textColor.opacity(enabled ? 1 : 0.4))
+                    if let s = sub { Text(s).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary) }
+                }
                 Spacer()
+                if let t = trailing { Text(t).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary) }
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, 16).padding(.vertical, 13)
             .contentShape(Rectangle())
         }
+        .disabled(!enabled)
+    }
+
+    private func small(_ label: String, _ enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(Fonts.sans(13, .medium)).foregroundColor(enabled ? Palette.navy : Palette.textSecondary).lineLimit(1).fixedSize()
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 12).fill(enabled ? Palette.navySoft : Palette.background))
+        }
+        .disabled(!enabled)
+    }
+}
+
+/// «حذف عناصر محددة» من الصفحة.
+private struct ClearItemsSheet: View {
+    let page: Int
+    let onDelete: (Bool, Bool, Bool, Bool) -> Void
+    @State private var ink = true
+    @State private var hl = false
+    @State private var tx = false
+    @State private var im = false
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        SheetScaffold(title: L("حذف عناصر من الصفحة \(page + 1)", "Delete items from page \(page + 1)")) {
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(L("الكتابة اليدوية والرسم", "Handwriting and drawings"), isOn: $ink)
+                Toggle(L("التظليل (ويُزال من الملخص)", "Highlights (also removed from the summary)"), isOn: $hl)
+                Toggle(L("مربعات النص والملاحظات اللاصقة", "Text boxes and sticky notes"), isOn: $tx)
+                Toggle(L("الصور", "Images"), isOn: $im)
+                Text(L("يمكنك التراجع عن ذلك.", "You can undo this.")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                HStack {
+                    Spacer()
+                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
+                    NavyButton(label: L("حذف", "Delete"), danger: true) { onDelete(ink, hl, tx, im); dismiss() }.disabled(!(ink || hl || tx || im))
+                }
+                .padding(.top, 8)
+            }
+            .font(Fonts.sans(14)).tint(Palette.navy)
+            .padding(.horizontal, 22)
+        }
+        .presentationDetents([.height(340)])
     }
 }
 

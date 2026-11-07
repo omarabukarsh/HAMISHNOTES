@@ -50,6 +50,15 @@ extension UIColor {
     var argb: UInt32 { Color(self).argb }
 }
 
+/// لون التمييز على الصفحة (Exporter.markColor في أندرويد): مزج مع الأبيض، ويُرسم بمزج «ضرب».
+func markColor(_ argb: UInt32, strong: Bool = false) -> UIColor {
+    let k: CGFloat = strong ? 0.9 : 0.55
+    let c = UIColor(argb: argb)
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    c.getRed(&r, green: &g, blue: &b, alpha: &a)
+    return UIColor(red: 1 - k + k * r, green: 1 - k + k * g, blue: 1 - k + k * b, alpha: 1)
+}
+
 /// هوية هامش: مجلد دراسة فاخر. كحلي داكن، ذهبي كختم رقيق، وورق عاجي.
 enum Palette {
     static let navy = Color(hex: 0xFF1B365D)

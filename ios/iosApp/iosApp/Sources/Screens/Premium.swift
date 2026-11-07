@@ -117,11 +117,11 @@ final class Premium: ObservableObject {
         #if TEST_PREMIUM
         if UserDefaults.standard.bool(forKey: "test_premium") { ok = true }
         #endif
-        let fin = ok
+        let fin = ok, fexp = exp, ftr = tr
         await MainActor.run {
             self.active = fin
-            self.expires = exp
-            self.trial = tr
+            self.expires = fexp
+            self.trial = ftr
         }
     }
 

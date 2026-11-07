@@ -748,7 +748,7 @@ final class ImageSelectionView: UIView {
         layer.borderColor = UIColor(Palette.gold).cgColor
         layer.borderWidth = 2
         backgroundColor = UIColor.white.withAlphaComponent(0.04)
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(move(_:))))
+        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(dragMove(_:))))
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:))))
         let handle = UIView(frame: CGRect(x: bounds.width - 14, y: bounds.height - 14, width: 28, height: 28))
         handle.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
@@ -772,7 +772,7 @@ final class ImageSelectionView: UIView {
 
     @objc private func deleteTap() { onDelete?() }
 
-    @objc private func move(_ g: UIPanGestureRecognizer) {
+    @objc private func dragMove(_ g: UIPanGestureRecognizer) {
         if g.state == .began { startFrame = frame }
         let t = g.translation(in: superview)
         frame = startFrame.offsetBy(dx: t.x, dy: t.y)

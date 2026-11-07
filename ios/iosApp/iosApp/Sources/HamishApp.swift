@@ -137,6 +137,7 @@ private struct TabBar: View {
 
 /// تبويب على شكل لسان ملف بزوايا علوية مستديرة.
 private struct TabItem: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let title: String
     let active: Bool
     let home: Bool

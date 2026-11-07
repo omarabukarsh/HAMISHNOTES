@@ -208,6 +208,7 @@ struct LineStyleSample: View {
 
 /// نمط الخط والسماكة (للأقلام والأشكال).
 struct StrokeStyleSection: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     @Binding var style: LineStyle
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

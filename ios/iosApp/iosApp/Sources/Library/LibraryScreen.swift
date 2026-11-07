@@ -364,6 +364,7 @@ private struct Spine: View {
 }
 
 struct SpineItem: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let label: String
     let icon: String
     let count: Int?
@@ -514,6 +515,7 @@ private struct FilterRow: View {
 }
 
 private struct SearchField: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     @Binding var value: String
     var body: some View {
         HStack(spacing: 10) {
@@ -552,6 +554,7 @@ private struct SortMenu: View {
 
 /// زر «جديد» الأصفر.
 struct NewMenuButton: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let onNewNote: () -> Void
     let onImport: () -> Void
     var onScan: () -> Void = {}
@@ -679,6 +682,7 @@ struct WeightedRow: Layout {
 }
 
 private struct ResumeCard: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let entry: DocEntry
     let wide: Bool
     let onOpen: () -> Void
@@ -727,6 +731,7 @@ private struct ResumeCard: View {
 
 /// مجلد مادة: رسم مجلد أصفر، والاسم وعدد المستندات تحته.
 struct FolderTile: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let name: String
     let count: Int
     let selected: Bool
@@ -952,6 +957,7 @@ struct NotebookCover: View {
 // ---------------------------------------------------------------- الحالة الفارغة
 
 private struct EmptyLibrary: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let onNewNote: () -> Void
     let onImport: () -> Void
     let onScan: () -> Void

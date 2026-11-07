@@ -71,6 +71,7 @@ struct PremiumBadge: View {
 
 /// زر دائري بأيقونة فقط.
 struct IconCircleButton: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let icon: String
     let label: String
     var selected = false
@@ -144,6 +145,7 @@ struct NavyButton: View {
 
 /// عنوان كبير بخط أصفر منحنٍ تحته.
 struct UnderlinedTitle: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let text: String
     var size: CGFloat = 40
     var body: some View {
@@ -166,6 +168,7 @@ struct UnderlinedTitle: View {
 
 /// نص بخط يدوي (Caveat) مثل «تابع من حيث توقفت».
 struct ScriptLabel: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let text: String
     var color: Color = Lib.accentDeep
     var size: CGFloat = 16

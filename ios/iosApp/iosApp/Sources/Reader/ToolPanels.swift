@@ -61,6 +61,7 @@ struct PanelLabel: View {
 
 /// خيار في صف: بطاقة صغيرة فيها رسم وعنوان.
 struct OptionCard<Art: View>: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let label: String
     let selected: Bool
     let action: () -> Void

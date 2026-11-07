@@ -5,6 +5,7 @@ import PDFKit
 // مقبض تسحبه لتمر بالصفحات بسرعة، مع فقاعة معاينة فيها صورة الصفحة ورقمها.
 
 struct PageScrubber: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     @ObservedObject var session: DocSession
     @State private var dragging = false
     @State private var dragY: CGFloat = 0

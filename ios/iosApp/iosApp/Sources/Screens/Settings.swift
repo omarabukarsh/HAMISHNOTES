@@ -522,6 +522,7 @@ private struct ValueChevron: View {
 }
 
 struct Segmented: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let options: [String]
     let selected: Int
     var sizes: [CGFloat]? = nil

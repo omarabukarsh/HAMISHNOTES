@@ -309,6 +309,7 @@ struct FlameShape: Shape {
 
 /// أعمدة أيام الشهر مع خط هدف متقطع؛ الأيام الفارغة خطوط خفيفة، واليوم محاط بإطار.
 private struct MonthBars: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let values: [Int64]
     let goalMs: Int64
     let todayIndex: Int?

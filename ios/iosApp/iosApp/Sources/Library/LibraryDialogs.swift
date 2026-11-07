@@ -23,7 +23,7 @@ struct SheetScaffold<Content: View>: View {
     }
 }
 
-/// اسم واحد (إعادة تسمية، مادة جديدة).
+/// اسم واحد (إعادة تسمية، مادة جديدة): نافذة حوار مثل NameDialog في أندرويد.
 struct NameSheet: View {
     let title: String
     let initial: String
@@ -32,24 +32,15 @@ struct NameSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        SheetScaffold(title: title) {
-            VStack(alignment: .leading, spacing: 16) {
-                FieldBox(placeholder: L("الاسم", "Name"), text: $name)
-                HStack {
-                    Spacer()
-                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
-                    NavyButton(label: L("حفظ", "Save")) {
-                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        onSave(name)
-                        dismiss()
-                    }
-                    .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
-                }
-            }
-            .padding(.horizontal, 22)
+        let ok = !name.trimmingCharacters(in: .whitespaces).isEmpty
+        AlertDialogCard(title: title, width: 360) {
+            OutlinedField(label: L("الاسم", "Name"), text: $name)
+                .onSubmit { if ok { onSave(name); dismiss() } }
+        } buttons: {
+            DialogButton(label: L("إلغاء", "Cancel")) { dismiss() }
+            DialogButton(label: L("حفظ", "Save"), enabled: ok) { onSave(name); dismiss() }
         }
         .onAppear { name = initial }
-        .presentationDetents([.height(220)])
     }
 }
 
@@ -310,94 +301,238 @@ struct ShareSheet: UIViewControllerRepresentable {
 
 // ---------------------------------------------------------------- القوالب
 
-enum PickerMode { case newNote, addPage, defaultTemplate }
+enum PickerMode { case newNote, addPage, change, defaultTemplate }
 
-/// اختيار القالب: الأقسام، لون الورقة، المقاس، والاتجاه.
+/// منتقي الورق (نفس TemplatePickerDialog في أندرويد): نافذة كبيرة بعمودين — الورقة المختارة كبيرة
+/// على الجانب، والمقاس والاتجاه واللون والأقسام في الجانب الآخر، وشريط ثابت في الأسفل فيه زر الإضافة.
 struct TemplatePickerSheet: View {
     let mode: PickerMode
+    var initial: PaperChoice? = nil
+    var sizeLocked = false
     var onPdf: ((Bool) -> Void)? = nil
     let onConfirm: (PaperChoice, String, Bool) -> Void
     @State private var choice = Templates.defaultChoice()
     @State private var name = L("ملاحظة جديدة", "New note")
     @State private var atEnd = false
     @State private var makeDefault = false
+    @State private var collapsed: Set<Int> = []
+    @State private var custom: Color = .white
+    @State private var ready = false
     @Environment(\.dismiss) private var dismiss
 
+    private var ratio: CGFloat { let p = choice.points; return p.width / max(1, p.height) }
+
     var body: some View {
-        let title: String = {
-            switch mode {
-            case .newNote: return L("ملاحظة جديدة", "New note")
-            case .addPage: return L("إضافة صفحة", "Add page")
-            case .defaultTemplate: return L("القالب الافتراضي للملاحظات", "Default notebook template")
+        VStack(spacing: 0) {
+            Text(title).font(Fonts.display(22)).foregroundColor(Palette.navy)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 12)
+            Rectangle().fill(Palette.gold.opacity(0.45)).frame(height: 1)
+            HStack(spacing: 0) {
+                side
+                Rectangle().fill(Palette.divider).frame(width: 1)
+                options
             }
-        }()
-        SheetScaffold(title: title) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if mode == .newNote { FieldBox(placeholder: L("الاسم", "Name"), text: $name) }
-                    if mode == .addPage {
-                        Text(L("المكان", "Position")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+            .frame(maxHeight: .infinity)
+            Rectangle().fill(Palette.divider).frame(height: 1)
+            HStack(spacing: 8) {
+                if let pdf = onPdf {
+                    DialogButton(label: L("إضافة ملف PDF…", "Add PDF file…")) { dismiss(); pdf(atEnd) }
+                }
+                Spacer()
+                DialogButton(label: L("إلغاء", "Cancel"), color: Palette.textSecondary) { dismiss() }
+                Button {
+                    if makeDefault || mode == .defaultTemplate { Templates.saveDefault(choice) }
+                    dismiss()
+                    onConfirm(choice, name, atEnd)
+                } label: {
+                    Text(confirmLabel).font(Fonts.sans(14, .medium)).foregroundColor(.white)
+                        .padding(.horizontal, 24).padding(.vertical, 10)
+                        .background(Capsule().fill(Palette.navy))
+                }
+                .buttonStyle(PressScale())
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+        }
+        .background(Palette.drawerBg)
+        .environment(\.layoutDirection, .leftToRight)
+        .onAppear {
+            guard !ready else { return }
+            ready = true
+            if let i = initial { choice = i }
+            custom = Color(hex: choice.color)
+        }
+    }
+
+    private var title: String {
+        switch mode {
+        case .newNote: return L("ملاحظة جديدة", "New note")
+        case .addPage: return L("إضافة صفحة", "Add page")
+        case .change: return L("تغيير قالب الصفحة", "Change page template")
+        case .defaultTemplate: return L("القالب الافتراضي للملاحظات", "Default notebook template")
+        }
+    }
+
+    private var confirmLabel: String {
+        switch mode {
+        case .newNote: return L("إنشاء", "Create")
+        case .addPage: return L("إضافة صفحة", "Add page")
+        case .change: return L("تطبيق", "Apply")
+        case .defaultTemplate: return L("حفظ", "Save")
+        }
+    }
+
+    // ---------- العمود الجانبي: الورقة المختارة كبيرة
+
+    private var side: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if mode == .newNote { FieldBox(placeholder: L("الاسم", "Name"), text: $name) }
+                if mode == .addPage {
+                    Text(L("المكان", "Position")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                    HStack(spacing: 6) {
+                        ChoiceChip(label: L("بعد الحالية", "After current"), selected: !atEnd) { atEnd = false }
+                        ChoiceChip(label: L("في النهاية", "At the end"), selected: atEnd) { atEnd = true }
+                    }
+                }
+                Text(L("الورقة", "Paper")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                paper(choice.kind, width: ratio > 1 ? 220 : max(130, 220 * ratio), selected: true)
+                    .frame(maxWidth: .infinity)
+                Text(Templates.labelOf(choice.kind) + " · " + Templates.sizeOf(choice.size).label + (choice.landscape ? L(" · أفقي", " · landscape") : ""))
+                    .font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
+                    .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                if mode == .newNote || mode == .addPage {
+                    Button { makeDefault.toggle() } label: {
                         HStack(spacing: 8) {
-                            ChoiceChip(label: L("بعد الحالية", "After current"), selected: !atEnd) { atEnd = false }
-                            ChoiceChip(label: L("في النهاية", "At the end"), selected: atEnd) { atEnd = true }
+                            Image(systemName: makeDefault ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 20)).foregroundColor(makeDefault ? Palette.navy : Palette.textSecondary)
+                            Text(L("اجعله القالب الافتراضي", "Make it the default")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
                         }
+                        .padding(4)
                     }
-                    Text(L("الورقة", "Paper")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                    PaperColorRow(selected: choice.color) { choice.color = $0 }
-                    HStack(spacing: 8) {
-                        Menu {
-                            ForEach(Templates.sizes) { s in Button(s.label) { choice.size = s.id } }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+        }
+        .frame(width: 280)
+        .background(Palette.ivory)
+    }
+
+    // ---------- الخيارات والأقسام
+
+    private var options: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if !sizeLocked {
+                    Menu {
+                        ForEach(Templates.sizes) { sz in
+                            Button { choice.size = sz.id } label: {
+                                if sz.id == choice.size { Label(sz.label, systemImage: "checkmark") } else { Text(sz.label) }
+                            }
+                        }
+                    } label: {
+                        Text(Templates.sizeOf(choice.size).label + "  ▾").font(Fonts.sans(14, .medium)).foregroundColor(Palette.textPrimary)
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .background(RoundedRectangle(cornerRadius: 18).fill(Color.white))
+                            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.divider, lineWidth: 1))
+                    }
+                    HStack(spacing: 0) {
+                        orientation(portrait: true)
+                        orientation(portrait: false)
+                    }
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Templates.paperColors, id: \.0) { item in
+                            let sel = item.0 == choice.color
+                            Button { choice.color = item.0 } label: {
+                                Circle().fill(Color(hex: item.0)).frame(width: 34, height: 34)
+                                    .overlay(Circle().stroke(sel ? Palette.gold : Palette.divider, lineWidth: sel ? 3 : 1))
+                            }
+                            .accessibilityLabel(item.1)
+                        }
+                        ColorPicker("", selection: $custom, supportsOpacity: false).labelsHidden().frame(width: 34, height: 34)
+                            .onChange(of: custom) { _, c in
+                                if ready && c.argb | 0xFF000000 != choice.color { choice.color = c.argb | 0xFF000000 }
+                            }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            Rectangle().fill(Palette.divider).frame(height: 1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(Templates.categories.enumerated()), id: \.offset) { ci, cat in
+                        let closed = collapsed.contains(ci)
+                        Button {
+                            if closed { collapsed.remove(ci) } else { collapsed.insert(ci) }
                         } label: {
-                            ChoiceChipLabel(text: Templates.sizeOf(choice.size).label + " ▾")
+                            HStack(spacing: 8) {
+                                Text(closed ? "▸" : "▾").font(Fonts.sans(14)).foregroundColor(Palette.goldDeep)
+                                Text(cat.title()).font(Fonts.sans(17, .bold)).foregroundColor(Palette.navy)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 18).padding(.vertical, 10)
+                            .contentShape(Rectangle())
                         }
-                        ChoiceChip(label: L("عمودي", "Portrait"), selected: !choice.landscape) { choice.landscape = false }
-                        ChoiceChip(label: L("أفقي", "Landscape"), selected: choice.landscape) { choice.landscape = true }
-                    }
-                    ForEach(Array(Templates.categories.enumerated()), id: \.offset) { _, cat in
-                        Text(cat.title()).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary).padding(.top, 6)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 12)], spacing: 12) {
-                            ForEach(cat.kinds) { k in
-                                let sel = k.id == choice.kind
-                                Button { choice.kind = k.id } label: {
-                                    VStack(spacing: 6) {
-                                        Image(uiImage: Templates.preview(kind: k.id, bg: choice.color,
-                                                                         size: CGSize(width: 96, height: choice.landscape ? 68 : 134)))
-                                            .resizable().scaledToFit().frame(height: 120)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(sel ? Palette.gold : Palette.divider, lineWidth: sel ? 3 : 1))
-                                            .shadow(color: .black.opacity(0.08), radius: 3, y: 2)
-                                        Text(k.label()).font(Fonts.sans(12, sel ? .bold : .regular)).foregroundColor(sel ? Palette.navy : Palette.textPrimary)
+                        .buttonStyle(.plain)
+                        if !closed {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(alignment: .top, spacing: 18) {
+                                    ForEach(cat.kinds) { k in
+                                        let sel = k.id == choice.kind
+                                        Button { choice.kind = k.id } label: {
+                                            VStack(spacing: 6) {
+                                                paper(k.id, width: ratio > 1 ? 108 : min(108, 140 * ratio), selected: sel)
+                                                    .frame(height: 150)
+                                                Text(k.label()).font(Fonts.sans(13, sel ? .bold : .regular))
+                                                    .foregroundColor(sel ? Palette.goldDeep : Palette.textPrimary)
+                                                    .multilineTextAlignment(.center)
+                                            }
+                                            .frame(width: 118)
+                                            .padding(4)
+                                        }
+                                        .buttonStyle(PressScale())
                                     }
                                 }
+                                .padding(.horizontal, 18).padding(.bottom, 14)
                             }
                         }
                     }
-                    if mode != .defaultTemplate {
-                        Toggle(isOn: $makeDefault) { Text(L("اجعله القالب الافتراضي", "Make it the default")).font(Fonts.sans(13)) }.tint(Palette.navy)
-                    }
-                    HStack {
-                        if mode == .addPage, let pdf = onPdf {
-                            NavyButton(label: L("إضافة ملف PDF…", "Add PDF file…"), filled: false) { dismiss(); pdf(atEnd) }
-                        }
-                        Spacer()
-                        NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
-                        NavyButton(label: {
-                            switch mode {
-                            case .newNote: return L("إنشاء", "Create")
-                            case .addPage: return L("إضافة صفحة", "Add page")
-                            case .defaultTemplate: return L("حفظ", "Save")
-                            }
-                        }()) {
-                            if makeDefault || mode == .defaultTemplate { Templates.saveDefault(choice) }
-                            dismiss()
-                            onConfirm(choice, name, atEnd)
-                        }
-                    }
-                    .padding(.top, 6)
                 }
-                .padding(.horizontal, 22).padding(.bottom, 22)
+                .padding(.vertical, 8)
             }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// صورة الورقة بقالبها ولونها ونسبتها.
+    private func paper(_ kind: String, width: CGFloat, selected: Bool) -> some View {
+        let r = min(max(ratio, 0.4), 2.5)
+        let h = width / r
+        return Image(uiImage: Templates.preview(kind: kind, bg: choice.color, size: CGSize(width: 260, height: 260 / r)))
+            .resizable()
+            .frame(width: width, height: h)
+            .background(Color(hex: choice.color))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Palette.gold : Palette.divider, lineWidth: selected ? 3 : 1))
+            .shadow(color: .black.opacity(selected ? 0.16 : 0.08), radius: selected ? 6 : 2, y: 2)
+    }
+
+    private func orientation(portrait: Bool) -> some View {
+        let sel = portrait != choice.landscape
+        return Button { choice.landscape = !portrait } label: {
+            RoundedRectangle(cornerRadius: 3).stroke(sel ? Palette.navy : Palette.textSecondary, lineWidth: 2)
+                .frame(width: portrait ? 14 : 22, height: portrait ? 20 : 14)
+                .frame(width: 46, height: 40)
+                .background(sel ? Palette.navySoft : Color.clear)
+        }
+        .buttonStyle(.plain)
     }
 }
 

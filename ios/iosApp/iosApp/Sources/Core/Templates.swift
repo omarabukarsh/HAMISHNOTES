@@ -258,7 +258,17 @@ enum Templates {
     }
 
     /// صورة مصغّرة للقالب (لنافذة الاختيار).
+    private static let previews = NSCache<NSString, UIImage>()
+
     static func preview(kind: String, bg: UInt32, size: CGSize) -> UIImage {
+        let key = "\(kind):\(bg):\(Int(size.width))x\(Int(size.height))" as NSString
+        if let c = previews.object(forKey: key) { return c }
+        let img = renderPreview(kind: kind, bg: bg, size: size)
+        previews.setObject(img, forKey: key)
+        return img
+    }
+
+    private static func renderPreview(kind: String, bg: UInt32, size: CGSize) -> UIImage {
         let r = UIGraphicsImageRenderer(size: size)
         return r.image { ctx in
             // القالب مرسوم بمقاس A4 مصغّرًا

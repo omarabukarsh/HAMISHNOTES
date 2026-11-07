@@ -148,12 +148,12 @@ struct PagesDrawer: View {
             }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
         } message: { Text(L("ستُحذف الصفحات المحددة وكل ما كتبته عليها.", "The selected pages and everything written on them will be deleted.")) }
-        .sheet(isPresented: $addPage) {
-            TemplatePickerSheet(mode: .addPage) { choice, _, _ in
-                s.addBlankPage(after: s.pageCount - 1, kind: choice.kind, color: choice.color, size: choice.points)
+        .bigSheet(isPresented: $addPage, width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
+            TemplatePickerSheet(mode: .addPage) { choice, _, atEnd in
+                s.addBlankPage(after: atEnd ? s.pageCount - 1 : s.currentPage, kind: choice.kind, color: choice.color, size: choice.points)
             }
         }
-        .sheet(item: $outlineEdit) { e in
+        .dialogSheet(item: $outlineEdit) { e in
             NameSheet(title: L("إعادة تسمية العنوان", "Rename heading"), initial: e.title) { t in
                 s.edit { d in if let i = d.outline.firstIndex(where: { $0.id == e.id }) { d.outline[i].title = t } }
             }
@@ -423,15 +423,15 @@ struct PageMenuDrawer: View {
             Button(L("حذف", "Delete"), role: .destructive) { s.deletePage(p) }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
         } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) }
-        .sheet(isPresented: $outlineAdd) {
+        .dialogSheet(isPresented: $outlineAdd) {
             NameSheet(title: L("عنوان للصفحة \(p + 1)", "Heading for page \(p + 1)"), initial: "") { t in
                 s.edit { $0.outline.append(OutlineEntry(title: t, level: 0, page: p)) }
                 app.message(L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
             }
         }
         .sheet(isPresented: $itemsDialog) { ClearItemsSheet(page: p) { ink, hl, tx, im in clear(p, ink: ink, hl: hl, tx: tx, im: im) } }
-        .sheet(isPresented: $changeTemplate) {
-            TemplatePickerSheet(mode: .defaultTemplate) { choice, _, _ in
+        .bigSheet(isPresented: $changeTemplate, width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
+            TemplatePickerSheet(mode: .change, sizeLocked: true) { choice, _, _ in
                 guard let pid = s.pageId(p), let doc = s.pdf,
                       let page = Templates.makePage(kind: choice.kind, bg: choice.color, size: s.pageSize(p)) else { return }
                 doc.removePage(at: p)

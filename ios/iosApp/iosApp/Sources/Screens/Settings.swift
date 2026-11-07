@@ -93,7 +93,9 @@ struct SettingsView: View {
         .background(Palette.background.ignoresSafeArea())
         .sheet(item: $doc) { LegalSheet(doc: $0) }
         .bigSheet(isPresented: $toolbarOpen, width: 0.92, height: 0.9) { ToolbarCustomizeSheet().environmentObject(app).environment(\.layoutDirection, .leftToRight) }
-        .sheet(isPresented: $templateOpen) { TemplatePickerSheet(mode: .defaultTemplate) { _, _, _ in app.objectWillChange.send() } }
+        .bigSheet(isPresented: $templateOpen, width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
+            TemplatePickerSheet(mode: .defaultTemplate) { _, _, _ in app.objectWillChange.send() }
+        }
     }
 
     private func sidebar(selected: SettingsPage?) -> some View {

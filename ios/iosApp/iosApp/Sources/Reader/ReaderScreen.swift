@@ -135,17 +135,21 @@ private struct ReaderContent: View {
         .dropdownHost()
         .background(Palette.desk)
         .onChange(of: app.lassoActive) { on in if !on { s.lassoSel = nil } }
-        .sheet(item: $sheet) { sh in
+        // إضافة صفحة: نافذة كبيرة مثل أندرويد
+        .bigSheet(isPresented: Binding(get: { sheet?.id == "addPage" }, set: { if !$0 { sheet = nil } }), width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
+            TemplatePickerSheet(mode: .addPage, onPdf: { atEnd in
+                pdfAfter = atEnd ? s.pageCount - 1 : s.currentPage
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pdfPicker = true }
+            }) { choice, _, atEnd in
+                s.addBlankPage(after: atEnd ? s.pageCount - 1 : s.currentPage, kind: choice.kind, color: choice.color, size: choice.points)
+            }
+            .environmentObject(app)
+        }
+        .sheet(item: Binding(get: { sheet?.id == "addPage" || sheet?.id == "audio" ? nil : sheet }, set: { sheet = $0 })) { sh in
             Group {
                 switch sh {
                 case .jump: PageJumpSheet(session: s)
-                case .addPage:
-                    TemplatePickerSheet(mode: .addPage, onPdf: { atEnd in
-                        pdfAfter = atEnd ? s.pageCount - 1 : s.currentPage
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pdfPicker = true }
-                    }) { choice, _, atEnd in
-                        s.addBlankPage(after: atEnd ? s.pageCount - 1 : s.currentPage, kind: choice.kind, color: choice.color, size: choice.points)
-                    }
+                case .addPage: EmptyView()
                 case .link: LinkSheet(session: s)
                 case .audio: EmptyView()
                 case .split: SplitPickerSheet(session: s)

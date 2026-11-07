@@ -82,6 +82,8 @@ private struct AppDialogModifier<C: View>: ViewModifier {
                     .presentationBackground(.clear)
             }
             .onChange(of: isPresented) { _, v in show(v) }
+            // أُغلقت من داخلها (dismiss): تُصفَّر الحالة الخارجية أيضًا
+            .onChange(of: cover) { _, v in if !v && isPresented { isPresented = false } }
             .onAppear { if isPresented { show(true) } }
     }
 
@@ -94,8 +96,54 @@ private struct AppDialogModifier<C: View>: ViewModifier {
 }
 
 extension View {
+    /// نافذة حوار في وسط الشاشة لمحتوى يُغلق نفسه بـ dismiss (مثل NameSheet).
+    func dialogSheet<C: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> C) -> some View {
+        appDialog(isPresented: isPresented) { _ in content() }
+    }
+
+    /// نافذة حوار لعنصر محدد.
+    func dialogSheet<T: Identifiable, C: View>(item: Binding<T?>, @ViewBuilder content: @escaping (T) -> C) -> some View {
+        appDialog(isPresented: Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } })) { _ in
+            if let t = item.wrappedValue { content(t) }
+        }
+    }
+
     /// نافذة حوار بشكل نسخة أندرويد. المحتوى يأخذ دالة الإغلاق.
     func appDialog<C: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping (_ dismiss: @escaping () -> Void) -> C) -> some View {
         modifier(AppDialogModifier(isPresented: isPresented, content: content))
+    }
+}
+
+/// حقل نص بإطار وعنوان يطفو فوقه عند الكتابة (مثل OutlinedTextField في أندرويد).
+struct OutlinedField: View {
+    let label: String
+    @Binding var text: String
+    var autoFocus = true
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let up = focused || !text.isEmpty
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(focused ? Palette.navy : Palette.textSecondary.opacity(0.6), lineWidth: focused ? 2 : 1)
+                .frame(height: 56)
+                .padding(.top, 8)
+            TextField("", text: $text)
+                .font(Fonts.sans(16)).foregroundColor(Palette.textPrimary)
+                .focused($focused)
+                .padding(.horizontal, 16)
+                .frame(height: 56)
+                .padding(.top, 8)
+            Text(label)
+                .font(Fonts.sans(up ? 12 : 16))
+                .foregroundColor(focused ? Palette.navy : Palette.textSecondary)
+                .padding(.horizontal, up ? 4 : 0)
+                .background(up ? Palette.ivory : Color.clear)
+                .offset(x: up ? 12 : 16, y: up ? 0 : 26)
+                .allowsHitTesting(false)
+                .animation(.easeOut(duration: 0.15), value: up)
+        }
+        .frame(height: 64)
+        .onAppear { if autoFocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true } } }
     }
 }

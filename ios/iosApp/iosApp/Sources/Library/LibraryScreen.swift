@@ -117,7 +117,15 @@ struct LibraryScreen: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: OfficeConverter.types, allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { app.importDocuments(urls) }
         }
-        .sheet(item: $sheet) { s in sheetView(s) }
+        // ملاحظة جديدة: منتقي الورق الكبير؛ والأسماء (مادة جديدة، إعادة تسمية) في نافذة حوار مثل أندرويد
+        .bigSheet(isPresented: Binding(get: { sheet?.id == "newNote" }, set: { if !$0 { sheet = nil } }),
+                  width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
+            TemplatePickerSheet(mode: .newNote) { choice, name, _ in app.createNote(name, choice) }
+        }
+        .dialogSheet(isPresented: Binding(get: { sheet.map(LibraryScreen.isNameDialog) ?? false }, set: { if !$0 { sheet = nil } })) {
+            if let s = sheet { sheetView(s) }
+        }
+        .sheet(item: Binding(get: { sheet.flatMap { LibraryScreen.isNameDialog($0) || $0.id == "newNote" ? nil : $0 } }, set: { sheet = $0 })) { s in sheetView(s) }
         .alert(deleteTarget.count == 1 ? L("حذف المستند؟", "Delete document?") : L("حذف \(deleteTarget.count) مستندات؟", "Delete \(deleteTarget.count) documents?"),
                isPresented: $confirmDelete) {
             Button(L("حذف", "Delete"), role: .destructive) {
@@ -238,6 +246,13 @@ struct LibraryScreen: View {
     }
 
     // ---------------------------------------------------------------- النوافذ
+
+    static func isNameDialog(_ s: LibrarySheet) -> Bool {
+        switch s {
+        case .rename, .addFolder, .renameFolder: return true
+        default: return false
+        }
+    }
 
     @ViewBuilder
     private func sheetView(_ s: LibrarySheet) -> some View {

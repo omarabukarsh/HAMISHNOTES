@@ -334,6 +334,7 @@ struct BigSheet<C: View>: ViewModifier {
     var heightFraction: CGFloat = 0.92
     var maxHeight: CGFloat = .infinity
     var minHeight: CGFloat = 0
+    var maxWidth: CGFloat = .infinity
     /// الارتفاع على قدر المحتوى (بين minHeight وmaxHeight) كما في نوافذ أندرويد heightIn.
     var fitContent = false
     let sheet: () -> C
@@ -346,13 +347,13 @@ struct BigSheet<C: View>: ViewModifier {
                     Group {
                         if fitContent {
                             sheet()
-                                .frame(width: g.size.width * widthFraction)
+                                .frame(width: min(maxWidth, g.size.width * widthFraction))
                                 .frame(minHeight: minHeight)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxHeight: min(maxHeight, g.size.height * 0.96))
                         } else {
                             sheet()
-                                .frame(width: g.size.width * widthFraction,
+                                .frame(width: min(maxWidth, g.size.width * widthFraction),
                                        height: min(g.size.height * 0.96, max(minHeight, min(maxHeight, g.size.height * heightFraction))))
                         }
                     }
@@ -368,9 +369,10 @@ struct BigSheet<C: View>: ViewModifier {
 
 extension View {
     func bigSheet<C: View>(isPresented: Binding<Bool>, width: CGFloat = 0.94, height: CGFloat = 0.92, maxHeight: CGFloat = .infinity,
-                           minHeight: CGFloat = 0, fitContent: Bool = false, @ViewBuilder _ sheet: @escaping () -> C) -> some View {
+                           minHeight: CGFloat = 0, maxWidth: CGFloat = .infinity, fitContent: Bool = false,
+                           @ViewBuilder _ sheet: @escaping () -> C) -> some View {
         modifier(BigSheet(isPresented: isPresented, widthFraction: width, heightFraction: height, maxHeight: maxHeight, minHeight: minHeight,
-                          fitContent: fitContent, sheet: sheet))
+                          maxWidth: maxWidth, fitContent: fitContent, sheet: sheet))
     }
 
     /// إطار مستدير بخط رفيع.

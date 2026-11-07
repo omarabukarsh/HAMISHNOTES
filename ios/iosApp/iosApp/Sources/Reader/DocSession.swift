@@ -7,9 +7,10 @@ import Vision
 enum EditStep {
     case ink(page: String, before: PKDrawing, after: PKDrawing)
     case data(before: DocData, after: DocData)
+    /// تعديل الحبر والبيانات معًا (التحديد الحر) خطوةً واحدة.
+    indirect case both(EditStep, EditStep)
 }
 
-/// مستند مفتوح في تبويب: الملف، وما كُتب عليه، وحالة الواجهة.
 /// منطقة نافذة الكتابة المكبّرة على صفحة (بنقاط الصفحة).
 struct ZoomBox: Equatable {
     var page: Int
@@ -19,6 +20,7 @@ struct ZoomBox: Equatable {
     var h: CGFloat
 }
 
+/// مستند مفتوح في تبويب: الملف، وما كُتب عليه، وحالة الواجهة.
 final class DocSession: ObservableObject, Identifiable {
     let id: String
     @Published var title: String
@@ -52,14 +54,16 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var selectedImage: String? = nil
     /// نافذة الكتابة المكبّرة: المنطقة المعروضة من الصفحة (بنقاط الصفحة).
     @Published var zoomBox: ZoomBox? = nil
+    /// ما حدده التحديد الحر في صفحة.
+    @Published var lassoSel: LassoSel? = nil
 
     // ---------- التراجع ----------
     @Published private(set) var undoStack: [EditStep] = []
     @Published private(set) var redoStack: [EditStep] = []
 
-    private var drawings: [String: PKDrawing] = [:]
-    private var dirtyInk: Set<String> = []
-    private var dataDirty = false
+    var drawings: [String: PKDrawing] = [:]
+    var dirtyInk: Set<String> = []
+    var dataDirty = false
     private var pdfDirty = false
     private var saveWork: DispatchWorkItem?
 
@@ -171,19 +175,21 @@ final class DocSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
-    private func push(_ s: EditStep) {
+    func push(_ s: EditStep) {
         undoStack.append(s)
         if undoStack.count > 200 { undoStack.removeFirst() }
         redoStack.removeAll()
     }
 
     func undo() {
+        lassoSel = nil
         guard let s = undoStack.popLast() else { return }
         apply(s, reverse: true)
         redoStack.append(s)
     }
 
     func redo() {
+        lassoSel = nil
         guard let s = redoStack.popLast() else { return }
         apply(s, reverse: false)
         undoStack.append(s)
@@ -202,6 +208,10 @@ final class DocSession: ObservableObject, Identifiable {
             data = reverse ? before : after
             dataDirty = true
             if structure { rebuildPDFOrder() }
+        case let .both(a, b):
+            apply(a, reverse: reverse)
+            apply(b, reverse: reverse)
+            return
         }
         scheduleSave()
     }
@@ -583,7 +593,7 @@ final class DocSession: ObservableObject, Identifiable {
 
     // ======================================================== الحفظ
 
-    private func scheduleSave() {
+    func scheduleSave() {
         saveWork?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.flush() }
         saveWork = w

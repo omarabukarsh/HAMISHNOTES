@@ -186,6 +186,7 @@ struct AudioPlayerBar: View {
 /// تحويل الكتابة اليدوية في الصفحة الحالية إلى نص (Vision على الجهاز).
 struct HandwritingSheet: View {
     @ObservedObject var session: DocSession
+    var lassoOnly = false
     @EnvironmentObject var app: AppController
     @State private var text = ""
     @State private var busy = true
@@ -221,7 +222,7 @@ struct HandwritingSheet: View {
 
     private func recognize() {
         guard let pid = session.pageId(session.currentPage) else { busy = false; return }
-        let d = session.drawing(for: pid)
+        let d = lassoOnly ? (session.lassoDrawing() ?? PKDrawing()) : session.drawing(for: pid)
         guard !d.strokes.isEmpty else { busy = false; return }
         let r = d.bounds.insetBy(dx: -20, dy: -20)
         let img = UIGraphicsImageRenderer(size: r.size).image { ctx in

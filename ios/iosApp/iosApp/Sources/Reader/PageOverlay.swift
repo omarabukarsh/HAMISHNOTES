@@ -24,6 +24,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private let topLayer = UIView()
     private let laser = LaserView()
     private let shapes = ShapeCaptureView()
+    private let lasso = LassoView()
     private var selectionFrame: ImageSelectionView?
     private var applying = false
     private var lastStrokeCount = 0
@@ -62,6 +63,10 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         laser.isHidden = true
         addSubview(laser)
+        lasso.isHidden = true
+        lasso.session = session
+        lasso.pageId = pageId
+        addSubview(lasso)
         shapes.isHidden = true
         shapes.onShape = { [weak self] strokes in self?.commitShape(strokes) }
         addSubview(shapes)
@@ -94,7 +99,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     override func layoutSubviews() {
         super.layoutSubviews()
         let nk = bounds.width / max(1, pageSize.width)
-        for v in [marksView, imagesLayer, canvas, topLayer, laser, shapes] as [UIView] { v.frame = bounds }
+        for v in [marksView, imagesLayer, canvas, topLayer, laser, shapes, lasso] as [UIView] { v.frame = bounds }
         if abs(nk - k) > 0.0001 {
             let old = k
             k = nk
@@ -106,6 +111,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
         marksView.k = k * pageSize.width
         marksView.setNeedsDisplay()
+        lasso.k = k
+        lasso.refresh()
+    }
+
+    func refreshLasso() {
+        lasso.k = k
+        lasso.refresh()
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
@@ -137,8 +149,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         shapes.isHidden = !shapeOn
         canvas.isUserInteractionEnabled = !laserOn && !shapeOn && !tapTools
 
+        lasso.isHidden = !c.lassoActive
+        lasso.fingerWrites = finger
+        lasso.rect = c.lassoRect
+        lasso.k = k
         if c.lassoActive {
-            canvas.tool = PKLassoTool()
+            canvas.isUserInteractionEnabled = false
+            lasso.refresh()
             return
         }
         if let tool = PageOverlayView.pkTool(scale: k) { canvas.tool = tool }
@@ -198,9 +215,17 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             lastStrokeCount = strokes.count
             if handleHighlight(last) { return }
         }
+        let added = strokes.count == lastStrokeCount + 1
         lastStrokeCount = strokes.count
-        s.inkChanged(pageId, pageDrawing)
+        let pd = pageDrawing
+        s.inkChanged(pageId, pd)
+        if added, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = pd.strokes.last {
+            AutoFont.shared.onStroke(s, pageId: pageId, stroke: last)
+        }
     }
+
+    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) { AutoFont.shared.penDown() }
+    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) { AutoFont.shared.penUp() }
 
     private func commitShape(_ strokes: [PKStroke]) {
         guard let s = session else { return }
@@ -549,7 +574,8 @@ final class ShapeCaptureView: UIView {
                 PKStrokePoint(location: p, timeOffset: TimeInterval(i) * 0.005, size: CGSize(width: ink.1, height: ink.1),
                               opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
             }
-            return PKStroke(ink: ink.0, path: PKStrokePath(controlPoints: sp, creationDate: Date()))
+            return PKStroke(ink: ink.0, path: PKStrokePath(controlPoints: sp, creationDate: Date()),
+                            transform: .identity, mask: nil, randomSeed: shapeSeed)
         }
         onShape?(strokes)
     }
@@ -638,7 +664,15 @@ final class TextBoxView: UILabel {
         numberOfLines = 0
         text = box.text
         let size = box.size * k
-        font = box.font.isEmpty ? Fonts.ui(size) : (UIFont(name: box.font, size: size) ?? Fonts.ui(size))
+        if box.font.isEmpty {
+            font = Fonts.ui(size)
+        } else if let f = FontStore.shared.uiFont(box.font, size: size) ?? UIFont(name: box.font, size: size) {
+            font = f
+        } else {
+            font = Fonts.ui(size)
+            let name = box.font
+            Task { @MainActor in await FontStore.shared.ensure(name) }
+        }
         textColor = box.linkDoc != nil ? UIColor(Palette.navy) : UIColor(argb: box.color)
         if box.linkDoc != nil {
             attributedText = NSAttributedString(string: "🔗 " + box.text, attributes: [

@@ -548,7 +548,7 @@ struct ToolbarCustomizeSheet: View {
         ("snap", "ph_snap", L("التقاط النص", "Text snap")),
         ("lasso", "ph_lasso", L("التحديد الحر", "Lasso")),
         ("shapetool", "ph_shapes", L("الأشكال", "Shapes")),
-        ("autofont", "ph_text_scan", L("الكتابة إلى نص", "Handwriting to text")),
+        ("autofont", "ph_text_scan", L("Aa تحويل الكتابة تلقائياً", "Aa Auto-convert handwriting")),
         ("image", "ph_image", L("الصور", "Photos")),
         ("stickers", "ph_sticker", L("الملصقات", "Stickers")),
         ("text", "ph_text", L("مربع نص", "Text box")),

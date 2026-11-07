@@ -61,6 +61,14 @@ final class AppController: ObservableObject {
     @Published var laserMode: LaserMode = .dot { didSet { prefs.set(laserMode.rawValue, forKey: "laser_mode") } }
     @Published var eraserMode: EraserMode = .stroke { didSet { prefs.set(eraserMode.rawValue, forKey: "eraser_mode") } }
     @Published var presets: [PenPreset] = [] { didSet { saveCodable(presets, "pen_presets") } }
+    // التحديد الحر: نوعه (حر/مستطيل) وما يدخل فيه
+    @Published var lassoRect = false { didSet { prefs.set(lassoRect, forKey: "lasso_rect") } }
+    @Published var lassoInk = true { didSet { prefs.set(lassoInk, forKey: "lasso_ink") } }
+    @Published var lassoHighlight = true { didSet { prefs.set(lassoHighlight, forKey: "lasso_hl") } }
+    @Published var lassoShapes = true { didSet { prefs.set(lassoShapes, forKey: "lasso_shapes") } }
+    @Published var lassoImages = true { didSet { prefs.set(lassoImages, forKey: "lasso_images") } }
+    @Published var lassoTexts = true { didSet { prefs.set(lassoTexts, forKey: "lasso_texts") } }
+    @Published var lassoStickies = true { didSet { prefs.set(lassoStickies, forKey: "lasso_stickies") } }
 
     let penPalette: [UInt32] = [0xFF000000, 0xFF455A64, 0xFF1565C0, 0xFFC62828, 0xFF2E7D32, 0xFFEF6C00, 0xFF6A1B9A, 0xFF795548]
     let highlightPalette: [UInt32] = [0xFFFFEB3B, 0xFF69F0AE, 0xFFFF80AB, 0xFF40C4FF, 0xFFFFAB40]
@@ -130,6 +138,13 @@ final class AppController: ObservableObject {
         summariesOn = p.object(forKey: "summaries_on") as? Bool ?? true
         highlightToSummary = p.object(forKey: "hl_summary") as? Bool ?? true
         highlightSnap = p.bool(forKey: "hl_snap")
+        lassoRect = p.bool(forKey: "lasso_rect")
+        lassoInk = p.object(forKey: "lasso_ink") as? Bool ?? true
+        lassoHighlight = p.object(forKey: "lasso_hl") as? Bool ?? true
+        lassoShapes = p.object(forKey: "lasso_shapes") as? Bool ?? true
+        lassoImages = p.object(forKey: "lasso_images") as? Bool ?? true
+        lassoTexts = p.object(forKey: "lasso_texts") as? Bool ?? true
+        lassoStickies = p.object(forKey: "lasso_stickies") as? Bool ?? true
         summaryTidy = p.object(forKey: "sum_tidy") as? Bool ?? true
         summaryByColor = p.bool(forKey: "sum_by_color")
         colorLabels = p.dictionary(forKey: "color_labels") as? [String: String] ?? [:]

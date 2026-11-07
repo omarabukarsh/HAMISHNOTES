@@ -137,6 +137,8 @@ struct TextBox: Codable, Identifiable, Equatable {
     var font = ""
     var linkDoc: String? = nil
     var linkPage = 0
+    /// الكتابة اليدوية الأصلية لنص تحوّل منها (لزر «رجوع لخط يدي»).
+    var ink: Data? = nil
 }
 
 /// صورة أو ملصق فوق الصفحة.

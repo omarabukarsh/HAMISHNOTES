@@ -95,6 +95,8 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         // أي تغيير في البيانات (تراجع، حذف تمييز من الدرج...) يعيد رسم عناصر الصفحات الظاهرة
         session.$data.dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
+        session.$lassoSel.receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.overlays.values.forEach { $0.refreshLasso() } }.store(in: &bag)
         session.$selectedImage.dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
         // نتائج البحث مظللة في الصفحة، والنتيجة الحالية محددة

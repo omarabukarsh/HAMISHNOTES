@@ -4,7 +4,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 enum ReaderSheet: Identifiable {
-    case jump, addPage, link, audio, split, export, colorPicker, toText
+    case jump, addPage, link, audio, split, export, colorPicker, toText, lassoToText, changeFont, autoFont
     var id: String { "\(self)" }
 }
 
@@ -104,6 +104,12 @@ private struct ReaderContent: View {
                 .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
+            VStack(spacing: 8) {
+                if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
+                AutoFontChip(session: s)
+            }
+            .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
+            .padding(.bottom, s.zoomBox != nil ? 230 : 0)
             if let rec = audio.playing, rec.0 == s.id {
                 AudioPlayerBar(docId: s.id, rec: rec.1).frame(maxHeight: .infinity, alignment: .bottom).padding(16)
             }
@@ -125,6 +131,7 @@ private struct ReaderContent: View {
             }
         }
         .background(Palette.desk)
+        .onChange(of: app.lassoActive) { on in if !on { s.lassoSel = nil } }
         .sheet(item: $sheet) { sh in
             Group {
                 switch sh {
@@ -142,6 +149,9 @@ private struct ReaderContent: View {
                 case .export: ShareExportSheet(docIds: [s.id])
                 case .colorPicker: ColorPickerSheet()
                 case .toText: HandwritingSheet(session: s)
+                case .lassoToText: HandwritingSheet(session: s, lassoOnly: true)
+                case .changeFont: ChangeFontSheet(session: s)
+                case .autoFont: AutoFontSheet()
                 }
             }
             .environmentObject(app)
@@ -170,6 +180,7 @@ private struct ReaderTopBar: View {
     @EnvironmentObject var app: AppController
     @ObservedObject var pm = Premium.shared
     @ObservedObject var audio = AudioNotes.shared
+    @ObservedObject var af = AutoFont.shared
     @Binding var sheet: ReaderSheet?
     @State private var settingsFor: String? = nil
     @State private var lassoMenu = false
@@ -274,14 +285,18 @@ private struct ReaderTopBar: View {
                     toolSlot(.laser, id: "ls", selected: app.tool == .laser && !app.lassoActive)
                     if v("lasso") {
                         TBtn(selected: app.lassoActive, action: {
-                            if app.lassoActive { app.lassoActive = false } else {
+                            // نقرة تفعّل التحديد، ونقرة ثانية تفتح إعداداته
+                            if app.lassoActive { lassoMenu = true } else {
                                 app.lassoActive = true
                                 app.shapeActive = false
                                 app.textActive = false
                                 app.stickyActive = false
-                                app.message(L("أحِط بالقلم حول ما تريد تحديده، ثم اسحبه أو انقر عليه للنسخ والحذف", "Draw around what you want to select, then drag it or tap it to copy or delete"))
+                                app.message(L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
-                        }) { PhIcon("ph_lasso", tintFor(app.lassoActive)) }
+                        }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", tintFor(app.lassoActive)) }
+                        .popover(isPresented: $lassoMenu) {
+                            LassoMenuContent(onOff: { lassoMenu = false; app.lassoActive = false; s.lassoSel = nil }).environmentObject(app)
+                        }
                     }
                     if v("shapetool") {
                         TBtn(selected: app.shapeActive && !app.lassoActive, action: {
@@ -293,8 +308,8 @@ private struct ReaderTopBar: View {
                         }) { PhIcon("ph_shapes", tintFor(app.shapeActive && !app.lassoActive)) }
                     }
                     if v("autofont") {
-                        TBtn(locked: !pm.active, action: { if pm.require(.toText) { sheet = .toText } }) {
-                            Text("Aa").font(Fonts.sans(16, .bold)).foregroundColor(Palette.textSecondary)
+                        TBtn(selected: af.on, locked: !pm.active, action: { if pm.require(.toText) { sheet = .autoFont } }) {
+                            Text("Aa").font(Fonts.sans(16, .bold)).foregroundColor(af.on ? Palette.goldDeep : Palette.textSecondary)
                         }
                     }
                     TBtn(selected: app.fingerWrites, action: {

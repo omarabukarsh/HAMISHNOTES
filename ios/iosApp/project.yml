@@ -26,6 +26,10 @@ targets:
       - path: ../../app/src/main/assets/licenses
         type: folder
         buildPhase: resources
+      # مكتبة الخطوط: الفهرس والخطوط المثبتة (الباقي يُنزَّل عند الطلب)
+      - path: ../../app/src/main/assets/fonts
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: Hamish

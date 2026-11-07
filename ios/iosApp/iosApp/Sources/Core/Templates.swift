@@ -99,6 +99,28 @@ enum Templates {
         return (kind, bg)
     }
 
+    /// مواضع أسطر الكتابة في القالب (لوضع النص المتحول على السطر).
+    static func lineYs(kind: String, w: CGFloat, h: CGFloat) -> [CGFloat] {
+        let unit = min(w, h * 0.707)
+        let step = unit / 24
+        func seq(_ from: CGFloat, _ to: CGFloat, _ st: CGFloat) -> [CGFloat] {
+            var out: [CGFloat] = []
+            var y = from
+            while y < to { out.append(y); y += st }
+            return out
+        }
+        switch kind {
+        case "lined": return seq(step * 2.5, h - step, step)
+        case "lined_n": return seq(step * 2.5, h - step, step * 0.75)
+        case "grid": return seq(step, h, step)
+        case "grid_s": return seq(step * 0.6, h, step * 0.6)
+        case "legal": return seq(step * 3, h - step * 0.5, step)
+        case "header": return seq(h * 0.10 + step * 1.2, h - step * 0.5, step)
+        case "cornell": return seq(h * 0.085 + step * 1.2, h * 0.80 - step * 0.3, step)
+        default: return []
+        }
+    }
+
     // ---------- الرسم ----------
 
     private static func ruled(_ c: CGContext, _ x0: CGFloat, _ x1: CGFloat, _ y0: CGFloat, _ y1: CGFloat, _ step: CGFloat) {

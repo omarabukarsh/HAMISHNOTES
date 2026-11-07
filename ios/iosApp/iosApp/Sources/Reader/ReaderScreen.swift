@@ -106,6 +106,7 @@ private struct ReaderContent: View {
             }
             VStack(spacing: 8) {
                 if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
+                if s.selectedImage != nil { ImageBar(session: s) }
                 AutoFontChip(session: s)
             }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
@@ -995,5 +996,37 @@ private struct SplitPickerSheet: View {
                 .padding(22)
             }
         }
+    }
+}
+
+/// شريط الصورة المحددة (كما في أندرويد): حذف، تصغير، تكبير، تم.
+private struct ImageBar: View {
+    @ObservedObject var session: DocSession
+    var body: some View {
+        HStack(spacing: 0) {
+            DialogButton(label: L("حذف الصورة", "Delete image"), color: Palette.danger) {
+                if let id = session.selectedImage { session.deleteImage(id); session.selectedImage = nil }
+            }
+            DialogButton(label: L("تصغير", "Smaller")) { scale(0.87) }
+            DialogButton(label: L("تكبير", "Larger")) { scale(1.15) }
+            DialogButton(label: L("تم", "Done")) { session.selectedImage = nil }
+        }
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+    }
+
+    /// يغيّر الحجم حول وسط الصورة، داخل حدود الصفحة.
+    private func scale(_ f: CGFloat) {
+        guard let id = session.selectedImage, var im = session.data.images.first(where: { $0.id == id }),
+              let idx = session.index(of: im.page) else { return }
+        let size = session.pageSize(idx)
+        let h0 = im.w / max(0.01, im.aspect)
+        let w = min(max(size.width * 0.05, im.w * f), size.width * 1.5)
+        let h = w / max(0.01, im.aspect)
+        im.x += (im.w - w) / 2
+        im.y += (h0 - h) / 2
+        im.w = w
+        session.upsertImage(im)
     }
 }

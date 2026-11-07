@@ -940,32 +940,36 @@ final class ImageSelectionView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.borderColor = UIColor(Palette.gold).cgColor
+        // إطار كحلي رفيع ومقبض دائري صغير في الزاوية (كما في أندرويد)؛ الحذف من الشريط السفلي
+        layer.borderColor = UIColor(Palette.navy).cgColor
         layer.borderWidth = 2
-        backgroundColor = UIColor.white.withAlphaComponent(0.04)
+        backgroundColor = .clear
         addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(dragMove(_:))))
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:))))
-        let handle = UIView(frame: CGRect(x: bounds.width - 14, y: bounds.height - 14, width: 28, height: 28))
-        handle.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
-        handle.backgroundColor = UIColor(Palette.gold)
-        handle.layer.cornerRadius = 14
-        handle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resize(_:))))
-        addSubview(handle)
-        let del = UIButton(type: .system)
-        del.frame = CGRect(x: -14, y: -14, width: 28, height: 28)
-        del.backgroundColor = UIColor(Palette.danger)
-        del.tintColor = .white
-        del.layer.cornerRadius = 14
-        del.setImage(UIImage(named: "ph_trash")?.withRenderingMode(.alwaysTemplate), for: .normal)
-        del.imageEdgeInsets = UIEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
-        del.addTarget(self, action: #selector(deleteTap), for: .touchUpInside)
-        addSubview(del)
+        let touch = UIView(frame: CGRect(x: bounds.width - 22, y: bounds.height - 22, width: 44, height: 44))
+        touch.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
+        touch.backgroundColor = .clear
+        let dot = UIView(frame: CGRect(x: 12, y: 12, width: 20, height: 20))
+        dot.backgroundColor = UIColor(Palette.navy)
+        dot.layer.cornerRadius = 10
+        dot.isUserInteractionEnabled = false
+        let inner = UIView(frame: CGRect(x: 6, y: 6, width: 8, height: 8))
+        inner.backgroundColor = .white
+        inner.layer.cornerRadius = 4
+        dot.addSubview(inner)
+        touch.addSubview(dot)
+        touch.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resize(_:))))
+        addSubview(touch)
         clipsToBounds = false
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc private func deleteTap() { onDelete?() }
+
+    /// المقبض يبرز خارج الإطار قليلًا: يُلمس هناك أيضًا.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -22, dy: -22).contains(point)
+    }
 
     @objc private func dragMove(_ g: UIPanGestureRecognizer) {
         if g.state == .began { startFrame = frame }

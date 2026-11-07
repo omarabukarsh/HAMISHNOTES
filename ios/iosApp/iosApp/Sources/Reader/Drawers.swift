@@ -40,7 +40,7 @@ struct PageThumb: View {
             c.setBlendMode(.multiply)
             for m in marks {
                 c.setFillColor(UIColor(argb: m.color).withAlphaComponent(0.42).cgColor)
-                for r in m.rects { c.fill(CGRect(x: r.l * k, y: r.t * k, width: (r.r - r.l) * k, height: (r.b - r.t) * k)) }
+                for r in m.rects { c.fill(r.scaled(tw)) }
             }
             c.setBlendMode(.normal)
             if !drawing.strokes.isEmpty {

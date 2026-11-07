@@ -835,6 +835,7 @@ final class AppController: ObservableObject {
 
     func cardsIn(_ deck: String?) -> [Card] {
         guard let d = deck else { return cards }
+        if d.hasPrefix("doc:") { let id = String(d.dropFirst(4)); return cards.filter { $0.docId == id } }
         return cards.filter { $0.folder == d }
     }
 }

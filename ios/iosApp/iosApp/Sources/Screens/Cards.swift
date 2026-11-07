@@ -39,7 +39,12 @@ struct DeckView: View {
     var body: some View {
         let cards = app.cardsIn(deck)
         let due = cards.filter(Srs.isDue)
-        SheetScaffold(title: deck.map { L("بطاقات \($0)", "\($0) cards") } ?? L("كل البطاقات", "All cards")) {
+        let title: String = {
+            guard let d = deck else { return L("كل البطاقات", "All cards") }
+            if d.hasPrefix("doc:") { return L("بطاقات \(app.entry(String(d.dropFirst(4)))?.name ?? "")", "\(app.entry(String(d.dropFirst(4)))?.name ?? "") cards") }
+            return L("بطاقات \(d)", "\(d) cards")
+        }()
+        SheetScaffold(title: title) {
             if studying {
                 StudyView(cards: due.isEmpty ? cards.shuffled() : due) { studying = false }
             } else {
@@ -100,7 +105,10 @@ struct DeckView: View {
             }
         }
         .sheet(item: $editing) { c in CardEditorSheet(card: c, folder: c.folder).environmentObject(app) }
-        .sheet(isPresented: $adding) { CardEditorSheet(card: nil, folder: deck ?? "").environmentObject(app) }
+        .sheet(isPresented: $adding) {
+            CardEditorSheet(card: deck?.hasPrefix("doc:") == true ? Card(id: UUID().uuidString, front: "", back: "", docId: String(deck!.dropFirst(4))) : nil,
+                            folder: deck?.hasPrefix("doc:") == true ? "" : (deck ?? "")).environmentObject(app)
+        }
     }
 }
 

@@ -104,7 +104,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             applyTool()
             reloadItems()
         }
-        marksView.k = k
+        marksView.k = k * pageSize.width
         marksView.setNeedsDisplay()
     }
 
@@ -223,66 +223,36 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         return CGRect(x: vr.minX / k, y: vr.minY / k, width: vr.width / k, height: vr.height / k)
     }
 
-    /// يلتقط نص السطر تحت خط الهايلايتر. true = استُبدل الخط بتمييز مرتب.
+    /// خط هايلايتر جديد: مع «التقاط النص» يُستبدل بتمييز على الكلمات تحته ويُضاف نصه إلى الملخص
+    /// (نفس snapHighlight في أندرويد). دونه يبقى رسمًا حرًا ولا يدخل الملخص.
     private func handleHighlight(_ stroke: PKStroke) -> Bool {
-        guard let s = session, let page = page else { return false }
+        guard let s = session, let index = s.index(of: pageId) else { return false }
         let c = AppController.shared
-        var pts: [CGPoint] = []
-        for p in stroke.path.interpolatedPoints(by: .distance(4)) { pts.append(p.location.applying(stroke.transform)) }
-        var lo = Int.max, hi = Int.min
-        for p in pts {
-            guard let q = toPdf(p) else { continue }
-            let i = page.characterIndex(at: q)
-            if i >= 0 { lo = min(lo, i); hi = max(hi, i) }
+        guard c.highlightSnap && Premium.shared.active else { return false }
+        let W = pageSize.width * k
+        var pts: [RelPt] = []
+        for p in stroke.path.interpolatedPoints(by: .distance(3)) {
+            let q = p.location.applying(stroke.transform)
+            pts.append(RelPt(x: q.x / W, y: q.y / W))
         }
-        var text = ""
-        var rects: [CGRect] = []
-        if lo <= hi, let sel = page.selection(for: NSRange(location: lo, length: hi - lo + 1)) {
-            text = sel.string ?? ""
-            for line in sel.selectionsByLine() {
-                if let r = fromPdf(line.bounds(for: page)) { rects.append(r) }
-            }
-        } else {
-            // صفحة ممسوحة: النص من القراءة الضوئية
-            let bb = stroke.renderBounds
-            let pb = CGRect(x: bb.minX / k, y: bb.minY / k, width: bb.width / k, height: bb.height / k)
-            let lines = (s.ocr[pageId] ?? []).filter { $0.rect.rect.intersects(pb) }
-            text = lines.map { $0.text }.joined(separator: "\n")
-            rects = lines.map { $0.rect.rect.intersection(pb.insetBy(dx: 0, dy: -4)) }
-        }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let col = c.colorFor(.highlighter)
-        if c.highlightSnap && Premium.shared.active && !rects.isEmpty {
-            // التمييز المرتب يحل محل الخط الحر
+        let band = Sizes.width(.highlighter, c.sizeFor(.highlighter)) / 600
+        if s.snapHighlight(index, pts: pts, color: c.colorFor(.highlighter), band: band) {
             var d = canvas.drawing
             d.strokes.removeLast()
             applying = true
             canvas.drawing = d
             applying = false
             lastStrokeCount = d.strokes.count
-            // التظليل مرتين على نفس السطر = مهم
-            if let old = s.marks(onPage: pageId).first(where: { m in !m.free && m.rects.contains { r in rects.contains { $0.intersects(r.rect.insetBy(dx: 2, dy: 2)) } } }),
-               old.text == text || text.isEmpty {
-                s.updateMark(old.id) { $0.level = 2 }
-            } else {
-                s.addMark(TextMark(id: UUID().uuidString, page: pageId, rects: rects.map(MarkRect.init), color: col,
-                                   text: text, createdAt: nowMs(), inSummary: c.highlightToSummary && c.summariesOn))
-            }
             reloadMarks()
             return true
         }
-        if !text.isEmpty && c.highlightToSummary && c.summariesOn {
-            let bb = stroke.renderBounds
-            s.addMark(TextMark(id: UUID().uuidString, page: pageId,
-                               rects: [MarkRect(CGRect(x: bb.minX / k, y: bb.minY / k, width: bb.width / k, height: bb.height / k))],
-                               color: col, text: text, createdAt: nowMs(), free: true))
-        }
+        c.message(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
         return false
     }
 
     func reloadMarks() {
         marksView.marks = session?.marks(onPage: pageId).filter { !$0.free } ?? []
-        marksView.k = k
+        marksView.k = k * pageSize.width
         marksView.setNeedsDisplay()
     }
 
@@ -403,16 +373,20 @@ final class MarksView: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// k = عرض الصفحة بالنقاط على الشاشة (المستطيلات نسبية لعرض الصفحة).
     override func draw(_ rect: CGRect) {
         guard let c = UIGraphicsGetCurrentContext() else { return }
         c.setBlendMode(.multiply)
         for m in marks {
-            let col = UIColor(argb: m.color).withAlphaComponent(m.level > 1 ? 0.62 : 0.42)
-            c.setFillColor(col.cgColor)
+            c.setFillColor(UIColor(argb: m.color).withAlphaComponent(m.level > 1 ? 0.62 : 0.42).cgColor)
             for r in m.rects {
-                let rr = CGRect(x: r.l * k, y: r.t * k, width: (r.r - r.l) * k, height: (r.b - r.t) * k)
-                c.addPath(UIBezierPath(roundedRect: rr.insetBy(dx: -1, dy: -0.5), cornerRadius: 2 * k).cgPath)
+                c.addPath(UIBezierPath(roundedRect: r.scaled(k), cornerRadius: k * 0.003).cgPath)
                 c.fillPath()
+            }
+            // الأجزاء المظللة مرة ثانية: تظليل أقوى
+            if m.level < 2 && !m.strongRects.isEmpty {
+                c.setFillColor(UIColor(argb: m.color).withAlphaComponent(0.4).cgColor)
+                for r in m.strongRects { c.fill(r.scaled(k)) }
             }
         }
     }

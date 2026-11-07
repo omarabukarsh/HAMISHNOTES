@@ -78,14 +78,15 @@ struct DocEntry: Codable, Identifiable, Equatable {
     var coverColorOrDefault: Color { coverColor != 0 ? Color(hex: coverColor) : Lib.cover }
 }
 
-/// مستطيل بإحداثيات الصفحة (نقاط PDF، الأصل أعلى اليسار).
+/// مستطيل بإحداثيات نسبية لعرض الصفحة (مثل أندرويد).
 struct MarkRect: Codable, Equatable {
     var l: CGFloat, t: CGFloat, r: CGFloat, b: CGFloat
-    var rect: CGRect { CGRect(x: l, y: t, width: r - l, height: b - t) }
-    init(_ r: CGRect) { l = r.minX; t = r.minY; self.r = r.maxX; b = r.maxY }
+    init(l: CGFloat, t: CGFloat, r: CGFloat, b: CGFloat) { self.l = l; self.t = t; self.r = r; self.b = b }
+    /// المستطيل بنقاط صفحة عرضها w.
+    func scaled(_ w: CGFloat) -> CGRect { CGRect(x: l * w, y: t * w, width: (r - l) * w, height: (b - t) * w) }
 }
 
-/// تمييز على النص: يظهر في درج «ملخصات».
+/// تمييز ملتقط على النص: يظهر في درج «ملخصات» (نفس نموذج أندرويد).
 struct TextMark: Codable, Identifiable, Equatable {
     var id: String
     var page: String          // معرّف الصفحة
@@ -96,8 +97,33 @@ struct TextMark: Codable, Identifiable, Equatable {
     /// 1 عادي، 2 مهم (ظُلّل مرتين).
     var level = 1
     var inSummary = true
-    /// تمييز حر (بالرسم) لا يُرسم من المستطيلات، والمستطيلات للترتيب فقط.
+    /// تمييز حر (رسم بالهايلايتر دون نص) لا يدخل الملخص.
     var free = false
+    /// أجزاء ظُلّلت مرة ثانية؛ تظهر بخط عريض في الملخص.
+    var emphasis: [String] = []
+    /// مستطيلات الأجزاء المظللة مرة ثانية (تظليل أقوى على الصفحة).
+    var strongRects: [MarkRect] = []
+
+    init(id: String, page: String, rects: [MarkRect], color: UInt32, text: String, createdAt: Int64,
+         level: Int = 1, inSummary: Bool = true, free: Bool = false, emphasis: [String] = [], strongRects: [MarkRect] = []) {
+        self.id = id; self.page = page; self.rects = rects; self.color = color; self.text = text; self.createdAt = createdAt
+        self.level = level; self.inSummary = inSummary; self.free = free; self.emphasis = emphasis; self.strongRects = strongRects
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        page = try c.decode(String.self, forKey: .page)
+        rects = try c.decode([MarkRect].self, forKey: .rects)
+        color = try c.decode(UInt32.self, forKey: .color)
+        text = try c.decode(String.self, forKey: .text)
+        createdAt = try c.decode(Int64.self, forKey: .createdAt)
+        level = try c.decodeIfPresent(Int.self, forKey: .level) ?? 1
+        inSummary = try c.decodeIfPresent(Bool.self, forKey: .inSummary) ?? true
+        free = try c.decodeIfPresent(Bool.self, forKey: .free) ?? false
+        emphasis = try c.decodeIfPresent([String].self, forKey: .emphasis) ?? []
+        strongRects = try c.decodeIfPresent([MarkRect].self, forKey: .strongRects) ?? []
+    }
 }
 
 /// مربع نص فوق الصفحة. x و y الزاوية العليا، w العرض، size حجم الخط (نقاط).
@@ -159,6 +185,8 @@ struct DocData: Codable {
     var outline: [OutlineEntry] = []
     var map: MindMapData? = nil
     var recordings: [AudioRec] = []
+    /// تعديلات المستخدم على الملخص (عناوين، ترتيب، جداول).
+    var summaryEdits: SummaryEdits? = nil
 }
 
 /// تسجيل صوتي مرتبط بالمستند.

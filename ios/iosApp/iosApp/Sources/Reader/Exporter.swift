@@ -47,7 +47,7 @@ enum Exporter {
         c.setBlendMode(.multiply)
         for m in data.marks where m.page == pid && !m.free {
             c.setFillColor(UIColor(argb: m.color).withAlphaComponent(m.level > 1 ? 0.62 : 0.42).cgColor)
-            for r in m.rects { c.fill(r.rect) }
+            for r in m.rects { c.fill(r.scaled(size.width)) }
         }
         c.restoreGState()
         for im in data.images where im.page == pid {
@@ -77,49 +77,55 @@ enum Exporter {
         }
     }
 
-    /// ملخص مستند واحد (PDF).
+    /// ملخص مستند واحد (PDF): نفس أجزاء درج الملخصات (عناوين، فقرات، جداول، والمهم بخط عريض).
     static func summaryPDF(_ s: DocSession) -> URL? {
-        let marks = s.allMarks().filter { $0.inSummary }
-        guard !marks.isEmpty else {
-            AppController.shared.message(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
+        let app = AppController.shared
+        let blocks = Summary.view(s.allMarks(), tidy: app.summaryTidy, edits: s.summaryEdits)
+        guard !blocks.isEmpty else {
+            app.message(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
             return nil
         }
-        var html = "<h1>\(esc(L("ملخص", "Summary"))): \(esc(s.title))</h1>"
-        var lastPage = -1
-        for m in marks {
-            let p = s.index(of: m.page) ?? 0
-            if p != lastPage {
-                html += "<div class='pg'>\(esc(L("صفحة \(p + 1)", "Page \(p + 1)")))</div>"
-                lastPage = p
-            }
-            html += block(m)
-        }
-        return renderHTML(html, name: L("ملخص ", "Summary ") + safeFileName(s.title))
+        return renderHTML("<h1>\(esc(s.title))</h1>" + html(blocks), name: L("ملخص ", "Summary ") + safeFileName(s.title))
     }
 
     /// ملخص مادة كاملة: كل مستنداتها بالترتيب.
     static func folderSummary(_ folder: String) -> URL? {
         let app = AppController.shared
-        var html = "<h1>\(esc(L("ملخص مادة", "Subject summary"))): \(esc(folder))</h1>"
+        var body = "<h1>\(esc(L("ملخص مادة", "Subject summary"))): \(esc(folder))</h1>"
         var any = false
         for e in app.library.filter({ $0.folder == folder && !$0.isMap }).sorted(by: { $0.name < $1.name }) {
             let s = app.tabs.first { $0.id == e.id } ?? DocSession(entry: e)
-            let marks = s.allMarks().filter { $0.inSummary }
-            if marks.isEmpty { continue }
+            let blocks = Summary.view(s.allMarks(), tidy: app.summaryTidy, edits: s.summaryEdits)
+            if blocks.isEmpty { continue }
             any = true
-            html += "<h2>\(esc(e.name))</h2>"
-            for m in marks { html += block(m) }
+            body += "<h2>\(esc(e.name))</h2>" + html(blocks)
         }
         guard any else { return nil }
-        return renderHTML(html, name: L("ملخص مادة ", "Subject summary ") + safeFileName(folder))
+        return renderHTML(body, name: L("ملخص مادة ", "Subject summary ") + safeFileName(folder))
     }
 
-    private static func block(_ m: TextMark) -> String {
-        let t = AppController.shared.summaryTidy ? TextTidy.tidy(m.text) : m.text
-        let col = String(format: "#%06X", m.color & 0xFFFFFF)
-        if t.hasPrefix("# ") { return "<h3>\(esc(String(t.dropFirst(2))))</h3>" }
-        let body = esc(t).replacingOccurrences(of: "\n", with: "<br>")
-        return "<p style='border-\(I18n.english ? "left" : "right"): 4px solid \(col)'>\(m.level > 1 ? "<b>\(body)</b>" : body)</p>"
+    private static func html(_ blocks: [SBlock]) -> String {
+        blocks.map { b -> String in
+            switch b {
+            case .heading(let t, _, _): return "<h3>\(esc(t))</h3>"
+            case .para(let t, let e, _, _):
+                var out = ""
+                var i = t.startIndex
+                for r in Summary.emphasisRanges(t, e) where r.lowerBound >= i {
+                    out += esc(String(t[i..<r.lowerBound])) + "<b class='em'>" + esc(String(t[r])) + "</b>"
+                    i = r.upperBound
+                }
+                out += esc(String(t[i...]))
+                return "<p>\(out)</p>"
+            case .table(let rows, _, _, let header):
+                let cols = rows.map { $0.count }.max() ?? 1
+                let trs = rows.enumerated().map { ri, r -> String in
+                    let tag = header && ri == 0 ? "th" : "td"
+                    return "<tr>" + (0..<cols).map { "<\(tag)>\(esc($0 < r.count ? r[$0] : ""))</\(tag)>" }.joined() + "</tr>"
+                }.joined()
+                return "<table>\(trs)</table>"
+            }
+        }.joined()
     }
 
     private static func esc(_ s: String) -> String {
@@ -135,7 +141,11 @@ enum Exporter {
         h2 { color: #1B365D; font-size: 17pt; margin-top: 22px; }
         h3 { color: #1B365D; font-size: 15pt; }
         .pg { color: #8C6A1F; font-size: 10pt; margin-top: 16px; }
-        p { padding: 2px 10px; margin: 8px 0; }
+        p { margin: 8px 0; }
+        b.em { font-weight: 800; background: #F4E9CB; }
+        table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 10pt; }
+        th, td { border: 0.5px solid #E4DFD3; padding: 4px 6px; vertical-align: top; }
+        th { background: #E8EDF5; }
         </style></head><body>\(body)</body></html>
         """
         let fmt = UIMarkupTextPrintFormatter(markupText: html)

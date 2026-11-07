@@ -3,12 +3,6 @@ import PDFKit
 import PencilKit
 import Vision
 
-/// كلمة أو سطر مقروء بالقراءة الضوئية (إحداثيات الصفحة، الأصل أعلى اليسار).
-struct OcrLine: Codable, Equatable {
-    var text: String
-    var rect: MarkRect
-}
-
 /// خطوة قابلة للتراجع.
 enum EditStep {
     case ink(page: String, before: PKDrawing, after: PKDrawing)
@@ -216,14 +210,166 @@ final class DocSession: ObservableObject, Identifiable {
 
     func marks(onPage pid: String) -> [TextMark] { data.marks.filter { $0.page == pid } }
 
-    /// كل التمييزات مرتبة حسب الصفحة ثم موضعها.
+    /// تمييزات الملخص بترتيب القراءة: الصفحة، ثم أعلى مستطيل، ثم أقصى اليسار (مثل MarkMerge.readingOrder).
     func allMarks() -> [TextMark] {
-        data.marks.sorted { a, b in
+        data.marks.filter { $0.inSummary && !$0.free }.sorted { a, b in
             let ia = index(of: a.page) ?? 0, ib = index(of: b.page) ?? 0
             if ia != ib { return ia < ib }
-            return (a.rects.first?.t ?? 0) < (b.rects.first?.t ?? 0)
+            let ta = a.rects.map { $0.t }.min() ?? 0, tb = b.rects.map { $0.t }.min() ?? 0
+            if ta != tb { return ta < tb }
+            return (a.rects.map { $0.l }.min() ?? 0) < (b.rects.map { $0.l }.min() ?? 0)
         }
     }
+
+    // ---------- كلمات الصفحة والتقاط النص ----------
+
+    private var wordCache: [String: [OcrWord]] = [:]
+
+    /// كلمات الصفحة: من طبقة نص PDF، وإلا من القراءة الضوئية المحفوظة.
+    func words(_ index: Int) -> [OcrWord] {
+        guard let pid = pageId(index) else { return [] }
+        if let w = wordCache[pid] { return w }
+        var w: [OcrWord] = []
+        if let p = pdf?.page(at: index) { w = TextLayout.pdfWords(p) }
+        if w.count < 3, let o = ocr[pid] { w = o }
+        wordCache[pid] = w
+        return w
+    }
+
+    /// خط هايلايتر بالتقاط النص (نفس DocSession.snapHighlight في أندرويد).
+    /// pts بإحداثيات نسبية لعرض الصفحة. true = صار تمييزًا على النص.
+    @discardableResult
+    func snapHighlight(_ index: Int, pts: [RelPt], color: UInt32, band: CGFloat) -> Bool {
+        guard let pid = pageId(index) else { return false }
+        let ws = words(index)
+        let idx = TextLayout.wordsUnder(ws, pts, band: band)
+        guard !idx.isEmpty else { return false }
+        let c = AppController.shared
+        let existing = marks(onPage: pid)
+        guard let res = MarkMerge.add(existing: existing, page: pid, words: ws, idx: idx, color: color, now: nowMs(),
+                                      inSummary: c.highlightToSummary && c.summariesOn) else { return false }
+        edit { d in d.marks = d.marks.filter { $0.page != pid } + res.marks }
+        if let m = res.message { c.message(m) }
+        return true
+    }
+
+    // ---------- تحرير الملخص (نقل DocSession.kt) ----------
+
+    var summaryEdits: SummaryEdits { data.summaryEdits ?? SummaryEdits() }
+
+    private func changeEdits(_ f: (SummaryEdits) -> SummaryEdits) {
+        let next = f(summaryEdits)
+        if next == summaryEdits { return }
+        edit { $0.summaryEdits = next }
+    }
+
+    /// kind: "h" عنوان، "p" نص عادي، nil = كما يكتشفه البرنامج.
+    func setBlockKind(_ key: String, _ kind: String?) {
+        changeEdits { e in var x = e; if let k = kind { x.kinds[key] = k } else { x.kinds.removeValue(forKey: key) }; return x }
+    }
+
+    func moveBlock(_ shown: [String], _ key: String, _ delta: Int) {
+        guard let i = shown.firstIndex(of: key) else { return }
+        let j = i + delta
+        guard j >= 0 && j < shown.count else { return }
+        var next = shown
+        next[i] = shown[j]
+        next[j] = key
+        changeEdits { e in var x = e; x.order = next; return x }
+    }
+
+    func makeTable(_ keys: [String], cols: Int) {
+        guard !keys.isEmpty else { return }
+        changeEdits { e in
+            var expanded: [String] = []
+            var absorbed = Set<String>()
+            for k in keys {
+                if k.hasPrefix("g:"), let g = e.tables.first(where: { "g:" + $0.id == k }) {
+                    expanded += g.keys
+                    absorbed.insert(g.id)
+                } else { expanded.append(k) }
+            }
+            var uniq: [String] = []
+            for k in expanded where !uniq.contains(k) { uniq.append(k) }
+            let group = TableGroup(id: UUID().uuidString, keys: uniq, cols: cols)
+            let gKey = "g:" + group.id
+            let memberKeys = Set(keys).union(uniq)
+            let firstPos = e.order.firstIndex { memberKeys.contains($0) }
+            var order = e.order
+            if let fp = firstPos {
+                order = e.order.enumerated().compactMap { i, k in i == fp ? gKey : (memberKeys.contains(k) ? nil : k) }
+            }
+            var x = e
+            x.tables = e.tables.filter { !absorbed.contains($0.id) && !$0.keys.contains(where: { uniq.contains($0) }) } + [group]
+            x.order = order
+            return x
+        }
+    }
+
+    func saveTable(_ blockKey: String, rows: [[String]], header: Bool) {
+        changeEdits { e in
+            var x = e
+            if blockKey.hasPrefix("g:") {
+                x.tables = e.tables.map { g in var y = g; if "g:" + g.id == blockKey { y.rows = rows; y.header = header }; return y }
+            } else {
+                let g = TableGroup(id: UUID().uuidString, keys: [blockKey], rows: rows, header: header)
+                x.tables.append(g)
+                x.order = e.order.map { $0 == blockKey ? "g:" + g.id : $0 }
+            }
+            return x
+        }
+    }
+
+    func addToTable(_ tableKey: String, keys: [String], newRows: [[String]]) {
+        changeEdits { e0 in
+            var absorbed = Set<String>()
+            var add: [String] = []
+            for k in keys where k != tableKey {
+                if k.hasPrefix("g:"), let g = e0.tables.first(where: { "g:" + $0.id == k }) {
+                    absorbed.insert(g.id)
+                    add += g.keys
+                } else { add.append(k) }
+            }
+            if add.isEmpty { return e0 }
+            var e = e0
+            e.tables = e0.tables.filter { !absorbed.contains($0.id) }
+            let order = e.order.filter { !add.contains($0) && !absorbed.contains(String($0.dropFirst(2))) }
+            if tableKey.hasPrefix("g:") {
+                e.tables = e.tables.map { g in
+                    var y = g
+                    if "g:" + g.id == tableKey {
+                        var ks = g.keys
+                        for k in add where !ks.contains(k) { ks.append(k) }
+                        y.keys = ks
+                        if let r = g.rows { y.rows = r + newRows }
+                    }
+                    return y
+                }
+                e.order = order
+            } else {
+                let g = TableGroup(id: UUID().uuidString, keys: [tableKey] + add)
+                e.tables.append(g)
+                e.order = order.map { $0 == tableKey ? "g:" + g.id : $0 }
+            }
+            return e
+        }
+    }
+
+    func removeTable(_ groupKey: String) {
+        changeEdits { e in var x = e; x.tables = e.tables.filter { "g:" + $0.id != groupKey }; return x }
+    }
+
+    func resetBlock(_ key: String) {
+        changeEdits { e in
+            var x = e
+            x.kinds.removeValue(forKey: key)
+            x.order = e.order.filter { $0 != key }
+            x.tables = e.tables.filter { "g:" + $0.id != key }.map { g in var y = g; y.keys = g.keys.filter { $0 != key }; return y }.filter { !$0.keys.isEmpty }
+            return x
+        }
+    }
+
+    func updateMarkText(_ id: String, _ text: String) { updateMark(id) { $0.text = text } }
 
     func addMark(_ m: TextMark) { edit { $0.marks.append(m) } }
 
@@ -463,8 +609,10 @@ final class DocSession: ObservableObject, Identifiable {
     func ocrHits(_ q: String) -> [(Int, String)] {
         var out: [(Int, String)] = []
         for (i, info) in data.pages.enumerated() {
-            for l in ocr[info.id] ?? [] where l.text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
-                out.append((i, l.text))
+            let ws = ocr[info.id] ?? []
+            let lines = Dictionary(grouping: ws) { $0.line }.values.map { $0.map { $0.text }.joined(separator: " ") }
+            for l in lines where l.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+                out.append((i, l))
             }
         }
         return out
@@ -472,12 +620,12 @@ final class DocSession: ObservableObject, Identifiable {
 
     // ======================================================== القراءة الضوئية
 
-    @Published var ocr: [String: [OcrLine]] = [:]
+    @Published var ocr: [String: [OcrWord]] = [:]
 
     private var ocrURL: URL { repo.dir(id).appendingPathComponent("ocr.json") }
 
     func loadOcr() {
-        if let d = try? Data(contentsOf: ocrURL), let v = try? JSONDecoder().decode([String: [OcrLine]].self, from: d) { ocr = v }
+        if let d = try? Data(contentsOf: ocrURL), let v = try? JSONDecoder().decode([String: [OcrWord]].self, from: d) { ocr = v }
     }
 
     private func saveOcr() {
@@ -495,9 +643,10 @@ final class DocSession: ObservableObject, Identifiable {
                 guard let self = self, self.ocrRunning else { break }
                 guard let page = doc.page(at: i) else { continue }
                 if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20 { continue }
-                let lines = Self.recognize(page)
+                let ws = TextLayout.ocrWords(page)
                 DispatchQueue.main.async {
-                    self.ocr[info.id] = lines
+                    self.ocr[info.id] = ws
+                    self.wordCache.removeValue(forKey: info.id)
                     self.ocrProgress = i + 1
                 }
             }
@@ -512,24 +661,4 @@ final class DocSession: ObservableObject, Identifiable {
 
     func stopOcr() { ocrRunning = false }
 
-    static func recognize(_ page: PDFPage) -> [OcrLine] {
-        let b = page.bounds(for: .cropBox)
-        let scale: CGFloat = 2.5
-        let img = page.thumbnail(of: CGSize(width: b.width * scale, height: b.height * scale), for: .cropBox)
-        guard let cg = img.cgImage else { return [] }
-        let req = VNRecognizeTextRequest()
-        req.recognitionLevel = .accurate
-        req.usesLanguageCorrection = true
-        let supported = (try? req.supportedRecognitionLanguages()) ?? []
-        req.recognitionLanguages = ["ar-SA", "en-US"].filter { supported.contains($0) }
-        let h = VNImageRequestHandler(cgImage: cg, options: [:])
-        try? h.perform([req])
-        let w = b.width, hh = b.height
-        return (req.results ?? []).compactMap { o in
-            guard let t = o.topCandidates(1).first?.string else { return nil }
-            let r = o.boundingBox
-            let rect = CGRect(x: r.minX * w, y: (1 - r.maxY) * hh, width: r.width * w, height: r.height * hh)
-            return OcrLine(text: t, rect: MarkRect(rect))
-        }
-    }
 }

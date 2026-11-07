@@ -71,27 +71,21 @@ enum Demo {
         let s = DocSession(entry: e)
         guard let pdf = s.pdf, let page = pdf.page(at: 0), let pid = s.pageId(0) else { return }
         let size = s.pageSize(0)
-        let b = page.bounds(for: .cropBox)
-        func toTop(_ r: CGRect) -> CGRect { CGRect(x: r.minX - b.minX, y: b.maxY - r.maxY, width: r.width, height: r.height) }
-        let lines = (page.selection(for: b)?.selectionsByLine() ?? []).filter { ($0.string ?? "").trimmingCharacters(in: .whitespaces).count > 12 }
+        // تظليل حقيقي بالتقاط النص (نفس مسار الهايلايتر): صفوف من أول ثلاث صفحات
+        c.highlightSnap = true
         let palette: [UInt32] = [0xFFFFEB3B, 0xFF69F0AE, 0xFFFF80AB, 0xFF40C4FF]
-        var marks: [TextMark] = []
-        for (k, l) in lines.prefix(12).enumerated() where k % 3 == 1 {
-            marks.append(TextMark(id: UUID().uuidString, page: pid, rects: [MarkRect(toTop(l.bounds(for: page)))],
-                                  color: palette[(k / 3) % palette.count], text: l.string ?? "", createdAt: nowMs(), level: k == 4 ? 2 : 1))
-        }
-        // تظليل في صفحات أخرى
-        for p in 1..<min(3, pdf.pageCount) {
-            guard let pg = pdf.page(at: p), let ppid = s.pageId(p) else { continue }
-            let bb = pg.bounds(for: .cropBox)
-            for l in (pg.selection(for: bb)?.selectionsByLine() ?? []).filter({ ($0.string ?? "").count > 15 }).prefix(6).enumerated().filter({ $0.offset % 2 == 0 }).map({ $0.element }) {
-                let r = l.bounds(for: pg)
-                marks.append(TextMark(id: UUID().uuidString, page: ppid, rects: [MarkRect(CGRect(x: r.minX - bb.minX, y: bb.maxY - r.maxY, width: r.width, height: r.height))],
-                                      color: palette[p % palette.count], text: l.string ?? "", createdAt: nowMs()))
+        for p in 0..<min(3, pdf.pageCount) {
+            let ws = s.words(p)
+            let rows = TextLayout.visualRows(ws, Array(ws.indices))
+            for (k, row) in rows.prefix(14).enumerated() where k % 3 == 1 {
+                let l = row.map { ws[$0].l }.min()!, r = row.map { ws[$0].r }.max()!
+                let y = row.map { (ws[$0].t + ws[$0].b) / 2 }.reduce(0, +) / CGFloat(row.count)
+                let pts = stride(from: l, through: r, by: 0.01).map { RelPt(x: $0, y: y) }
+                s.snapHighlight(p, pts: pts, color: palette[(k / 3 + p) % palette.count], band: 0.024)
+                if k == 4 { s.snapHighlight(p, pts: pts, color: palette[(k / 3 + p) % palette.count], band: 0.024) }
             }
         }
         s.edit { d in
-            d.marks = marks
             d.bookmarks = [pid]
             d.notes.append(StickyNote(id: UUID().uuidString, page: pid, x: size.width * 0.62, y: size.height * 0.62, w: size.width * 0.3, h: size.width * 0.24,
                                       color: 0xFFFFF59D, text: I18n.english ? "Review before the exam!" : "راجع هذا قبل الامتحان!"))

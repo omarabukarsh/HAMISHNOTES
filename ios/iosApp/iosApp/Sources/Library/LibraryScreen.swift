@@ -610,26 +610,56 @@ private struct ResumeRow: View {
     let resume: DocEntry?
     let wide: Bool
     var body: some View {
-        HStack(spacing: 18) {
+        WeightedRow(spacing: 18, weights: resume != nil && wide && !app.folders.isEmpty ? [1.25, 1] : [1]) {
             if let r = resume {
                 ResumeCard(entry: r, wide: wide) { app.openDocument(r.id) }
-                    .frame(maxWidth: .infinity)
-                    .layoutPriority(1.25)
             }
             if wide && !app.folders.isEmpty {
-                HStack(spacing: 8) {
+                WeightedRow(spacing: 8, weights: [1, 1, 1]) {
                     ForEach(Array(app.folders.prefix(3)), id: \.self) { f in
                         FolderTile(name: f, count: app.library.filter { $0.folder == f }.count, selected: app.libraryFolder == f) {
                             app.libraryFolder = f
                             app.libraryFilter = .all
                         }
                     }
-                    ForEach(0..<max(0, 3 - app.folders.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+                    ForEach(0..<max(0, 3 - app.folders.count), id: \.self) { _ in Color.clear.frame(height: 1) }
                 }
-                .frame(maxWidth: .infinity)
             }
         }
         .padding(.bottom, 4)
+    }
+}
+
+/// صف بأوزان مثل Modifier.weight في أندرويد: يقسم العرض بين العناصر حسب أوزانها، ويتوسطها عموديًا.
+struct WeightedRow: Layout {
+    var spacing: CGFloat = 0
+    var weights: [CGFloat]
+
+    private func widths(_ total: CGFloat, _ n: Int) -> [CGFloat] {
+        let ws = (0..<n).map { $0 < weights.count ? weights[$0] : 1 }
+        let sum = max(0.0001, ws.reduce(0, +))
+        let free = max(0, total - spacing * CGFloat(max(0, n - 1)))
+        return ws.map { free * $0 / sum }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let total = proposal.width ?? 800
+        let ws = widths(total, subviews.count)
+        var h: CGFloat = 0
+        for (i, v) in subviews.enumerated() {
+            h = max(h, v.sizeThatFits(ProposedViewSize(width: ws[i], height: proposal.height)).height)
+        }
+        return CGSize(width: total, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let ws = widths(bounds.width, subviews.count)
+        var x = bounds.minX
+        for (i, v) in subviews.enumerated() {
+            let sz = v.sizeThatFits(ProposedViewSize(width: ws[i], height: bounds.height))
+            v.place(at: CGPoint(x: x, y: bounds.midY - sz.height / 2), proposal: ProposedViewSize(width: ws[i], height: sz.height))
+            x += ws[i] + spacing
+        }
     }
 }
 

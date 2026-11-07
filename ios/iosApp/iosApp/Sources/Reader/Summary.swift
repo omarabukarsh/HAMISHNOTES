@@ -46,8 +46,10 @@ struct SummaryEdits: Codable, Equatable {
     var order: [String] = []
     var kinds: [String: String] = [:]
     var tables: [TableGroup] = []
+    /// الخريطة الذهنية كما وضعها المستخدم (nil = لم تُبنَ بعد).
+    var map: MapEdits? = nil
 
-    var isEmpty: Bool { order.isEmpty && kinds.isEmpty && tables.isEmpty }
+    var isEmpty: Bool { order.isEmpty && kinds.isEmpty && tables.isEmpty && (map?.isEmpty ?? true) }
 }
 
 private let TERMINAL: Set<Character> = [".", "!", "?", "؟", "…"]

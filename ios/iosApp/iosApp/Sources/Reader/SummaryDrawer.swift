@@ -11,6 +11,7 @@ struct SummaryDrawer: View {
     @State private var selecting = false
     @State private var selected: [String] = []
     @State private var tableTarget: String? = nil
+    @State private var selectForMap = false
     @State private var tableCols = 2
     @State private var editingTable: TableEdit? = nil
     @State private var cardFrom: CardDraft? = nil
@@ -36,7 +37,7 @@ struct SummaryDrawer: View {
                 }
                 .padding(.leading, 4)
                 Spacer(minLength: 4)
-                Button { if !all.isEmpty { s.mapOpen = true } } label: {
+                Button { s.mapPlacing = nil; s.mapOpen = true } label: {
                     HStack(spacing: 5) {
                         PhIcon("ph_mindmap", Palette.goldDeep, 16)
                         Text(L("خريطة", "Map")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
@@ -92,7 +93,7 @@ struct SummaryDrawer: View {
                 .padding(.bottom, 6)
             }
             Rectangle().fill(Palette.gold.opacity(0.45)).frame(height: 1)
-            if selecting { tableBar(blocks) }
+            if selecting { if selectForMap { mapSelectBar } else { tableBar(blocks) } }
             if blocks.isEmpty {
                 VStack(spacing: 8) {
                     Text(L("لا توجد ملخصات بعد", "No summaries yet")).font(Fonts.sans(16, .bold)).foregroundColor(Palette.textPrimary)
@@ -180,8 +181,39 @@ struct SummaryDrawer: View {
 
     private func endSelecting() {
         selecting = false
+        selectForMap = false
         selected = []
         tableTarget = nil
+    }
+
+    /// شريط «اختيار عدة نصوص» للخريطة.
+    private var mapSelectBar: some View {
+        let n = selected.count
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(n == 0 ? L("اختر النصوص بالترتيب الذي تريده في الخريطة", "Pick texts in the order you want on the map")
+                 : L("اخترت \(n) · تُوضع كلها في المكان الذي تختاره، بنفس الترتيب", "\(n) selected · they go where you choose, in this order"))
+                .font(Fonts.sans(13, .bold)).foregroundColor(.white)
+            HStack(spacing: 8) {
+                Button {
+                    session.mapPlacing = selected.compactMap { MindMap.nodeKey($0) }
+                    session.mapOpen = true
+                    endSelecting()
+                } label: {
+                    Text("◎ " + L("ضعها في الخريطة", "Place on the map")).font(Fonts.sans(14, .bold)).foregroundColor(Color(hex: 0xFF1A2230).opacity(n > 0 ? 1 : 0.4))
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.gold.opacity(n > 0 ? 1 : 0.5)))
+                }
+                .disabled(n == 0)
+                Button(action: endSelecting) {
+                    Text(L("إلغاء", "Cancel")).font(Fonts.sans(14, .bold)).foregroundColor(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)))
+                }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(hex: 0xFF1A2230))
     }
 
     // ---------- جزء من الملخص ----------
@@ -233,6 +265,12 @@ struct SummaryDrawer: View {
         let pos = shown.firstIndex(of: b.key) ?? -1
         let first = b.marks.first
         let isTable: Bool = { if case .table = b { return true } else { return false } }()
+        if let mk = MindMap.nodeKey(b.key) {
+            Section(L("الخريطة الذهنية", "Mind map")) {
+                Button { s.mapPlacing = [mk]; s.mapOpen = true } label: { Label { Text(L("ضعه في الخريطة…", "Place on the map…")) } icon: { Image("ph_mindmap") } }
+                Button { selecting = true; selectForMap = true; tableTarget = nil; selected = [b.key] } label: { Label { Text(L("اختيار عدة نصوص…", "Select several texts…")) } icon: { Image("ph_pages") } }
+            }
+        }
         Section {
             switch b {
             case .heading: Button { s.setBlockKind(b.key, "p") } label: { Label { Text(L("نص عادي", "Plain text")) } icon: { Image("ph_text") } }

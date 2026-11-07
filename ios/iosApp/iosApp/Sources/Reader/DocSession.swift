@@ -46,6 +46,8 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var searchIndex = 0
     @Published var trayMode: String? = nil      // "stickers" أو "photos"
     @Published var mapOpen = false
+    /// نصوص من الملخصات تُوضع الآن في الخريطة (تفتح الخريطة لاختيار مكانها).
+    @Published var mapPlacing: [String]? = nil
     @Published var ocrRunning = false
     @Published var ocrProgress = 0
     @Published var scalePercent = 100
@@ -278,7 +280,7 @@ final class DocSession: ObservableObject, Identifiable {
 
     var summaryEdits: SummaryEdits { data.summaryEdits ?? SummaryEdits() }
 
-    private func changeEdits(_ f: (SummaryEdits) -> SummaryEdits) {
+    func changeEdits(_ f: (SummaryEdits) -> SummaryEdits) {
         let next = f(summaryEdits)
         if next == summaryEdits { return }
         edit { $0.summaryEdits = next }

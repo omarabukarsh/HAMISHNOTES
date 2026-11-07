@@ -163,8 +163,9 @@ private struct ReaderContent: View {
         .sheet(item: Binding(get: { s.editingNote }, set: { s.editingNote = $0 })) { n in
             NoteSheet(session: s, note: n).environment(\.layoutDirection, .leftToRight)
         }
-        .bigSheet(isPresented: Binding(get: { s.mapOpen }, set: { s.mapOpen = $0 }), maxWidth: 1400) {
-            MindMapView(session: s, standalone: false).environmentObject(app)
+        .fullScreenCover(isPresented: Binding(get: { s.mapOpen }, set: { s.mapOpen = $0; if !$0 { s.mapPlacing = nil } })) {
+            MindMapView(session: s, standalone: false, placing: s.mapPlacing, onClose: { s.mapOpen = false; s.mapPlacing = nil })
+                .environmentObject(app)
                 .environment(\.layoutDirection, .leftToRight)
         }
         .fileImporter(isPresented: $pdfPicker, allowedContentTypes: [.pdf]) { r in

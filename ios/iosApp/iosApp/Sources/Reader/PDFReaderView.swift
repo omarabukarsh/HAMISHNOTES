@@ -97,6 +97,21 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
         session.$selectedImage.dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
+        // نتائج البحث مظللة في الصفحة، والنتيجة الحالية محددة
+        session.$searchHits.combineLatest(session.$searchIndex).receive(on: RunLoop.main)
+            .sink { [weak self] hits, idx in
+                guard let v = self?.pdfView else { return }
+                hits.forEach { $0.color = UIColor(argb: 0xFFFFEB3B).withAlphaComponent(0.6) }
+                v.highlightedSelections = hits.isEmpty ? nil : hits
+                if hits.indices.contains(idx) {
+                    let sel = hits[idx]
+                    sel.color = UIColor(argb: 0xFFFFAB40)
+                    v.setCurrentSelection(sel, animate: true)
+                    v.go(to: sel)
+                } else {
+                    v.clearSelection()
+                }
+            }.store(in: &bag)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.go(self.session.currentPage, animated: false)

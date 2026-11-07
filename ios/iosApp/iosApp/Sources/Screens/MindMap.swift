@@ -21,11 +21,10 @@ struct MindMapView: View {
     private var map: MindMapData { session.data.map ?? MindMapData(title: session.title) }
 
     var body: some View {
-        let layout = MapLayout(map: map, rtl: !app.english)
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text(map.title).font(Fonts.display(20)).foregroundColor(Palette.navy).lineLimit(1)
-                Text(L("\(layout.total) فكرة", "\(layout.total) ideas")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                Text(L("\(MapOps.flatten(map.branches).count) فكرة", "\(MapOps.flatten(map.branches).count) ideas")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                 Spacer()
                 if !standalone {
                     Button { showMarks.toggle() } label: {
@@ -47,6 +46,8 @@ struct MindMapView: View {
             .background(Color.white)
             .overlay(Rectangle().fill(Palette.divider).frame(height: 1), alignment: .bottom)
             HStack(spacing: 0) {
+                GeometryReader { geo in
+                let layout = MapLayout(map: map, rtl: !app.english, minSize: CGSize(width: geo.size.width / zoom, height: geo.size.height / zoom))
                 ScrollView([.horizontal, .vertical]) {
                     ZStack(alignment: .topLeading) {
                         Canvas { ctx, _ in
@@ -74,7 +75,9 @@ struct MindMapView: View {
                     .frame(width: layout.size.width * zoom * pinch, height: layout.size.height * zoom * pinch, alignment: .topLeading)
                     .environment(\.layoutDirection, .leftToRight)
                 }
+                .environment(\.layoutDirection, .leftToRight)
                 .gesture(MagnificationGesture().updating($pinch) { v, st, _ in st = v }.onEnded { v in zoom = max(0.4, min(2.5, zoom * v)) })
+                }
                 if showMarks { marksList }
             }
         }
@@ -182,7 +185,7 @@ struct MapLayout {
     var size: CGSize = .zero
     var total = 0
 
-    init(map: MindMapData, rtl: Bool) {
+    init(map: MindMapData, rtl: Bool, minSize: CGSize = CGSize(width: 700, height: 500)) {
         var row: CGFloat = 0
         var maxDepth = 0
         var raw: [(MapNodeData, Int, CGFloat, Int)] = []   // العقدة، العمق، الصف، الفرع
@@ -207,7 +210,7 @@ struct MapLayout {
         let height = rows * Self.rowH + 80
         let cols = CGFloat(maxDepth + 1)
         let width = Self.centerW + 60 + cols * (Self.nodeW + Self.colGap) + 40
-        let W = max(700, width), H = max(500, height)
+        let W = max(minSize.width, width), H = max(minSize.height, height)
         size = CGSize(width: W, height: H)
         let cy = branchYs.isEmpty ? H / 2 : ((branchYs.min()! + branchYs.max()!) / 2) * Self.rowH + 40 + Self.rowH / 2
         func x(_ depth: Int) -> CGFloat {

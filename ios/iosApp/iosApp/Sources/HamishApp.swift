@@ -78,14 +78,14 @@ struct RootView: View {
             if let t = app.toast { ToastView(text: t) }
             PremiumHost()
         }
-        .sheet(isPresented: $app.settingsOpen) {
+        .bigSheet(isPresented: $app.settingsOpen, maxWidth: 880) {
             SettingsView().environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
         }
-        .sheet(isPresented: $app.statsOpen) {
+        .bigSheet(isPresented: $app.statsOpen) {
             StatsView().environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
         }
-        .sheet(item: Binding(get: { app.openDeck.map { IdString(id: $0) } }, set: { app.openDeck = $0?.id })) { d in
-            DeckView(deck: d.id == "*" ? nil : d.id).environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+        .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } })) {
+            DeckView(deck: app.openDeck == "*" ? nil : app.openDeck).environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
         }
         .sheet(item: Binding(get: { app.setPinFor.map { IdString(id: $0) } }, set: { app.setPinFor = $0?.id })) { t in
             SetPinSheet(docId: t.id).environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)

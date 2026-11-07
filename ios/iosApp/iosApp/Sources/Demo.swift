@@ -131,6 +131,7 @@ enum Demo {
         dr.strokes = strokes
         s.setInk(pid, dr, record: false)
         s.flush()
+        c.flush()
     }
 
     private static func show(_ screen: String, _ e: DocEntry) {
@@ -147,8 +148,8 @@ enum Demo {
         if screen == "stats" { c.statsOpen = true; return }
         if screen == "cards" { c.openDeck = "*"; return }
         if screen == "paywall" {
-            UserDefaults.standard.set(false, forKey: "test_premium")
-            Task { await Premium.shared.refresh(); await MainActor.run { Premium.shared.paywallOpen = true } }
+            Premium.shared.endTest()
+            Premium.shared.paywallOpen = true
             return
         }
         if screen == "subject" { c.libraryFolder = c.entry(e.id)?.folder; c.libraryFilter = .all; return }

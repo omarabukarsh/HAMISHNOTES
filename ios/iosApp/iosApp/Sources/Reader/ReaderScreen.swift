@@ -146,7 +146,7 @@ private struct ReaderContent: View {
         .sheet(item: Binding(get: { s.editingNote }, set: { s.editingNote = $0 })) { n in
             NoteSheet(session: s, note: n).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
         }
-        .sheet(isPresented: Binding(get: { s.mapOpen }, set: { s.mapOpen = $0 })) {
+        .bigSheet(isPresented: Binding(get: { s.mapOpen }, set: { s.mapOpen = $0 }), maxWidth: 1400) {
             MindMapView(session: s, standalone: false).environmentObject(app)
                 .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
         }

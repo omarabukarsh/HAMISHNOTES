@@ -65,12 +65,13 @@ struct PagesDrawer: View {
     var body: some View {
         let s = session
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                ForEach(Array([L("الصفحات", "Pages"), L("الفهرس", "Outline"), L("العلامات", "Bookmarks"), L("التسجيلات", "Recordings")].enumerated()), id: \.offset) { k, label in
+            let tabs: [(String, String)] = [("ph_pages", L("الصفحات", "Pages")), ("ph_list", L("الفهرس", "Outline")),
+                                            ("ph_bookmark", L("العلامات", "Bookmarks")), ("ph_waveform", L("التسجيلات", "Recordings"))]
+            HStack(spacing: 4) {
+                ForEach(0..<tabs.count, id: \.self) { k in
                     Button { tab = k } label: {
-                        Text(label).font(Fonts.sans(13, tab == k ? .bold : .regular))
-                            .foregroundColor(tab == k ? .white : Palette.textPrimary)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
+                        PhIcon(tab == k ? filledIcon(tabs[k].0) : tabs[k].0, tab == k ? .white : Palette.textSecondary, 18, tabs[k].1)
+                            .frame(width: 38, height: 32)
                             .background(Capsule().fill(tab == k ? Palette.navy : Color.clear))
                     }
                 }
@@ -86,7 +87,9 @@ struct PagesDrawer: View {
                     Button(L("إغلاق الشريط", "Close sidebar")) { s.drawerOpen = false }
                 } label: { PhIcon("ph_more", Palette.textSecondary, 20).frame(width: 32, height: 32) }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 12).padding(.top, 10)
+            Text(tabs[tab].1).font(Fonts.sans(15, .bold)).foregroundColor(Palette.navy)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 6)
             Divider()
             switch tab {
             case 0: pagesGrid((0..<s.pageCount).map { $0 })
@@ -100,7 +103,7 @@ struct PagesDrawer: View {
             default: recordings
             }
         }
-        .frame(width: cols == 1 ? 230 : cols == 2 ? 300 : 360)
+        .frame(width: cols == 1 ? 240 : cols == 2 ? 310 : 370)
         .frame(maxHeight: .infinity)
         .background(Palette.drawerBg)
         .overlay(Rectangle().fill(Palette.divider).frame(width: 1), alignment: .trailing)
@@ -297,13 +300,13 @@ struct PageMenuDrawer: View {
                     }
                     Group {
                     label(L("نقل الصفحة", "Move page"))
-                    HStack(spacing: 6) {
+                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) {
                         ChoiceChip(label: L("للأعلى", "Up"), selected: false) { s.movePage(p, to: p - 1); s.goTo(page: max(0, p - 1)) }
                         ChoiceChip(label: L("للأسفل", "Down"), selected: false) { s.movePage(p, to: p + 1); s.goTo(page: min(s.pageCount - 1, p + 1)) }
                         ChoiceChip(label: L("للبداية", "Start"), selected: false) { s.movePage(p, to: 0); s.goTo(page: 0) }
                         ChoiceChip(label: L("للنهاية", "End"), selected: false) { s.movePage(p, to: s.pageCount - 1); s.goTo(page: s.pageCount - 1) }
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 12) }
                     row("ph_hand_pointing", L("الانتقال إلى صفحة", "Go to page")) { sheet = .jump }
                     label(L("مسح أو حذف", "Clear or delete"))
                     row("ph_eraser", L("مسح الصفحة", "Clear page")) { confirmClear = true }

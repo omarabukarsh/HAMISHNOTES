@@ -103,6 +103,10 @@ final class Premium: ObservableObject {
 
     /// يقرأ الاشتراك الحالي من App Store.
     func refresh() async {
+        #if TEST_PREMIUM
+        let test = UserDefaults.standard.bool(forKey: "test_premium")
+        await MainActor.run { if test { self.active = true } }
+        #endif
         var ok = false
         var exp: Date? = nil
         var tr = false
@@ -180,6 +184,7 @@ final class Premium: ObservableObject {
 
     func endTest() {
         UserDefaults.standard.set(false, forKey: "test_premium")
+        active = false
         Task { await refresh() }
     }
 

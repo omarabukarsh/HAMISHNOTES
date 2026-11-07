@@ -501,23 +501,52 @@ struct ColorDots: View {
     }
 }
 
-/// عشرة أحجام: نقاط بأحجام متزايدة.
+/// ثلاثة أحجام قابلة للتعديل لكل أداة (نفس SizeSlots في أندرويد): خط بسماكة الحجم،
+/// ونقرة على الحجم المختار تفتح شريطًا لتغييره.
 struct SizeSlots: View {
     @EnvironmentObject var app: AppController
     let tool: Tool
-    var count = 5
+    @State private var editing: Int? = nil
+
+    static func slots(_ t: Tool) -> [Int] {
+        if let s = UserDefaults.standard.array(forKey: "slots_" + t.rawValue) as? [Int], s.count == 3 { return s }
+        return t == .highlighter ? [2, 4, 7] : [1, 3, 6]
+    }
+
+    static func setSlot(_ t: Tool, _ i: Int, _ v: Int) {
+        var l = slots(t)
+        l[i] = max(0, min(Sizes.count - 1, v))
+        UserDefaults.standard.set(l, forKey: "slots_" + t.rawValue)
+    }
+
     var body: some View {
+        let slots = Self.slots(tool)
         let cur = app.sizeFor(tool)
-        let nearest = Int((Double(cur) * Double(count - 1) / Double(Sizes.count - 1)).rounded())
-        HStack(spacing: 2) {
-            ForEach(0..<count, id: \.self) { i in
-                let idx = i * (Sizes.count - 1) / max(1, count - 1)
-                let sel = i == nearest
-                Button { app.setSize(idx) } label: {
-                    Circle().fill(sel ? Palette.navy : Palette.textSecondary.opacity(0.55))
-                        .frame(width: 5 + CGFloat(i) * 3.2, height: 5 + CGFloat(i) * 3.2)
-                        .frame(width: 30, height: 34)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navySoft : Color.clear))
+        HStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { i in
+                let sz = slots[i]
+                let sel = sz == cur
+                Button { if sel { editing = i } else { app.setSize(sz) } } label: {
+                    Capsule().fill(sel ? Palette.navy : Palette.textSecondary)
+                        .frame(width: 26, height: 2 + CGFloat(sz) * 1.3)
+                        .frame(width: 46, height: 40)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(sel ? Palette.navySoft : Color.clear))
+                }
+                .popover(isPresented: Binding(get: { editing == i }, set: { if !$0 { editing = nil } })) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(L("الحجم \(i + 1)", "Size \(i + 1)")).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary)
+                            Spacer()
+                            Text(String(format: "%.2f mm", Double(Sizes.width(tool, Self.slots(tool)[i]) / 600 * 210))).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                        }
+                        Slider(value: Binding(get: { Double(Self.slots(tool)[i]) }, set: { v in
+                            Self.setSlot(tool, i, Int(v.rounded()))
+                            app.setSize(Int(v.rounded()))
+                        }), in: 0...Double(Sizes.count - 1), step: 1).tint(Palette.navy)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .frame(width: 260)
+                    .environment(\.layoutDirection, .leftToRight)
                 }
             }
         }

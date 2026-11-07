@@ -387,23 +387,29 @@ private struct GoalSheet: View {
 
 // ---------------------------------------------------------------- تسجيل الدخول
 
-/// أول فتح للتطبيق: تسجيل الدخول بحساب Apple (يمكن تخطيه).
+/// أول فتح للتطبيق: تسجيل الدخول (يمكن تخطيه)، بنفس تصميم SignInScreen في أندرويد.
+/// زر Google في أندرويد يقابله «المتابعة باستخدام Apple» في iPad.
 struct SignInScreen: View {
     @EnvironmentObject var app: AppController
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(hex: 0xFFFFFDF7), Color(hex: 0xFFFCEBC2)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        ZStack(alignment: .bottom) {
+            Lib.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                AppLogo(size: 110, corner: 28).shadow(color: Pw.goldDeep.opacity(0.25), radius: 16, y: 6)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color(hex: 0xFFFFFDF7))
+                        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Lib.line, lineWidth: 1))
+                        .shadow(color: Lib.text.opacity(0.25), radius: 14, y: 4)
+                    AppLogo(size: 96, corner: 22)
+                }
+                .frame(width: 112, height: 112)
                 Spacer().frame(height: 22)
-                Text(L("هامش", "Hamish")).font(Fonts.display(44)).foregroundColor(Pw.ink)
-                Spacer().frame(height: 10)
+                UnderlinedTitle(text: L("هامش", "Hamish"), size: 44)
+                Spacer().frame(height: 16)
                 Text(L("ملاحظاتك وملفات PDF وأدوات المذاكرة في مكان واحد.\nسجّل الدخول لربط حسابك، أو تخطَّ وابدأ مباشرة.",
                        "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."))
-                    .font(Fonts.sans(16)).foregroundColor(Pw.muted).multilineTextAlignment(.center).lineSpacing(6)
-                Spacer().frame(height: 34)
-                Group {
+                    .font(Fonts.sans(15)).foregroundColor(Lib.muted).multilineTextAlignment(.center).lineSpacing(7)
+                Spacer().frame(height: 36)
                 SignInWithAppleButton(.continue) { req in
                     req.requestedScopes = [.fullName, .email]
                 } onCompletion: { r in
@@ -415,19 +421,22 @@ struct SignInScreen: View {
                         app.message(L("تعذر تسجيل الدخول", "Sign-in failed"))
                     }
                 }
-                .signInWithAppleButtonStyle(.black)
-                .frame(width: 320, height: 52)
+                .signInWithAppleButtonStyle(.whiteOutline)
+                .frame(height: 52)
                 .clipShape(Capsule())
-                Spacer().frame(height: 10)
-                Button { app.skipLogin() } label: {
-                    Text(L("ليس الآن", "Not now")).font(Fonts.sans(15, .bold)).foregroundColor(Pw.muted).frame(width: 320, height: 46)
-                }
+                .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                 Spacer().frame(height: 18)
-                Text(L("ملاحظاتك تبقى على جهازك. نستخدم اسمك وبريدك فقط.", "Your notes stay on your device. We only use your name and email."))
-                    .font(Fonts.sans(12)).foregroundColor(Pw.muted)
+                Button { app.skipLogin() } label: {
+                    Text(L("ليس الآن", "Not now")).font(Fonts.sans(15, .bold)).foregroundColor(Lib.muted)
+                        .padding(.horizontal, 24).padding(.vertical, 10)
                 }
             }
-            .padding(30)
+            .frame(maxWidth: 420)
+            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(L("ملاحظاتك تبقى على جهازك. نستخدم اسمك وبريدك فقط.", "Your notes stay on your device. We only use your name and email."))
+                .font(Fonts.sans(12)).foregroundColor(Lib.muted).multilineTextAlignment(.center)
+                .padding(.horizontal, 28).padding(.vertical, 20)
         }
     }
 }

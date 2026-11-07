@@ -691,6 +691,8 @@ struct MindMapView: View {
         }
         .background(Palette.ivory.ignoresSafeArea())
         .environment(\.layoutDirection, .leftToRight)
+        // الخريطة عاجية في الثيمين: الحقول والقوائم بألوان الوضع الفاتح
+        .environment(\.colorScheme, .light)
         .onAppear {
             if !started {
                 started = true
@@ -698,7 +700,7 @@ struct MindMapView: View {
                 placingKeys = placing?.filter { k in items.contains { $0.key == k } }
             }
         }
-        .sheet(item: $freeTarget) { ft in
+        .dialogSheet(item: $freeTarget) { ft in
             MapTextSheet(title: L("نص جديد", "New text"), color: freeInk, initial: "",
                          note: L("سيوضع: ", "Goes as: ") + describe(model, ft.target), confirm: L("إضافة", "Add")) { txt in
                 session.mapAddFree(txt, ft.target)
@@ -706,7 +708,7 @@ struct MindMapView: View {
                 fitted = false
             }
         }
-        .sheet(item: $editKey) { ek in
+        .dialogSheet(item: $editKey) { ek in
             if let n = MindMap.find(model, ek.id) {
                 let edited = !n.isFree && n.text != n.original
                 let page = n.mark.flatMap { session.index(of: $0.page) }.map { $0 + 1 } ?? 1
@@ -1060,24 +1062,20 @@ private struct MapTextSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        SheetScaffold(title: title) {
-            VStack(alignment: .leading, spacing: 10) {
-                TextEditor(text: $text).font(Fonts.sans(16)).frame(minHeight: 90, maxHeight: 180)
-                    .padding(6).background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
-                Text(note).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-                HStack {
-                    if let r = restore {
-                        Button(L("استعادة الأصلي", "Restore original")) { r(); dismiss() }.foregroundColor(Palette.goldDeep)
-                    }
-                    Spacer()
-                    Button(L("إلغاء", "Cancel")) { dismiss() }.foregroundColor(Palette.textSecondary).padding(.trailing, 8)
-                    NavyButton(label: confirm) { onSave(text); dismiss() }
-                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .font(Fonts.sans(15))
+        let ok = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // نافذة حوار مثل FreeTextDialog / NodeTextDialog في أندرويد
+        AlertDialogCard(title: title, width: 440, titleColor: color) {
+            VStack(alignment: .leading, spacing: 8) {
+                OutlinedEditor(text: $text, minHeight: restore == nil && initial.isEmpty ? 70 : 90)
+                Text(note).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 22).padding(.bottom, 20)
+        } buttons: {
+            if let r = restore {
+                DialogButton(label: L("استعادة الأصلي", "Restore original"), color: Palette.goldDeep) { r(); dismiss() }
+            }
+            DialogButton(label: L("إلغاء", "Cancel")) { dismiss() }
+            DialogButton(label: confirm, bold: true, enabled: ok) { onSave(text); dismiss() }
         }
         .onAppear { text = initial }
     }

@@ -365,6 +365,7 @@ struct BigSheet<C: View>: ViewModifier {
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                 }
             }
+            .environment(\.colorScheme, .light)
             .presentationBackground(.clear)
         }
     }

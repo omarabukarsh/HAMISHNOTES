@@ -6,12 +6,13 @@ import SwiftUI
 struct AlertDialogCard<Content: View, Buttons: View>: View {
     let title: String
     var width: CGFloat = 520
+    var titleColor: Color = Palette.textPrimary
     @ViewBuilder let content: () -> Content
     @ViewBuilder let buttons: () -> Buttons
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(Fonts.display(22)).foregroundColor(Palette.textPrimary)
+            Text(title).font(Fonts.display(22)).foregroundColor(titleColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
             content()
                 .font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
@@ -60,6 +61,8 @@ private struct DialogHost<C: View>: View {
                 .padding(24)
         }
         .environment(\.layoutDirection, .leftToRight)
+        // النوافذ عاجية دائمًا: عناصر النظام (الحقول) بألوان الوضع الفاتح
+        .environment(\.colorScheme, .light)
         .onAppear { withAnimation(Motion.enter) { shown = true } }
     }
 
@@ -145,5 +148,25 @@ struct OutlinedField: View {
         }
         .frame(height: 64)
         .onAppear { if autoFocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true } } }
+    }
+}
+
+/// حقل نص متعدد الأسطر بإطار (مثل OutlinedTextField متعدد الأسطر في أندرويد).
+struct OutlinedEditor: View {
+    @Binding var text: String
+    var minHeight: CGFloat = 70
+    var autoFocus = true
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text, axis: .vertical)
+            .lineLimit(3...8)
+            .font(Fonts.sans(16)).foregroundColor(Palette.textPrimary)
+            .focused($focused)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .frame(minHeight: minHeight, alignment: .topLeading)
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(focused ? Palette.navy : Palette.textSecondary.opacity(0.6), lineWidth: focused ? 2 : 1))
+            .onAppear { if autoFocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true } } }
     }
 }

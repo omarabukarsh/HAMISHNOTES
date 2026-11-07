@@ -549,7 +549,7 @@ struct SideTray: View {
                     trayButton("ph_image", L("من مكتبة الصور", "From the photo library"))
                 }
                 Button { importing = true } label: { trayButton("ph_folder", L("من الملفات", "From Files")) }
-                Text(L("تُضاف الصورة إلى الصفحة الحالية. انقر عليها بإصبعك لتحريكها أو تغيير حجمها أو حذفها.", "The picture is added to the current page. Tap it with your finger to move, resize or delete it."))
+                Text(L("تُضاف الصورة وسط الجزء الظاهر من الصفحة. انقر عليها بإصبعك لتحريكها أو تغيير حجمها أو حذفها.", "The picture is added in the middle of what you see on the page. Tap it with your finger to move, resize or delete it."))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
             } else {
                 ScrollView {
@@ -559,12 +559,14 @@ struct SideTray: View {
                                 StickerIcon(key: k, size: 44).frame(width: 56, height: 56)
                                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                             }
+                            .onDrag { NSItemProvider(object: (StickerDragPrefix + k) as NSString) }
                         }
                         ForEach(["⭐️", "✅", "❗️", "❓", "💡", "📌", "🔥", "❤️", "👍", "📝", "⚠️", "🎯"], id: \.self) { e in
                             Button { s.insertSticker(e) } label: {
                                 Text(e).font(.system(size: 34)).frame(width: 56, height: 56)
                                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                             }
+                            .onDrag { NSItemProvider(object: (StickerDragPrefix + e) as NSString) }
                         }
                         ForEach(store.mine, id: \.self) { f in
                             Button { s.insertSticker("mine:" + f) } label: {
@@ -576,10 +578,13 @@ struct SideTray: View {
                                 .frame(width: 48, height: 48).frame(width: 56, height: 56)
                                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                             }
+                            .onDrag { NSItemProvider(object: (StickerDragPrefix + "mine:" + f) as NSString) }
                             .contextMenu { Button(role: .destructive) { StickerStore.shared.delete(f) } label: { Text(L("حذف", "Delete")) } }
                         }
                     }
                 }
+                Text(L("انقر على الملصق لإضافته، أو اضغط عليه مطوّلًا واسحبه إلى مكانه في الصفحة", "Tap a sticker to add it, or long-press and drag it to its place on the page"))
+                    .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                 PhotosPicker(selection: $stickerPick, maxSelectionCount: 1, matching: .images) {
                     trayButton("ph_plus", L("ملصق من صورة", "Sticker from a photo"))
                 }
@@ -594,10 +599,11 @@ struct SideTray: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .onChange(of: picks) { items in
-            for it in items {
+            let n = items.count
+            for (i, it) in items.enumerated() {
                 Task {
                     if let d = try? await it.loadTransferable(type: Data.self), let img = UIImage(data: d) {
-                        await MainActor.run { s.insertImage(img) }
+                        await MainActor.run { s.insertImage(img, index: i, select: i == n - 1) }
                     }
                 }
             }
@@ -615,9 +621,9 @@ struct SideTray: View {
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.image], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r {
-                for u in urls {
+                for (i, u) in urls.enumerated() {
                     let sc = u.startAccessingSecurityScopedResource()
-                    if let d = try? Data(contentsOf: u), let img = UIImage(data: d) { s.insertImage(img) }
+                    if let d = try? Data(contentsOf: u), let img = UIImage(data: d) { s.insertImage(img, index: i, select: i == urls.count - 1) }
                     if sc { u.stopAccessingSecurityScopedResource() }
                 }
             }

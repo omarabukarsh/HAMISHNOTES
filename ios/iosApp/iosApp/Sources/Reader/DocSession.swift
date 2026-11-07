@@ -75,6 +75,8 @@ final class DocSession: ObservableObject, Identifiable {
     var fitHook: (() -> Void)?
     var reloadHook: (() -> Void)?
     var applyInkHook: ((String, PKDrawing) -> Void)?
+    /// وسط الجزء الظاهر من الصفحة على الشاشة (بنقاط الصفحة).
+    var visibleCenterHook: ((Int) -> CGPoint?)?
 
     init(entry: DocEntry) {
         id = entry.id
@@ -485,29 +487,49 @@ final class DocSession: ObservableObject, Identifiable {
     func deleteNote(_ id: String) { edit { $0.notes.removeAll { $0.id == id } } }
 
     /// يضيف صورة إلى الصفحة الحالية في وسطها.
-    func insertImage(_ img: UIImage, page: Int? = nil) {
+    /// وسط الجزء الظاهر من الصفحة (كما في أندرويد): هناك تُضاف الصور والملصقات إن لم تُسحب إلى مكان.
+    func visibleCenter(_ page: Int) -> CGPoint {
+        let size = pageSize(page)
+        return visibleCenterHook?(page) ?? CGPoint(x: size.width / 2, y: size.height / 2)
+    }
+
+    /// يضيف صورة: at = وسطها بنقاط الصفحة (مكان الإفلات أو وسط الجزء الظاهر)؛ index يزيح الصور المختارة معًا.
+    func insertImage(_ img: UIImage, page: Int? = nil, at point: CGPoint? = nil, index: Int = 0, width: CGFloat = 0.45, select: Bool = true) {
         let p = page ?? currentPage
         guard let pid = pageId(p), let jpg = img.jpegData(compressionQuality: 0.88) else { return }
         let name = "img-\(UUID().uuidString).jpg"
         try? jpg.write(to: repo.mediaDir(id).appendingPathComponent(name))
-        let size = pageSize(p)
-        let w = size.width * 0.5
         let aspect = img.size.width / max(1, img.size.height)
-        let item = ImageItem(id: UUID().uuidString, file: name, page: pid,
-                             x: (size.width - w) / 2, y: size.height * 0.2, w: w, aspect: aspect)
+        let item = placed(file: name, page: p, pid: pid, width: width, aspect: aspect, at: point, index: index)
         upsertImage(item)
-        selectedImage = item.id
+        if select { selectedImage = item.id }
     }
 
     func insertSticker(_ key: String, page: Int? = nil, at point: CGPoint? = nil) {
         let p = page ?? currentPage
         guard let pid = pageId(p) else { return }
-        let size = pageSize(p)
-        let w = size.width * 0.16
-        let c = point ?? CGPoint(x: size.width / 2, y: size.height * 0.3)
-        let item = ImageItem(id: UUID().uuidString, file: "sticker:" + key, page: pid, x: c.x - w / 2, y: c.y - w / 2, w: w, aspect: 1)
+        var aspect: CGFloat = 1
+        var width: CGFloat = 0.16
+        if key.hasPrefix("mine:"), let img = UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(String(key.dropFirst(5))).path) {
+            aspect = img.size.width / max(1, img.size.height)
+            if aspect > 1.5 { width = 0.26 }
+        }
+        let item = placed(file: "sticker:" + key, page: p, pid: pid, width: width, aspect: aspect, at: point, index: 0)
         upsertImage(item)
         selectedImage = item.id
+        AppController.shared.message(L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
+    }
+
+    /// موضع عنصر جديد على الصفحة، داخل حدودها.
+    private func placed(file: String, page p: Int, pid: String, width: CGFloat, aspect: CGFloat, at point: CGPoint?, index: Int) -> ImageItem {
+        let size = pageSize(p)
+        let w = size.width * width
+        let h = w / max(0.01, aspect)
+        let c = point ?? visibleCenter(p)
+        let shift = CGFloat(index % 8) * 0.035 * size.width
+        let x = min(max(0, c.x - w / 2 + shift), max(0, size.width - w))
+        let y = min(max(0, c.y - h / 2 + shift), max(0, size.height - h))
+        return ImageItem(id: UUID().uuidString, file: file, page: pid, x: x, y: y, w: w, aspect: aspect)
     }
 
     func image(for item: ImageItem) -> UIImage? {

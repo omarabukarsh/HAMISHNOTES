@@ -92,6 +92,9 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         session.fitHook = { [weak self] in self?.fit() }
         session.reloadHook = { [weak self] in self?.reload() }
         session.applyInkHook = { [weak self] pid, d in self?.overlays[pid]?.setDrawing(d) }
+        session.visibleCenterHook = { [weak self] i in self?.visibleCenter(i) }
+        // سحب ملصق أو صورة من الدرج وإفلاتها على الصفحة في مكانها
+        h.addInteraction(UIDropInteraction(delegate: self))
         // أي تغيير في البيانات (تراجع، حذف تمييز من الدرج...) يعيد رسم عناصر الصفحات الظاهرة
         session.$data.dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
@@ -171,6 +174,26 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         pan.minimumNumberOfTouches = writing && c.fingerWrites ? 2 : 1
     }
 
+    /// وسط الجزء الظاهر من الصفحة بنقاط الصفحة.
+    func visibleCenter(_ i: Int) -> CGPoint? {
+        guard let v = pdfView, let page = v.document?.page(at: i) else { return nil }
+        let r = v.convert(page.bounds(for: v.displayBox), from: page)
+        let vis = r.intersection(v.bounds)
+        guard !vis.isNull, r.height > 1 else { return nil }
+        let size = session.pageSize(i)
+        return CGPoint(x: size.width / 2, y: (vis.midY - r.minY) / r.height * size.height)
+    }
+
+    /// الصفحة تحت نقطة في العارض، والنقطة بنقاط الصفحة (الأصل أعلى اليسار).
+    func pagePoint(_ pt: CGPoint) -> (Int, CGPoint)? {
+        guard let v = pdfView, let doc = v.document, let page = v.page(for: pt, nearest: true) else { return nil }
+        let i = doc.index(for: page)
+        let r = v.convert(page.bounds(for: v.displayBox), from: page)
+        guard r.width > 1, r.height > 1 else { return nil }
+        let size = session.pageSize(i)
+        return (i, CGPoint(x: (pt.x - r.minX) / r.width * size.width, y: (pt.y - r.minY) / r.height * size.height))
+    }
+
     static func scrollView(in v: UIView) -> UIScrollView? {
         for s in v.subviews {
             if let sv = s as? UIScrollView { return sv }
@@ -234,5 +257,39 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
             v.document = d
         }
         go(cur, animated: false)
+    }
+}
+
+// ---------- الإفلات على الصفحة ----------
+
+/// بادئة ملصقات الدرج المسحوبة.
+let StickerDragPrefix = "hamish-sticker:"
+
+extension PDFCoordinator: UIDropInteractionDelegate {
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        session.canLoadObjects(ofClass: NSString.self) || session.canLoadObjects(ofClass: UIImage.self)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        UIDropProposal(operation: .copy)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop drop: UIDropSession) {
+        guard let v = pdfView, let hit = pagePoint(drop.location(in: v)) else { return }
+        let (page, at) = hit
+        let s = session
+        if drop.canLoadObjects(ofClass: NSString.self) {
+            _ = drop.loadObjects(ofClass: NSString.self) { items in
+                guard let str = items.first as? String, str.hasPrefix(StickerDragPrefix) else { return }
+                DispatchQueue.main.async { s.insertSticker(String(str.dropFirst(StickerDragPrefix.count)), page: page, at: at) }
+            }
+        } else {
+            _ = drop.loadObjects(ofClass: UIImage.self) { items in
+                let imgs = items.compactMap { $0 as? UIImage }
+                DispatchQueue.main.async {
+                    for (i, img) in imgs.enumerated() { s.insertImage(img, page: page, at: at, index: i, select: i == imgs.count - 1) }
+                }
+            }
+        }
     }
 }

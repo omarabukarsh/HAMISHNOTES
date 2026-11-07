@@ -14,6 +14,15 @@ enum HandwritingReader {
     /// الأسطر المقروءة من الأعلى للأسفل.
     static func read(_ strokes: [PKStroke], lang: HwLang?) async -> [String] {
         guard !strokes.isEmpty else { return [] }
+        // محرك ML Kit (من حركة القلم) أولًا، كما في أندرويد؛ وVision حتى تجهز حزمة اللغة
+        let code: Int = lang.map { $0 == .arabic ? 0 : 1 } ?? AppController.shared.hwLang
+        let ok = strokes.filter { $0.ink.inkType != .marker && $0.randomSeed != shapeSeed }
+        if let lines = await InkReader.readLines(ok, lang: code) { return lines }
+        return await visionRead(strokes, lang: lang)
+    }
+
+    /// قراءة صورة الكتابة بأداة Vision (احتياطية).
+    static func visionRead(_ strokes: [PKStroke], lang: HwLang?) async -> [String] {
         let d = PKDrawing(strokes: strokes.map { s in
             var c = s
             c.ink = PKInk(s.ink.inkType == .marker ? .monoline : s.ink.inkType, color: .black)
@@ -241,7 +250,7 @@ final class AutoFont: ObservableObject {
     static let shared = AutoFont()
     private let prefs = UserDefaults.standard
 
-    @Published var on = false { didSet { prefs.set(on, forKey: "af_on"); if !on { discard() } } }
+    @Published var on = false { didSet { prefs.set(on, forKey: "af_on"); if !on { discard() } else { InkReader.prefetch(AppController.shared.hwLang) } } }
     @Published var font = "Tajawal" { didSet { prefs.set(font, forKey: "af_font") } }
     /// مدة التوقف قبل التحويل (ملّي ثانية)؛ 0 = عند الضغط على ✓ فقط.
     @Published var delayMs = 2000 { didSet { prefs.set(delayMs, forKey: "af_delay") } }

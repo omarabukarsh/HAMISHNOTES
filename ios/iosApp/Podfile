@@ -1,0 +1,17 @@
+# مكتبة Google ML Kit لقراءة خط اليد (نفس محرك نسخة أندرويد).
+# تُستعمل في بناء الجهاز (IPA) فقط؛ بناء المحاكي (الصور والاختبارات) يعمل دونها ويقرأ بأداة Vision.
+platform :ios, '17.4'
+
+target 'Hamish' do
+  pod 'GoogleMLKit/DigitalInkRecognition'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |c|
+      c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '17.4'
+      c.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+      c.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+    end
+  end
+end

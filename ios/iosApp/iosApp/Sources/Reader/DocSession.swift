@@ -283,12 +283,14 @@ final class DocSession: ObservableObject, Identifiable {
         guard let idx = index(of: pid) else { return }
         let w = pageSize(idx).width
         let work = DispatchWorkItem { [weak self] in
-            let words = HandwritingWords.read(d, pageW: w, lang: lang)
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.handWords[pid] = words
-                self.handKeys[pid] = k
-                self.wordCache.removeValue(forKey: pid)
+            Task.detached(priority: .utility) {
+                let words = await HandwritingWords.readAsync(d, pageW: w, lang: lang)
+                await MainActor.run {
+                    guard let self = self else { return }
+                    self.handWords[pid] = words
+                    self.handKeys[pid] = k
+                    self.wordCache.removeValue(forKey: pid)
+                }
             }
         }
         handWork[pid] = work

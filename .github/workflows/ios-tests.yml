@@ -1,0 +1,45 @@
+name: iPad tests
+# يشغّل الاختبارات الآلية لنسخة iPad على محاكي (نفس الاختبارات المرجعية في أندرويد)
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - 'app/src/sharedTest/assets/**'
+      - '.github/workflows/ios-tests.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        working-directory: ios/iosApp
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Run tests on an iPad simulator
+        working-directory: ios/iosApp
+        shell: bash
+        run: |
+          set -o pipefail
+          NAME=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          ipads=[x for r in d.values() for x in r if 'iPad Pro' in x['name']] or [x for r in d.values() for x in r if 'iPad' in x['name']]
+          ipads.sort(key=lambda x: ('13' not in x['name'], x['name']))
+          print(ipads[0]['udid'])")
+          xcodebuild test -project Hamish.xcodeproj -scheme Hamish -destination "id=$NAME" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | grep -E "error:|Test Case .*(passed|failed)|Executed|TEST (SUCCEEDED|FAILED)" || true
+          grep -E 'error:' -A3 test.log | head -80 | sed 's/^/::error::/' || true
+          grep -q "TEST SUCCEEDED" test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-test-log
+          path: ios/iosApp/test.log

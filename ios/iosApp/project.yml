@@ -30,6 +30,9 @@ targets:
       - path: ../../app/src/main/assets/fonts
         type: folder
         buildPhase: resources
+    scheme:
+      testTargets:
+        - HamishTests
     dependencies:
       # أداة الشاشة الرئيسية (وقت الدراسة، أقرب امتحان، متابعة آخر مستند)
       - target: HamishWidget
@@ -72,3 +75,23 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
+
+  # اختبارات آلية (نفس اختبارات أندرويد المرجعية على antibiotics.pdf)، تعمل على محاكي iPad
+  HamishTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HamishTests
+      - path: ../../app/src/sharedTest/assets/antibiotics_words.tsv
+        buildPhase: resources
+    dependencies:
+      - target: Hamish
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.omarabukarsh.hamish.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Hamish.app/Hamish
+        BUNDLE_LOADER: $(TEST_HOST)
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "2"
+        CODE_SIGNING_ALLOWED: NO

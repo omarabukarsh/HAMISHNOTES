@@ -224,24 +224,9 @@ struct HandwritingSheet: View {
         guard let pid = session.pageId(session.currentPage) else { busy = false; return }
         let d = lassoOnly ? (session.lassoDrawing() ?? PKDrawing()) : session.drawing(for: pid)
         guard !d.strokes.isEmpty else { busy = false; return }
-        let r = d.bounds.insetBy(dx: -20, dy: -20)
-        let img = UIGraphicsImageRenderer(size: r.size).image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: r.size))
-            d.image(from: r, scale: 2).draw(in: CGRect(origin: .zero, size: r.size))
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let req = VNRecognizeTextRequest()
-            req.recognitionLevel = .accurate
-            let supported = (try? req.supportedRecognitionLanguages()) ?? []
-            let langs = I18n.english ? ["en-US", "ar-SA"] : ["ar-SA", "en-US"]
-            req.recognitionLanguages = langs.filter { supported.contains($0) }
-            if let cg = img.cgImage { try? VNImageRequestHandler(cgImage: cg).perform([req]) }
-            let t = (req.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-            DispatchQueue.main.async {
-                text = t
-                busy = false
-            }
+        Task { @MainActor in
+            text = await HandwritingReader.read(d.strokes, lang: nil).joined(separator: "\n")
+            busy = false
         }
     }
 }

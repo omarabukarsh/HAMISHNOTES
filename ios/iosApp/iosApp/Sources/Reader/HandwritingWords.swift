@@ -17,6 +17,14 @@ enum HandwritingWords {
         return "\(ok.count)|\(Int(b.minX))|\(Int(b.minY))|\(Int(b.width))|\(Int(b.height))|\(lang)"
     }
 
+    /// كلمات خط اليد: بمحرك ML Kit من حركة القلم إن كان جاهزًا، وإلا بقراءة الصورة (Vision).
+    static func readAsync(_ d: PKDrawing, pageW: CGFloat, lang: Int) async -> [OcrWord] {
+        let ok = d.strokes.filter(eligible)
+        guard !ok.isEmpty else { return [] }
+        if let w = await InkReader.words(ok, pageW: pageW, lang: lang) { return w }
+        return read(d, pageW: pageW, lang: lang)
+    }
+
     /// كلمات خط اليد بإحداثيات نسبية لعرض الصفحة (مثل كلمات النص).
     static func read(_ d: PKDrawing, pageW: CGFloat, lang: Int) -> [OcrWord] {
         let ok = d.strokes.filter(eligible).map { s -> PKStroke in

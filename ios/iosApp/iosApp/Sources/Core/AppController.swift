@@ -72,7 +72,9 @@ final class AppController: ObservableObject {
     /// نمط خط الأقلام (متصل، متقطع، منقّط).
     @Published var penStyle: LineStyle = .solid { didSet { prefs.set(penStyle.rawValue, forKey: "pen_style") } }
     /// لغة قراءة خط اليد: 0 عربي، 1 إنجليزي، 2 كلاهما.
-    @Published var hwLang = 2 { didSet { prefs.set(hwLang, forKey: "hw_lang") } }
+    @Published var hwLang = 2 { didSet { prefs.set(hwLang, forKey: "hw_lang"); if started { InkReader.prefetch(hwLang) } } }
+    /// انتهى تحميل الإعدادات (لا تنزيل لحزم خط اليد أثناء التحميل).
+    private var started = false
     // التحديد الحر: نوعه (حر/مستطيل) وما يدخل فيه
     @Published var lassoRect = false { didSet { prefs.set(lassoRect, forKey: "lasso_rect") } }
     @Published var lassoInk = true { didSet { prefs.set(lassoInk, forKey: "lasso_ink") } }
@@ -160,6 +162,7 @@ final class AppController: ObservableObject {
         drawAndHold = p.object(forKey: "draw_hold") as? Bool ?? true
         penStyle = LineStyle(rawValue: p.integer(forKey: "pen_style")) ?? .solid
         hwLang = p.object(forKey: "hw_lang") as? Int ?? 2
+        defer { started = true }
         lassoInk = p.object(forKey: "lasso_ink") as? Bool ?? true
         lassoHighlight = p.object(forKey: "lasso_hl") as? Bool ?? true
         lassoShapes = p.object(forKey: "lasso_shapes") as? Bool ?? true

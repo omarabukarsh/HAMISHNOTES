@@ -102,11 +102,13 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         // نتائج البحث مظللة في الصفحة، والنتيجة الحالية محددة
         session.$searchHits.combineLatest(session.$searchIndex).receive(on: RunLoop.main)
             .sink { [weak self] hits, idx in
-                guard let v = self?.pdfView else { return }
-                hits.forEach { $0.color = UIColor(argb: 0xFFFFEB3B).withAlphaComponent(0.6) }
-                v.highlightedSelections = hits.isEmpty ? nil : hits
-                if hits.indices.contains(idx) {
-                    let sel = hits[idx]
+                guard let self = self, let v = self.pdfView else { return }
+                let sels = hits.compactMap { $0.sel }
+                sels.forEach { $0.color = UIColor(argb: 0xFFFFEB3B).withAlphaComponent(0.6) }
+                v.highlightedSelections = sels.isEmpty ? nil : sels
+                // خط اليد والصفحات المقروءة: مستطيلات في طبقة الصفحة
+                self.overlays.values.forEach { $0.showSearch(hits, current: idx) }
+                if hits.indices.contains(idx), let sel = hits[idx].sel {
                     sel.color = UIColor(argb: 0xFFFFAB40)
                     v.setCurrentSelection(sel, animate: true)
                     v.go(to: sel)
@@ -130,6 +132,7 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         if let o = overlays[pid], o.page === page { return o }
         let o = PageOverlayView(pageId: pid, session: session, pdfView: view, page: page, size: session.pageSize(i))
         overlays[pid] = o
+        if !session.searchHits.isEmpty { o.showSearch(session.searchHits, current: session.searchIndex) }
         return o
     }
 

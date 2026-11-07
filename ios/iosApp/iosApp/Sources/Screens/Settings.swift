@@ -200,6 +200,14 @@ struct SettingsView: View {
                 GroupDivider()
                 SwitchRow(icon: "ph_hand_pointing", color: TileGold, title: L("الكتابة بالإصبع", "Write with your finger"),
                           desc: L("أوقفه ليكتب القلم فقط ويبقى الإصبع للتمرير والتكبير", "Turn off so only the pencil writes and your finger scrolls and zooms"), isOn: $app.fingerWrites)
+                GroupDivider()
+                SwitchRow(icon: "ph_shape_detect", color: TilePurple, title: L("ارسم وأبقِ: تحويل الرسم إلى شكل", "Draw and hold: make a shape"),
+                          desc: L("ارسم ثم أبقِ القلم ثابتًا لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"), isOn: $app.drawAndHold)
+                GroupDivider()
+                GroupRow(icon: "ph_translate", color: TileBlue, title: L("لغة خط يدك", "Handwriting language"),
+                         desc: L("تُقرأ كتابتك بها لتلتقطها بالهايلايتر وتبحث فيها", "Your writing is read in it, so you can highlight and search it")) {
+                    Segmented(options: [L("الاثنان", "Both"), "عربي", "English"], selected: [2, 0, 1].firstIndex(of: app.hwLang) ?? 0) { app.hwLang = [2, 0, 1][$0] }
+                }
             }
             GroupLabel(L("الأصابع", "Fingers"))
             SettingsGroup {

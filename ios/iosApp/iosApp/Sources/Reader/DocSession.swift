@@ -42,7 +42,7 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var pageMenuOpen = false
     @Published var searchOpen = false
     @Published var searchQuery = ""
-    @Published var searchHits: [PDFSelection] = []
+    @Published var searchHits: [SearchHit] = []
     @Published var searchIndex = 0
     @Published var trayMode: String? = nil      // "stickers" أو "photos"
     @Published var mapOpen = false
@@ -147,6 +147,7 @@ final class DocSession: ObservableObject, Identifiable {
         dirtyInk.insert(pageId)
         push(.ink(page: pageId, before: old, after: new))
         scheduleSave()
+        scheduleHandRead(pageId)
     }
 
     /// يضع حبرًا جديدًا على الصفحة (من الأشكال أو اللصق) ويحدّث الكانفاس.
@@ -247,6 +248,9 @@ final class DocSession: ObservableObject, Identifiable {
     // ---------- كلمات الصفحة والتقاط النص ----------
 
     private var wordCache: [String: [OcrWord]] = [:]
+    var handWords: [String: [OcrWord]] = [:]
+    private var handKeys: [String: String] = [:]
+    private var handWork: [String: DispatchWorkItem] = [:]
 
     /// كلمات الصفحة: من طبقة نص PDF، وإلا من القراءة الضوئية المحفوظة.
     func words(_ index: Int) -> [OcrWord] {
@@ -255,8 +259,40 @@ final class DocSession: ObservableObject, Identifiable {
         var w: [OcrWord] = []
         if let p = pdf?.page(at: index) { w = TextLayout.pdfWords(p) }
         if w.count < 3, let o = ocr[pid] { w = o }
+        // كلمات خط اليد تُضاف دائمًا (تُقرأ في الخلفية بعد الكتابة)
+        if let h = handWords[pid], !h.isEmpty {
+            let off = (w.map { $0.line }.max() ?? -1) + 1
+            w += h.map { var x = $0; x.line += off; return x }
+        } else {
+            scheduleHandRead(pid)
+        }
         wordCache[pid] = w
         return w
+    }
+
+    // ---------- خط اليد كنص ----------
+
+    /// يقرأ خط اليد في الصفحة بعد توقف الكتابة لحظة.
+    func scheduleHandRead(_ pid: String, delay: Double = 1.2) {
+        let d = drawing(for: pid)
+        guard d.strokes.contains(where: HandwritingWords.eligible) || handWords[pid] != nil else { return }
+        let lang = AppController.shared.hwLang
+        let k = HandwritingWords.key(d, lang: lang)
+        if handKeys[pid] == k { return }
+        handWork[pid]?.cancel()
+        guard let idx = index(of: pid) else { return }
+        let w = pageSize(idx).width
+        let work = DispatchWorkItem { [weak self] in
+            let words = HandwritingWords.read(d, pageW: w, lang: lang)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.handWords[pid] = words
+                self.handKeys[pid] = k
+                self.wordCache.removeValue(forKey: pid)
+            }
+        }
+        handWork[pid] = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// خط هايلايتر بالتقاط النص (نفس DocSession.snapHighlight في أندرويد).
@@ -621,12 +657,32 @@ final class DocSession: ObservableObject, Identifiable {
     func runSearch() {
         let q = searchQuery.trimmingCharacters(in: .whitespaces)
         guard let doc = pdf, !q.isEmpty else { searchHits = []; return }
-        var hits = doc.findString(q, withOptions: [.caseInsensitive, .diacriticInsensitive])
-        // نص الصفحات المقروءة ضوئيًا
-        if hits.isEmpty { hits = [] }
+        var hits: [SearchHit] = doc.findString(q, withOptions: [.caseInsensitive, .diacriticInsensitive]).compactMap { sel in
+            guard let p = sel.pages.first else { return nil }
+            return SearchHit(page: doc.index(for: p), sel: sel, rect: nil)
+        }
+        // خط اليد والصفحات المقروءة ضوئيًا
+        let tokens = q.split(separator: " ").map(String.init)
+        for (i, info) in data.pages.enumerated() {
+            let w = pageSize(i).width
+            let words = (handWords[info.id] ?? []) + ((doc.page(at: i)?.string ?? "").count > 20 ? [] : (ocr[info.id] ?? []))
+            for line in Dictionary(grouping: words, by: { $0.line }).values {
+                let sorted = line.sorted { $0.l < $1.l }
+                let text = sorted.map { $0.text }.joined(separator: " ")
+                guard text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil else { continue }
+                let hitWords = sorted.filter { wd in tokens.contains { wd.text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil } }
+                let r = hitWords.reduce(CGRect.null) { $0.union(CGRect(x: $1.l * w, y: $1.t * w, width: ($1.r - $1.l) * w, height: ($1.b - $1.t) * w)) }
+                if !r.isNull { hits.append(SearchHit(page: i, sel: nil, rect: r.insetBy(dx: -2, dy: -2))) }
+            }
+        }
+        hits.sort { a, b in
+            if a.page != b.page { return a.page < b.page }
+            let ya = a.rect?.minY ?? 0, yb = b.rect?.minY ?? 0
+            return ya < yb
+        }
         searchHits = hits
         searchIndex = 0
-        if let first = hits.first, let p = first.pages.first { goTo(page: doc.index(for: p)) }
+        if let first = hits.first { goTo(page: first.page) }
     }
 
     func ocrHits(_ q: String) -> [(Int, String)] {

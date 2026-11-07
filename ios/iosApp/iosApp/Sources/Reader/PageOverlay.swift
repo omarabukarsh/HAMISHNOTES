@@ -1,4 +1,5 @@
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import PDFKit
 import PencilKit
 import SwiftUI
@@ -7,6 +8,32 @@ import SwiftUI
 /// فتمر لمسات الإصبع إلى عارض PDF للتمرير والتكبير.
 final class InkCanvas: PKCanvasView {
     var fingerWrites = false
+}
+
+/// يتابع حركة القلم دون أن يعترضها: هل بقي القلم ثابتًا لحظة قبل رفعه؟ («ارسم وأبقِ»)
+final class HoldTracker: UIGestureRecognizer {
+    private(set) var held = false
+    private var lastMove: CFTimeInterval = 0
+    private var lastPt: CGPoint = .zero
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        held = false
+        lastMove = CACurrentMediaTime()
+        lastPt = touches.first?.location(in: view) ?? .zero
+    }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let p = touches.first?.location(in: view) else { return }
+        if hypot(p.x - lastPt.x, p.y - lastPt.y) > 6 { lastMove = CACurrentMediaTime(); lastPt = p }
+    }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        held = CACurrentMediaTime() - lastMove >= 0.45
+        state = .failed
+    }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { held = false; state = .failed }
+    override func reset() { }
+    /// يصلح سواء وصل رفع القلم إلى هنا قبل حفظ الخط أو بعده.
+    var heldNow: Bool { held || (lastMove > 0 && CACurrentMediaTime() - lastMove >= 0.45) }
+    func consume() { held = false; lastMove = 0 }
 }
 
 /// طبقة فوق كل صفحة: التمييز، الصور، الكتابة بالقلم، النصوص، الملاحظات اللاصقة، الليزر، والأشكال.
@@ -19,12 +46,15 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     let pageSize: CGSize
 
     let canvas = InkCanvas()
+    private let hold = HoldTracker()
     private let marksView = MarksView()
     private let imagesLayer = UIView()
     private let topLayer = UIView()
     private let laser = LaserView()
     private let shapes = ShapeCaptureView()
     private let lasso = LassoView()
+    private let searchLayer = CAShapeLayer()
+    private let searchCurrent = CAShapeLayer()
     private var selectionFrame: ImageSelectionView?
     private var applying = false
     private var lastStrokeCount = 0
@@ -56,6 +86,11 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         canvas.showsHorizontalScrollIndicator = false
         canvas.minimumZoomScale = 1
         canvas.maximumZoomScale = 1
+        hold.cancelsTouchesInView = false
+        hold.delaysTouchesBegan = false
+        hold.delaysTouchesEnded = false
+        hold.delegate = self
+        canvas.addGestureRecognizer(hold)
         addSubview(canvas)
 
         topLayer.backgroundColor = .clear
@@ -63,6 +98,10 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         laser.isHidden = true
         addSubview(laser)
+        searchLayer.fillColor = UIColor(argb: 0xFFFFEB3B).withAlphaComponent(0.45).cgColor
+        searchCurrent.fillColor = UIColor(argb: 0xFFFFAB40).withAlphaComponent(0.55).cgColor
+        marksView.layer.addSublayer(searchLayer)
+        marksView.layer.addSublayer(searchCurrent)
         lasso.isHidden = true
         lasso.session = session
         lasso.pageId = pageId
@@ -113,6 +152,27 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         marksView.setNeedsDisplay()
         lasso.k = k
         lasso.refresh()
+        searchLayer.frame = marksView.bounds
+        searchCurrent.frame = marksView.bounds
+        if !lastHits.isEmpty { showSearch(lastHits, current: lastHitIndex) }
+    }
+
+    private var lastHits: [SearchHit] = []
+    private var lastHitIndex = 0
+
+    /// نتائج البحث في خط اليد والصفحات المقروءة لهذه الصفحة.
+    func showSearch(_ hits: [SearchHit], current: Int) {
+        lastHits = hits
+        lastHitIndex = current
+        guard let idx = session?.index(of: pageId) else { return }
+        let all = UIBezierPath(), cur = UIBezierPath()
+        for (i, h) in hits.enumerated() where h.page == idx {
+            guard let r = h.rect else { continue }
+            let rr = CGRect(x: r.minX * k, y: r.minY * k, width: r.width * k, height: r.height * k)
+            (i == current ? cur : all).append(UIBezierPath(roundedRect: rr, cornerRadius: rr.height * 0.25))
+        }
+        searchLayer.path = all.cgPath
+        searchCurrent.path = cur.cgPath
     }
 
     func refreshLasso() {
@@ -162,6 +222,10 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         if shapeOn {
             shapes.ink = shapeInk()
             shapes.kind = c.shapeKind
+            shapes.style = c.shapeStyle
+            shapes.rounded = c.shapeRounded
+            shapes.arrowStart = c.arrowStart
+            shapes.arrowEnd = c.arrowEnd
         }
     }
 
@@ -184,11 +248,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     private func shapeInk() -> (PKInk, CGFloat) {
         let c = AppController.shared
-        let t = c.tool
-        let col = UIColor(argb: c.colorFor(t))
-        let w = Sizes.width(t, c.sizeFor(t)) * k
-        if t == .highlighter { return (PKInk(.marker, color: col.withAlphaComponent(0.6)), w) }
-        return (PKInk(.monoline, color: col), w)
+        return (PKInk(.monoline, color: UIColor(argb: c.shapeColor)), Sizes.width(.ballpoint, c.shapeSize) * k)
     }
 
     // ======================================================== الحبر
@@ -216,12 +276,42 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             if handleHighlight(last) { return }
         }
         let added = strokes.count == lastStrokeCount + 1
-        lastStrokeCount = strokes.count
+        var converted = false
+        if added, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = strokes.last {
+            converted = restyle(last)
+        }
+        lastStrokeCount = canvas.drawing.strokes.count
         let pd = pageDrawing
         s.inkChanged(pageId, pd)
-        if added, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = pd.strokes.last {
+        if added, !converted, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = pd.strokes.last {
             AutoFont.shared.onStroke(s, pageId: pageId, stroke: last)
         }
+    }
+
+    /// «ارسم وأبقِ» (شكل مرتب) ونمط خط القلم (متقطع/منقّط) للخط الجديد. true = صار شكلًا.
+    private func restyle(_ last: PKStroke) -> Bool {
+        let c = AppController.shared
+        let pts = last.path.interpolatedPoints(by: .distance(2)).map { $0.location.applying(last.transform) }
+        let w = last.path.first?.size.width ?? Sizes.width(c.tool, c.sizeFor(c.tool)) * k
+        var paths: [[CGPoint]]? = nil
+        var shape = false
+        if c.drawAndHold && hold.heldNow, let r = ShapeRecognizer.recognize(pts, pageW: pageSize.width * k) {
+            paths = r
+            shape = true
+        }
+        hold.consume()
+        if c.penStyle != .solid {
+            let base = paths ?? [pts]
+            paths = base.flatMap { StrokeKit.split($0, style: c.penStyle, width: w) }
+        }
+        guard let ps = paths else { return false }
+        var d = canvas.drawing
+        d.strokes.removeLast()
+        d.strokes.append(contentsOf: StrokeKit.strokes(ps, ink: last.ink, width: w, seed: shape ? shapeSeed : last.randomSeed, date: last.path.creationDate))
+        applying = true
+        canvas.drawing = d
+        applying = false
+        return shape
     }
 
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) { AutoFont.shared.penDown() }
@@ -528,6 +618,10 @@ final class ShapeCaptureView: UIView {
     var kind: ShapeKind = .line
     var ink: (PKInk, CGFloat) = (PKInk(.monoline, color: .black), 2)
     var fingerWrites = false
+    var style: LineStyle = .solid
+    var rounded = true
+    var arrowStart: ArrowHead = .none
+    var arrowEnd: ArrowHead = .none
     var onShape: (([PKStroke]) -> Void)?
     private var start: CGPoint?
     private var end: CGPoint?
@@ -569,14 +663,7 @@ final class ShapeCaptureView: UIView {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         defer { start = nil; end = nil; preview.path = nil }
         guard let a = start, let b = end, hypot(b.x - a.x, b.y - a.y) > 6 else { return }
-        let strokes = Shapes.paths(kind, a, b).map { pts -> PKStroke in
-            let sp = pts.enumerated().map { i, p in
-                PKStrokePoint(location: p, timeOffset: TimeInterval(i) * 0.005, size: CGSize(width: ink.1, height: ink.1),
-                              opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
-            }
-            return PKStroke(ink: ink.0, path: PKStrokePath(controlPoints: sp, creationDate: Date()),
-                            transform: .identity, mask: nil, randomSeed: shapeSeed)
-        }
+        let strokes = StrokeKit.strokes(styledPaths(a, b), ink: ink.0, width: ink.1)
         onShape?(strokes)
     }
 
@@ -587,12 +674,26 @@ final class ShapeCaptureView: UIView {
     private func update() {
         guard let a = start, let b = end else { return }
         let p = UIBezierPath()
-        for pts in Shapes.paths(kind, a, b) {
+        for pts in styledPaths(a, b) {
             guard let f = pts.first else { continue }
             p.move(to: f)
             for q in pts.dropFirst() { p.addLine(to: q) }
         }
         preview.path = p.cgPath
+    }
+}
+
+extension ShapeCaptureView {
+    /// الشكل بنمطه: الزوايا المستديرة، ورؤوس الأسهم للخطوط، والتقطيع.
+    func styledPaths(_ a: CGPoint, _ b: CGPoint) -> [[CGPoint]] {
+        var paths = Shapes.paths(kind, a, b, rounded: rounded)
+        if [.line, .elbow, .curve].contains(kind), let main = paths.first, main.count > 1 {
+            let back = main[max(0, main.count - 4)], fwd = main[min(main.count - 1, 3)]
+            if let h = StrokeKit.arrow(arrowEnd, tip: main.last!, from: back, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
+            if let h = StrokeKit.arrow(arrowStart, tip: main.first!, from: fwd, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
+        }
+        guard style != .solid, let main = paths.first else { return paths }
+        return StrokeKit.split(main, style: style, width: ink.1) + paths.dropFirst()
     }
 }
 
@@ -614,7 +715,7 @@ enum Shapes {
         return out
     }
 
-    static func paths(_ kind: ShapeKind, _ a: CGPoint, _ b: CGPoint) -> [[CGPoint]] {
+    static func paths(_ kind: ShapeKind, _ a: CGPoint, _ b: CGPoint, rounded: Bool = false) -> [[CGPoint]] {
         let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
         switch kind {
         case .line:
@@ -630,12 +731,14 @@ enum Shapes {
                 return CGPoint(x: x, y: y)
             }
             return [pts]
-        case .rect:
-            return [dense([CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)], closed: true)]
-        case .triangle:
-            return [dense([CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)], closed: true)]
-        case .diamond:
-            return [dense([CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.midY), CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX, y: r.midY)], closed: true)]
+        case .rect, .triangle, .diamond:
+            let c: [CGPoint]
+            switch kind {
+            case .rect: c = [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+            case .triangle: c = [CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+            default: c = [CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.midY), CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX, y: r.midY)]
+            }
+            return [rounded ? StrokeKit.rounded(c) : dense(c, closed: true)]
         case .circle, .ellipse:
             var rr = r
             if kind == .circle {

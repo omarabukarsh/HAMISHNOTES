@@ -61,6 +61,18 @@ final class AppController: ObservableObject {
     @Published var laserMode: LaserMode = .dot { didSet { prefs.set(laserMode.rawValue, forKey: "laser_mode") } }
     @Published var eraserMode: EraserMode = .stroke { didSet { prefs.set(eraserMode.rawValue, forKey: "eraser_mode") } }
     @Published var presets: [PenPreset] = [] { didSet { saveCodable(presets, "pen_presets") } }
+    // الأشكال: النمط والسماكة واللون والزوايا ورؤوس الأسهم، و«ارسم وأبقِ»
+    @Published var shapeStyle: LineStyle = .solid { didSet { prefs.set(shapeStyle.rawValue, forKey: "shape_style") } }
+    @Published var shapeSize = 2 { didSet { prefs.set(shapeSize, forKey: "shape_size") } }
+    @Published var shapeRounded = true { didSet { prefs.set(shapeRounded, forKey: "shape_round") } }
+    @Published var arrowStart: ArrowHead = .none { didSet { prefs.set(arrowStart.rawValue, forKey: "arrow_s") } }
+    @Published var arrowEnd: ArrowHead = .none { didSet { prefs.set(arrowEnd.rawValue, forKey: "arrow_e") } }
+    @Published var shapeColor: UInt32 = 0xFF000000 { didSet { prefs.set(Int(shapeColor), forKey: "shape_color") } }
+    @Published var drawAndHold = true { didSet { prefs.set(drawAndHold, forKey: "draw_hold") } }
+    /// نمط خط الأقلام (متصل، متقطع، منقّط).
+    @Published var penStyle: LineStyle = .solid { didSet { prefs.set(penStyle.rawValue, forKey: "pen_style") } }
+    /// لغة قراءة خط اليد: 0 عربي، 1 إنجليزي، 2 كلاهما.
+    @Published var hwLang = 2 { didSet { prefs.set(hwLang, forKey: "hw_lang") } }
     // التحديد الحر: نوعه (حر/مستطيل) وما يدخل فيه
     @Published var lassoRect = false { didSet { prefs.set(lassoRect, forKey: "lasso_rect") } }
     @Published var lassoInk = true { didSet { prefs.set(lassoInk, forKey: "lasso_ink") } }
@@ -139,6 +151,15 @@ final class AppController: ObservableObject {
         highlightToSummary = p.object(forKey: "hl_summary") as? Bool ?? true
         highlightSnap = p.bool(forKey: "hl_snap")
         lassoRect = p.bool(forKey: "lasso_rect")
+        shapeStyle = LineStyle(rawValue: p.integer(forKey: "shape_style")) ?? .solid
+        shapeSize = p.object(forKey: "shape_size") as? Int ?? 2
+        shapeRounded = p.object(forKey: "shape_round") as? Bool ?? true
+        arrowStart = ArrowHead(rawValue: p.string(forKey: "arrow_s") ?? "") ?? .none
+        arrowEnd = ArrowHead(rawValue: p.string(forKey: "arrow_e") ?? "") ?? .none
+        shapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "shape_color") as? Int ?? 0xFF000000)
+        drawAndHold = p.object(forKey: "draw_hold") as? Bool ?? true
+        penStyle = LineStyle(rawValue: p.integer(forKey: "pen_style")) ?? .solid
+        hwLang = p.object(forKey: "hw_lang") as? Int ?? 2
         lassoInk = p.object(forKey: "lasso_ink") as? Bool ?? true
         lassoHighlight = p.object(forKey: "lasso_hl") as? Bool ?? true
         lassoShapes = p.object(forKey: "lasso_shapes") as? Bool ?? true

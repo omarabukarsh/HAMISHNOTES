@@ -634,6 +634,9 @@ struct ToolSettingsPanel: View {
                     .frame(width: min(34, max(4, Sizes.width(t, app.sizeFor(t)) * 0.6)), height: min(34, max(4, Sizes.width(t, app.sizeFor(t)) * 0.6)))
                     .frame(width: 36, height: 36)
             }
+            if t.isPen {
+                StrokeStyleSection(style: $app.penStyle)
+            }
             if t == .eraser {
                 HStack(spacing: 6) {
                     ChoiceChip(label: L("الخط كاملًا", "Whole stroke"), selected: app.eraserMode == .stroke) { app.eraserMode = .stroke }
@@ -691,23 +694,101 @@ struct ColorPickerSheet: View {
 
 private struct ShapeBar: View {
     @EnvironmentObject var app: AppController
+    @State private var strokeMenu = false
+    @State private var colorMenu = false
     var body: some View {
         let kinds: [(ShapeKind, String)] = [(.line, "ph_shape_line"), (.elbow, "ph_shape_elbow"), (.curve, "ph_shape_curve"), (.rect, "ph_shape_rect"),
-                                            (.circle, "ph_shape_circle"), (.ellipse, "ph_shape_ellipse"), (.triangle, "ph_shape_triangle"), (.diamond, "ph_shape_diamond")]
+                                            (.circle, "ph_shape_circle"), (.triangle, "ph_shape_triangle"), (.diamond, "ph_shape_diamond"), (.ellipse, "ph_shape_ellipse")]
         HStack(spacing: 0) {
+            // «ارسم وأبقِ»: التعرف على الشكل المرسوم بالقلم عند إبقائه ثابتًا
+            TBtn(selected: app.drawAndHold, action: {
+                app.drawAndHold.toggle()
+                app.message(app.drawAndHold ? L("ارسم الشكل وأبقِ القلم ثابتًا لحظة فيصير مرتبًا", "Draw a shape and hold the pen still for a moment to tidy it")
+                                            : L("أُوقف «ارسم وأبقِ»", "Draw and hold is off"))
+            }) { PhIcon("ph_shape_detect", tintFor(app.drawAndHold)) }
+            ToolbarSep()
             ForEach(kinds, id: \.0) { item in
                 TBtn(selected: app.shapeKind == item.0, action: { app.shapeKind = item.0 }) { PhIcon(item.1, tintFor(app.shapeKind == item.0)) }
             }
             ToolbarSep()
-            ColorDots(onCustom: {})
+            TBtn(action: { strokeMenu = true }) { LineStyleSample(style: app.shapeStyle, color: Palette.textPrimary, width: 4) }
+                .popover(isPresented: $strokeMenu) { ShapeStrokePanel().environmentObject(app) }
+            Button { colorMenu = true } label: {
+                Circle().fill(Color(hex: app.shapeColor)).frame(width: 24, height: 24)
+                    .overlay(Circle().stroke(Palette.divider, lineWidth: 1)).frame(width: 42, height: 42)
+            }
+            .popover(isPresented: $colorMenu) {
+                HStack(spacing: 6) {
+                    ForEach(Array((app.penPalette + app.customColors).prefix(10)), id: \.self) { col in
+                        Button { app.shapeColor = col; colorMenu = false } label: {
+                            Circle().fill(Color(hex: col)).frame(width: 32, height: 32)
+                                .overlay(Circle().stroke(col == app.shapeColor ? Palette.navy : Palette.divider, lineWidth: col == app.shapeColor ? 2.5 : 1))
+                        }
+                    }
+                }
+                .padding(10)
+            }
             ToolbarSep()
-            TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18) }
+            TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق الأشكال", "Close shapes")) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(Capsule().fill(Color.white))
         .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
         .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
         .padding(.bottom, 6)
+    }
+}
+
+/// إعدادات خط الأشكال: النمط، السماكة، الزوايا المستديرة، رؤوس الأسهم.
+private struct ShapeStrokePanel: View {
+    @EnvironmentObject var app: AppController
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Spacer()
+                Text(String(format: "%.2f mm", Sizes.width(.ballpoint, app.shapeSize) / 595 * 210)).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                Button {
+                    app.shapeStyle = .solid; app.shapeSize = 2; app.shapeRounded = true; app.arrowStart = .none; app.arrowEnd = .none
+                } label: { PhIcon("ph_undo", Palette.textSecondary, 18, L("استعادة", "Reset")).frame(width: 34, height: 34) }
+            }
+            StrokeStyleSection(style: $app.shapeStyle)
+            Text(L("السماكة", "Thickness")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+            Slider(value: Binding(get: { Double(app.shapeSize) }, set: { app.shapeSize = Int($0.rounded()) }), in: 0...Double(Sizes.count - 1), step: 1).tint(Palette.navy)
+            Divider()
+            Toggle(L("زوايا مستديرة", "Rounded corners"), isOn: $app.shapeRounded).font(Fonts.sans(13)).tint(Palette.navy)
+            Text(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+            HStack(alignment: .top, spacing: 8) {
+                VStack(spacing: 6) { ForEach(ArrowHead.allCases, id: \.self) { h in arrowOption(h, start: true, selected: app.arrowStart == h) { app.arrowStart = h } } }
+                VStack(spacing: 6) { ForEach(ArrowHead.allCases, id: \.self) { h in arrowOption(h, start: false, selected: app.arrowEnd == h) { app.arrowEnd = h } } }
+            }
+        }
+        .padding(14)
+        .frame(width: 290)
+    }
+
+    private func arrowOption(_ h: ArrowHead, start: Bool, selected: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if h == .none {
+                    Text(L("بدون", "None")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
+                } else {
+                    Canvas { ctx, size in
+                        let y = size.height / 2, x0: CGFloat = 6, x1 = size.width - 6
+                        var l = Path(); l.move(to: CGPoint(x: x0, y: y)); l.addLine(to: CGPoint(x: x1, y: y))
+                        ctx.stroke(l, with: .color(Palette.textPrimary), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        let tip = start ? x0 : x1, dir: CGFloat = start ? 1 : -1
+                        var p = Path()
+                        p.move(to: CGPoint(x: tip + dir * 10, y: y - 6)); p.addLine(to: CGPoint(x: tip, y: y)); p.addLine(to: CGPoint(x: tip + dir * 10, y: y + 6))
+                        if h == .closed { p.closeSubpath() }
+                        ctx.stroke(p, with: .color(Palette.textPrimary), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    }
+                    .frame(width: 80, height: 20)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background(RoundedRectangle(cornerRadius: 10).fill(selected ? Palette.navySoft : Palette.background))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Palette.navy : Color.clear, lineWidth: 1.5))
+        }
     }
 }
 
@@ -769,9 +850,9 @@ private struct ReaderSearchBar: View {
 
     private func step(_ d: Int) {
         let s = session
-        guard !s.searchHits.isEmpty, let doc = s.pdf else { return }
+        guard !s.searchHits.isEmpty else { return }
         s.searchIndex = (s.searchIndex + d + s.searchHits.count) % s.searchHits.count
-        if let p = s.searchHits[s.searchIndex].pages.first { s.goTo(page: doc.index(for: p)) }
+        if s.searchHits[s.searchIndex].sel == nil { s.goTo(page: s.searchHits[s.searchIndex].page) }
     }
 }
 

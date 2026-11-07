@@ -39,6 +39,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.omarabukarsh.hamish
         INFOPLIST_FILE: iosApp/Info.plist
         CODE_SIGN_ENTITLEMENTS: iosApp/Hamish.entitlements
+        # معرّف عميل Google من نوع iOS (يُمرَّر من سر GOOGLE_IOS_CLIENT_ID عند البناء)
+        GOOGLE_IOS_CLIENT_ID: ""
         TARGETED_DEVICE_FAMILY: "2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.0"

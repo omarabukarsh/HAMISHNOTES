@@ -388,9 +388,11 @@ private struct GoalSheet: View {
 // ---------------------------------------------------------------- تسجيل الدخول
 
 /// أول فتح للتطبيق: تسجيل الدخول (يمكن تخطيه)، بنفس تصميم SignInScreen في أندرويد.
-/// زر Google في أندرويد يقابله «المتابعة باستخدام Apple» في iPad.
+/// «المتابعة باستخدام Google» كما في أندرويد، و«المتابعة باستخدام Apple» (شرط App Store مع Google).
 struct SignInScreen: View {
     @EnvironmentObject var app: AppController
+    @State private var busy = false
+    @State private var error: String? = nil
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -410,6 +412,32 @@ struct SignInScreen: View {
                        "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."))
                     .font(Fonts.sans(15)).foregroundColor(Lib.muted).multilineTextAlignment(.center).lineSpacing(7)
                 Spacer().frame(height: 36)
+                Button {
+                    busy = true
+                    error = nil
+                    Task { @MainActor in
+                        switch await GoogleAuth.shared.signIn() {
+                        case .success(let r): app.setAccount(email: r.0, name: r.1)
+                        case .failure(let f): if f != .cancelled { error = GoogleAuth.message(f) }
+                        }
+                        busy = false
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image("ic_google").resizable().frame(width: 20, height: 20)
+                        Text(busy ? L("جارٍ الدخول…", "Signing in…") : L("المتابعة باستخدام Google", "Continue with Google"))
+                            .font(Fonts.sans(16, .bold)).foregroundColor(Color(hex: 0xFF1E2A44))
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 15)
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(Color(hex: 0xFFDADCE0), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                }
+                .disabled(busy)
+                if let e = error {
+                    Text(e).font(Fonts.sans(13)).foregroundColor(Lib.exam).multilineTextAlignment(.center).padding(.top, 12)
+                }
+                Spacer().frame(height: 12)
                 SignInWithAppleButton(.continue) { req in
                     req.requestedScopes = [.fullName, .email]
                 } onCompletion: { r in

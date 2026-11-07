@@ -68,6 +68,8 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>لإضافة صور إلى صفحاتك.</string>
 	<!-- فتح ملفات PDF من «الملفات» والتطبيقات الأخرى -->
+	<key>GoogleClientID</key>
+	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

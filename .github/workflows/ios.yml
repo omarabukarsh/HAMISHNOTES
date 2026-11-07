@@ -34,6 +34,7 @@ jobs:
             SYMROOT="$PWD/build" \
             MARKETING_VERSION="1.0.${{ github.run_number }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            GOOGLE_IOS_CLIENT_ID="${{ secrets.GOOGLE_IOS_CLIENT_ID }}" \
             build 2>&1 | tee xcode.log | grep -E 'error:|warning: .*Swift|BUILD' || true
           grep -q "BUILD SUCCEEDED" xcode.log
       - name: Report Xcode errors

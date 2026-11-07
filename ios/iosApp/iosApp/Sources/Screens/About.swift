@@ -31,7 +31,7 @@ func privacyText() -> String {
 
 • على جهازك فقط: ملفات PDF، والكتابة، والتمييز، والملخصات، والبطاقات، والتسجيلات الصوتية، وإحصاءات الدراسة، والإعدادات. لا تُرسل إلينا.
 
-• تسجيل الدخول بـ Apple (اختياري): يبقى الاسم والبريد على جهازك لعرضهما في التطبيق.
+• تسجيل الدخول بـ Google أو Apple (اختياري): يبقى الاسم والبريد على جهازك لعرضهما في التطبيق.
 
 • الاشتراك: يديره App Store بالكامل. لا نحصل على بيانات بطاقتك أبدًا.
 
@@ -53,7 +53,7 @@ Summary: your files and notes stay on your device and we never see them. No ads,
 
 • On your device only: PDFs, handwriting, highlights, summaries, cards, audio recordings, study stats and settings. Never sent to us.
 
-• Sign in with Apple (optional): your name and email stay on your device to show them in the app.
+• Sign in with Google or Apple (optional): your name and email stay on your device to show them in the app.
 
 • Subscription: handled entirely by the App Store. We never receive your card details.
 

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -44,11 +46,15 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val entry = c.library.firstOrNull { it.id == docId } ?: return
     var editable by remember { mutableStateOf(true) }
+    // النافذة تبقى مفتوحة حتى يعود اختيار مكان الحفظ: إغلاقها قبل ذلك يُلغي استقبال النتيجة
+    // فيُنشأ الملف فارغًا (0 بايت) دون أن يُكتب فيه
     val docSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
         if (uri != null) c.shareOrSaveDoc(ctx, docId, editable, uri)
+        onDismiss()
     }
     val sumSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
         if (uri != null) c.shareOrSaveSummary(ctx, docId, uri)
+        onDismiss()
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -85,7 +91,6 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
                     }
                     OutlinedButton(
                         onClick = {
-                            onDismiss()
                             docSaver.launch(entry.name + if (editable) ".pdf" else L(" - نهائي.pdf", " - final.pdf"))
                         },
                         modifier = Modifier.weight(1f)
@@ -102,11 +107,83 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
                         TextButton(onClick = { onDismiss(); c.shareOrSaveSummary(ctx, docId, null) }) {
                             Text(L("مشاركة الملخصات", "Share summaries"), color = Palette.Navy)
                         }
-                        TextButton(onClick = { onDismiss(); sumSaver.launch(L("ملخص ", "Summary ") + entry.name + ".pdf") }) {
+                        TextButton(onClick = { sumSaver.launch(L("ملخص ", "Summary ") + entry.name + ".pdf") }) {
                             Text(L("حفظ الملخصات", "Save summaries"), color = Palette.Navy)
                         }
                     }
                 }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
+    )
+}
+
+/** مشاركة أو حفظ عدة مستندات محددة من المكتبة دفعة واحدة (ملف PDF لكل مستند). */
+@Composable
+fun ShareManyDialog(ids: List<String>, onDismiss: () -> Unit, onStarted: () -> Unit) {
+    val c = AppController
+    val ctx = LocalContext.current
+    val entries = c.library.filter { it.id in ids }
+    val locked = entries.count { it.locked }
+    var editable by remember { mutableStateOf(true) }
+    // النافذة تبقى مفتوحة حتى يعود اختيار المجلد، وإلا يضيع استقبال النتيجة
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
+            c.shareOrSaveDocs(ctx, ids, editable, uri)
+            onStarted()
+        } else onDismiss()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("مشاركة أو حفظ ${entries.size} مستندات", "Share or save ${entries.size} documents")) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    entries.take(4).joinToString("، ") { it.name } + if (entries.size > 4) L(" و${entries.size - 4} غيرها", " and ${entries.size - 4} more") else "",
+                    fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 2
+                )
+                if (locked > 0) {
+                    Text(
+                        L("$locked مستند مقفل سيُتخطى", "$locked locked document(s) will be skipped"),
+                        fontSize = 12.sp, color = Palette.Danger, modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(L("نوع النسخة", "Copy type"), fontSize = 13.sp, color = Palette.TextSecondary)
+                Spacer(Modifier.height(6.dp))
+                CopyOption(
+                    L("قابلة للتعديل", "Editable"),
+                    L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in Hamish."),
+                    editable
+                ) { editable = true }
+                Spacer(Modifier.height(8.dp))
+                CopyOption(
+                    L("نهائية", "Final"),
+                    L("الكتابة مثبتة في الصفحات؛ مناسبة لإرسالها للآخرين.", "Writing is fixed into the pages; good for sending to others."),
+                    !editable
+                ) { editable = false }
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { c.shareOrSaveDocs(ctx, ids, editable, null); onStarted() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Palette.Navy)
+                    ) {
+                        PhIcon(R.drawable.ph_export, Color.White, 18.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(L("مشاركة", "Share"))
+                    }
+                    OutlinedButton(
+                        onClick = { folderPicker.launch(null) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text(L("حفظ في مجلد", "Save to folder"), color = Palette.Navy) }
+                }
+                Text(
+                    L("المشاركة ترسل كل الملفات معًا (تلغرام، واتساب، البريد…). الحفظ يضعها في مجلد تختاره.",
+                        "Share sends all files together (Telegram, WhatsApp, email…). Save puts them in a folder you choose."),
+                    fontSize = 11.sp, color = Palette.TextSecondary, modifier = Modifier.padding(top = 6.dp)
+                )
             }
         },
         confirmButton = {},

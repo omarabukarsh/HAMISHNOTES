@@ -1,45 +1,71 @@
 # Privacy Policy — Hamish
 
-Last updated: October 2026
+Last updated: November 1, 2026
+Developer: Hamish Notes · Contact: noteshamish@gmail.com
 
-- Your files stay on your device: PDFs, handwriting, highlights, summaries and audio recordings are stored inside the app on your device only. Hamish does not send your files or notes to any server, and the developer runs no server that collects your data.
+Summary: your files and notes stay on your device and we never see them. Our server keeps only the minimum needed for your account and subscription. No ads, no selling of data, no tracking or analytics tools.
 
-- No accounts or ads: the app needs no sign-in, contains no ads, and the developer adds no analytics or tracking tools.
+• On your device only: PDFs, handwriting, highlights, summaries, cards, audio recordings, study stats and settings. Never sent to us.
 
-- Microphone: microphone permission is requested only when you use “Lecture recording”; recordings are stored on your device only.
+• Google account (optional, required to subscribe): email address, name and Google account identifier, to create your account and link your subscription to it.
 
-- Biometrics/device lock: when you lock a document, the app uses Android to verify you; the app never receives your fingerprint. The PIN is stored hashed on your device.
+• Subscription: purchase token, plan, status, expiry date and free-trial state, to verify your subscription. We never receive your card details; Google handles payment.
 
-- Google ML Kit: reading page text, translation and handwriting-to-text run on your device; the text, images and handwriting of your files are not sent. The first use of translation or handwriting recognition downloads a language pack from Google once. The ML Kit library sends Google technical diagnostic data (such as device model and OS, app version, performance, selected languages and a per-installation identifier that does not identify you) to improve the service and diagnose problems, encrypted in transit, under Google’s privacy policy: https://policies.google.com/privacy
+• Device identifier: a hashed code that does not reveal who you are, to bind Premium to your device.
 
-- Sharing and export: when you share or export a file, it goes to the app or place you choose.
+• App integrity check (Google Play Integrity): confirms the app is genuine and the device is not compromised. If it fails we store the result to prevent modified copies and fraud.
 
-- Deleting data: deleting a document from the library deletes its data, and uninstalling the app deletes all its data from your device.
+• Technical logs: our hosting provider keeps short-lived logs (such as request time and IP address) for security and troubleshooting.
 
-- Children: the app is a general study tool and collects no data from any user.
+• Services: Supabase (server, in Frankfurt, Germany) and Google (sign-in, billing and Play Integrity) under the Google Privacy Policy: https://policies.google.com/privacy
 
-Contact: [put your email here]
+• Google ML Kit: text reading, translation and handwriting-to-text run on your device; your files' content is not sent. Language packs are downloaded from Google once, and the library sends technical diagnostics that do not identify you.
+
+• Permissions: microphone only for lecture recording (stays on your device); fingerprint is verified by Android and never reaches us; internet for your account, subscription and language packs.
+
+• Deletion: delete your account in Settings → Account → Delete my account, or request it by email. We delete your account, subscription data and integrity records, and cancel your Google Play renewal. Uninstalling the app deletes your files from your device.
+
+• Security: encrypted connections (HTTPS), restricted database access, and digitally signed Premium activation.
+
+• Children: the app is a general study tool, not directed at children under 13.
+
+To contact us, or to access or delete your data: noteshamish@gmail.com
+
+Full version: site/privacy/index.html
 
 ---
 
 # سياسة الخصوصية — هامش (Hamish)
 
-آخر تحديث: أكتوبر 2026
+آخر تحديث: 1 نوفمبر 2026
+المطوّر: Hamish Notes · للتواصل: noteshamish@gmail.com
 
-- ملفاتك تبقى على جهازك: ملفات PDF والكتابة والتمييز والملخصات والتسجيلات الصوتية تُحفظ داخل التطبيق على جهازك فقط. لا يرسل «هامش» ملفاتك أو ملاحظاتك إلى أي خادم، ولا يملك المطوّر أي خادم يجمع بياناتك.
+الخلاصة: ملفاتك وملاحظاتك على جهازك فقط ولا نطّلع عليها. نحفظ على خادمنا الحد الأدنى اللازم لحسابك واشتراكك فقط. لا إعلانات، ولا بيع للبيانات، ولا أدوات تتبّع أو تحليلات.
 
-- لا حسابات ولا إعلانات: لا يطلب التطبيق تسجيل الدخول، ولا يحتوي إعلانات، ولا يضيف المطوّر أي أدوات تحليلات أو تتبّع.
+• على جهازك فقط: ملفات PDF، والكتابة، والتمييز، والملخصات، والبطاقات، والتسجيلات الصوتية، وإحصاءات الدراسة، والإعدادات. لا تُرسل إلينا.
 
-- الميكروفون: يُطلب إذن الميكروفون فقط عند استخدامك «تسجيل المحاضرة»، والتسجيل يُحفظ على جهازك فقط.
+• حساب Google (اختياري، ولازم للاشتراك): البريد الإلكتروني والاسم ومعرّف حسابك في Google، لإنشاء حسابك وربط اشتراكك به.
 
-- البصمة/قفل الجهاز: عند قفل مستند يستخدم التطبيق نظام أندرويد للتحقق من هويتك؛ لا يحصل التطبيق على بصمتك. الرقم السري يُحفظ مشفّرًا (تجزئة) على جهازك.
+• الاشتراك: رمز الشراء، ونوع الخطة، وحالتها، وتاريخ انتهائها، وفترة التجربة، للتحقق من اشتراكك. لا نحصل على بيانات بطاقتك أبدًا، فالدفع تديره Google.
 
-- خدمات Google ML Kit: قراءة النص من الصفحات، والترجمة، وتحويل الكتابة اليدوية إلى نص تعمل على جهازك، ولا يُرسل نص ملفاتك أو صورها أو كتابتك. أول استخدام للترجمة أو تحويل الكتابة ينزّل حزمة لغة من Google مرة واحدة. ترسل مكتبة ML Kit إلى Google بيانات تشخيصية تقنية (مثل طراز الجهاز ونظامه، ونسخة التطبيق، وسرعة الأداء، واللغات المختارة، ومعرّف تثبيت لا يحدد هويتك) لتحسين الخدمة وتشخيص الأعطال، مشفّرة أثناء النقل، وفق سياسة خصوصية Google: https://policies.google.com/privacy
+• معرّف الجهاز: رمز مشتق ومشفّر لا يكشف هويتك، لربط Premium بجهازك.
 
-- المشاركة والتصدير: عندما تشارك أو تصدّر ملفًا، يذهب إلى التطبيق أو المكان الذي تختاره أنت.
+• فحص سلامة التطبيق (Google Play Integrity): يؤكد أن التطبيق أصلي وأن الجهاز سليم. إن فشل نحفظ نتيجته لمنع النسخ المعدّلة والاحتيال.
 
-- حذف البيانات: حذف مستند من المكتبة يحذف بياناته، وإلغاء تثبيت التطبيق يحذف كل بياناته من جهازك.
+• سجلات تقنية: يحفظ مزوّد الخادم سجلات قصيرة المدة (مثل وقت الطلب وعنوان IP) للأمان وتشخيص الأعطال.
 
-- الأطفال: التطبيق أداة دراسة عامة ولا يجمع بيانات من أي مستخدم.
+• الخدمات: Supabase (الخادم، في فرانكفورت، ألمانيا)، وGoogle (تسجيل الدخول والدفع وPlay Integrity) وفق سياسة خصوصية Google: https://policies.google.com/privacy
 
-للتواصل: [ضع بريدك الإلكتروني هنا]
+• Google ML Kit: قراءة النص والترجمة وتحويل الكتابة إلى نص تعمل على جهازك، ولا يُرسل محتوى ملفاتك. تنزّل حزم اللغات من Google مرة واحدة، وترسل المكتبة بيانات تشخيصية تقنية لا تحدد هويتك.
+
+• الأذونات: الميكروفون فقط لتسجيل المحاضرة (يبقى على جهازك)، والبصمة يتحقق منها نظام Android ولا نحصل عليها، والإنترنت للحساب والاشتراك وحزم اللغات.
+
+• الحذف: احذف حسابك من الإعدادات ← الحساب ← حذف حسابي، أو اطلبه بالبريد. نحذف حسابك وبيانات اشتراكك وسجلات الفحص، ونلغي تجديد اشتراكك في Google Play. حذف التطبيق يحذف ملفاتك من جهازك.
+
+• الأمان: اتصال مشفّر (HTTPS)، ووصول مقيّد لقاعدة البيانات، وتفعيل Premium موقّع رقميًا.
+
+• الأطفال: التطبيق أداة دراسة عامة، غير موجّهة للأطفال دون 13 عامًا.
+
+للتواصل أو طلب بياناتك أو حذفها: noteshamish@gmail.com
+
+النسخة الكاملة: site/privacy/index.html

@@ -120,6 +120,8 @@ const val NOTE_COLLAPSED = 0.045f
 
 class DocSession(entry: DocEntry) {
     val id: String = entry.id
+    /** خريطة ذهنية مستقلة: تُعرض الخريطة بدل الصفحات. */
+    val isMap: Boolean = entry.isMap
 
     var title by mutableStateOf(entry.name)
     var status by mutableStateOf<SessionStatus>(SessionStatus.Loading)
@@ -233,6 +235,127 @@ class DocSession(entry: DocEntry) {
     val redoStack = mutableStateListOf<EditSnapshot>()
 
     val listState = LazyListState(entry.lastPage.coerceIn(0, maxOf(0, entry.pageCount - 1)), 0)
+
+    // ---- الصفحة الحالية: آخر صفحة لُمست أو كُتب عليها، وإلا الأكثر ظهوراً على الشاشة ----
+    /** آخر صفحة لمسها المستخدم (-1 = لا شيء؛ تُلغى عند التمرير باليد). */
+    var activePage by mutableStateOf(-1)
+
+    /** الصفحة الأكثر ظهوراً في الشاشة الآن. */
+    fun mostVisiblePage(): Int {
+        val info = listState.layoutInfo
+        val vis = info.visibleItemsInfo
+        if (vis.isEmpty()) return listState.firstVisibleItemIndex
+        val top = info.viewportStartOffset
+        val bottom = info.viewportEndOffset
+        return vis.maxByOrNull { minOf(it.offset + it.size, bottom) - maxOf(it.offset, top) }?.index
+            ?: listState.firstVisibleItemIndex
+    }
+
+    /** رقم الصفحة الذي يظهر في الشريط وتعمل عليه الأزرار (إضافة صورة، ملصق، ...). */
+    fun currentPage(): Int {
+        val n = pdf?.count ?: Int.MAX_VALUE
+        val a = activePage
+        if (a in 0 until n && listState.layoutInfo.visibleItemsInfo.any { it.index == a }) return a
+        return mostVisiblePage().coerceIn(0, maxOf(0, n - 1))
+    }
+
+    /** وسط الجزء الظاهر من الصفحة (بوحدات عرض الصفحة): هنا توضع الصورة أو الملصق عند النقر. */
+    fun visibleCenter(page: Int): Offset {
+        val ratio = pdf?.ratio(page) ?: 0.707f
+        val pageH = 1f / ratio
+        val info = listState.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { v -> v.index == page } ?: return Offset(0.5f, pageH / 2f)
+        if (item.size <= 0) return Offset(0.5f, pageH / 2f)
+        val top = maxOf(item.offset, info.viewportStartOffset)
+        val bottom = minOf(item.offset + item.size, info.viewportEndOffset)
+        val cy = ((top + bottom) / 2f - item.offset) / item.size * pageH
+        return Offset(0.5f, cy.coerceIn(0f, pageH))
+    }
+
+    /** مواضع الصفحات الظاهرة في النافذة (لإسقاط الصور والملصقات المسحوبة عليها). */
+    val pageWindowRects = HashMap<Int, androidx.compose.ui.geometry.Rect>()
+
+    /** الصفحة التي تقع تحت نقطة في النافذة، وموضعها داخل الصفحة بوحدات عرض الصفحة. */
+    fun pageAt(win: Offset): Pair<Int, Offset>? {
+        val vis = listState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
+        val hit = pageWindowRects.entries.firstOrNull { it.key in vis && it.value.contains(win) } ?: return null
+        val r = hit.value
+        if (r.width <= 0f) return null
+        return hit.key to Offset((win.x - r.left) / r.width, (win.y - r.top) / r.width)
+    }
+
+    // ---- الكتابة المباشرة على الصفحة ----
+    /** مربع النص الذي يُكتب فيه الآن مباشرة على الصفحة (null = لا شيء). */
+    var inlineEditId by mutableStateOf<String?>(null)
+
+    /** يبدأ الكتابة المباشرة في مربع موجود. */
+    fun startInlineEdit(boxId: String) {
+        if (inlineEditId != null && inlineEditId != boxId) finishInlineEdit()
+        beginEdit()
+        inlineEditId = boxId
+        selectedTextId = boxId
+        selectedImageId = null
+    }
+
+    /** ينهي الكتابة المباشرة: مربع فارغ يُحذف، وإلا يُحفظ التعديل كخطوة تراجع واحدة. */
+    fun finishInlineEdit() {
+        val id = inlineEditId ?: return
+        inlineEditId = null
+        val tb = textBox(id)
+        if (tb != null && tb.text.isBlank()) {
+            texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).filter { it.id != id })
+            if (selectedTextId == id) selectedTextId = null
+        }
+        if (snapshot != null) endEdit() else persist()
+    }
+
+    /** يضع مربع نص فارغاً في موضع النقر ويفتح الكتابة فيه مباشرة. */
+    fun placeInlineText(page: Int, x: Float, y: Float, color: Color, size: Float) {
+        finishInlineEdit()
+        val ratio = pdf?.ratio(page) ?: 0.707f
+        val w = 0.42f
+        val tb = TextBox(
+            UUID.randomUUID().toString(), page,
+            x.coerceIn(0f, 1f - w * 0.3f), (y - size * 0.6f).coerceIn(0f, maxOf(0f, 1f / ratio - size * 1.4f)),
+            w, "", color, size
+        )
+        beginEdit()
+        texts = texts + (page to ((texts[page] ?: emptyList()) + tb))
+        inlineEditId = tb.id
+        selectedTextId = tb.id
+        selectedImageId = null
+        activePage = page
+    }
+
+    /** تخطيط النص المعروض لكل مربع نص وعرض الصفحة بالبكسل (لمعرفة الكلمة تحت الإصبع أو القلم). */
+    val textLayouts = HashMap<String, Pair<androidx.compose.ui.text.TextLayoutResult, Float>>()
+
+    /** بدائل كلمة متحولة معروضة للتصحيح: [start, end) موضع الكلمة في نص المربع. */
+    class AltPopup(val boxId: String, val page: Int, val start: Int, val end: Int, val alts: List<String>, val at: Offset)
+    var altPopup by mutableStateOf<AltPopup?>(null)
+
+    /** يستبدل الكلمة المعروضة ببديل (خطوة تراجع واحدة). */
+    fun applyAlt(p: AltPopup, word: String) {
+        altPopup = null
+        val tb = textBox(p.boxId) ?: return
+        if (p.end > tb.text.length || p.start > p.end) return
+        val old = tb.text.substring(p.start, p.end)
+        beginEdit()
+        updateTextBox(p.boxId) {
+            val others = (it.alts[old] ?: emptyList()) + old
+            it.copy(
+                text = it.text.substring(0, p.start) + word + it.text.substring(p.end),
+                alts = it.alts - old + (word to others.filter { o -> o != word }.distinct())
+            )
+        }
+        endEdit()
+    }
+
+    /** مكان زري الصور والملصقات في النافذة: درجهما يخرج من الزر ويستقر تحته. */
+    val trayAnchors = androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>()
+
+    /** الدرج الجانبي المفتوح: "stickers" أو "photos" أو null. */
+    var trayMode by mutableStateOf<String?>(null)
 
     // ---- القراءة الضوئية والتحديد والبحث ----
     val ocr = mutableStateMapOf<Int, OcrPage>()
@@ -590,6 +713,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun undo() {
+        if (inlineEditId != null) finishInlineEdit()
         if (undoStack.isEmpty()) return
         redoStack.add(snap())
         restore(undoStack.removeAt(undoStack.lastIndex))
@@ -597,6 +721,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun redo() {
+        if (inlineEditId != null) finishInlineEdit()
         if (redoStack.isEmpty()) return
         undoStack.add(snap())
         restore(redoStack.removeAt(redoStack.lastIndex))
@@ -815,6 +940,7 @@ class DocSession(entry: DocEntry) {
         val doc = pdf ?: return
         lassoSel = null
         zoomBox = null
+        inlineEditId = null
         undoStack.clear()
         redoStack.clear()
         snapshot = null
@@ -827,6 +953,7 @@ class DocSession(entry: DocEntry) {
         val pagesSnap = doc.pages
         val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
         val ocrSnap = ocr.toMap()
+        baseWords.clear()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
             AppController.repo.savePages(id, pagesSnap)
@@ -838,14 +965,30 @@ class DocSession(entry: DocEntry) {
 
     // ---------- القراءة الضوئية ----------
 
+    /** إصدار قراءة الصفحة: يتغيّر مع كتابة المستخدم ولغة خط اليد ومصدر القراءة. */
+    private fun ocrVersion(strokes: List<Ink>): Int = (OcrEngine.versionOf(strokes) * 31 + 3) * 4 + PenPrefs.hwLang
+
+    /** إصدار القراءة الاحتياطية (خط اليد داخل الصورة) حين لا تكون حزمة اللغة جاهزة. */
+    private fun fallbackVersion(ver: Int): Int = ver xor 0x20000000
+
+    /** القراءة المحفوظة للصفحة ما زالت صالحة لكتابتها الحالية. */
+    private fun isFresh(existing: OcrPage, strokes: List<Ink>): Boolean {
+        val ver = ocrVersion(strokes)
+        return existing.version == ver ||
+            (existing.version == fallbackVersion(ver) && !HandwritingReader.isReady(PenPrefs.hwLang))
+    }
+
+    /** قراءة الصورة دون خط اليد (للصفحات الممسوحة)؛ لا تتغيّر بالكتابة فتُحفظ مؤقتًا. */
+    private val baseWords = java.util.concurrent.ConcurrentHashMap<Int, List<OcrWord>>()
+
     /** يقرأ صفحة واحدة (إن لم تكن مقروءة أو تغيّرت كتابة المستخدم عليها). */
     suspend fun ocrPage(page: Int): OcrPage? {
         val doc = pdf ?: return null
         val strokes = annotations[page] ?: emptyList()
-        // الإصدار يشمل مصدر القراءة (طبقة النص)، فتُعاد قراءة الصفحات المحفوظة بالطريقة القديمة مرة واحدة
-        val ver = OcrEngine.versionOf(strokes) * 31 + 2
+        val ver = ocrVersion(strokes)
         val existing = ocr[page]
-        if (existing != null && existing.version == ver) return existing
+        if (existing != null && isFresh(existing, strokes)) return existing
+        val lang = PenPrefs.hwLang
 
         val result: OcrPage? = try {
             withContext(Dispatchers.Default) {
@@ -856,9 +999,37 @@ class DocSession(entry: DocEntry) {
                 } catch (t: Throwable) {
                     emptyList()
                 }
+                fun withHand(base: List<OcrWord>, hand: List<OcrWord>): List<OcrWord> {
+                    if (hand.isEmpty()) return base
+                    // كلمات خط اليد تُضاف دائمًا، ولو كانت فوق نص الملف أو بين سطوره
+                    val offset = (base.maxOfOrNull { it.line } ?: -1) + 1
+                    return base + hand.map { it.copy(line = it.line + offset) }
+                }
+                // 2) خط اليد: يُقرأ من خطوط القلم نفسها بالعربية والإنجليزية (null = حزمة اللغة غير جاهزة)
+                val hand: List<OcrWord>? = try {
+                    HandwritingReader.read(strokes, lang, 0)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    null
+                }
+                if (hand != null) {
+                    if (layerWords.size >= 3) return@withContext OcrPage(withHand(layerWords, hand), ver)
+                    // صفحة ممسوحة: القراءة الضوئية للصورة وحدها، ثم كلمات خط اليد
+                    val seen = baseWords[page] ?: run {
+                        val base = doc.renderFresh(ref, 1800) ?: return@withContext null
+                        try {
+                            OcrEngine.recognize(base)
+                        } finally {
+                            base.recycle()
+                        }
+                    }.also { baseWords[page] = it }
+                    return@withContext OcrPage(withHand(seen, hand), ver)
+                }
+
+                // 3) احتياطي: الطريقة القديمة (خط اليد داخل صورة الصفحة)
                 val handwriting = strokes.any { it.tool != Tool.HIGHLIGHTER }
                 if (layerWords.size >= 3 && !handwriting) return@withContext OcrPage(layerWords, ver)
-                // 2) القراءة الضوئية: للصفحات الممسوحة ضوئيًا، ولخط اليد فوق صفحة رقمية
                 val base = doc.renderFresh(ref, 1800) ?: return@withContext null
                 try {
                     val src = OcrEngine.compose(base, strokes)
@@ -872,9 +1043,9 @@ class DocSession(entry: DocEntry) {
                                 val cy = (w.t + w.b) / 2f
                                 layerWords.none { o -> cx >= o.l && cx <= o.r && cy >= o.t && cy <= o.b }
                             }.map { it.copy(line = it.line + offset) }
-                            OcrPage(layerWords + extra, ver)
+                            OcrPage(layerWords + extra, fallbackVersion(ver))
                         } else {
-                            OcrPage(seen, ver)
+                            OcrPage(seen, fallbackVersion(ver))
                         }
                     } finally {
                         if (src !== base) src.recycle()
@@ -896,10 +1067,36 @@ class DocSession(entry: DocEntry) {
         return result
     }
 
+    private var inkReadJob: Job? = null
+
+    /**
+     * بعد ثانية ونصف من التوقف عن الكتابة: تُقرأ الصفحة الحالية، وكل صفحة مقروءة تغيّرت كتابتها،
+     * فيجد الهايلايتر والبحث ما كُتب للتو. القراءة وحدها لا تضيف شيئًا إلى الملخصات.
+     */
+    private fun scheduleInkRead() {
+        if (disposed || pdf == null) return
+        inkReadJob?.cancel()
+        inkReadJob = AppController.scope.launch {
+            delay(1500)
+            while (isActive && System.currentTimeMillis() - AppController.lastInkAt < 1500L) delay(250)
+            val cur = listState.firstVisibleItemIndex
+            val pages = (listOf(cur) + ocr.keys.sorted()).distinct()
+            for (p in pages) {
+                if (!isActive || disposed) break
+                val e = ocr[p]
+                if (e == null && p != cur) continue
+                if (e == null || !isFresh(e, annotations[p] ?: emptyList())) ocrPage(p)
+            }
+        }
+    }
+
     /** يقرأ كل الصفحات غير المقروءة في الخلفية، ويتوقف مؤقتًا أثناء الكتابة بالقلم. */
     fun startOcr(): Job? {
         if (ocrJob?.isActive == true) return ocrJob
+        // القراءة التلقائية مجانية للجميع (للبحث في الملفات الممسوحة)؛ Premium يقفل الزر اليدوي والتقاط النص فقط
         val doc = pdf ?: return null
+        // حزم لغة خط اليد تُنزَّل في الخلفية أول مرة، ثم تعمل دون إنترنت
+        HandwritingReader.prefetch(PenPrefs.hwLang)
         val job = AppController.scope.launch {
             ocrRunning = true
             ocrTotal = doc.count
@@ -964,7 +1161,15 @@ class DocSession(entry: DocEntry) {
         // قد يكتمل هذا بعد قراءة الصفحة في الخلفية أثناء حركة أخرى للمستخدم؛ لا نكسر لقطتها
         val nested = snapshot != null
         if (!nested) beginEdit()
+        val oldIds = (marks[page] ?: emptyList()).map { it.id }.toSet()
+        val newIds = res.marks.map { it.id }.toSet()
         marks = marks + (page to res.marks)
+        // تمييزات دُمجت في تمييز جديد: مكانها في الخريطة الذهنية ينتقل إليه
+        val removed = (oldIds - newIds).toList()
+        val added = (newIds - oldIds).toList()
+        if (removed.isNotEmpty() && added.size == 1 && !summaryEdits.map.isEmpty()) {
+            summaryEdits = summaryEdits.copy(map = MindMap.migrate(summaryEdits.map, removed, added[0]))
+        }
         if (!nested) endEdit()
         res.message?.let { AppController.messages.tryEmit(it) }
     }
@@ -986,7 +1191,8 @@ class DocSession(entry: DocEntry) {
                 AppController.messages.tryEmit(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
             }
         }
-        val ready = ocr[page]?.words
+        // القراءة المحفوظة قد تسبق ما كُتب بعدها؛ تُعاد قراءتها حينئذ (الأسطر الجديدة فقط تُقرأ فعلًا)
+        val ready = ocr[page]?.takeIf { isFresh(it, annotations[page] ?: emptyList()) }?.words
         if (ready != null) {
             applyTo(ready)
             return
@@ -1163,7 +1369,91 @@ class DocSession(entry: DocEntry) {
         )
     }
 
-    fun resetSummaryEdits() = changeEdits { SummaryEdits() }
+    /** «استعادة التلقائي» للملخص لا تمسح الخريطة الذهنية. */
+    fun resetSummaryEdits() = changeEdits { SummaryEdits(map = it.map) }
+
+    // ---------- الخريطة الذهنية ----------
+
+    /** تغيير يُتراجع عنه (أدوار النصوص وأسماؤها). */
+    private fun changeMap(f: (MapEdits) -> MapEdits) = changeEdits { e -> e.copy(map = f(e.map)) }
+
+    /** تغيير في العرض فقط (طيّ، شريط المسودة): يُحفظ دون أن يدخل التراجع. */
+    private fun changeMapQuiet(f: (MapEdits) -> MapEdits) {
+        val next = summaryEdits.copy(map = f(summaryEdits.map))
+        if (next == summaryEdits) return
+        summaryEdits = next
+        persist()
+    }
+
+    private fun mapItems() = MindMap.allItems(allMarks(), summaryEdits.map)
+
+    /** يضيف نصًا حرًا في الخريطة (غير مرتبط بالملخص). */
+    fun mapAddFree(text: String, target: MapTarget) =
+        changeMap { MindMap.addFree(it, allMarks(), text, target, UUID.randomUUID().toString()).first }
+
+    /** يضع النصوص (بترتيبها) في المكان المختار على الخريطة. */
+    fun mapPlace(keys: List<String>, target: MapTarget) = changeMap { MindMap.place(it, mapItems(), keys, target) }
+
+    /** يحرك النص خطوة بين إخوته في الخريطة. */
+    fun mapMove(key: String, delta: Int) = changeMap { MindMap.move(it, mapItems(), key, delta) }
+
+    /** يزيل النص وما تحته من الخريطة؛ يعيد عدد ما أُزيل. */
+    fun mapRemove(key: String): Int {
+        var n = 0
+        changeMap { e -> MindMap.remove(e, mapItems(), key).also { n = it.second }.first }
+        return n
+    }
+
+    /** يعدّل نص العقدة في الخريطة فقط (يمكن التراجع عنه). */
+    fun mapSetText(key: String, text: String) = changeMap { MindMap.setText(it, mapItems(), key, text) }
+
+    fun mapToggleCollapsed(key: String) = changeMapQuiet { m ->
+        m.copy(collapsed = if (key in m.collapsed) m.collapsed - key else m.collapsed + key)
+    }
+
+    fun mapSetCollapsed(keys: Set<String>) = changeMapQuiet { it.copy(collapsed = keys) }
+
+    // ---------- تغيير خط الكتابة اليدوية ----------
+
+    /** يستبدل خطوط الكتابة المحددة بمربع نص بخط من المكتبة (خطوة تراجع واحدة). */
+    fun inkToTextBox(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        lassoSel = null
+        selectedTextId = box.id
+        endEdit()
+    }
+
+    /** التحويل التلقائي: الكتابة تصبح نصاً بالخط المختار دون تغيير التحديد (خطوة تراجع واحدة). */
+    fun autoInkToText(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        endEdit()
+    }
+
+    /** يحذف خطوط الكتابة ويستبدل مربع نص موجود بنسخته المحدّثة (خطوة تراجع واحدة). */
+    fun autoReplace(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to (texts[page] ?: emptyList()).map { if (it.id == box.id) box else it })
+        endEdit()
+    }
+
+    /** يعيد الكتابة اليدوية الأصلية بدل مربع النص. */
+    fun textBoxToInk(boxId: String) {
+        val tb = textBox(boxId) ?: return
+        if (tb.ink.isEmpty()) return
+        beginEdit()
+        texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).filter { it.id != boxId })
+        annotations = annotations + (tb.page to ((annotations[tb.page] ?: emptyList()) + tb.ink))
+        selectedTextId = null
+        endEdit()
+    }
 
     // ---------- مربعات النص ----------
 
@@ -1252,6 +1542,7 @@ class DocSession(entry: DocEntry) {
      * إلى JSON أثناء الكتابة. الحفظ فوري عند إغلاق المستند وعند خروج التطبيق للخلفية (flushPersist).
      */
     fun persist() {
+        scheduleInkRead()
         saveJob?.cancel()
         saveJob = AppController.scope.launch {
             delay(1500)
@@ -1280,9 +1571,11 @@ class DocSession(entry: DocEntry) {
     }
 
     fun dispose() {
+        finishInlineEdit()
         flushPersist()
         disposed = true
         ocrJob?.cancel()
+        inkReadJob?.cancel()
         textLayer?.close()
         textLayer = null
         pdf?.close()

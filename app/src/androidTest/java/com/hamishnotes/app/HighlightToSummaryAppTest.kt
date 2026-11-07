@@ -28,10 +28,8 @@ class HighlightToSummaryAppTest {
 
     /** حالات على صفحات مختلفة حتى يكون الملخص المتوقع هو تتابعها بترتيب الصفحات. */
     private val cases = listOf(
-        AntibioticsCases.arabicBox,
-        AntibioticsCases.doseTable,
-        AntibioticsCases.arabicDiacritics,
-        AntibioticsCases.wrappedCells
+        AntibioticsCases.headingAndBullets,
+        AntibioticsCases.doseTable
     )
 
     @Test

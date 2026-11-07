@@ -39,21 +39,32 @@ Hamish turns your PDF lectures into a study notebook.
 - Category: Education (or Productivity).
 - Content rating questionnaire: no violence, no user-generated content shared with others, no ads → expected rating: Everyone / 3+.
 - Target audience: 13+ (students). Not designed for children.
-- Ads: No. In-app purchases: none (unless added later).
+- Ads: No. In-app purchases: **Yes**, Hamish Premium yearly subscription with a 7-day free trial (Google Play Billing, product `hamish_premium`).
 
-## Data safety form (answer honestly; you are responsible for the final answers)
+## Data safety form (matches the code as of November 2026; you are responsible for the final answers)
 
-Your own app code collects and shares nothing. Google ML Kit (bundled) sends diagnostics to Google:
+Privacy policy URL: https://omarabukarsh.github.io/hamishnotes-site/privacy/
+Account deletion URL: https://omarabukarsh.github.io/hamishnotes-site/delete/
+(Source: `site/`, published from the public repo omarabukarsh/hamishnotes-site via GitHub Pages.)
 
-- Data collected: **Yes** (by the ML Kit SDK).
-  - App info and performance → Diagnostics, Other app performance data (latency, errors, API configuration). Purpose: Analytics. Not shared with third parties. Not required for the user to choose (collected automatically).
-  - Device or other IDs → per-installation identifier. Purpose: Analytics.
-- Data shared with third parties: **No** (Google acts as the SDK service provider).
-- Encrypted in transit: **Yes**.
-- Users can request deletion: no account exists; data on the device is removed by uninstalling.
-- Microphone/audio: recorded and stored **only on the device**, never transmitted → not "collected" under Play's definition.
-- Files and docs, photos: processed on device only → not collected.
-- Source: https://developers.google.com/ml-kit/android-data-disclosure
+**Does the app collect or share user data? Yes (collects). Shared with third parties: No** (Supabase and Google act as service providers, which Play does not count as sharing).
+**Encrypted in transit: Yes. Users can request deletion: Yes** (in the app, and via the deletion URL).
+
+| Play category › type | Collected | Optional? | Purposes | Source in code |
+|---|---|---|---|---|
+| Personal info › Email address | Yes | Optional (needed only to subscribe) | App functionality, Account management | Google sign-in → Supabase Auth |
+| Personal info › Name | Yes | Optional | App functionality, Account management | Google sign-in → Supabase Auth |
+| Personal info › User IDs | Yes | Optional | App functionality, Account management | Google / Supabase user ID |
+| Financial info › Purchase history | Yes | Optional | App functionality, Account management, Fraud prevention | `subscriptions` table (purchase token, plan, status, expiry, trial) |
+| Device or other IDs | Yes | Required for Premium; ML Kit collects automatically | App functionality, Fraud prevention/security; Analytics (ML Kit) | Hashed device ID in the grant and `integrity_failures`; ML Kit installation ID |
+| App info and performance › Diagnostics | Yes | Collected automatically | Analytics | Google ML Kit diagnostics |
+| App info and performance › Other app performance data | Yes | Collected automatically | Fraud prevention/security | Play Integrity verdict stored only when a check fails |
+
+Not collected (stays on the device only): files and docs, photos, audio recordings, handwriting, highlights, summaries, study stats, contacts, location, messages.
+Payment card details: never received (Google Play Billing).
+IP addresses appear only in short-lived hosting logs and are not used to infer location.
+
+ML Kit disclosure reference: https://developers.google.com/ml-kit/android-data-disclosure
 
 ## Permissions to explain in Play Console
 
@@ -65,7 +76,7 @@ Your own app code collects and shares nothing. Google ML Kit (bundled) sends dia
 
 1. Create a Google Play developer account (one-time USD 25 fee) and verify your identity. Libya supports developer and merchant registration (default currency USD) — check the official list again before you start: https://support.google.com/googleplay/android-developer/answer/9306917
 2. If you will sell the app or add in-app purchases: create a payments profile (merchant account). Payouts require a bank account that can receive international transfers in USD.
-3. Host PRIVACY_POLICY.md and TERMS.md publicly (GitHub Pages or Google Sites) and add your contact email in both (and in the app's About texts).
+3. ~~Publish `site/` at a public URL~~ Done: https://omarabukarsh.github.io/hamishnotes-site/ (privacy/ and delete/). Contact email noteshamish@gmail.com is already in the policy, terms and the app.
 4. Create a new **upload key** (keystore) outside the repository, keep two backups, and enroll in **Play App Signing**. Do not commit it. (The current committed keystore is for test builds only.)
 5. Build an Android App Bundle (.aab) with the upload key and upload it to the Internal testing track first.
 6. Fill in: store listing (texts above), screenshots of your own app only, app icon 512×512, feature graphic 1024×500, content rating, target audience, data safety, privacy policy URL, ads = no.

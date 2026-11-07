@@ -249,7 +249,7 @@ fun EraserAdvancedSection() {
     }
     if (confirm) {
         val s = c.tabs.firstOrNull { it.id == c.activeId }
-        val page = s?.listState?.firstVisibleItemIndex ?: 0
+        val page = s?.currentPage() ?: 0
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text(L("مسح الصفحة ${page + 1}؟", "Clear page ${page + 1}?")) },

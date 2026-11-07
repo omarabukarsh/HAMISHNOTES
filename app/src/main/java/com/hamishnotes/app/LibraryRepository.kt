@@ -132,7 +132,8 @@ class LibraryRepository(context: Context) {
                         folder = o.optString("folder", ""),
                         locked = o.optBoolean("lock", false),
                         coverColor = o.optInt("cover", 0),
-                        sticker = o.optString("sticker", "")
+                        sticker = o.optString("sticker", ""),
+                        isMap = o.optBoolean("map", false)
                     )
                 } catch (e: Throwable) {
                     null
@@ -170,6 +171,7 @@ class LibraryRepository(context: Context) {
                             .put("lock", e.locked)
                             .put("cover", e.coverColor)
                             .put("sticker", e.sticker)
+                            .put("map", e.isMap)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
@@ -516,7 +518,15 @@ class LibraryRepository(context: Context) {
                                 size = o.getDouble("s").toFloat(),
                                 sticky = o.optBoolean("st", false),
                                 linkDoc = o.optString("ld", "").ifEmpty { null },
-                                linkPage = o.optInt("lp", 0)
+                                linkPage = o.optInt("lp", 0),
+                                font = o.optString("f", ""),
+                                ink = parseInkArray(o.optJSONArray("ink")),
+                                alts = o.optJSONObject("alts")?.let { ao ->
+                                    ao.keys().asSequence().associateWith { k ->
+                                        val arr = ao.optJSONArray(k)
+                                        if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
+                                    }
+                                } ?: emptyMap()
                             )
                         )
                     } catch (e: Throwable) {
@@ -664,6 +674,13 @@ class LibraryRepository(context: Context) {
                             .put("st", tb.sticky)
                             .put("ld", tb.linkDoc ?: "")
                             .put("lp", tb.linkPage)
+                            .apply {
+                                if (tb.font.isNotEmpty()) put("f", tb.font)
+                                if (tb.ink.isNotEmpty()) put("ink", inkArray(tb.ink))
+                                if (tb.alts.isNotEmpty()) put("alts", JSONObject().apply {
+                                    tb.alts.forEach { (k, v) -> put(k, JSONArray(v)) }
+                                })
+                            }
                     )
                 }
             }
@@ -736,7 +753,7 @@ class LibraryRepository(context: Context) {
                     )
                 }
             } ?: emptyList()
-            SummaryEdits(order, kinds, tables)
+            SummaryEdits(order, kinds, tables, parseMap(o.optJSONObject("map")))
         } catch (e: Throwable) {
             SummaryEdits()
         }
@@ -762,6 +779,90 @@ class LibraryRepository(context: Context) {
             .put("order", JSONArray().apply { e.order.forEach { put(it) } })
             .put("kinds", kinds)
             .put("tables", tables)
+            .apply { if (!e.map.isEmpty()) put("map", mapJson(e.map)) }
+    }
+
+    /** خطوط كتابة يدوية بنفس صيغة الحفظ («p» نقاط مسطحة x,y,ضغط). */
+    private fun inkArray(list: List<Ink>): JSONArray = JSONArray().apply {
+        list.forEach { s ->
+            val flat = JSONArray()
+            s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+            put(
+                JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble()).put("k", s.tool.name).put("t", s.t)
+                    .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                    .put("p", flat)
+            )
+        }
+    }
+
+    private fun parseInkArray(a: JSONArray?): List<Ink> {
+        if (a == null) return emptyList()
+        val out = ArrayList<Ink>()
+        for (k in 0 until a.length()) {
+            try {
+                val so = a.getJSONObject(k)
+                val flat = so.getJSONArray("p")
+                val pts = ArrayList<Pt>(flat.length() / 3)
+                var j = 0
+                while (j + 2 < flat.length()) {
+                    pts.add(Pt(flat.getDouble(j).toFloat(), flat.getDouble(j + 1).toFloat(), flat.getDouble(j + 2).toFloat()))
+                    j += 3
+                }
+                val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
+                out.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false)))
+            } catch (e: Throwable) {
+            }
+        }
+        return out
+    }
+
+    private fun parseMap(o: JSONObject?): MapEdits {
+        if (o == null) return MapEdits()
+        return try {
+            val nodes = LinkedHashMap<String, MapNodeEdit>()
+            o.optJSONObject("nodes")?.let { n ->
+                for (k in n.keys()) {
+                    val v = n.getJSONObject(k)
+                    val role = runCatching { MapRole.valueOf(v.getString("role")) }.getOrNull() ?: continue
+                    if (role == MapRole.HIDDEN) continue
+                    val pos = if (v.has("pos")) v.optDouble("pos") else null
+                    nodes[k] = MapNodeEdit(role, v.optString("parent").takeIf { it.isNotEmpty() }, pos)
+                }
+            }
+            val collapsed = o.optJSONArray("collapsed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+            val texts = LinkedHashMap<String, String>()
+            o.optJSONObject("texts")?.let { tx -> for (k in tx.keys()) tx.optString(k).takeIf { it.isNotBlank() }?.let { texts[k] = it } }
+            val free = LinkedHashMap<String, String>()
+            o.optJSONObject("free")?.let { fr -> for (k in fr.keys()) fr.optString(k).takeIf { it.isNotBlank() }?.let { free[k] = it } }
+            MapEdits(nodes, collapsed, texts, free)
+        } catch (e: Throwable) {
+            MapEdits()
+        }
+    }
+
+    private fun mapJson(m: MapEdits): JSONObject {
+        val nodes = JSONObject()
+        m.nodes.forEach { (k, v) ->
+            nodes.put(k, JSONObject().put("role", v.role.name).apply {
+                v.parent?.let { put("parent", it) }
+                v.pos?.let { put("pos", it) }
+            })
+        }
+        return JSONObject().put("nodes", nodes)
+            .put("collapsed", JSONArray().apply { m.collapsed.forEach { put(it) } })
+            .apply { if (m.texts.isNotEmpty()) put("texts", JSONObject().apply { m.texts.forEach { (k, v) -> put(k, v) } }) }
+            .apply { if (m.free.isNotEmpty()) put("free", JSONObject().apply { m.free.forEach { (k, v) -> put(k, v) } }) }
+    }
+
+    /** يحفظ صورة جاهزة (مثل الخريطة الذهنية) لتوضع على صفحة. خارج الخيط الرئيسي. */
+    fun saveImage(docId: String, bmp: Bitmap): String {
+        val dir = File(imgRoot, docId).apply { mkdirs() }
+        // حد أقصى معقول للحجم كما في الصور المستوردة
+        val k = minOf(1f, 2400f / maxOf(bmp.width, bmp.height))
+        val scaled = if (k < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true) else bmp
+        val name = UUID.randomUUID().toString() + ".png"
+        File(dir, name).outputStream().use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return name
     }
 
     /** ينسخ الصورة إلى مساحة التطبيق بعد تصغيرها وتصحيح اتجاهها. خارج الخيط الرئيسي. */
@@ -802,7 +903,7 @@ class LibraryRepository(context: Context) {
         }
 
         val isPng = try {
-            resolver.getType(uri) == "image/png"
+            resolver.getType(uri) == "image/png" || uri.path?.endsWith(".png", ignoreCase = true) == true
         } catch (e: Throwable) {
             false
         }

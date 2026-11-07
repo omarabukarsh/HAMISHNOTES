@@ -12,6 +12,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +83,7 @@ const val PAGES_PANEL_W = 300
 fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     val c = AppController
     val scope = rememberCoroutineScope()
-    val cur = s.listState.firstVisibleItemIndex
+    val cur by remember(s) { androidx.compose.runtime.derivedStateOf { s.currentPage() } }
     // يفتح الدرج عند الصفحة المعروضة لا من البداية
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = (cur - 2).coerceAtLeast(0))
     var tabForFollow by remember { mutableStateOf(0) }
@@ -90,7 +101,55 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     var addPage by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val n = pdf.count
-    fun go(p: Int) = scope.launch { s.listState.scrollToItem(p) }
+    fun go(p: Int) = scope.launch { s.activePage = p; s.listState.scrollToItem(p) }
+
+    // ---- ترتيب الصفحات بالسحب: ضغط مطوّل على الصورة ثم سحبها لأعلى أو لأسفل ----
+    val gridBox = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val itemRects = remember { mutableStateMapOf<Int, Rect>() }
+    var dragFrom by remember { mutableStateOf<Int?>(null) }
+    var dragPos by remember { mutableStateOf(Offset.Zero) }
+    var dragGrab by remember { mutableStateOf(Offset.Zero) }
+    var dragTarget by remember { mutableStateOf<Int?>(null) }
+    var gridH by remember { mutableStateOf(0f) }
+    var lastMove by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val density = LocalDensity.current
+    val canReorder = tab == 0 && !selecting && n > 1
+    fun visibleRects(): Map<Int, Rect> {
+        val vis = gridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Int }.toSet()
+        return itemRects.filterKeys { it in vis }
+    }
+    fun hitTarget(p: Offset): Int? {
+        val r = visibleRects()
+        r.entries.firstOrNull { it.value.contains(p) }?.let { return it.key }
+        // بين الصور: أقرب صورة
+        return r.entries.minByOrNull { (it.value.center - p).getDistance() }?.key
+    }
+    fun movePage(from: Int, to: Int) {
+        if (from == to || from !in 0 until n || to !in 0 until n) return
+        s.rearrangePages((0 until n).toMutableList().apply { add(to, removeAt(from)) })
+    }
+    // تمرير تلقائي قرب حافتي الدرج أثناء السحب
+    LaunchedEffect(dragFrom) {
+        if (dragFrom == null) return@LaunchedEffect
+        val edge = with(density) { 56.dp.toPx() }
+        val step = with(density) { 14.dp.toPx() }
+        while (isActive && dragFrom != null) {
+            val y = dragPos.y
+            val d = when {
+                y < edge -> -step * (1f - (y / edge).coerceIn(0f, 1f))
+                gridH > 0f && y > gridH - edge -> step * (1f - ((gridH - y) / edge).coerceIn(0f, 1f))
+                else -> 0f
+            }
+            if (d != 0f) {
+                gridState.dispatchRawDelta(d)
+                dragTarget = hitTarget(dragPos)
+            }
+            delay(16)
+        }
+    }
+    LaunchedEffect(lastMove) {
+        if (lastMove != null) { delay(6000); lastMove = null }
+    }
 
     Surface(
         modifier.fillMaxHeight().width(PAGES_PANEL_W.dp),
@@ -161,6 +220,43 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                                 L("ضع علامة على صفحة من زاوية صورتها أو من قائمة الصفحة لتجدها هنا بسرعة.", "Mark a page from its thumbnail corner or the page menu to find it here quickly.")
                             )
                         } else {
+                            Box(
+                                Modifier.fillMaxSize()
+                                    .onGloballyPositioned { gridBox[0] = it; gridH = it.size.height.toFloat() }
+                                    .pointerInput(canReorder, n) {
+                                        if (!canReorder) return@pointerInput
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { p ->
+                                                val from = hitTarget(p)
+                                                val r = from?.let { visibleRects()[it] }
+                                                if (from != null && r != null && r.contains(p)) {
+                                                    dragFrom = from
+                                                    dragGrab = p - r.topLeft
+                                                    dragPos = p
+                                                    dragTarget = from
+                                                }
+                                            },
+                                            onDrag = { ch, _ ->
+                                                if (dragFrom != null) {
+                                                    ch.consume()
+                                                    dragPos = ch.position
+                                                    dragTarget = hitTarget(dragPos)
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                val f = dragFrom
+                                                val dest = dragTarget
+                                                dragFrom = null
+                                                dragTarget = null
+                                                if (f != null && dest != null && f != dest) {
+                                                    movePage(f, dest)
+                                                    lastMove = Pair(dest, f)
+                                                }
+                                            },
+                                            onDragCancel = { dragFrom = null; dragTarget = null }
+                                        )
+                                    }
+                            ) {
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(cols),
                                 state = gridState,
@@ -171,13 +267,23 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                             ) {
                                 items(shown.size, key = { shown[it] }) { k ->
                                     val i = shown[k]
-                                    PageThumb(
-                                        s, pdf, i, i == cur,
-                                        selecting = selecting, picked = i in picked
+                                    val isTarget = dragFrom != null && dragTarget == i && dragFrom != i
+                                    Box(
+                                        Modifier
+                                            .onGloballyPositioned { lc ->
+                                                gridBox[0]?.let { root -> if (root.isAttached && lc.isAttached) itemRects[i] = root.localBoundingBoxOf(lc, false) }
+                                            }
+                                            .graphicsLayer { alpha = if (dragFrom == i) 0.3f else 1f }
+                                            .then(if (isTarget) Modifier.border(3.dp, Color(0xFF16A34A), RoundedCornerShape(10.dp)) else Modifier)
                                     ) {
-                                        if (selecting) {
-                                            if (i in picked) picked.remove(i) else picked.add(i)
-                                        } else go(i)
+                                        PageThumb(
+                                            s, pdf, i, i == cur,
+                                            selecting = selecting, picked = i in picked, longMenu = !canReorder
+                                        ) {
+                                            if (selecting) {
+                                                if (i in picked) picked.remove(i) else picked.add(i)
+                                            } else go(i)
+                                        }
                                     }
                                 }
                                 if (tab == 0 && !selecting) {
@@ -199,6 +305,46 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                                     }
                                 }
                             }
+                            // صورة الصفحة المسحوبة تتبع الإصبع
+                            val f = dragFrom
+                            val fr = f?.let { itemRects[it] }
+                            if (f != null && fr != null) {
+                                val gb = remember(f) { pdf.cached(pdf.pages.getOrNull(f), 360)?.asImageBitmap() }
+                                val tl = dragPos - dragGrab
+                                Box(
+                                    Modifier.align(androidx.compose.ui.AbsoluteAlignment.TopLeft)
+                                        .absoluteOffset { IntOffset(tl.x.toInt(), tl.y.toInt()) }
+                                        .size(with(density) { fr.width.toDp() }, with(density) { (fr.width / pdf.ratio(f)).toDp() })
+                                        .graphicsLayer { scaleX = 1.05f; scaleY = 1.05f; alpha = 0.92f }
+                                        .shadow(10.dp, RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.White)
+                                        .border(2.dp, Palette.Navy, RoundedCornerShape(8.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (gb != null) Image(gb, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+                                    else Text("${f + 1}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+                                }
+                            }
+                            }
+                        }
+                    }
+                }
+                // تراجع عن آخر نقل بالسحب
+                lastMove?.let { (at, back) ->
+                    Row(
+                        Modifier.align(Alignment.BottomCenter).padding(12.dp)
+                            .shadow(6.dp, RoundedCornerShape(16.dp))
+                            .background(Palette.Navy, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            L("نُقلت الصفحة إلى ${at + 1}", "Page moved to ${at + 1}"),
+                            fontSize = 13.sp, color = Color.White, modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                        TextButton(onClick = { lastMove = null; movePage(at, back) }) {
+                            Text(L("↶ تراجع", "↶ Undo"), color = Palette.Gold, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -318,7 +464,7 @@ private fun RecordingsList(s: DocSession) {
 @Composable
 private fun PageThumb(
     s: DocSession, pdf: PdfDoc, i: Int, current: Boolean,
-    selecting: Boolean = false, picked: Boolean = false, onClick: () -> Unit
+    selecting: Boolean = false, picked: Boolean = false, longMenu: Boolean = true, onClick: () -> Unit
 ) {
     val ref = pdf.pages.getOrNull(i)
     val ratio = pdf.ratio(i)
@@ -349,7 +495,7 @@ private fun PageThumb(
                         else -> Modifier.border(1.dp, Palette.Divider, shape)
                     }
                 )
-                .combinedClickable(onClick = onClick, onLongClick = { if (!selecting) menu = true })
+                .combinedClickable(onClick = onClick, onLongClick = if (longMenu && !selecting) ({ menu = true }) else null)
         ) {
             val b = bmp
             if (b != null) {

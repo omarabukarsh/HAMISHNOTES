@@ -33,13 +33,22 @@ internal fun buildPath(pts: List<Pt>, w: Float, extra: Pt?): Path {
     return path
 }
 
-/** مسار بخطوط مستقيمة (للأشكال: زوايا حادة). */
+/** شكل مغلق: آخر نقطة هي الأولى. */
+internal fun isClosedShape(pts: List<Pt>): Boolean =
+    pts.size > 3 && pts.first().x == pts.last().x && pts.first().y == pts.last().y
+
+/** مسار بخطوط مستقيمة (للأشكال: زوايا حادة). الشكل المغلق يُغلق فتكون زاوية البداية حادة أيضًا. */
 internal fun polyPath(pts: List<Pt>, w: Float): Path {
     val path = Path()
     if (pts.isEmpty()) return path
     path.moveTo(pts[0].x * w, pts[0].y * w)
     if (pts.size == 1) path.lineTo(pts[0].x * w + 0.01f, pts[0].y * w)
-    for (i in 1 until pts.size) path.lineTo(pts[i].x * w, pts[i].y * w)
+    if (isClosedShape(pts)) {
+        for (i in 1 until pts.size - 1) path.lineTo(pts[i].x * w, pts[i].y * w)
+        path.close()
+    } else {
+        for (i in 1 until pts.size) path.lineTo(pts[i].x * w, pts[i].y * w)
+    }
     return path
 }
 
@@ -79,7 +88,11 @@ internal fun DrawScope.drawInk(
         val path = if (sharp) polyPath(if (extra != null) pts + extra else pts, w) else buildPath(pts, w, extra)
         drawPath(
             path, color.copy(alpha = color.alpha * alpha),
-            style = Stroke(width = px, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = dashEffect(style, px))
+            // الأشكال بوصلات حادة (الزوايا المستديرة مبنية في نقاط الشكل نفسه)
+            style = Stroke(
+                width = px, miter = 10f, cap = StrokeCap.Round,
+                join = if (sharp) StrokeJoin.Miter else StrokeJoin.Round, pathEffect = dashEffect(style, px)
+            )
         )
         return
     }

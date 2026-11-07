@@ -112,10 +112,13 @@ fun LibraryScreen() {
     var deleteTarget by remember { mutableStateOf<DocEntry?>(null) }
     var moveTarget by remember { mutableStateOf<DocEntry?>(null) }
     var showNewNote by remember { mutableStateOf(false) }
+    var showNewMap by remember { mutableStateOf(false) }
+    var showNewCard by remember { mutableStateOf(false) }
     // تحديد أكثر من مستند (MyNotes Pro)
     var selecting by remember { mutableStateOf(false) }
     val selected = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var moveMany by remember { mutableStateOf(false) }
+    var shareMany by remember { mutableStateOf(false) }
     var deleteMany by remember { mutableStateOf(false) }
 
     val query = c.libraryQuery.trim()
@@ -166,14 +169,21 @@ fun LibraryScreen() {
                             onDuplicate = { c.library.filter { it.id in selected }.forEach { c.duplicate(it) }; selected.clear(); selecting = false },
                             onMove = { moveMany = true },
                             onDelete = { deleteMany = true },
-                            onDone = { selected.clear(); selecting = false }
+                            onDone = { selected.clear(); selecting = false },
+                            onShare = { shareMany = true }
                         )
                     } else {
-                        LibraryHeader(wide, docs.size, startImport, onSelect = { selecting = true }) { showNewNote = true }
+                        LibraryHeader(
+                            wide, docs.size, startImport, onSelect = { selecting = true },
+                            onNewMap = { showNewMap = true }, onNewCard = { showNewCard = true }
+                        ) { showNewNote = true }
                     }
                 }
                 if (!wide) FilterRow()
-                c.libraryFolder?.let { f -> ExamPlanCard(f) }
+                c.libraryFolder?.let { f ->
+                    ExamPlanCard(f)
+                    SubjectCardsButton(f)
+                }
                 if (c.importing) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = Lib.accent)
                 }
@@ -182,7 +192,7 @@ fun LibraryScreen() {
                         !c.libraryLoaded -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                             CircularProgressIndicator(color = Palette.Navy)
                         }
-                        c.library.isEmpty() -> EmptyLibrary(startImport) { showNewNote = true }
+                        c.library.isEmpty() -> EmptyLibrary(startImport, { showNewMap = true }, { showNewCard = true }) { showNewNote = true }
                         docs.isEmpty() -> NoResults(
                             if (c.libraryFilter == LibraryFilter.FAVORITES && query.isEmpty())
                                 L("لا توجد مستندات مفضلة بعد. اختر «إضافة إلى المفضلة» من قائمة أي مستند.", "No favorites yet. Choose “Add to favorites” from any document’s menu.")
@@ -264,6 +274,9 @@ fun LibraryScreen() {
         )
     }
 
+    if (showNewMap) NewMapDialog(initialFolder = c.libraryFolder.orEmpty()) { showNewMap = false }
+    if (showNewCard) NewLooseCardDialog(initialFolder = c.libraryFolder.orEmpty()) { showNewCard = false }
+    CardDeck.openDeck?.let { d -> DeckDialog(if (d == CardDeck.ALL) null else d) { CardDeck.openDeck = null } }
     if (showNewNote) {
         TemplatePickerDialog(
             mode = PickerMode.NEW_NOTE,
@@ -275,6 +288,11 @@ fun LibraryScreen() {
         )
     }
 
+    if (shareMany) {
+        val ids = c.library.filter { it.id in selected }.map { it.id }
+        if (ids.isEmpty()) shareMany = false
+        else ShareManyDialog(ids, onDismiss = { shareMany = false }, onStarted = { shareMany = false; selected.clear(); selecting = false })
+    }
     if (moveMany) {
         val list = c.library.filter { it.id in selected }
         if (list.isEmpty()) moveMany = false
@@ -395,6 +413,7 @@ private fun Spine() {
             c.libraryFolder = null
             c.libraryFilter = LibraryFilter.FAVORITES
         }
+        SpineItem(L("كل البطاقات", "All cards"), R.drawable.ph_cards, null, false, tint = CardTeal) { CardDeck.openDeck = CardDeck.ALL }
         SpineItem(L("الإعدادات", "Settings"), R.drawable.ph_sliders, null, false) { c.settingsOpen = true }
 
         // المواد
@@ -605,6 +624,7 @@ private fun FolderSection() {
                     val safeF = f.replace(Regex("[\\\\/:*?\"<>|]"), "-")
                     saver.launch(L("ملخص مادة $safeF.pdf", "Subject summary $safeF.pdf"))
                 })
+                DropdownMenuItem(text = { Text(L("بطاقات المادة", "Subject cards")) }, onClick = { menu = false; CardDeck.openDeck = f })
                 DropdownMenuItem(text = { Text(L("موعد الامتحان…", "Exam date…")) }, onClick = { menu = false; examFor = f })
                 DropdownMenuItem(text = { Text(L("إعادة تسمية", "Rename")) }, onClick = { menu = false; renaming = f })
                 DropdownMenuItem(
@@ -675,6 +695,50 @@ fun ExamDateDialog(folder: String, onDismiss: () -> Unit) {
 }
 
 /** بطاقة المادة المختارة: العد التنازلي للامتحان وخطة القراءة اليومية. */
+/** زر «بطاقات المادة» داخل المادة: يفتح بطاقاتها فقط. */
+@Composable
+private fun SubjectCardsButton(folder: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 4.dp)) {
+        Row(
+            Modifier.clip(RoundedCornerShape(20.dp)).background(CardTeal)
+                .clickable { CardDeck.openDeck = folder }.padding(horizontal = 16.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PhIcon(R.drawable.ph_cards, Color.White, 17.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(L("بطاقات المادة", "Subject cards"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+    }
+}
+
+/** خريطة ذهنية جديدة بلا ملف: الاسم والمادة. */
+@Composable
+private fun NewMapDialog(initialFolder: String, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var folder by remember { mutableStateOf(initialFolder) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L("خريطة ذهنية جديدة", "New mind map")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name, onValueChange = { name = it }, singleLine = true,
+                    label = { Text(L("الاسم (المركز)", "Name (center)")) }, modifier = Modifier.fillMaxWidth()
+                )
+                Text(L("المادة", "Subject"), fontSize = 13.sp, color = Palette.TextSecondary)
+                SubjectChips(folder) { folder = it }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = {
+                AppController.createMap(name.trim(), folder)
+                onDismiss()
+            }) { Text(L("إنشاء", "Create"), fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
+    )
+}
+
 @Composable
 private fun ExamPlanCard(folder: String) {
     val c = AppController
@@ -853,11 +917,15 @@ private fun FilterRow() {
                 c.libraryFilter = LibraryFilter.ALL
             }
         }
+        ChoiceChip("▤ " + L("كل البطاقات", "All cards"), false) { CardDeck.openDeck = CardDeck.ALL }
     }
 }
 
 @Composable
-private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onSelect: () -> Unit, onNewNote: () -> Unit) {
+private fun LibraryHeader(
+    wide: Boolean, shown: Int, onImport: () -> Unit, onSelect: () -> Unit,
+    onNewMap: () -> Unit = {}, onNewCard: () -> Unit = {}, onNewNote: () -> Unit
+) {
     val c = AppController
     val title = c.libraryFolder ?: filterTitle(c.libraryFilter)
     Column(
@@ -875,7 +943,7 @@ private fun LibraryHeader(wide: Boolean, shown: Int, onImport: () -> Unit, onSel
                 IconCircleButton(R.drawable.ph_sliders, L("الإعدادات", "Settings")) { c.settingsOpen = true }
             }
             IconCircleButton(R.drawable.ph_check, L("تحديد", "Select"), onClick = onSelect)
-            NewMenuButton(onNewNote, onImport)
+            NewMenuButton(onNewNote, onImport, onNewMap, onNewCard)
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SearchField(c.libraryQuery, { c.libraryQuery = it }, Modifier.weight(1f))
@@ -909,7 +977,8 @@ private fun SelectionBar(
     onDuplicate: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    onShare: () -> Unit = {}
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)
@@ -925,6 +994,7 @@ private fun SelectionBar(
             modifier = Modifier.padding(end = 10.dp)
         )
         BarAction(if (allSelected) L("إلغاء تحديد الكل", "Deselect all") else L("تحديد الكل", "Select all"), true, onSelectAll)
+        BarAction(L("مشاركة أو حفظ", "Share or save"), count > 0, onShare)
         BarAction(L("المفضلة", "Favorite"), count > 0, onFavorite)
         BarAction(L("نقل إلى مادة", "Move to subject"), count > 0, onMove)
         BarAction(L("نسخ", "Duplicate"), count > 0, onDuplicate)
@@ -1197,7 +1267,7 @@ private fun DocCard(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    pagesCount(entry.pageCount) + " · " + (
+                    (if (entry.isMap) L("خريطة ذهنية", "Mind map") else pagesCount(entry.pageCount)) + " · " + (
                         if (entry.lastOpened > 0L) L("فُتح ", "Opened ") + formatRelative(entry.lastOpened)
                         else L("أُضيف ", "Added ") + formatRelative(entry.addedAt)
                         ),
@@ -1294,7 +1364,7 @@ private fun Thumbnail(entry: DocEntry) {
 // ---------------------------------------------------------------- الحالات الفارغة
 
 @Composable
-private fun EmptyLibrary(onImport: () -> Unit, onNewNote: () -> Unit) {
+private fun EmptyLibrary(onImport: () -> Unit, onNewMap: () -> Unit = {}, onNewCard: () -> Unit = {}, onNewNote: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1309,7 +1379,7 @@ private fun EmptyLibrary(onImport: () -> Unit, onNewNote: () -> Unit) {
             fontSize = 15.sp, lineHeight = 24.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(20.dp))
-        NewMenuButton(onNewNote, onImport)
+        NewMenuButton(onNewNote, onImport, onNewMap, onNewCard)
     }
 }
 

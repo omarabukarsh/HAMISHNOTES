@@ -103,6 +103,16 @@ export async function getSubscription(pkg: string, purchaseToken: string): Promi
   return await res.json();
 }
 
+/** يلغي التجديد التلقائي (يبقى الاشتراك حتى نهاية مدته عند Google، لكن هامش يسحبه فور حذف الحساب). */
+export async function cancelSubscription(pkg: string, productId: string, purchaseToken: string): Promise<void> {
+  const res = await google(
+    `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${pkg}/purchases/subscriptions/${productId}/tokens/${encodeURIComponent(purchaseToken)}:cancel`,
+    { method: "POST", body: "{}" },
+  );
+  // 410: انتهى الاشتراك أصلًا، فلا شيء يُلغى
+  if (!res.ok && res.status !== 410) throw new Error(`cancel: ${res.status}`);
+}
+
 /** تأكيد الشراء خلال 3 أيام، وإلا تردّ Google المبلغ وتلغي الاشتراك. */
 export async function acknowledge(pkg: string, productId: string, purchaseToken: string): Promise<void> {
   const res = await google(

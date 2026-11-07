@@ -108,7 +108,9 @@ object ToolCatalog {
         ToolInfo("bookmark", L("العلامة المرجعية", "Bookmark"), L("علّم الصفحات المهمة بشريط ذهبي، وتجدها في «العلامات» داخل درج الصفحات.", "Mark important pages with a gold ribbon; find them under “Bookmarks” in the pages drawer."), R.drawable.ph_bookmark, Demo.BOOKMARK),
         ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("جلسة دراسة ثم راحة بالمدة التي تختارها في الإعدادات. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "A study session then a break, with durations you choose in Settings. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
         ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
+        ToolInfo("stickers", L("الملصقات", "Stickers"), L("ضع ملصقًا جاهزًا على الصفحة، أو اصنع ملصقاتك من صورة أو من رسمك فتبقى محفوظة في التطبيق.", "Put a ready-made sticker on the page, or make your own from a photo or your drawing; they stay saved in the app."), R.drawable.ph_sticker, Demo.IMAGE),
         ToolInfo("lasso", L("التحديد الحر", "Lasso"), L("أحِط بالقلم حول كتابتك لتحديدها، ثم اسحبها أو كبّرها بالمقبض أو غيّر لونها أو انسخها أو حوّلها إلى نص مكتوب أو احذفها.", "Loop around your writing to select it, then drag it, resize with the handle, recolor, duplicate, convert to typed text or delete."), R.drawable.ph_lasso, Demo.LASSO),
+        ToolInfo("autofont", L("Aa تحويل الكتابة تلقائياً", "Aa Auto-convert handwriting"), L("اكتب بالقلم كالعادة؛ عند إنهاء الجملة تتحول في مكانها إلى الخط الذي تختاره، والتراجع يعيدها لخط يدك.", "Write as usual; when you finish a sentence it turns into the font you chose, in place. Undo brings your handwriting back."), R.drawable.ph_text, Demo.TEXT),
         ToolInfo("shapetool", L("أداة الأشكال", "Shapes tool"), L("ارسم مستطيلًا أو دائرة أو مثلثًا أو معينًا أو خطًا أو سهمًا أو موصلًا بالسحب، مع نمط الخط وسماكته ورؤوس الأسهم.", "Drag to draw rectangles, circles, triangles, diamonds, lines, arrows or connectors, with line style, thickness and arrowheads."), R.drawable.ph_shapes, Demo.SHAPES),
         ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("اختر لونًا وانقر على الصفحة لتضع ملاحظة تكتب عليها بالقلم؛ اسحبها لتحريكها، ومن زاويتها لتكبيرها، واطوها لتصبح مربعًا صغيرًا.", "Pick a color and tap the page to place a note you write on with the pen; drag to move, drag its corner to resize, and collapse it to a small square."), R.drawable.ph_note, Demo.STICKY),
         ToolInfo("link", L("رابط إلى صفحة", "Page link"), L("ضع على الصفحة رابطًا إلى صفحة أخرى أو مستند آخر (مثل «جدول المضادات ص 12»)؛ انقر عليه مرتين لتنتقل، ويظهر زر للرجوع.", "Place a link to another page or document (e.g. “antibiotics table p. 12”); tap it twice to jump, with a Back button."), R.drawable.ph_link, Demo.NAV),
@@ -158,7 +160,7 @@ private fun SettingsPage.title(): String = when (this) {
 private fun SettingsPage.lead(): String = when (this) {
     SettingsPage.ACCOUNT -> L("حساب Google المرتبط بهامش.", "Your Google account linked to Hamish.")
     SettingsPage.GENERAL -> L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
-    SettingsPage.PEN -> L("القلم والأصابع وشريط الأدوات.", "Your pen, finger gestures and the toolbar.")
+    SettingsPage.PEN -> L("قلمك، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Your pen, pen or finger writing, and the toolbar.")
     SettingsPage.HIGHLIGHTS -> L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
     SettingsPage.STUDY -> L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
     SettingsPage.APPEARANCE -> L("اجعل هامش يبدو كما تحب.", "Make Hamish look and feel the way you like.")
@@ -416,6 +418,10 @@ private fun SettingsPane(
                             L("أين تُحفظ ملاحظاتك", "Where your notes are stored"),
                             L("على هذا الجهاز فقط", "On this device only")
                         )
+                        if (c.accountEmail != null) {
+                            GroupDivider()
+                            DeleteAccountRow()
+                        }
                     }
                 }
                 SettingsPage.GENERAL -> {
@@ -452,6 +458,8 @@ private fun SettingsPane(
                     }
                 }
                 SettingsPage.PEN -> {
+                    // القلم المكتشف، وضع الكتابة بالقلم أو الإصبع، وجرّب قلمك
+                    PensSection()
                     GroupLabel(L("القلم", "Pen"))
                     SettingsGroup {
                         SwitchRow(
@@ -467,6 +475,19 @@ private fun SettingsPane(
                             L("ارسم ثم أبقِ القلم ثابتًا لحظة فيصبح الرسم شكلًا مرتبًا", "Draw, then hold the pen still for a moment to turn it into a neat shape"),
                             PenPrefs.drawAndHold
                         ) { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }
+                        GroupDivider()
+                        // تُقرأ كتابتك بهذه اللغة لتلتقطها بالهايلايتر وتبحث فيها
+                        GroupRow(
+                            R.drawable.ph_text_scan, TileBlue,
+                            L("لغة خط يدك", "Handwriting language"),
+                            L("تُقرأ كتابتك بها لتلتقطها بالهايلايتر وتبحث فيها", "Your writing is read in it, so you can highlight and search it")
+                        ) {
+                            val opts = listOf(HwLang.BOTH, HwLang.ARABIC, HwLang.ENGLISH)
+                            Segmented(
+                                listOf(L("الاثنان", "Both"), "عربي", "English"),
+                                opts.indexOf(PenPrefs.hwLang).coerceAtLeast(0)
+                            ) { PenPrefs.changeHwLang(opts[it]) }
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     PenKeyLearnRow()
@@ -1160,6 +1181,14 @@ private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, on
                     "You'll be signed out of $email.\nYour notes stay on this device, and you can sign in again anytime."),
                 fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
             )
+            if (Premium.grant != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    L("Premium مرتبط بحسابك، وسيتوقف على هذا الجهاز حتى تسجّل الدخول به مجددًا.",
+                        "Premium is tied to your account and pauses on this device until you sign back in with it."),
+                    fontSize = 12.5.sp, lineHeight = 19.sp, color = Palette.GoldDeep, textAlign = TextAlign.Center
+                )
+            }
             Spacer(Modifier.height(22.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val pill = RoundedCornerShape(50)

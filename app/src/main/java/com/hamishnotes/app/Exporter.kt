@@ -251,6 +251,7 @@ object Exporter {
                 val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = tb.color.toArgb()
                     textSize = tb.size * w * scale
+                    FontStore.typeface(tb.font)?.let { typeface = it }
                 }
                 val lw = (tb.w * w * scale).toInt().coerceAtLeast(10)
                 val layout = layoutOf(tb.text, tp, lw, 1.25f)
@@ -280,7 +281,9 @@ object Exporter {
                 }
                 cs.setStrokingColor(s.color.red, s.color.green, s.color.blue)
                 cs.setLineCapStyle(if (s.tool == Tool.HIGHLIGHTER) 2 else 1)
-                cs.setLineJoinStyle(1)
+                // الأشكال بوصلات حادة (الزوايا المستديرة مبنية في نقاط الشكل)
+                cs.setLineJoinStyle(if (s.shape) 0 else 1)
+                if (s.shape) cs.setMiterLimit(10f)
                 val base = s.width * w * when (s.tool) {
                     Tool.PENCIL -> 0.85f
                     else -> 1f
@@ -301,6 +304,9 @@ object Exporter {
                     cs.moveTo(px(pts[0].x), py(pts[0].y))
                     if (pts.size == 1) {
                         cs.lineTo(px(pts[0].x) + 0.01f, py(pts[0].y))
+                    } else if (s.shape && isClosedShape(pts)) {
+                        for (j in 1 until pts.size - 1) cs.lineTo(px(pts[j].x), py(pts[j].y))
+                        cs.closePath()
                     } else {
                         for (j in 1 until pts.size) cs.lineTo(px(pts[j].x), py(pts[j].y))
                     }
@@ -408,9 +414,16 @@ object Exporter {
         if (s.style == LineStyle.DASHED) p.pathEffect = android.graphics.DashPathEffect(floatArrayOf(p.strokeWidth * 3.2f + 6f, p.strokeWidth * 2.6f + 5f), 0f)
         else if (s.style == LineStyle.DOTTED) p.pathEffect = android.graphics.DashPathEffect(floatArrayOf(0.1f, p.strokeWidth * 2.2f + 3f), 0f)
         if (s.shape) {
+            p.strokeJoin = Paint.Join.MITER
+            p.strokeMiter = 10f
             val path = Path()
             path.moveTo(pts[0].x * w, pts[0].y * w)
-            for (i in 1 until pts.size) path.lineTo(pts[i].x * w, pts[i].y * w)
+            if (isClosedShape(pts)) {
+                for (i in 1 until pts.size - 1) path.lineTo(pts[i].x * w, pts[i].y * w)
+                path.close()
+            } else {
+                for (i in 1 until pts.size) path.lineTo(pts[i].x * w, pts[i].y * w)
+            }
             c.drawPath(path, p)
         } else c.drawPath(smoothPath(pts, w), p)
     }
@@ -438,6 +451,7 @@ object Exporter {
             val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
             tp.color = tb.color.toArgb()
             tp.textSize = tb.size * w
+            FontStore.typeface(tb.font)?.let { tp.typeface = it }
             val layout = layoutOf(tb.text, tp, (tb.w * w).toInt().coerceAtLeast(10), 1.25f)
             c.save()
             c.translate(tb.x * w, tb.y * w)

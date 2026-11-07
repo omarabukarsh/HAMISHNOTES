@@ -28,6 +28,8 @@ object PenPrefs {
     var stabilize by mutableStateOf(0f); private set
     /** ارسم ثم أبقِ القلم ثابتًا لحظة: يتحول الرسم إلى شكل مرتب. */
     var drawAndHold by mutableStateOf(true); private set
+    /** لغة خط اليد التي يُقرأ بها (HwLang): الاثنان، أو عربي، أو إنجليزي. */
+    var hwLang by mutableStateOf(HwLang.BOTH); private set
 
     // ---- الهايلايتر ----
     var hlStabilize by mutableStateOf(0.3f); private set
@@ -65,6 +67,8 @@ object PenPrefs {
     // ---- الملاحظات اللاصقة ----
     /** وضع إضافة ملاحظة: النقرة التالية على الصفحة تضع ملاحظة. */
     var stickyActive by mutableStateOf(false)
+    /** أداة النص: النقرة التالية على الصفحة تضع مربع كتابة مباشرة في مكانها. */
+    var textActive by mutableStateOf(false)
     var stickyColor by mutableStateOf(0xFFF6B3B5.toInt()); private set
     var stickyStyle by mutableStateOf(0); private set
     /** الاسم الذي يظهر أسفل الملاحظات. */
@@ -93,6 +97,7 @@ object PenPrefs {
         pressure = sp.getFloat("pressure", 0.5f)
         stabilize = sp.getFloat("stabilize", 0f)
         drawAndHold = sp.getBoolean("draw_hold", true)
+        hwLang = sp.getInt("hw_lang", HwLang.BOTH).coerceIn(0, 2)
         hlStabilize = sp.getFloat("hl_stabilize", 0.3f)
         hlStraight = sp.getBoolean("hl_straight", true)
         erasePen = sp.getBoolean("er_pen", true)
@@ -133,6 +138,11 @@ object PenPrefs {
     fun changePressure(v: Float) { pressure = v; put("pressure", v) }
     fun changeStabilize(v: Float) { stabilize = v; put("stabilize", v) }
     fun changeDrawAndHold(v: Boolean) { drawAndHold = v; put("draw_hold", v) }
+    fun changeHwLang(v: Int) {
+        hwLang = v.coerceIn(0, 2)
+        put("hw_lang", hwLang)
+        HandwritingReader.prefetch(hwLang)
+    }
     fun resetPen() {
         changeLineStyle(0); changeSharpness(0.25f); changePressure(0.5f); changeStabilize(0f)
     }
@@ -284,8 +294,8 @@ object ShapeBuilder {
         val out = arrayListOf(body)
         if (kind == ShapeKind.LINE || kind == ShapeKind.ELBOW || kind == ShapeKind.CURVE) {
             if (body.size >= 2) {
-                if (end != ArrowHead.NONE) out.add(head(body[body.size - 2], body.last(), end, width))
-                if (start != ArrowHead.NONE) out.add(head(body[1], body[0], start, width))
+                if (end != ArrowHead.NONE) out.add(head(body[body.size - 2], body.last(), end, width, rounded))
+                if (start != ArrowHead.NONE) out.add(head(body[1], body[0], start, width, rounded))
             }
         }
         return out
@@ -319,12 +329,13 @@ object ShapeBuilder {
         return out
     }
 
-    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float): List<Pt> {
+    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float, rounded: Boolean): List<Pt> {
         val ang = atan2(tip.y - from.y, tip.x - from.x)
         val len = (0.018f + width * 3f)
         val spread = 0.45f
         val l = p(tip.x - len * cos(ang - spread), tip.y - len * sin(ang - spread))
         val r = p(tip.x - len * cos(ang + spread), tip.y - len * sin(ang + spread))
-        return if (kind == ArrowHead.CLOSED) listOf(l, p(tip.x, tip.y), r, l) else listOf(l, p(tip.x, tip.y), r)
+        return if (kind == ArrowHead.CLOSED) closed(listOf(l, p(tip.x, tip.y), r), rounded)
+        else listOf(l, p(tip.x, tip.y), r).let { if (rounded) roundCorners(it, false) else it }
     }
 }

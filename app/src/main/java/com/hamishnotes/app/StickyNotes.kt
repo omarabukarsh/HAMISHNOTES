@@ -155,12 +155,17 @@ fun StickyBar() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // اللون: نقرة تختاره (ثم نقرة على الصفحة)، أو ضغطة مطوّلة وسحب إلى المكان على الصفحة
+                val session = AppController.tabs.firstOrNull { it.id == AppController.activeId }
                 StickyColors.forEach { col ->
                     val sel = PenPrefs.stickyColor == col
+                    val payload = remember(col) { TrayPayload.Sticky(col) }
                     Box(
                         Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (sel) Palette.NavySoft else Color.Transparent)
-                            .clickable { PenPrefs.changeStickyColor(col) },
+                            .clickable { PenPrefs.changeStickyColor(col) }
+                            // اسحب اللون لأسفل نحو الصفحة: تخرج الملاحظة تحت إصبعك
+                            .dragToPage(session, payload, null, axis = DragAxis.Vertical, onStart = { PenPrefs.changeStickyColor(col) }),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(col)).border(1.dp, Palette.Divider, RoundedCornerShape(6.dp)))

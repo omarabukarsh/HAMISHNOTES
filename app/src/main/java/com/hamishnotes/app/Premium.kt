@@ -140,6 +140,14 @@ object Premium {
         val p = c.getSharedPreferences("premium", Context.MODE_PRIVATE)
         sp = p
         Cloud.init(c)
+        Cloud.onSessionExpired = {
+            AppController.scope.launch {
+                if (AppController.accountEmail != null) {
+                    AppController.signOutAccount()
+                    AppController.messages.tryEmit(L("انتهت جلستك، سجّل الدخول بحساب Google مجددًا", "Your session ended, please sign in with Google again"))
+                }
+            }
+        }
         if (BuildConfig.TEST_PREMIUM) testActive = p.getBoolean("test_active", false)
         evaluate()
         if (!BuildConfig.TEST_PREMIUM && Cloud.configured) {
@@ -171,7 +179,14 @@ object Premium {
         evaluate()
     }
 
-    /** يقرر حالة الاشتراك من القسيمة المحفوظة، دون إنترنت. */
+    /**
+     * يقرر حالة الاشتراك من القسيمة المحفوظة، دون إنترنت.
+     *
+     * حارس إرجاع الساعة: نحفظ أكبر وقت رآه الجهاز (seen). إن رجعت الساعة إلى الوراء أكثر من المهلة
+     * فالقسيمة لا تُقبل، فلا يمكن إطالة القسيمة بضبط الساعة على تاريخ قديم مع قطع الإنترنت.
+     * وإن كانت الساعة متقدمة خطأً ثم صُحّحت، يُشفى المستخدم عند أول قسيمة جديدة من الخادم،
+     * لأن seen يُضبط حينها على وقت الإصدار (iat)، وهو وقت الخادم الموثوق.
+     */
     internal fun evaluate() {
         val c = app ?: return
         val p = sp ?: return
@@ -184,6 +199,11 @@ object Premium {
         active = (BuildConfig.TEST_PREMIUM && testActive) || ok
     }
 
+    /**
+     * صلاحية القسيمة دون إنترنت: نفس الحزمة والجهاز والحساب، وضمن مدتها، والساعة ليست قبل وقت إصدارها.
+     * Premium يتبع الحساب، فيتوقف عند تسجيل الخروج (uid=null). القسيمة لا تُحذف (انظر onAccountChanged)،
+     * فيعود Premium فور الدخول بنفس الحساب، دون انتظار التحقق الخلفي من الخادم.
+     */
     internal fun valid(c: Context, g: Lic.Grant, now: Long): Boolean =
         g.pkg == c.packageName && g.dev == Lic.device(c) && g.sub == Cloud.userId &&
             now < g.until && now + CLOCK_SLACK > g.iat && Lic.signerOk(c)
@@ -201,9 +221,15 @@ object Premium {
         return ok
     }
 
-    /** بعد الدخول أو الخروج من حساب Google: القسيمة مربوطة بالحساب. */
+    /**
+     * بعد الدخول أو الخروج من حساب Google.
+     * تسجيل الخروج لا يحذف القسيمة (تبقى مربوطة بالجهاز فيعود Premium فور الدخول بنفس الحساب).
+     * الدخول بحساب مختلف عن صاحب القسيمة يحذفها، فلا تنتقل من حساب إلى آخر.
+     */
     fun onAccountChanged() {
-        if (Cloud.userId == null) sp?.edit()?.remove("grant")?.apply()
+        val uid = Cloud.userId
+        val g = Lic.parse(sp?.getString("grant", null))
+        if (uid != null && g != null && g.sub != uid) sp?.edit()?.remove("grant")?.apply()
         evaluate()
     }
 
@@ -316,7 +342,8 @@ object Premium {
             val token = Cloud.function("license", body).getString("grant")
             val g = Lic.parse(token)
             if (g == null || !valid(c, g, System.currentTimeMillis())) return Outcome.FAILED
-            sp?.edit()?.putString("grant", token)?.apply()
+            // قسيمة جديدة من الخادم: وقت إصدارها موثوق، فنصحح به حارس الساعة (يشفي ساعة كانت متقدمة ثم صُحّحت)
+            sp?.edit()?.putString("grant", token)?.putLong("seen", g.iat)?.apply()
             evaluate()
             Outcome.OK
         } catch (e: Cloud.HttpError) {

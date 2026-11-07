@@ -138,7 +138,13 @@ data class TextBox(
     val sticky: Boolean = false,
     /** رابط إلى مستند (معرّفه) وصفحة فيه؛ null = ليس رابطًا. */
     val linkDoc: String? = null,
-    val linkPage: Int = 0
+    val linkPage: Int = 0,
+    /** اسم الخط من مكتبة الخطوط؛ فارغ = الخط الافتراضي. */
+    val font: String = "",
+    /** الكتابة اليدوية التي حُوّلت إلى هذا النص (لإرجاعها)؛ فارغة لمربعات النص العادية. */
+    val ink: List<Ink> = emptyList(),
+    /** بدائل القراءة لكل كلمة متحولة (للتصحيح بالنقر): الكلمة ← قراءات أخرى لها. */
+    val alts: Map<String, List<String>> = emptyMap()
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */
@@ -211,7 +217,9 @@ data class DocEntry(
     /** لون غلاف الدفتر في المكتبة (ARGB)؛ 0 = اللون الافتراضي. */
     val coverColor: Int = 0,
     /** ملصق على الغلاف (رمز تعبيري)؛ فارغ = بدون. */
-    val sticker: String = ""
+    val sticker: String = "",
+    /** خريطة ذهنية مستقلة (من «جديد»): تُفتح على الخريطة مباشرة، وكل عقدها نصوص حرة. */
+    val isMap: Boolean = false
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

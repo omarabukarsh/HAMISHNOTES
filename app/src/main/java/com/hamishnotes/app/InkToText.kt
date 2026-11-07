@@ -79,6 +79,12 @@ fun InkToTextDialog(s: DocSession, onDismiss: () -> Unit) {
         var alive = true
         busy = true
         text = ""
+        // فحص مستقل داخل الخاصية نفسها، فلا يكفي تعديل بوّابة واحدة لفتحها
+        if (!Premium.confirm()) {
+            status = L("هذه الميزة من مزايا Premium", "This is a Premium feature")
+            busy = false
+            return@DisposableEffect onDispose { alive = false }
+        }
         status = L("جارٍ تجهيز حزمة اللغة…", "Preparing language pack…")
         val id = DigitalInkRecognitionModelIdentifier.fromLanguageTag(if (arabic) "ar" else "en-US")
         if (id == null) {

@@ -1,10 +1,7 @@
 name: iPad preview (simulator screenshots)
 # يشغّل التطبيق على محاكي iPad ويلتقط صورًا للشاشة (ويتأكد أنه يفتح دون انهيار)
+# لا يعمل تلقائيًا: يُشغَّل يدويًا فقط عند الحاجة (التجربة تكون على الجهاز مباشرة)
 on:
-  push:
-    paths:
-      - 'ios/**'
-      - '.github/workflows/ios-preview.yml'
   workflow_dispatch:
 
 concurrency:

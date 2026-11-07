@@ -169,6 +169,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         lasso.refresh()
         searchLayer.frame = marksView.bounds
         searchCurrent.frame = marksView.bounds
+        updateRenderScale()
         if !lastHits.isEmpty { showSearch(lastHits, current: lastHitIndex) }
         showInsert()
     }
@@ -504,6 +505,38 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         } else {
             selectionFrame = nil
         }
+        updateRenderScale()
+    }
+
+    // ======================================================== حدّة النص عند التكبير
+
+    private var renderScale: CGFloat = 0
+
+    /// الطبقة مرسومة بنقاط الصفحة ثم يكبّرها عارض PDF: النصوص والتمييز تُرسم بدقة حجمها
+    /// الحقيقي على الشاشة، فلا تظهر مبكسلة.
+    func updateRenderScale() {
+        guard let w = window else { return }
+        let onScreen = convert(bounds, to: nil).width
+        let eff = onScreen / max(1, bounds.width)
+        // تقريب لأقرب ربع حتى لا يُعاد الرسم مع كل حركة تكبير صغيرة، وبحد أعلى للذاكرة
+        let s = min(8, max(1, (eff * 4).rounded(.up) / 4)) * w.screen.scale
+        guard abs(s - renderScale) > 0.01 else { return }
+        renderScale = s
+        for v in [marksView, topLayer] as [UIView] { applyScale(s, to: v) }
+        for l in marksView.layer.sublayers ?? [] { l.contentsScale = s }
+    }
+
+    private func applyScale(_ s: CGFloat, to v: UIView) {
+        v.contentScaleFactor = s
+        v.layer.contentsScale = s
+        v.setNeedsDisplay()
+        for sub in v.subviews { applyScale(s, to: sub) }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        renderScale = 0
+        updateRenderScale()
     }
 
     @objc private func onTap(_ g: UITapGestureRecognizer) {

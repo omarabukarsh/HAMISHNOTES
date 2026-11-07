@@ -213,6 +213,8 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         guard let v = pdfView else { return }
         let base = v.scaleFactorForSizeToFit
         session.scalePercent = Int((v.scaleFactor / max(0.01, base) * 100).rounded())
+        // النصوص فوق الصفحات تُعاد رسمها بدقة التكبير الجديد
+        DispatchQueue.main.async { [weak self] in self?.overlays.values.forEach { $0.updateRenderScale() } }
     }
 
     private func go(_ i: Int, animated: Bool = true) {

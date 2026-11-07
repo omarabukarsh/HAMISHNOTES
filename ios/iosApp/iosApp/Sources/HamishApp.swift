@@ -34,18 +34,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         AppController.shared.initialize()
         _ = Premium.shared
-        // تشغيل تجريبي (لقطات المحاكي): -hamishDemo /path/file.pdf
-        let args = ProcessInfo.processInfo.arguments
-        if let i = args.firstIndex(of: "-hamishDemo"), i + 1 < args.count {
-            let path = args[i + 1]
-            let c = AppController.shared
-            c.skipLogin()
-            if let e = c.library.first(where: { $0.name == URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent }) {
-                c.openDocument(e.id)
-            } else {
-                c.importDocuments([URL(fileURLWithPath: path)])
-            }
-        }
+        // تشغيل تجريبي (لقطات المحاكي): -hamishDemo /path/file.pdf -hamishScreen <name>
+        Demo.run(args: ProcessInfo.processInfo.arguments)
         return true
     }
 }

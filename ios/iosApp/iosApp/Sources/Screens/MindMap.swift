@@ -643,13 +643,18 @@ struct MindMapView: View {
                     if keys == nil && !addingFree && model.branches.isEmpty {
                         emptyMap
                     } else {
-                        MapCanvas(model: model, plan: plan, target: target, selectedKey: selectedKey,
-                                  onTap: { k in if keys == nil && !addingFree { selectedKey = selectedKey == k ? nil : k } },
-                                  onLongTap: { k in if keys == nil && !addingFree { selectedKey = k; editKey = EditKey(id: k) } },
-                                  onTarget: { t in if addingFree { freeTarget = FreeTarget(target: t) } else { target = target == t ? nil : t } })
-                            .scaleEffect(scale, anchor: .topLeading)
-                            .offset(offset)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        // الخريطة مثبّتة من الزاوية العليا ثم تُكبَّر وتُزاح (ولو كانت أكبر من الشاشة)
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .overlay(alignment: .topLeading) {
+                                MapCanvas(model: model, plan: plan, target: target, selectedKey: selectedKey,
+                                          onTap: { k in if keys == nil && !addingFree { selectedKey = selectedKey == k ? nil : k } },
+                                          onLongTap: { k in if keys == nil && !addingFree { selectedKey = k; editKey = EditKey(id: k) } },
+                                          onTarget: { t in if addingFree { freeTarget = FreeTarget(target: t) } else { target = target == t ? nil : t } })
+                                    .fixedSize()
+                                    .scaleEffect(scale, anchor: .topLeading)
+                                    .offset(offset)
+                            }
                     }
                     bottomBar(model, keys: keys)
                         .frame(maxHeight: .infinity, alignment: .bottom)
@@ -674,11 +679,14 @@ struct MindMapView: View {
                             .onEnded { _ in baseOffset = offset }
                     )
                 )
-                .onAppear { viewport = geo.size; if !fitted { fit(plan); fitted = true } }
-                .onChange(of: geo.size) { s in viewport = s; fit(plan) }
-                .onChange(of: fitted) { f in if !f { userMoved = false; fit(plan); fitted = true } }
+                .onAppear {
+                    viewport = geo.size
+                    if !fitted && geo.size.width > 0 { fit(plan, in: geo.size); fitted = true }
+                }
+                .onChange(of: geo.size) { s in viewport = s; if !userMoved { fit(plan, in: s) } }
+                .onChange(of: fitted) { f in if !f { userMoved = false; fit(plan, in: geo.size); fitted = true } }
                 // الخريطة تتوسط من جديد كلما تغيّر حجمها (ما لم يحرّكها المستخدم بيده)
-                .onChange(of: plan.size) { _ in if !userMoved { fit(plan) } }
+                .onChange(of: plan.size) { _ in if !userMoved { fit(plan, in: geo.size) } }
             }
         }
         .background(Palette.ivory.ignoresSafeArea())
@@ -717,7 +725,8 @@ struct MindMapView: View {
 
     // ---------- التكبير
 
-    private func fit(_ plan: MapPlan) {
+    private func fit(_ plan: MapPlan, in size: CGSize? = nil) {
+        let viewport = size ?? self.viewport
         guard viewport.width > 0, plan.size.width > 0 else { return }
         let sc = max(0.2, min(min(viewport.width / plan.size.width, viewport.height / plan.size.height), 1.15))
         scale = sc
@@ -750,7 +759,7 @@ struct MindMapView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(freeInk))
             }
             if !model.branches.isEmpty {
-                Button { fit(plan) } label: { PhIcon("ph_fit", Palette.navy, 20, L("توسيط", "Fit")).frame(width: 40, height: 40) }
+                Button { userMoved = false; fit(plan) } label: { PhIcon("ph_fit", Palette.navy, 20, L("توسيط", "Fit")).frame(width: 40, height: 40) }
                 Button {
                     let bk = Set(model.branches.map { $0.key })
                     session.mapSetCollapsed(anyOpen ? edits.collapsed.union(bk) : edits.collapsed.subtracting(bk))

@@ -311,6 +311,7 @@ private struct Spine: View {
             }
             .padding(.leading, 4)
             Spacer().frame(height: 22)
+            Group {
             SpineItem(label: L("الأحدث", "Recent"), icon: "ph_recent", count: nil, selected: noFolder && app.libraryFilter == .recent) {
                 app.libraryFolder = nil; app.libraryFilter = .recent
             }
@@ -324,6 +325,7 @@ private struct Spine: View {
             }
             SpineItem(label: L("كل البطاقات", "All cards"), icon: "ph_cards", count: nil, selected: false, tint: CardTeal) { app.openDeck = "*" }
             SpineItem(label: L("الإعدادات", "Settings"), icon: "ph_sliders", count: nil, selected: false) { app.settingsOpen = true }
+            }
 
             ScrollView(showsIndicators: false) { FolderSection(sheet: $sheet) }
 
@@ -331,11 +333,13 @@ private struct Spine: View {
                 PremiumTeaser(title: L("هامش Premium", "Hamish Premium"), desc: L("\(Premium.trialDays) أيام مجانًا", "\(Premium.trialDays) days free"))
                 Spacer().frame(height: 10)
             }
+            Group {
             StudyCard()
             Spacer().frame(height: 14)
             Text(docsCount(app.library.count) + " · " + pagesCount(pages)).font(Fonts.sans(12)).foregroundColor(Lib.muted)
             Spacer().frame(height: 10)
             ThemeSwitch()
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 22)
         .frame(width: 248)

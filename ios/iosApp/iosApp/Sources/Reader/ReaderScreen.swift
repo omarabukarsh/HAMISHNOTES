@@ -169,10 +169,6 @@ private struct ReaderTopBar: View {
     @State private var autoFont = false
 
     var body: some View {
-        let s = session
-        let cur = s.currentPage
-        let v: (String) -> Bool = { app.toolVisible($0) }
-        let dim = Palette.textSecondary.opacity(0.35)
         ZStack {
             HStack {
                 // زر درج الصفحات
@@ -205,6 +201,31 @@ private struct ReaderTopBar: View {
             // الأدوات في المنتصف
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
+                    navGroup
+                    coreGroup
+                    insertGroupA
+                    insertGroupB
+                    viewGroup
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .background(Capsule().fill(Color.white))
+            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
+            .clipShape(Capsule())
+            .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
+            .padding(.horizontal, 58)
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+    }
+
+    private var s: DocSession { session }
+    private var cur: Int { session.currentPage }
+    private func v(_ id: String) -> Bool { app.toolVisible(id) }
+    private var dim: Color { Palette.textSecondary.opacity(0.35) }
+    @ViewBuilder private var navGroup: some View {
                     if v("nav") {
                         TBtn(action: { s.goTo(page: cur - 1) }) { PhIcon("ph_caret_up", Palette.textPrimary, 20) }
                         Button { sheet = .jump } label: {
@@ -222,7 +243,8 @@ private struct ReaderTopBar: View {
                     }
                     if v("timer") { PomodoroControl(showStartLabel: false) }
                     if v("nav") || v("bookmark") || v("timer") { ToolbarSep() }
-
+    }
+    @ViewBuilder private var coreGroup: some View {
                     // الأدوات الأساسية
                     if app.toolbarStyle == .penBar {
                         let writing = app.tool.isWriting && !app.lassoActive && !app.shapeActive
@@ -275,7 +297,8 @@ private struct ReaderTopBar: View {
                     }) {
                         PhIcon(app.fingerWrites ? "ph_hand_pointing_fill" : "ph_hand_pointing", app.fingerWrites ? Palette.goldDeep : Palette.textSecondary)
                     }
-
+    }
+    @ViewBuilder private var insertGroupA: some View {
                     if ["image", "stickers", "text", "sticky", "addpage", "ocr", "search", "export"].contains(where: v) { ToolbarSep() }
                     if v("image") {
                         TBtn(selected: s.trayMode == "photos", action: { s.trayMode = s.trayMode == "photos" ? nil : "photos"; s.summaryOpen = false }) {
@@ -305,6 +328,8 @@ private struct ReaderTopBar: View {
                             }
                         }) { PhIcon("ph_note", tintFor(app.stickyActive)) }
                     }
+    }
+    @ViewBuilder private var insertGroupB: some View {
                     if v("link") { TBtn(action: { sheet = .link }) { PhIcon("ph_link") } }
                     if v("split") {
                         let on = app.splitId != nil
@@ -332,6 +357,8 @@ private struct ReaderTopBar: View {
                         }) { PhIcon("ph_search", tintFor(s.searchOpen)) }
                     }
                     if v("export") { TBtn(action: { s.flush(); sheet = .export }) { PhIcon("ph_export") } }
+    }
+    @ViewBuilder private var viewGroup: some View {
                     if v("undo") {
                         ToolbarSep()
                         TBtn(enabled: !s.undoStack.isEmpty, action: { s.undo() }) { PhIcon("ph_undo", s.undoStack.isEmpty ? dim : Palette.textPrimary) }
@@ -358,19 +385,6 @@ private struct ReaderTopBar: View {
                         s.pageMenuOpen.toggle()
                         if s.pageMenuOpen { s.summaryOpen = false }
                     }) { PhIcon("ph_more", tintFor(s.pageMenuOpen)) }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 4)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .background(Capsule().fill(Color.white))
-            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-            .clipShape(Capsule())
-            .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
-            .padding(.horizontal, 58)
-            .frame(maxWidth: .infinity)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 8)
     }
 
     private func circleButton<C: View>(on: Bool, bg: Color, action: @escaping () -> Void, @ViewBuilder content: () -> C) -> some View {

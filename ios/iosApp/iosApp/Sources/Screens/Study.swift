@@ -212,6 +212,7 @@ struct SignInScreen: View {
                        "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."))
                     .font(Fonts.sans(16)).foregroundColor(Pw.muted).multilineTextAlignment(.center).lineSpacing(6)
                 Spacer().frame(height: 34)
+                Group {
                 SignInWithAppleButton(.continue) { req in
                     req.requestedScopes = [.fullName, .email]
                 } onCompletion: { r in
@@ -233,6 +234,7 @@ struct SignInScreen: View {
                 Spacer().frame(height: 18)
                 Text(L("ملاحظاتك تبقى على جهازك. نستخدم اسمك وبريدك فقط.", "Your notes stay on your device. We only use your name and email."))
                     .font(Fonts.sans(12)).foregroundColor(Pw.muted)
+                }
             }
             .padding(30)
         }

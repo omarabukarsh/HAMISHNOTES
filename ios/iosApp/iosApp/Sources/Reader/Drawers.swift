@@ -283,6 +283,7 @@ struct PageMenuDrawer: View {
             .padding(16)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
+                    Group {
                     row("ph_bookmark", s.isBookmarked(p) ? L("إزالة العلامة المرجعية", "Remove bookmark") : L("علامة مرجعية للصفحة", "Bookmark page")) { s.toggleBookmark(p) }
                     row("ph_copy", L("تكرار الصفحة", "Duplicate page")) { s.duplicatePage(p); app.message(L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated")) }
                     row("ph_add_page", L("إضافة صفحة بعدها", "Add a page after")) { sheet = .addPage }
@@ -293,6 +294,8 @@ struct PageMenuDrawer: View {
                     if s.isBlank(p) { row("ph_grid", L("تغيير القالب", "Change template")) { changeTemplate = true } }
                     row("ph_mindmap", L("الخريطة الذهنية", "Mind map")) { s.mapOpen = true }
                     row("ph_text_scan", L("تحويل الكتابة إلى نص", "Handwriting to text")) { if Premium.shared.require(.toText) { sheet = .toText } }
+                    }
+                    Group {
                     label(L("نقل الصفحة", "Move page"))
                     HStack(spacing: 6) {
                         ChoiceChip(label: L("للأعلى", "Up"), selected: false) { s.movePage(p, to: p - 1); s.goTo(page: max(0, p - 1)) }
@@ -307,6 +310,7 @@ struct PageMenuDrawer: View {
                     row("ph_trash", L("حذف الصفحة", "Delete page"), danger: true) { confirmDelete = true }
                     label(L("الإعدادات", "Settings"))
                     row("ph_sliders", L("كل الإعدادات وتخصيص الأدوات", "All settings and toolbar")) { app.settingsOpen = true }
+                    }
                 }
                 .padding(.bottom, 20)
             }

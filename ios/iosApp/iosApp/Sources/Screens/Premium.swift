@@ -225,6 +225,7 @@ struct PremiumHost: View {
                            "The free plan keeps up to \(Premium.freeDocs) documents. Your current documents stay safe. Upgrade to add as many as you like."))
                         .font(Fonts.sans(14)).foregroundColor(Pw.muted).multilineTextAlignment(.center).lineSpacing(4)
                     Spacer().frame(height: 18)
+                    Group {
                     let used = min(AppController.shared.library.count, Premium.freeDocs)
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
@@ -237,6 +238,7 @@ struct PremiumHost: View {
                         Spacer()
                         Text(L("الخطة المجانية", "Free plan")).font(Fonts.sans(12)).foregroundColor(Pw.muted)
                     }.padding(.top, 6)
+                    }
                     Spacer().frame(height: 20)
                     GoldButton(label: L("مستندات بلا حد", "Get unlimited documents")) {
                         pm.limitOpen = false
@@ -371,6 +373,7 @@ struct PaywallView: View {
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Palette.navy))
                                 .padding(.leading, 18)
                         }
+                        Group {
                         Spacer().frame(height: 16)
                         CompareTable()
                         Spacer().frame(height: 22)
@@ -394,6 +397,7 @@ struct PaywallView: View {
                             link(L("الخصوصية", "Privacy")) { doc = .privacy }
                         }
                         .frame(maxWidth: .infinity)
+                        }
                     }
                 }
                 .padding(.horizontal, 30).padding(.vertical, 28)

@@ -295,10 +295,17 @@ struct GoalRing: View {
         let frac = min(1, Double(today) / Double(max(1, app.goalMinutes * 60_000)))
         ZStack {
             Circle().stroke(track, lineWidth: line)
-            Circle().trim(from: 0, to: frac).stroke(Lib.accent, style: StrokeStyle(lineWidth: line, lineCap: .round))
+            Circle().trim(from: 0, to: frac).stroke(Palette.gold, style: StrokeStyle(lineWidth: line, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            if flame { Text(frac >= 1 ? "🔥" : "⏱").font(.system(size: size * 0.38)) }
+            if flame {
+                ZStack {
+                    FlameShape().fill(Color(hex: 0xFFE8864A))
+                    FlameShape().stroke(Color(hex: 0xFFC45F2A), style: StrokeStyle(lineWidth: 1, lineJoin: .round))
+                }
+                .frame(width: size * 0.46, height: size * 0.46)
+            }
         }
+        .padding(line / 2)
         .frame(width: size, height: size)
     }
 }

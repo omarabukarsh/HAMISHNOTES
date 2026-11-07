@@ -256,7 +256,7 @@ struct LibraryScreen: View {
             case .newMap:
                 NewMapSheet(initialFolder: app.libraryFolder ?? "")
             case .newCard:
-                CardEditorSheet(card: nil, folder: app.libraryFolder ?? "")
+                NewLooseCardSheet(initialFolder: app.libraryFolder ?? "")
             case .addFolder:
                 NameSheet(title: L("مادة جديدة", "New subject"), initial: "") { app.addFolder($0) }
             case .renameFolder(let f):
@@ -547,9 +547,6 @@ struct NewMenuButton: View {
         Menu {
             Button(action: onNewNote) { Label { Text(L("ملاحظة جديدة", "New note")) } icon: { Image("ph_note") } }
             Button(action: onImport) { Label { Text(L("استيراد PDF", "Import PDF")) } icon: { Image("ph_export") } }
-            if VNDocumentCameraViewController.isSupported {
-                Button(action: onScan) { Label { Text(L("مسح مستند بالكاميرا", "Scan a document")) } icon: { Image("ph_scan") } }
-            }
             Button(action: onNewMap) { Label { Text(L("خريطة ذهنية جديدة", "New mind map")) } icon: { Image("ph_mindmap") } }
             Button(action: onNewCard) { Label { Text(L("بطاقة جديدة", "New card")) } icon: { Image("ph_cards") } }
         } label: {
@@ -840,9 +837,6 @@ private struct DocCard: View {
         Button { app.duplicate(entry) } label: { Text(L("إنشاء نسخة", "Duplicate")) }
         Button(action: onShare) { Label { Text(L("مشاركة أو تصدير…", "Share or export…")) } icon: { Image("ph_export") } }
         Button { app.toggleLock(entry.id) } label: { Text(entry.locked ? L("إلغاء القفل", "Unlock") : L("قفل المستند", "Lock document")) }
-        if app.splitId == nil && !app.tabs.isEmpty && !entry.isMap {
-            Button { if Premium.shared.require(.split) { app.openSplit(entry.id) } } label: { Text(L("فتح بجانب المستند الحالي", "Open beside the current document")) }
-        }
         Button(action: onMove) { Text(entry.folder.isEmpty ? L("نقل إلى مادة…", "Move to subject…") : L("المادة: \(entry.folder)…", "Subject: \(entry.folder)…")) }
         Button(role: .destructive, action: onDelete) { Text(L("حذف", "Delete")) }
     }

@@ -59,7 +59,7 @@ enum Demo {
         for k in 1...9 {
             if let d = Calendar.current.date(byAdding: .day, value: -k, to: Date()) {
                 c.stats[AppController.dayKey(d)] = Int64([75, 40, 62, 0, 90, 55, 68, 30, 80][k - 1]) * 60_000
-                c.stats["f|\(subject)|\(AppController.dayKey(d))"] = Int64([50, 30, 40, 0, 60, 35, 40, 20, 55][k - 1]) * 60_000
+                c.stats["\(AppController.dayKey(d))|\(e.id)"] = Int64([50, 30, 40, 0, 60, 35, 40, 20, 55][k - 1]) * 60_000
             }
         }
         c.addCard(front: I18n.english ? "How does penicillin work?" : "كيف يعمل البنسلين؟",

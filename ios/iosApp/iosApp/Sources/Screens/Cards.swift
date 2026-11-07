@@ -1,232 +1,265 @@
 import SwiftUI
 
-/// التكرار المتباعد (SM-2 مبسّط).
-enum Srs {
-    static let day: Int64 = 86_400_000
+// البطاقات (نفس Flashcards.kt في أندرويد): بطاقات تقلبها للمذاكرة، تصفية حسب المادة والصعبة،
+// خلط، وتعديل وحذف ونجمة لكل بطاقة. البطاقة: عنوان (الوجه) ومحتوى (الظهر).
 
-    static func grade(_ s: SrsState, _ q: Int) -> SrsState {
-        var n = s
-        let now = nowMs()
-        switch q {
-        case 0:
-            n.reps = 0
-            n.interval = 0
-            n.ease = max(1.3, s.ease - 0.2)
-            n.due = now + 60_000 * 10
-        default:
-            n.reps += 1
-            if n.reps == 1 { n.interval = q == 1 ? 1 : q == 2 ? 1 : 3 }
-            else if n.reps == 2 { n.interval = q == 1 ? 2 : q == 2 ? 4 : 6 }
-            else { n.interval = max(1, Int((Double(s.interval) * (q == 1 ? 1.2 : q == 2 ? s.ease : s.ease * 1.3)).rounded())) }
-            n.ease = max(1.3, s.ease + (q == 1 ? -0.15 : q == 3 ? 0.15 : 0))
-            n.due = now + Int64(n.interval) * day
-        }
-        return n
-    }
-
-    static func isDue(_ c: Card) -> Bool { c.srs.due <= nowMs() }
-}
-
-/// بطاقات مادة (أو كلها): القائمة، والمذاكرة بالقلب.
+/// مراجعة بطاقات: deck = nil لكل البطاقات، "doc:<id>" لبطاقات مستند، وإلا بطاقات مادة.
 struct DeckView: View {
     @EnvironmentObject var app: AppController
     let deck: String?
-    @State private var studying = false
-    @State private var editing: Card? = nil
+    @State private var subject: String? = nil   // nil = الكل، "" = بلا مادة
+    @State private var hardOnly = false
+    @State private var shuffled: [String]? = nil
+    @State private var flipped: Set<String> = []
+    @State private var page = 0
     @State private var adding = false
+    @State private var editing: Card? = nil
     @Environment(\.dismiss) private var dismiss
 
+    private func folderOf(_ c: Card) -> String {
+        if !c.folder.isEmpty { return c.folder }
+        if let d = c.docId { return app.entry(d)?.folder ?? "" }
+        return ""
+    }
+
+    private var loaded: [Card] {
+        guard let d = deck else { return app.cards }
+        if d.hasPrefix("doc:") { let id = String(d.dropFirst(4)); return app.cards.filter { $0.docId == id } }
+        return app.cards.filter { folderOf($0) == d }
+    }
+
+    private func source(_ c: Card) -> String {
+        let doc = c.docId.flatMap { app.entry($0)?.name }
+        let f = folderOf(c)
+        return (doc ?? L("بلا ملف", "No file")) + (f.isEmpty ? "" : " · \(f)")
+    }
+
     var body: some View {
-        let cards = app.cardsIn(deck)
-        let due = cards.filter(Srs.isDue)
+        let all = loaded
+        let base = all.filter { (subject == nil || folderOf($0) == subject) && (!hardOnly || $0.starred) }
+        let cards: [Card] = {
+            guard let order = shuffled else { return base }
+            return order.compactMap { id in base.first { $0.id == id } } + base.filter { !order.contains($0.id) }
+        }()
         let title: String = {
             guard let d = deck else { return L("كل البطاقات", "All cards") }
             if d.hasPrefix("doc:") { return L("بطاقات \(app.entry(String(d.dropFirst(4)))?.name ?? "")", "\(app.entry(String(d.dropFirst(4)))?.name ?? "") cards") }
             return L("بطاقات \(d)", "\(d) cards")
         }()
-        SheetScaffold(title: title) {
-            if studying {
-                StudyView(cards: due.isEmpty ? cards.shuffled() : due) { studying = false }
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(cardsCount(cards.count)).font(Fonts.sans(16, .bold)).foregroundColor(Palette.textPrimary)
-                            Text(due.isEmpty ? L("لا شيء مستحق الآن", "Nothing due now") : L("\(due.count) للمراجعة الآن", "\(due.count) due now"))
-                                .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                        }
-                        Spacer()
-                        NavyButton(label: "+ " + L("بطاقة", "Card"), filled: false) { if Premium.shared.require(.cards) { adding = true } }
-                        Button { if Premium.shared.require(.cards) { studying = true } } label: {
-                            HStack(spacing: 6) {
-                                PhIcon("ph_play", .white, 16)
-                                Text(L("ذاكر", "Study")).font(Fonts.sans(15, .bold)).foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 18).padding(.vertical, 11)
-                            .background(Capsule().fill(CardTeal))
-                        }
-                        .disabled(cards.isEmpty)
-                        .opacity(cards.isEmpty ? 0.5 : 1)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title + " · \(all.count)").font(Fonts.display(20)).foregroundColor(Palette.navy).lineLimit(1)
+                    Text(deck == nil ? L("كل بطاقات التطبيق، حتى التي بلا ملف", "Every card in the app, including those without a file")
+                         : L("بطاقات مستندات هذه المادة وبطاقاتها بلا ملف فقط", "Only this subject’s documents and its cards without a file"))
+                        .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).lineLimit(1)
+                }
+                Spacer()
+                Button { adding = true } label: {
+                    HStack(spacing: 4) {
+                        PhIcon("ph_plus", Palette.navy, 16)
+                        Text(L("بطاقة جديدة", "New card")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
                     }
-                    if cards.isEmpty {
-                        VStack(spacing: 8) {
-                            PhIcon("ph_cards", CardTeal, 44)
-                            Text(L("لا توجد بطاقات بعد", "No cards yet")).font(Fonts.sans(17, .bold)).foregroundColor(Palette.textPrimary)
-                            Text(L("أنشئ بطاقة من «جديد»، أو من أي نص في درج الملخصات ← «اجعله بطاقة».", "Create a card from “New”, or from any text in the summaries drawer → “Make it a card”."))
-                                .font(Fonts.sans(14)).foregroundColor(Palette.textSecondary).multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 40)
-                    } else {
-                        ScrollView {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                                ForEach(cards) { c in
-                                    Button { editing = c } label: {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            HStack {
-                                                if c.starred { PhIcon("ph_star_fill", Lib.accentDeep, 14) }
-                                                Text(c.folder.isEmpty ? L("بدون مادة", "No subject") : c.folder).font(Fonts.sans(11)).foregroundColor(CardTeal)
-                                                Spacer()
-                                                if Srs.isDue(c) { Circle().fill(Lib.exam).frame(width: 7, height: 7) }
-                                            }
-                                            Text(c.front.isEmpty ? c.back : c.front).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary).lineLimit(3)
-                                            if !c.front.isEmpty { Text(c.back).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).lineLimit(2) }
-                                        }
-                                        .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
-                                        .padding(14)
-                                        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
-                                        .roundedBorder(Palette.divider, radius: 16)
-                                    }
-                                }
-                            }
-                        }
+                    .padding(8)
+                }
+                if cards.count > 1 {
+                    Button { shuffled = cards.map { $0.id }.shuffled(); restart() } label: {
+                        Text(L("خلط", "Shuffle")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.goldDeep).padding(8)
                     }
                 }
-                .padding(.horizontal, 22).padding(.bottom, 20)
+                Button { dismiss() } label: { PhIcon("ph_close", Palette.textSecondary, 20, L("إغلاق", "Close")).frame(width: 40, height: 40) }
+            }
+            Spacer().frame(height: 8)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ChoiceChip(label: L("الكل \(all.count)", "All \(all.count)"), selected: subject == nil && !hardOnly) { subject = nil; hardOnly = false; restart() }
+                    if deck == nil {
+                        let subjects = Array(Set(all.map(folderOf).filter { !$0.isEmpty }))
+                        ForEach(app.folders.filter { subjects.contains($0) } + subjects.filter { !app.folders.contains($0) }, id: \.self) { f in
+                            ChoiceChip(label: "\(f) \(all.filter { folderOf($0) == f }.count)", selected: subject == f) { subject = subject == f ? nil : f; restart() }
+                        }
+                        let none = all.filter { folderOf($0).isEmpty }.count
+                        if none > 0 { ChoiceChip(label: L("بلا مادة \(none)", "No subject \(none)"), selected: subject == "") { subject = subject == "" ? nil : ""; restart() } }
+                    }
+                    ChoiceChip(label: L("الصعبة ★ \(all.filter { $0.starred }.count)", "Hard ★ \(all.filter { $0.starred }.count)"), selected: hardOnly) { hardOnly.toggle(); restart() }
+                }
+            }
+            Spacer().frame(height: 12)
+            if cards.isEmpty {
+                Text(hardOnly ? L("لا توجد بطاقات مميزة بنجمة هنا.", "No starred cards here.")
+                     : L("لا توجد بطاقات بعد. اضغط «بطاقة جديدة»، أو اصنعها من الملخصات.", "No cards yet. Tap “New card”, or make them from your summaries."))
+                    .font(Fonts.sans(15)).foregroundColor(Palette.textSecondary).multilineTextAlignment(.center).lineSpacing(5)
+                    .frame(maxWidth: .infinity, minHeight: 200)
+            } else {
+                TabView(selection: $page) {
+                    ForEach(Array(cards.enumerated()), id: \.element.id) { i, c in
+                        ZStack(alignment: .top) {
+                            FlipCard(card: c, flipped: flipped.contains(c.id)) {
+                                if flipped.contains(c.id) { flipped.remove(c.id) } else { flipped.insert(c.id) }
+                            }
+                            HStack {
+                                Text(source(c)).font(Fonts.sans(11, .bold)).foregroundColor(c.docId == nil ? CardTeal : Palette.textSecondary).lineLimit(1)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: 0xFFF1F3F7)))
+                                    .padding(14)
+                                Spacer()
+                                Button { editing = c } label: { PhIcon("ph_pencil", Palette.textSecondary, 20, L("تعديل البطاقة", "Edit card")).frame(width: 40, height: 40) }
+                                Button { app.cards.removeAll { $0.id == c.id } } label: { PhIcon("ph_trash", Palette.textSecondary, 20, L("حذف البطاقة", "Delete card")).frame(width: 40, height: 40) }
+                                Button {
+                                    if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k].starred.toggle() }
+                                } label: { PhIcon(c.starred ? "ph_star_fill" : "ph_star", Palette.gold, 24).frame(width: 40, height: 40) }
+                            }
+                            .padding(.trailing, 8).padding(.top, 2)
+                        }
+                        .padding(.horizontal, 2)
+                        .tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(minHeight: 300, maxHeight: 460)
+                Spacer().frame(height: 14)
+                HStack {
+                    Button(L("السابقة", "Previous")) { withAnimation { page = max(0, page - 1) } }.disabled(page <= 0)
+                    Spacer()
+                    Text("\(min(page, cards.count - 1) + 1) / \(cards.count)").font(Fonts.sans(14, .bold)).foregroundColor(Palette.textSecondary)
+                    Spacer()
+                    Button(L("التالية", "Next")) { withAnimation { page = min(cards.count - 1, page + 1) } }.disabled(page >= cards.count - 1)
+                }
+                .font(Fonts.sans(14)).foregroundColor(Palette.navy)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .background(Palette.background.ignoresSafeArea())
+        .sheet(isPresented: $adding) {
+            if let d = deck, d.hasPrefix("doc:") {
+                CardEditorSheet(card: Card(id: UUID().uuidString, front: "", back: "", docId: String(d.dropFirst(4))), folder: "").environmentObject(app)
+            } else {
+                NewLooseCardSheet(initialFolder: deck ?? subject ?? "").environmentObject(app)
             }
         }
-        .sheet(item: $editing) { c in CardEditorSheet(card: c, folder: c.folder).environmentObject(app) }
-        .sheet(isPresented: $adding) {
-            CardEditorSheet(card: deck?.hasPrefix("doc:") == true ? Card(id: UUID().uuidString, front: "", back: "", docId: String(deck!.dropFirst(4))) : nil,
-                            folder: deck?.hasPrefix("doc:") == true ? "" : (deck ?? "")).environmentObject(app)
-        }
+        .sheet(item: $editing) { c in CardEditorSheet(card: c, folder: c.folder, title: L("تعديل البطاقة", "Edit card"), confirm: L("حفظ", "Save")).environmentObject(app) }
+    }
+
+    private func restart() {
+        flipped = []
+        page = 0
     }
 }
 
-/// المذاكرة: البطاقة تنقلب بالنقر، ثم تقييم التذكّر.
-private struct StudyView: View {
-    @EnvironmentObject var app: AppController
-    let cards: [Card]
-    let onDone: () -> Void
-    @State private var i = 0
-    @State private var flipped = false
+/// بطاقة تنقلب بالنقر: الوجه أبيض بالعنوان، والظهر عاجي بالمحتوى.
+private struct FlipCard: View {
+    let card: Card
+    let flipped: Bool
+    let onFlip: () -> Void
+    @State private var angle: Double = 0
 
     var body: some View {
-        VStack(spacing: 18) {
-            if i >= cards.count {
-                VStack(spacing: 10) {
-                    Text("🎉").font(.system(size: 54))
-                    Text(L("أنهيت المراجعة", "Review finished")).font(Fonts.display(22)).foregroundColor(Palette.navy)
-                    NavyButton(label: L("رجوع", "Back"), action: onDone)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                let c = cards[i]
-                Text("\(i + 1) / \(cards.count)").font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                ZStack {
-                    face(c.front.isEmpty ? L("تذكّر…", "Recall…") : c.front, back: false).opacity(flipped ? 0 : 1)
-                    face(c.back, back: true).opacity(flipped ? 1 : 0).rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
-                }
-                .rotation3DEffect(.degrees(flipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-                .animation(.spring(response: 0.45, dampingFraction: 0.8), value: flipped)
-                .onTapGesture { flipped.toggle() }
-                if flipped {
-                    HStack(spacing: 10) {
-                        grade(L("مرة أخرى", "Again"), 0, Lib.exam)
-                        grade(L("صعب", "Hard"), 1, Color(hex: 0xFFB5651D))
-                        grade(L("جيد", "Good"), 2, CardTeal)
-                        grade(L("سهل", "Easy"), 3, Palette.navy)
+        let showBack = angle > 90
+        ZStack {
+            RoundedRectangle(cornerRadius: 20).fill(showBack ? Palette.ivory : Color.white)
+            RoundedRectangle(cornerRadius: 20).stroke(showBack ? Palette.gold : Palette.divider, lineWidth: 1.5)
+            ScrollView {
+                VStack(spacing: 0) {
+                    if !showBack {
+                        Text(card.front).font(Fonts.display(22)).foregroundColor(Palette.navy).multilineTextAlignment(.center).lineSpacing(12)
+                    } else {
+                        Text(card.front.components(separatedBy: "\n").first ?? "").font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep).multilineTextAlignment(.center)
+                        Spacer().frame(height: 10)
+                        Rectangle().fill(Palette.gold).frame(width: 48, height: 2)
+                        Spacer().frame(height: 12)
+                        Text(card.back).font(Fonts.sans(17)).foregroundColor(Palette.textPrimary).multilineTextAlignment(.center).lineSpacing(11)
                     }
-                } else {
-                    Text(L("انقر البطاقة لترى الجواب", "Tap the card to see the answer")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                 }
+                .padding(26)
+                .frame(maxWidth: .infinity, minHeight: 300)
             }
+            .rotation3DEffect(.degrees(showBack ? 180 : 0), axis: (x: 0, y: 1, z: 0))
         }
-        .padding(22)
-    }
-
-    private func face(_ t: String, back: Bool) -> some View {
-        Text(t).font(Fonts.sans(back ? 18 : 22, back ? .regular : .bold)).foregroundColor(back ? Palette.textPrimary : .white)
-            .multilineTextAlignment(.center).lineSpacing(6)
-            .padding(30)
-            .frame(maxWidth: 560, minHeight: 300)
-            .background(RoundedRectangle(cornerRadius: 26).fill(back ? Color.white : CardTeal))
-            .roundedBorder(back ? Palette.divider : Color.clear, radius: 26)
-            .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
-    }
-
-    private func grade(_ label: String, _ q: Int, _ col: Color) -> some View {
-        Button {
-            let c = cards[i]
-            if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k].srs = Srs.grade(c.srs, q) }
-            flipped = false
-            i += 1
-        } label: {
-            Text(label).font(Fonts.sans(15, .bold)).foregroundColor(.white).padding(.horizontal, 18).padding(.vertical, 12)
-                .background(Capsule().fill(col))
-        }
+        .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onFlip)
+        .onAppear { angle = flipped ? 180 : 0 }
+        .onChange(of: flipped) { f in withAnimation(.easeInOut(duration: 0.38)) { angle = f ? 180 : 0 } }
     }
 }
 
-/// إنشاء بطاقة أو تعديلها.
+/// إضافة بطاقة أو تعديلها: العنوان (الوجه) والمحتوى (الظهر).
 struct CardEditorSheet: View {
     @EnvironmentObject var app: AppController
     let card: Card?
     let folder: String
+    var title = L("بطاقة جديدة", "New card")
+    var confirm = L("إضافة", "Add")
     @State private var front = ""
     @State private var back = ""
-    @State private var sub = ""
-    @State private var starred = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let isNew = card == nil || !app.cards.contains { $0.id == card!.id }
-        SheetScaffold(title: isNew ? L("بطاقة جديدة", "New card") : L("تعديل البطاقة", "Edit card")) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(L("الوجه (السؤال)", "Front (question)")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                    FieldBox(placeholder: L("مثلًا: ما آلية عمل البنسلين؟", "e.g. How does penicillin work?"), text: $front, multiline: true)
-                    Text(L("الظهر (الجواب)", "Back (answer)")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                    FieldBox(placeholder: L("الجواب", "The answer"), text: $back, multiline: true)
-                    Text(L("المادة", "Subject")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                    SubjectChips(selected: sub) { sub = $0 }
-                    Toggle(isOn: $starred) { Text(L("مميزة بنجمة", "Starred")).font(Fonts.sans(14)) }.tint(Palette.navy)
-                    if let src = card?.source, !src.isEmpty { Text(src).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary) }
-                    HStack {
-                        if !isNew, let c = card {
-                            NavyButton(label: L("حذف", "Delete"), filled: false, danger: true) { app.cards.removeAll { $0.id == c.id }; dismiss() }
-                        }
-                        Spacer()
-                        NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
-                        NavyButton(label: L("حفظ البطاقة", "Save card")) {
-                            guard !(front + back).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                            if Premium.shared.require(.cards) {
-                                var c = card ?? Card(id: UUID().uuidString, front: "", back: "")
-                                c.front = front; c.back = back; c.folder = sub; c.starred = starred
-                                if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k] = c } else { app.cards.append(c) }
-                                if !sub.isEmpty { app.addFolder(sub) }
-                                dismiss()
-                            }
-                        }
+        let ok = !front.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !back.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        SheetScaffold(title: title) {
+            VStack(alignment: .leading, spacing: 10) {
+                FieldBox(placeholder: L("عنوان البطاقة", "Card title"), text: $front, multiline: true)
+                FieldBox(placeholder: L("محتوى البطاقة", "Card content"), text: $back, multiline: true).frame(minHeight: 180, alignment: .top)
+                HStack {
+                    Spacer()
+                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
+                    NavyButton(label: confirm) {
+                        guard Premium.shared.require(.cards) else { return }
+                        var c = card ?? Card(id: UUID().uuidString, front: "", back: "", folder: folder)
+                        c.front = front.trimmingCharacters(in: .whitespacesAndNewlines)
+                        c.back = back.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k] = c } else { app.cards.append(c) }
+                        dismiss()
                     }
+                    .disabled(!ok).opacity(ok ? 1 : 0.5)
                 }
-                .padding(.horizontal, 22).padding(.bottom, 20)
             }
+            .padding(.horizontal, 22)
         }
-        .onAppear {
-            front = card?.front ?? ""
-            back = card?.back ?? ""
-            sub = card?.folder ?? folder
-            starred = card?.starred ?? false
+        .onAppear { front = card?.front ?? ""; back = card?.back ?? "" }
+    }
+}
+
+/// بطاقة جديدة بلا ملف: العنوان والمحتوى والمادة، و«حفظ وإضافة أخرى».
+struct NewLooseCardSheet: View {
+    @EnvironmentObject var app: AppController
+    let initialFolder: String
+    @State private var front = ""
+    @State private var back = ""
+    @State private var folder = ""
+    @State private var added = 0
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let ok = !front.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !back.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        SheetScaffold(title: L("بطاقة جديدة", "New card") + (added > 0 ? L(" · أُضيفت \(added)", " · \(added) added") : "")) {
+            VStack(alignment: .leading, spacing: 10) {
+                FieldBox(placeholder: L("العنوان (الوجه)", "Title (front)"), text: $front, multiline: true)
+                FieldBox(placeholder: L("المحتوى (الظهر)", "Content (back)"), text: $back, multiline: true).frame(minHeight: 140, alignment: .top)
+                Text(L("المادة", "Subject")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                SubjectChips(selected: folder) { folder = $0 }
+                HStack {
+                    NavyButton(label: added > 0 ? L("تم", "Done") : L("إلغاء", "Cancel"), filled: false) { dismiss() }
+                    Spacer()
+                    Button(L("حفظ وإضافة أخرى", "Save & add another")) {
+                        if save() { added += 1; front = ""; back = "" }
+                    }
+                    .font(Fonts.sans(15, .bold)).foregroundColor(CardTeal).disabled(!ok)
+                    NavyButton(label: L("حفظ", "Save")) {
+                        if save() { app.message(L("أُضيفت البطاقة", "Card added")); dismiss() }
+                    }
+                    .disabled(!ok).opacity(ok ? 1 : 0.5)
+                }
+            }
+            .padding(.horizontal, 22)
         }
+        .onAppear { folder = initialFolder }
+    }
+
+    private func save() -> Bool {
+        guard Premium.shared.require(.cards) else { return false }
+        app.addCard(front: front.trimmingCharacters(in: .whitespacesAndNewlines), back: back.trimmingCharacters(in: .whitespacesAndNewlines), folder: folder)
+        return true
     }
 }

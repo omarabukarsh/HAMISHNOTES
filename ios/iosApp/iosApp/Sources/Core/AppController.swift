@@ -598,15 +598,16 @@ final class AppController: ObservableObject {
         update(id) { $0.readMs += add }
         let k = todayKey()
         stats[k, default: 0] += add
-        if let f = entry(id)?.folder, !f.isEmpty { stats["f|\(f)|\(k)", default: 0] += add }
+        // وقت كل مستند في كل يوم (للتقرير حسب المادة)، بنفس مفاتيح أندرويد: «اليوم|المستند»
+        stats["\(k)|\(id)", default: 0] += add
         if Int.random(in: 0..<6) == 0 { prefs.set(stats, forKey: "stats") }
     }
 
-    func setGoal(_ minutes: Int) { goalMinutes = max(10, min(600, minutes)) }
+    func setGoal(_ minutes: Int) { goalMinutes = max(5, min(24 * 60, minutes)) }
 
-    /// أيام متتالية حتى اليوم (أو أمس) وصلت فيها الهدف.
+    /// عدد الأيام المتتالية التي قرأت فيها دقيقة أو أكثر (حتى اليوم أو أمس).
     func studyStreak() -> Int {
-        let goal = Int64(goalMinutes) * 60_000
+        let goal: Int64 = 60_000
         var d = Date()
         var n = 0
         if (stats[Self.dayKey(d)] ?? 0) < goal { d = Calendar.current.date(byAdding: .day, value: -1, to: d)! }

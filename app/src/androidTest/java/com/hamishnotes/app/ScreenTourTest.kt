@@ -34,6 +34,13 @@ class ScreenTourTest {
     @Test
     fun tour() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("tour") == "true")
+        // نافذة إذن الصور تغطي الشاشات وتسرق التركيز، فنمنح الأذونات مسبقًا
+        val ua = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
+        for (perm in listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+                "android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO")) {
+            try { ua.grantRuntimePermission(pkg, perm) } catch (_: Throwable) {}
+        }
         rule.waitUntil(20_000) { c.libraryLoaded }
 
         // 0) تسجيل الدخول (أول فتح)

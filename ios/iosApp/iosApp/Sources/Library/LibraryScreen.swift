@@ -270,7 +270,7 @@ struct LibraryScreen: View {
             }
         }
         .environmentObject(app)
-        .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+        .environment(\.layoutDirection, .leftToRight)
     }
 }
 
@@ -876,7 +876,7 @@ struct NotebookCover: View {
                         .padding(.horizontal, compact ? 6 : 9).padding(.vertical, compact ? 4 : 7)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white))
                         .padding(.top, compact ? 8 : 14).padding(.leading, compact ? 14 : 22).padding(.trailing, compact ? 6 : 10)
-                        .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+                        .environment(\.layoutDirection, .leftToRight)
                     Group {
                         if entry.isMap && !locked {
                             PhIcon("ph_mindmap", .white.opacity(0.92), compact ? 26 : 44)

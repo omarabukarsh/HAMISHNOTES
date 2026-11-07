@@ -144,7 +144,7 @@ struct LegalSheet: View {
                 }
             }
         }
-        .environment(\.layoutDirection, I18n.english ? .leftToRight : .rightToLeft)
+        .environment(\.layoutDirection, .leftToRight)
     }
 
     private var title: String {

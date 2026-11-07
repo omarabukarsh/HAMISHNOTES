@@ -109,7 +109,7 @@ struct MindMapView: View {
         .frame(width: MapLayout.nodeW, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 14).fill(isBranch ? n.color.opacity(0.16) : Color.white))
         .roundedBorder(n.color.opacity(isBranch ? 0.8 : 0.45), radius: 14, width: isBranch ? 2 : 1)
-        .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+        .environment(\.layoutDirection, .leftToRight)
         .contextMenu {
             Button(L("نقطة تحتها", "Add a point under it")) { editing = EditTarget(nodeId: nil, parent: n.node.id, text: "") }
             Button(L("تعديل", "Edit")) { editing = EditTarget(nodeId: n.node.id, parent: nil, text: n.node.text) }

@@ -140,7 +140,7 @@ final class AppController: ObservableObject {
         fingerWrites = p.bool(forKey: "finger_writes")
         nightPages = p.bool(forKey: "night_pages")
         toolbarStyle = ToolbarStyle(rawValue: p.string(forKey: "toolbar_style") ?? "") ?? .penBar
-        hiddenTools = p.stringArray(forKey: "hidden_tools") ?? []
+        hiddenTools = p.stringArray(forKey: "hidden_tools") ?? Self.defaultHiddenTools
         laserMode = LaserMode(rawValue: p.string(forKey: "laser_mode") ?? "") ?? .dot
         eraserMode = EraserMode(rawValue: p.string(forKey: "eraser_mode") ?? "") ?? .stroke
         librarySort = SortMode(rawValue: p.string(forKey: "lib_sort") ?? "") ?? .lastOpened
@@ -542,8 +542,11 @@ final class AppController: ObservableObject {
         if v { hiddenTools.removeAll { $0 == id } } else if !hiddenTools.contains(id) { hiddenTools.append(id) }
     }
 
+    /// الشريط الافتراضي (نفس أندرويد): الأدوات الأساسية فقط، والباقي يُضاف من «تخصيص شريط الأدوات».
+    static let defaultHiddenTools = ["zoomwin", "ocr", "zoom", "night", "nav", "bookmark", "timer", "link", "split", "fit", "focus", "readtimer"]
+
     func resetToolbar() {
-        hiddenTools = []
+        hiddenTools = Self.defaultHiddenTools
         toolbarStyle = .penBar
     }
 

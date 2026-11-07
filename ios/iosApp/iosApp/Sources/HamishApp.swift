@@ -13,7 +13,7 @@ struct HamishApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(app)
-                .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+                .environment(\.layoutDirection, .leftToRight)
                 .environment(\.locale, Locale(identifier: app.english ? "en" : "ar"))
                 .onOpenURL { url in
                     let scoped = url.startAccessingSecurityScopedResource()
@@ -79,19 +79,19 @@ struct RootView: View {
             PremiumHost()
         }
         .bigSheet(isPresented: $app.settingsOpen, maxWidth: 880) {
-            SettingsView().environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            SettingsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .bigSheet(isPresented: $app.statsOpen) {
-            StatsView().environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            StatsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } })) {
-            DeckView(deck: app.openDeck == "*" ? nil : app.openDeck).environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            DeckView(deck: app.openDeck == "*" ? nil : app.openDeck).environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .sheet(item: Binding(get: { app.setPinFor.map { IdString(id: $0) } }, set: { app.setPinFor = $0?.id })) { t in
-            SetPinSheet(docId: t.id).environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            SetPinSheet(docId: t.id).environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .sheet(item: $app.pinPrompt) { p in
-            PinPromptSheet(prompt: p).environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            PinPromptSheet(prompt: p).environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .onChange(of: app.unlockRequest) { id in
             if let id = id { app.requestUnlock(id) }

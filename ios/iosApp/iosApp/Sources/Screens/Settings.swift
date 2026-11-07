@@ -92,7 +92,7 @@ struct SettingsView: View {
         }
         .background(Palette.background.ignoresSafeArea())
         .sheet(item: $doc) { LegalSheet(doc: $0) }
-        .sheet(isPresented: $toolbarOpen) { ToolbarCustomizeSheet().environmentObject(app).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft) }
+        .sheet(isPresented: $toolbarOpen) { ToolbarCustomizeSheet().environmentObject(app).environment(\.layoutDirection, .leftToRight) }
         .sheet(isPresented: $templateOpen) { TemplatePickerSheet(mode: .defaultTemplate) { _, _, _ in app.objectWillChange.send() } }
     }
 

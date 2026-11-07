@@ -138,17 +138,17 @@ private struct ReaderContent: View {
                 }
             }
             .environmentObject(app)
-            .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            .environment(\.layoutDirection, .leftToRight)
         }
         .sheet(item: Binding(get: { s.editingBox }, set: { s.editingBox = $0 })) { b in
-            TextBoxSheet(session: s, box: b).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            TextBoxSheet(session: s, box: b).environment(\.layoutDirection, .leftToRight)
         }
         .sheet(item: Binding(get: { s.editingNote }, set: { s.editingNote = $0 })) { n in
-            NoteSheet(session: s, note: n).environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+            NoteSheet(session: s, note: n).environment(\.layoutDirection, .leftToRight)
         }
         .bigSheet(isPresented: Binding(get: { s.mapOpen }, set: { s.mapOpen = $0 }), maxWidth: 1400) {
             MindMapView(session: s, standalone: false).environmentObject(app)
-                .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+                .environment(\.layoutDirection, .leftToRight)
         }
         .fileImporter(isPresented: $pdfPicker, allowedContentTypes: [.pdf]) { r in
             if case .success(let u) = r { s.addPdfPages(from: u, after: pdfAfter) }
@@ -405,7 +405,7 @@ private struct ReaderTopBar: View {
         .popover(isPresented: Binding(get: { settingsFor == id && selected }, set: { if !$0 { settingsFor = nil } })) {
             ToolSettingsPanel(onCustomColor: { settingsFor = nil; sheet = .colorPicker })
                 .environmentObject(app)
-                .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+                .environment(\.layoutDirection, .leftToRight)
         }
     }
 }
@@ -446,7 +446,7 @@ private struct PenBar: View {
                         .popover(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } })) {
                             ToolSettingsPanel(onCustomColor: { more = false; sheet = .colorPicker })
                                 .environmentObject(app)
-                                .environment(\.layoutDirection, app.english ? .leftToRight : .rightToLeft)
+                                .environment(\.layoutDirection, .leftToRight)
                         }
                 }
                 ToolbarSep()

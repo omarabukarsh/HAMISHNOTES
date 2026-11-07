@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -113,10 +114,10 @@ class ScreenTourTest {
         shot("06-summaries")
         click("خريطة")
         shot("12-mind-map")
-        pressBack()
-        ui { s.summaryOpen = false }
+        // إغلاق الدرج يغلق الخريطة معه (حالتها داخله)، دون زر الرجوع الذي قد يغلق المستند
+        ui { s.summaryOpen = false; c.activate(e.id) }
 
-        ui { s.drawerOpen = true }
+        ui { c.activate(e.id); s.drawerOpen = true }
         shot("07-pages-drawer")
         ui { s.drawerOpen = false; s.pageMenuOpen = true }
         shot("08-page-menu")
@@ -149,7 +150,7 @@ class ScreenTourTest {
         ui { CardDeck.openDeck = null }
         click("اليوم")
         shot("18-stats")
-        pressBack()
+        clickDesc("إغلاق")
         ui { c.settingsOpen = true }
         shot("19-settings")
         ui { c.settingsOpen = false; Premium.endTest(); Premium.paywallOpen = true }
@@ -177,6 +178,15 @@ class ScreenTourTest {
             rule.onAllNodesWithText(text, substring = true)[0].performClick()
         } catch (t: Throwable) {
             DeviceFiles.writeReport("tour-missing-$text.txt", t.toString())
+        }
+    }
+
+    private fun clickDesc(desc: String) {
+        try {
+            rule.waitForIdle()
+            rule.onAllNodesWithContentDescription(desc)[0].performClick()
+        } catch (t: Throwable) {
+            DeviceFiles.writeReport("tour-missing-desc.txt", t.toString())
         }
     }
 

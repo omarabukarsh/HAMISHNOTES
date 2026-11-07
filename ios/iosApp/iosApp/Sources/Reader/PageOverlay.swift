@@ -10,6 +10,15 @@ final class InkCanvas: PKCanvasView {
     var fingerWrites = false
 }
 
+/// طبقة شفافة تحمل عناصر (نصوص، ملاحظات، إطار صورة): لا تأخذ اللمسة لنفسها أبدًا،
+/// فتصل لمسة القلم أو الإصبع إلى طبقة الكتابة تحتها إلا إذا وقعت على عنصر.
+final class PassThroughView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let v = super.hitTest(point, with: event)
+        return v === self ? nil : v
+    }
+}
+
 /// يتابع حركة القلم دون أن يعترضها: هل بقي القلم ثابتًا لحظة قبل رفعه؟ («ارسم وأبقِ»)
 final class HoldTracker: UIGestureRecognizer {
     private(set) var held = false
@@ -49,7 +58,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private let hold = HoldTracker()
     private let marksView = MarksView()
     private let imagesLayer = UIView()
-    private let topLayer = UIView()
+    private let topLayer = PassThroughView()
     private let laser = LaserView()
     private let shapes = ShapeCaptureView()
     private let lasso = LassoView()

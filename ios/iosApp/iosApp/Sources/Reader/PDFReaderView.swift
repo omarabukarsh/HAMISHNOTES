@@ -122,6 +122,7 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
             guard let self = self else { return }
             self.go(self.session.currentPage, animated: false)
             self.scaleChanged()
+            self.applyScrolling()
         }
     }
 
@@ -155,6 +156,27 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         guard key != lastToolKey else { return }
         lastToolKey = key
         overlays.values.forEach { $0.applyTool() }
+        applyScrolling()
+    }
+
+    /// التمرير مع أدوات الكتابة (كما في أندرويد): القلم يكتب ولا يحرّك الصفحة،
+    /// والإصبع يحرّكها؛ وإن كان الإصبع يكتب فالتحريك بإصبعين.
+    func applyScrolling() {
+        guard let v = pdfView, let sv = PDFCoordinator.scrollView(in: v) else { return }
+        let c = AppController.shared
+        let writing = c.tool != .laser || c.lassoActive || c.shapeActive
+        let pan = sv.panGestureRecognizer
+        pan.allowedTouchTypes = writing ? [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                                        : [NSNumber(value: UITouch.TouchType.direct.rawValue), NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pan.minimumNumberOfTouches = writing && c.fingerWrites ? 2 : 1
+    }
+
+    static func scrollView(in v: UIView) -> UIScrollView? {
+        for s in v.subviews {
+            if let sv = s as? UIScrollView { return sv }
+            if let sv = scrollView(in: s) { return sv }
+        }
+        return nil
     }
 
     // ---------- التنقل والتكبير ----------

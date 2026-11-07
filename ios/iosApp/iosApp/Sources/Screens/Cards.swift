@@ -82,9 +82,12 @@ struct DeckView: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(Palette.background.ignoresSafeArea())
-        .sheet(isPresented: $adding) { addSheet }
-        .sheet(item: $editing) { c in
+        // نافذة بحواف دائرية (24) كما في أندرويد
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Palette.background))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .environment(\.colorScheme, .light)
+        .dialogSheet(isPresented: $adding) { addSheet }
+        .dialogSheet(item: $editing) { c in
             CardEditorSheet(card: c, folder: c.folder, title: L("تعديل البطاقة", "Edit card"), confirm: L("حفظ", "Save")).environmentObject(app)
         }
     }
@@ -163,7 +166,7 @@ struct DeckView: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: 300)
+        .frame(height: 320)
     }
 
     private func cardPage(_ c: Card) -> some View {
@@ -223,8 +226,7 @@ private struct FlipCard: View {
     var body: some View {
         let showBack = angle > 90
         ZStack {
-            RoundedRectangle(cornerRadius: 20).fill(showBack ? Palette.ivory : Color.white)
-            RoundedRectangle(cornerRadius: 20).stroke(showBack ? Palette.gold : Palette.divider, lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 20, style: .continuous).fill(showBack ? Palette.ivory : Color.white)
             ScrollView {
                 VStack(spacing: 0) {
                     if !showBack {
@@ -242,6 +244,8 @@ private struct FlipCard: View {
             }
             .rotation3DEffect(.degrees(showBack ? 180 : 0), axis: (x: 0, y: 1, z: 0))
         }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(showBack ? Palette.gold : Palette.divider, lineWidth: 1.5))
         .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
         .contentShape(Rectangle())
         .onTapGesture(perform: onFlip)
@@ -263,25 +267,25 @@ struct CardEditorSheet: View {
 
     var body: some View {
         let ok = !front.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !back.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        SheetScaffold(title: title) {
-            VStack(alignment: .leading, spacing: 10) {
-                FieldBox(placeholder: L("عنوان البطاقة", "Card title"), text: $front, multiline: true)
-                FieldBox(placeholder: L("محتوى البطاقة", "Card content"), text: $back, multiline: true).frame(minHeight: 180, alignment: .top)
-                HStack {
-                    Spacer()
-                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
-                    NavyButton(label: confirm) {
-                        guard Premium.shared.require(.cards) else { return }
-                        var c = card ?? Card(id: UUID().uuidString, front: "", back: "", folder: folder)
-                        c.front = front.trimmingCharacters(in: .whitespacesAndNewlines)
-                        c.back = back.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k] = c } else { app.cards.append(c) }
-                        dismiss()
-                    }
-                    .disabled(!ok).opacity(ok ? 1 : 0.5)
+        // نافذة حوار مثل AddCardDialog في أندرويد
+        AlertDialogCard(title: title, width: 480) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    OutlinedField(label: L("عنوان البطاقة", "Card title"), text: $front, multiline: true)
+                    OutlinedField(label: L("محتوى البطاقة", "Card content"), text: $back, multiline: true, minHeight: 180, autoFocus: false)
                 }
             }
-            .padding(.horizontal, 22)
+            .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
+        } buttons: {
+            DialogButton(label: L("إلغاء", "Cancel")) { dismiss() }
+            DialogButton(label: confirm, enabled: ok) {
+                guard Premium.shared.require(.cards) else { return }
+                var c = card ?? Card(id: UUID().uuidString, front: "", back: "", folder: folder)
+                c.front = front.trimmingCharacters(in: .whitespacesAndNewlines)
+                c.back = back.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k] = c } else { app.cards.append(c) }
+                dismiss()
+            }
         }
         .onAppear { front = card?.front ?? ""; back = card?.back ?? "" }
     }
@@ -299,26 +303,25 @@ struct NewLooseCardSheet: View {
 
     var body: some View {
         let ok = !front.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !back.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        SheetScaffold(title: L("بطاقة جديدة", "New card") + (added > 0 ? L(" · أُضيفت \(added)", " · \(added) added") : "")) {
-            VStack(alignment: .leading, spacing: 10) {
-                FieldBox(placeholder: L("العنوان (الوجه)", "Title (front)"), text: $front, multiline: true)
-                FieldBox(placeholder: L("المحتوى (الظهر)", "Content (back)"), text: $back, multiline: true).frame(minHeight: 140, alignment: .top)
-                Text(L("المادة", "Subject")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                SubjectChips(selected: folder) { folder = $0 }
-                HStack {
-                    NavyButton(label: added > 0 ? L("تم", "Done") : L("إلغاء", "Cancel"), filled: false) { dismiss() }
-                    Spacer()
-                    Button(L("حفظ وإضافة أخرى", "Save & add another")) {
-                        if save() { added += 1; front = ""; back = "" }
-                    }
-                    .font(Fonts.sans(15, .bold)).foregroundColor(CardTeal).disabled(!ok)
-                    NavyButton(label: L("حفظ", "Save")) {
-                        if save() { app.message(L("أُضيفت البطاقة", "Card added")); dismiss() }
-                    }
-                    .disabled(!ok).opacity(ok ? 1 : 0.5)
+        // نافذة حوار مثل NewLooseCardDialog في أندرويد
+        AlertDialogCard(title: L("بطاقة جديدة", "New card") + (added > 0 ? L(" · أُضيفت \(added)", " · \(added) added") : ""), width: 480) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    OutlinedField(label: L("العنوان (الوجه)", "Title (front)"), text: $front, multiline: true)
+                    OutlinedField(label: L("المحتوى (الظهر)", "Content (back)"), text: $back, multiline: true, minHeight: 140, autoFocus: false)
+                    Text(L("المادة", "Subject")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                    SubjectChips(selected: folder) { folder = $0 }
                 }
             }
-            .padding(.horizontal, 22)
+            .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
+        } buttons: {
+            DialogButton(label: added > 0 ? L("تم", "Done") : L("إلغاء", "Cancel")) { dismiss() }
+            DialogButton(label: L("حفظ وإضافة أخرى", "Save & add another"), color: CardTeal, enabled: ok) {
+                if save() { added += 1; front = ""; back = "" }
+            }
+            DialogButton(label: L("حفظ", "Save"), bold: true, enabled: ok) {
+                if save() { app.message(L("أُضيفت البطاقة", "Card added")); dismiss() }
+            }
         }
         .onAppear { folder = initialFolder }
     }

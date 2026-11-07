@@ -249,7 +249,7 @@ struct LibraryScreen: View {
 
     static func isNameDialog(_ s: LibrarySheet) -> Bool {
         switch s {
-        case .rename, .addFolder, .renameFolder: return true
+        case .rename, .addFolder, .renameFolder, .newCard: return true
         default: return false
         }
     }

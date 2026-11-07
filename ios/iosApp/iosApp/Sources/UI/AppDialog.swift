@@ -121,32 +121,37 @@ extension View {
 struct OutlinedField: View {
     let label: String
     @Binding var text: String
+    var multiline = false
+    var minHeight: CGFloat = 56
     var autoFocus = true
     @FocusState private var focused: Bool
 
     var body: some View {
         let up = focused || !text.isEmpty
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .stroke(focused ? Palette.navy : Palette.textSecondary.opacity(0.6), lineWidth: focused ? 2 : 1)
-                .frame(height: 56)
-                .padding(.top, 8)
-            TextField("", text: $text)
-                .font(Fonts.sans(16)).foregroundColor(Palette.textPrimary)
-                .focused($focused)
-                .padding(.horizontal, 16)
-                .frame(height: 56)
-                .padding(.top, 8)
+            Group {
+                if multiline {
+                    TextField("", text: $text, axis: .vertical).lineLimit(1...10)
+                } else {
+                    TextField("", text: $text)
+                }
+            }
+            .font(Fonts.sans(16)).foregroundColor(Palette.textPrimary)
+            .focused($focused)
+            .padding(.horizontal, 16).padding(.vertical, 16)
+            .frame(minHeight: minHeight, alignment: .topLeading)
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(focused ? Palette.navy : Palette.textSecondary.opacity(0.6), lineWidth: focused ? 2 : 1))
+            .padding(.top, 8)
             Text(label)
                 .font(Fonts.sans(up ? 12 : 16))
                 .foregroundColor(focused ? Palette.navy : Palette.textSecondary)
                 .padding(.horizontal, up ? 4 : 0)
                 .background(up ? Palette.ivory : Color.clear)
-                .offset(x: up ? 12 : 16, y: up ? 0 : 26)
+                .offset(x: up ? 12 : 16, y: up ? 0 : 24)
                 .allowsHitTesting(false)
                 .animation(.easeOut(duration: 0.15), value: up)
         }
-        .frame(height: 64)
         .onAppear { if autoFocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true } } }
     }
 }

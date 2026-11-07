@@ -124,7 +124,7 @@ struct SummaryDrawer: View {
         .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
         .sheet(item: $editing) { m in MarkEditSheet(session: s, mark: m) }
         .sheet(item: $editingTable) { t in TableEditorSheet(rows: t.rows, header: t.header) { rows, header in s.saveTable(t.key, rows: rows, header: header) } }
-        .sheet(item: $cardFrom) { d in
+        .dialogSheet(item: $cardFrom) { d in
             CardEditorSheet(card: Card(id: UUID().uuidString, front: d.front, back: d.back, folder: app.entry(s.id)?.folder ?? "", docId: s.id, source: s.title),
                             folder: app.entry(s.id)?.folder ?? "")
                 .environmentObject(app)

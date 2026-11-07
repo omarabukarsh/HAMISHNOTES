@@ -114,7 +114,7 @@ struct LibraryScreen: View {
             }
         }
         .background(Lib.bg.ignoresSafeArea())
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { r in
+        .fileImporter(isPresented: $importing, allowedContentTypes: OfficeConverter.types, allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { app.importDocuments(urls) }
         }
         .sheet(item: $sheet) { s in sheetView(s) }

@@ -345,6 +345,7 @@ private struct AccountPane: View {
     @EnvironmentObject var app: AppController
     @ObservedObject var pm = Premium.shared
     @State private var confirmOut = false
+    @State private var deleting = false
 
     var body: some View {
         GroupLabel(L("حسابك", "Your account"))
@@ -360,6 +361,23 @@ private struct AccountPane: View {
                     Button(L("تسجيل الخروج", "Sign out")) { confirmOut = true }.font(Fonts.sans(13, .bold)).foregroundColor(Palette.danger)
                 }
                 .padding(14)
+                GroupDivider()
+                Button { deleting = true } label: {
+                    HStack(spacing: 14) {
+                        PhIcon("ph_trash", Lib.exam, 18).frame(width: 34, height: 34)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0xFFF8E7E6)))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L("حذف حسابي", "Delete my account")).font(Fonts.sans(15, .bold)).foregroundColor(Lib.exam)
+                            Text(L("يحذف حسابك وبيانات اشتراكك من هامش", "Deletes your account and subscription data from Hamish"))
+                                .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                        }
+                        Spacer()
+                        Chevron()
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             } else {
                 GroupRow(icon: "ph_user", color: Palette.navy, title: L("تسجيل الدخول", "Sign in"), desc: L("اربط حسابك في Apple", "Link your Apple account"),
                          action: { app.loginSeen = false }) { Chevron() }
@@ -369,6 +387,7 @@ private struct AccountPane: View {
             Button(L("تسجيل الخروج", "Sign out"), role: .destructive) { app.signOutAccount() }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
         } message: { Text(L("تبقى ملفاتك وملاحظاتك على هذا الجهاز.", "Your files and notes stay on this device.")) }
+        .sheet(isPresented: $deleting) { DeleteAccountSheet().environmentObject(app) }
         GroupLabel(L("الاشتراك", "Subscription"))
         SettingsGroup {
             if pm.active && pm.testMode && pm.product == nil {
@@ -616,6 +635,67 @@ struct ToolbarCustomizeSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
             .roundedBorder(sel ? Palette.gold : Palette.divider, radius: 14, width: sel ? 2.5 : 1)
+        }
+    }
+}
+
+/// حذف الحساب نهائيًا (نفس DeleteAccountDialog في أندرويد).
+private struct DeleteAccountSheet: View {
+    @EnvironmentObject var app: AppController
+    @ObservedObject var pm = Premium.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var sure = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhIcon("ph_trash", Lib.exam, 26).frame(width: 52, height: 52).background(Circle().fill(Color(hex: 0xFFF8E7E6)))
+            Text(L("حذف حسابك نهائيًا؟", "Delete your account for good?")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
+            (Text(L("سيُحذف حساب ", "The account ")) + Text(app.accountEmail ?? "").bold() + Text(L(" من هامش.\nلا يمكن التراجع عن الحذف.", " will be deleted from Hamish.\nThis can’t be undone.")))
+                .font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
+            VStack(alignment: .leading, spacing: 8) {
+                line(false, L("حسابك في هامش (البريد والاسم)", "Your Hamish account (email and name)"))
+                line(false, L("ربط تسجيل الدخول بـ Apple في هذا التطبيق", "The Sign in with Apple link in this app"))
+                line(true, L("مستنداتك وملاحظاتك تبقى على هذا الجهاز", "Your documents and notes stay on this device"))
+            }
+            .padding(12).background(RoundedRectangle(cornerRadius: 14).fill(Palette.background))
+            if pm.active && !pm.testMode {
+                (Text(L("لديك اشتراك Premium فعّال. ", "You have an active Premium subscription. ")).bold()
+                 + Text(L("حذف الحساب لا يلغي الاشتراك؛ ألغه من إعدادات App Store.", "Deleting your account doesn’t cancel it; cancel it in App Store settings.")))
+                    .font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
+            }
+            Toggle(isOn: $sure) {
+                Text(L("أفهم أن حذف الحساب نهائي", "I understand deleting my account is permanent")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.textPrimary)
+            }
+            .tint(Lib.exam)
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Text(L("إلغاء", "Cancel")).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 13)
+                        .background(RoundedRectangle(cornerRadius: 14).stroke(Palette.divider, lineWidth: 1))
+                }
+                Button {
+                    app.deleteAccount()
+                    app.message(L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device"))
+                    dismiss()
+                } label: {
+                    Text(L("حذف الحساب", "Delete account")).font(Fonts.sans(15, .bold)).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).padding(.vertical, 13)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Lib.exam.opacity(sure ? 1 : 0.4)))
+                }
+                .disabled(!sure)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 420)
+        .background(Color.white)
+        .presentationDetents([.medium, .large])
+        .environment(\.layoutDirection, .leftToRight)
+    }
+
+    private func line(_ kept: Bool, _ t: String) -> some View {
+        HStack(spacing: 8) {
+            Text(kept ? "✓" : "✕").font(Fonts.sans(13, .bold)).foregroundColor(kept ? Color(hex: 0xFF1F7A4D) : Lib.exam)
+            Text(t).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
         }
     }
 }

@@ -224,6 +224,13 @@ final class AppController: ObservableObject {
         prefs.removeObject(forKey: "account_name")
     }
 
+    /// حذف الحساب: بيانات الحساب وربط Apple في هذا التطبيق (الملفات تبقى على الجهاز).
+    func deleteAccount() {
+        signOutAccount()
+        prefs.removeObject(forKey: "apple_user")
+        prefs.removeObject(forKey: "account_apple_id")
+    }
+
     func skipLogin() {
         loginSeen = true
         prefs.set(true, forKey: "login_seen")
@@ -321,6 +328,28 @@ final class AppController: ObservableObject {
     }
 
     func importDocuments(_ urls: [URL]) {
+        // عروض الباوربوينت ومستندات Word وKeynote: تُحوَّل إلى PDF أولًا
+        let office = urls.filter { OfficeConverter.handles($0) }
+        if !office.isEmpty {
+            let rest = urls.filter { !OfficeConverter.handles($0) }
+            importing = true
+            message(L("جارٍ تحويل الملف إلى PDF…", "Converting the file to PDF…"))
+            var converted: [URL] = []
+            var left = office.count
+            for u in office {
+                OfficeConverter.convert(u) { out in
+                    if let o = out { converted.append(o) } else {
+                        self.message(L("تعذر تحويل «\(u.lastPathComponent)». صدّره إلى PDF ثم افتحه", "Couldn’t convert “\(u.lastPathComponent)”. Export it to PDF, then open it"))
+                    }
+                    left -= 1
+                    if left == 0 {
+                        self.importing = false
+                        if !converted.isEmpty || !rest.isEmpty { self.importDocuments(rest + converted) }
+                    }
+                }
+            }
+            return
+        }
         let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
         guard !pdfs.isEmpty else {
             if !urls.isEmpty { message(L("هذا النوع من الملفات غير مدعوم بعد. افتح ملف PDF", "This file type isn’t supported yet. Open a PDF")) }

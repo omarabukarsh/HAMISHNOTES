@@ -116,7 +116,7 @@ struct SettingsView: View {
                         IconTile(icon: "ph_user", color: Palette.navy, size: 38)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(L("تسجيل الدخول", "Sign in")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary)
-                            Text(L("اربط حسابك في Google أو Apple", "Link your Google or Apple account")).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
+                            Text((GoogleAuth.shared.configured ? L("اربط حسابك في Google أو Apple", "Link your Google or Apple account") : L("اربط حسابك في Apple", "Link your Apple account"))).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
                         }
                     }
                     Spacer(minLength: 0)
@@ -387,7 +387,7 @@ private struct AccountPane: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                GroupRow(icon: "ph_user", color: Palette.navy, title: L("تسجيل الدخول", "Sign in"), desc: L("اربط حسابك في Google أو Apple", "Link your Google or Apple account"),
+                GroupRow(icon: "ph_user", color: Palette.navy, title: L("تسجيل الدخول", "Sign in"), desc: (GoogleAuth.shared.configured ? L("اربط حسابك في Google أو Apple", "Link your Google or Apple account") : L("اربط حسابك في Apple", "Link your Apple account")),
                          action: { app.loginSeen = false }) { Chevron() }
             }
         }

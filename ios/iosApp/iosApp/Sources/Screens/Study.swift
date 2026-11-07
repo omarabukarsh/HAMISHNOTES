@@ -412,6 +412,8 @@ struct SignInScreen: View {
                        "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."))
                     .font(Fonts.sans(15)).foregroundColor(Lib.muted).multilineTextAlignment(.center).lineSpacing(7)
                 Spacer().frame(height: 36)
+                // زر Google مخفي حتى يُضاف معرّف عميل iOS (سر GOOGLE_IOS_CLIENT_ID)
+                if GoogleAuth.shared.configured {
                 Button {
                     busy = true
                     error = nil
@@ -438,6 +440,7 @@ struct SignInScreen: View {
                     Text(e).font(Fonts.sans(13)).foregroundColor(Lib.exam).multilineTextAlignment(.center).padding(.top, 12)
                 }
                 Spacer().frame(height: 12)
+                }
                 SignInWithAppleButton(.continue) { req in
                     req.requestedScopes = [.fullName, .email]
                 } onCompletion: { r in

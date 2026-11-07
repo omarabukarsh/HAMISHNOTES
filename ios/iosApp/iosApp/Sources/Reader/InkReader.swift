@@ -146,11 +146,14 @@ enum InkReader {
         return false
     }
 
+    private static func recognizer(_ tag: String) -> DigitalInkRecognizer? {
+        lock.lock(); defer { lock.unlock() }
+        return recognizers[tag]
+    }
+
     private static func read(_ l: Line, lang: Int) async -> String? {
         let tag = lang == 0 ? "ar" : (lang == 1 ? "en-US" : (isRTL(l) ? "ar" : "en-US"))
-        guard ensure(tag) else { return nil }
-        lock.lock(); let rec = recognizers[tag]; lock.unlock()
-        guard let r = rec else { return nil }
+        guard ensure(tag), let r = recognizer(tag) else { return nil }
         let strokes: [Stroke] = l.strokes.map { s in
             let base = s.path.creationDate.timeIntervalSince1970
             let pts = s.path.interpolatedPoints(by: .distance(2)).map { p -> StrokePoint in

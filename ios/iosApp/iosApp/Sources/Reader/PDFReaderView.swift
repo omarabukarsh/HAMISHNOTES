@@ -280,7 +280,9 @@ extension PDFCoordinator: UIDropInteractionDelegate {
         let s = session
         if drop.canLoadObjects(ofClass: NSString.self) {
             _ = drop.loadObjects(ofClass: NSString.self) { items in
-                guard let str = items.first as? String, str.hasPrefix(StickerDragPrefix) else { return }
+                guard let ns = items.first as? NSString else { return }
+                let str = ns as String
+                guard str.hasPrefix(StickerDragPrefix) else { return }
                 DispatchQueue.main.async { s.insertSticker(String(str.dropFirst(StickerDragPrefix.count)), page: page, at: at) }
             }
         } else {

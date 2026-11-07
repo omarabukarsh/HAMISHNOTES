@@ -129,7 +129,9 @@ enum ShapeRecognizer {
         if diag < 0.06 * pageW { return nil }
         let total = length(pts)
         let first = pts.first!, last = pts.last!
-        let closed = d(first, last) < 0.2 * diag && total > 2.2 * diag
+        // محيط الدائرة ≈ 2.22 × قطر مربعها، والشكل البيضوي أقل: 2.2 كانت ترفض الدوائر المرسومة بعناية
+        // (خط يذهب ويعود يُرفض لاحقًا لأنه لا يطابق الشكل البيضوي ولا المضلع)
+        let closed = d(first, last) < 0.2 * diag && total > 2.0 * diag
         if !closed {
             if straight(pts) { return [Shapes.dense([first, last], closed: false)] }
             guard let k = pts.indices.max(by: { d(pts[$0], first) < d(pts[$1], first) }), k >= 4, k < pts.count - 2 else { return nil }

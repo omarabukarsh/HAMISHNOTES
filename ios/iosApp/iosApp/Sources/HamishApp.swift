@@ -89,7 +89,7 @@ struct RootView: View {
         .bigSheet(isPresented: $app.statsOpen, width: 0.92, height: 0.92, maxHeight: 800) {
             StatsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
-        .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } }), width: 0.82, height: 0.85, maxHeight: 700, minHeight: 460) {
+        .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } }), width: 0.82, height: 0.85, maxHeight: 700, minHeight: 460, fitContent: true) {
             DeckView(deck: app.openDeck == "*" ? nil : app.openDeck).environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .sheet(item: Binding(get: { app.setPinFor.map { IdString(id: $0) } }, set: { app.setPinFor = $0?.id })) { t in

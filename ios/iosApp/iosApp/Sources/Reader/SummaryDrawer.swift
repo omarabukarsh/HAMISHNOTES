@@ -479,29 +479,60 @@ struct TableEditorSheet: View {
     let onSave: ([[String]], Bool) -> Void
     @Environment(\.dismiss) private var dismiss
 
+    private var cols: Int { max(1, rows.map { $0.count }.max() ?? 1) }
+
     var body: some View {
-        let cols = max(1, rows.map { $0.count }.max() ?? 1)
+        let cols = self.cols
         SheetScaffold(title: L("تحرير الجدول", "Edit table")) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("انقر رقم الصف أو اسم العمود لنقله أو حذفه", "Tap a row number or column name to move or delete it"))
+                        .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                    // أسماء الأعمدة
+                    HStack(spacing: 4) {
+                        Color.clear.frame(width: 30, height: 1)
+                        ForEach(0..<cols, id: \.self) { ci in
+                            Menu {
+                                Button(L("إدراج عمود بعده", "Insert column after")) { rows = rows.map { r in var x = pad(r, cols); x.insert("", at: ci + 1); return x } }
+                                if cols > 1 { Button(L("حذف العمود", "Delete column"), role: .destructive) { rows = rows.map { r in var x = pad(r, cols); x.remove(at: ci); return x } } }
+                            } label: {
+                                Text(L("عمود \(ci + 1)", "Column \(ci + 1)")).font(Fonts.sans(11, .bold)).foregroundColor(Palette.navy)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 4)
+                                    .background(RoundedRectangle(cornerRadius: 6).fill(Palette.navySoft.opacity(0.6)))
+                            }
+                        }
+                    }
                     ForEach(0..<rows.count, id: \.self) { ri in
                         HStack(spacing: 4) {
+                            Menu {
+                                Button(L("إدراج صف بعده", "Insert row after")) { rows.insert(Array(repeating: "", count: cols), at: ri + 1) }
+                                if ri > 0 { Button(L("تحريك لأعلى", "Move up")) { rows.swapAt(ri, ri - 1) } }
+                                if ri < rows.count - 1 { Button(L("تحريك لأسفل", "Move down")) { rows.swapAt(ri, ri + 1) } }
+                                Button(L("حذف الصف", "Delete row"), role: .destructive) { rows.remove(at: ri) }
+                            } label: {
+                                Text("\(ri + 1)").font(Fonts.sans(12, .bold)).foregroundColor(Palette.navy)
+                                    .frame(width: 30, height: 30).background(Circle().fill(Palette.navySoft.opacity(0.6)))
+                            }
                             ForEach(0..<cols, id: \.self) { ci in
-                                TextField("", text: Binding(get: { ci < rows[ri].count ? rows[ri][ci] : "" }, set: { v in
+                                TextField("", text: Binding(get: { ri < rows.count && ci < rows[ri].count ? rows[ri][ci] : "" }, set: { v in
+                                    guard ri < rows.count else { return }
                                     while rows[ri].count <= ci { rows[ri].append("") }
                                     rows[ri][ci] = v
                                 }), axis: .vertical)
                                 .font(Fonts.sans(13, header && ri == 0 ? .bold : .regular))
                                 .padding(6).background(RoundedRectangle(cornerRadius: 6).fill(header && ri == 0 ? Palette.navySoft : Color.white))
                             }
-                            Button { rows.remove(at: ri) } label: { PhIcon("ph_trash", Palette.danger, 16) }
                         }
                     }
                     HStack(spacing: 8) {
-                        ChoiceChip(label: "+ " + L("صف", "Row"), selected: false) { rows.append(Array(repeating: "", count: cols)) }
-                        ChoiceChip(label: "+ " + L("عمود", "Column"), selected: false) { rows = rows.map { $0 + [""] } }
-                        Toggle(isOn: $header) { Text(L("الصف الأول عناوين", "First row is a header")).font(Fonts.sans(13)) }.tint(Palette.navy)
+                        ChoiceChip(label: L("+ صف", "+ Row"), selected: false) { rows.append(Array(repeating: "", count: cols)) }
+                        ChoiceChip(label: L("+ عمود", "+ Column"), selected: false) { rows = rows.map { pad($0, cols) + [""] } }
+                        ChoiceChip(label: L("تبديل الصفوف والأعمدة", "Swap rows and columns"), selected: false) {
+                            let r = rows.map { pad($0, cols) }
+                            rows = (0..<cols).map { c in r.map { $0[c] } }
+                        }
                     }
+                    Toggle(isOn: $header) { Text(L("الصف الأول عناوين", "First row is a header")).font(Fonts.sans(13)) }.tint(Palette.navy)
                     HStack {
                         Spacer()
                         NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
@@ -511,7 +542,10 @@ struct TableEditorSheet: View {
                 .padding(.horizontal, 22).padding(.bottom, 20)
             }
         }
+        .environment(\.colorScheme, .light)
     }
+
+    private func pad(_ r: [String], _ n: Int) -> [String] { r.count >= n ? r : r + Array(repeating: "", count: n - r.count) }
 }
 
 struct IdURL: Identifiable {

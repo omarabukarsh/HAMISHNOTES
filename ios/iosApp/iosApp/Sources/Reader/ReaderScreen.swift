@@ -1009,7 +1009,27 @@ private struct ReaderSearchBar: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
         .background(Color.white)
+        .overlay(alignment: .bottom) {
+            // كما في أندرويد: البحث يشمل الصفحات المقروءة فقط، و«اقرأ الكل» يقرأ الباقي
+            let read = s.readPagesCount()
+            if read < s.pageCount && !s.searchQuery.isEmpty {
+                HStack(spacing: 8) {
+                    Text(L("البحث يشمل \(read) من \(s.pageCount) صفحة مقروءة حتى الآن", "Search covers \(read) of \(s.pageCount) pages read so far"))
+                        .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                    if !s.ocrRunning {
+                        Button { if Premium.shared.require(.ocr) { s.startOcr() } } label: {
+                            Text(L("اقرأ الكل", "Read all")).font(Fonts.sans(12, .bold)).foregroundColor(Palette.navy)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.goldSoft)
+                .offset(y: 26)
+            }
+        }
         .overlay(Rectangle().fill(Palette.divider).frame(height: 1), alignment: .bottom)
+        .zIndex(1)
     }
 
     private func step(_ d: Int) {
@@ -1145,41 +1165,54 @@ private struct LinkSheet: View {
     @State private var label = ""
     @Environment(\.dismiss) private var dismiss
 
+    /// المستند المختار (المستند نفسه أولًا، كما في أندرويد «رابط إلى صفحة»).
+    private var targetId: String { target ?? session.id }
+    private var targetPages: Int {
+        targetId == session.id ? session.pageCount : max(1, app.entry(targetId)?.pageCount ?? 1)
+    }
+
     var body: some View {
-        SheetScaffold(title: L("رابط إلى مستند", "Link to a document")) {
+        SheetScaffold(title: L("رابط إلى صفحة", "Link to a page")) {
             VStack(alignment: .leading, spacing: 12) {
-                FieldBox(placeholder: L("نص الرابط", "Link text"), text: $label)
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(app.library.filter { !$0.isMap }) { e in
-                            Button { target = e.id; if label.isEmpty { label = e.name } } label: {
-                                HStack {
-                                    Text(e.name).font(Fonts.sans(14, target == e.id ? .bold : .regular)).foregroundColor(Palette.textPrimary)
-                                    Spacer()
-                                    if target == e.id { PhIcon("ph_check", Palette.navy, 16) }
-                                }
-                                .padding(10)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(target == e.id ? Palette.navySoft : Color.white))
-                            }
-                        }
+                        row(id: session.id, name: L("هذا المستند", "This document") + " — " + session.title)
+                        ForEach(app.library.filter { !$0.isMap && $0.id != session.id }) { e in row(id: e.id, name: e.name) }
                     }
                 }
-                .frame(maxHeight: 280)
-                FieldBox(placeholder: L("الصفحة", "Page"), text: $page).keyboardType(.numberPad)
+                .frame(maxHeight: 260)
+                FieldBox(placeholder: L("الصفحة (من \(targetPages))", "Page (of \(targetPages))"), text: $page).keyboardType(.numberPad)
+                FieldBox(placeholder: L("عنوان الرابط (اختياري)", "Link title (optional)"), text: $label)
                 HStack {
                     Spacer()
                     NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
                     NavyButton(label: L("إضافة الرابط", "Add link")) {
-                        guard let t = target, let pid = session.pageId(session.currentPage) else { return }
+                        guard let pid = session.pageId(session.currentPage) else { return }
                         let size = session.pageSize(session.currentPage)
+                        let pg = min(max(1, Int(page) ?? 1), targetPages)
+                        let name = targetId == session.id ? session.title : (app.entry(targetId)?.name ?? "")
+                        let title = label.trimmingCharacters(in: .whitespaces).isEmpty ? name + L(" — ص \(pg)", " — p. \(pg)") : label
                         session.upsertBox(TextBox(id: UUID().uuidString, page: pid, x: size.width * 0.1, y: size.height * 0.1, w: size.width * 0.5,
-                                                  text: label.isEmpty ? (app.entry(t)?.name ?? "") : label, size: max(12, size.width * 0.022),
-                                                  linkDoc: t, linkPage: max(0, (Int(page) ?? 1) - 1)))
+                                                  text: title, size: max(12, size.width * 0.022), linkDoc: targetId, linkPage: pg - 1))
+                        app.say(.tip, L("أُضيف الرابط: اسحبه إلى مكانه، وانقره مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
                         dismiss()
                     }
                 }
             }
             .padding(.horizontal, 22).padding(.bottom, 16)
+        }
+    }
+
+    private func row(id: String, name: String) -> some View {
+        let sel = targetId == id
+        return Button { target = id } label: {
+            HStack {
+                Text(name).font(Fonts.sans(14, sel ? .bold : .regular)).foregroundColor(Palette.textPrimary).lineLimit(1)
+                Spacer()
+                if sel { PhIcon("ph_check", Palette.navy, 16) }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navySoft : Color.white))
         }
     }
 }

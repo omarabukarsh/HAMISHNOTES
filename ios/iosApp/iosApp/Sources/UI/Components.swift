@@ -313,14 +313,22 @@ struct GoalRing: View {
     }
 }
 
-/// تنبيه صغير أسفل الشاشة.
+/// تنبيه صغير أسفل الشاشة (وزر اختياري مثل «↶ تراجع»).
 struct ToastView: View {
     let text: String
+    var action: (String, () -> Void)? = nil
     var body: some View {
-        Text(text)
-            .font(Fonts.sans(14, .medium))
-            .foregroundColor(.white)
-            .multilineTextAlignment(.center)
+        HStack(spacing: 14) {
+            Text(text)
+                .font(Fonts.sans(14, .medium))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+            if let a = action {
+                Button { a.1(); AppController.shared.toast = nil; AppController.shared.toastAction = nil } label: {
+                    Text(a.0).font(Fonts.sans(14, .bold)).foregroundColor(Palette.gold)
+                }
+            }
+        }
             .padding(.horizontal, 18).padding(.vertical, 12)
             .background(Capsule().fill(Color(hex: 0xFF1E2A44).opacity(0.94)))
             .shadow(color: .black.opacity(0.2), radius: 10, y: 4)

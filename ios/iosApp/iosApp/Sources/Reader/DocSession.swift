@@ -681,6 +681,22 @@ final class DocSession: ObservableObject, Identifiable {
         doc.removePage(at: from)
         doc.insert(page, at: to)
         structureChanged()
+        // كما في أندرويد: «نُقلت الصفحة إلى …» مع زر تراجع
+        AppController.shared.message(L("نُقلت الصفحة إلى \(to + 1)", "Page moved to \(to + 1)"), action: L("↶ تراجع", "↶ Undo")) { [weak self] in
+            self?.movePageQuiet(to, to: from)
+        }
+    }
+
+    private func movePageQuiet(_ from: Int, to: Int) {
+        guard let doc = pdf, data.pages.indices.contains(from), to >= 0, to < data.pages.count, from != to,
+              let page = doc.page(at: from) else { return }
+        edit { d in
+            let p = d.pages.remove(at: from)
+            d.pages.insert(p, at: to)
+        }
+        doc.removePage(at: from)
+        doc.insert(page, at: to)
+        structureChanged()
     }
 
     func rotatePage(_ index: Int) {
@@ -799,6 +815,19 @@ final class DocSession: ObservableObject, Identifiable {
     // ======================================================== القراءة الضوئية
 
     @Published var ocr: [String: [OcrWord]] = [:]
+    private var digitalCache: Set<String>? = nil
+
+    /// عدد الصفحات المقروءة (نص رقمي أو قراءة ضوئية) لملاحظة البحث.
+    func readPagesCount() -> Int {
+        if digitalCache == nil, let doc = pdf {
+            var set = Set<String>()
+            for i in 0..<doc.pageCount {
+                if let pid = pageId(i), (doc.page(at: i)?.string ?? "").count > 20 { set.insert(pid) }
+            }
+            digitalCache = set
+        }
+        return (digitalCache ?? []).union(ocr.keys).count
+    }
 
     private var ocrURL: URL { repo.dir(id).appendingPathComponent("ocr.json") }
 

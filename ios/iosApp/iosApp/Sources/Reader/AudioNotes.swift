@@ -217,6 +217,8 @@ struct HandwritingSheet: View {
     @EnvironmentObject var app: AppController
     @State private var text = ""
     @State private var busy = true
+    @State private var removeInk = true
+    @State private var source: [PKStroke] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -227,30 +229,47 @@ struct HandwritingSheet: View {
                 } else if text.isEmpty {
                     Text(L("لم يُعثر على كتابة واضحة في هذه الصفحة.", "No clear handwriting was found on this page.")).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
                 } else {
-                    TextEditor(text: $text).font(Fonts.sans(16)).frame(minHeight: 200)
+                    TextEditor(text: $text).font(Fonts.sans(16)).frame(minHeight: 200).scrollContentBackground(.hidden)
                         .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Color.white)).roundedBorder(Palette.divider, radius: 12)
+                    // كما في أندرويد: «إدراج كنص» في مكان الكتابة، مع حذف الكتابة اليدوية بعد الإدراج
+                    Toggle(isOn: $removeInk) { Text(L("حذف الكتابة اليدوية بعد الإدراج", "Remove the handwriting after inserting")).font(Fonts.sans(13)) }
+                        .tint(Palette.navy)
                     HStack {
                         NavyButton(label: L("نسخ", "Copy"), filled: false) { UIPasteboard.general.string = text; app.say(.done, L("تم النسخ", "Copied")) }
                         Spacer()
-                        NavyButton(label: L("إضافة كنص على الصفحة", "Add as text on the page")) {
-                            guard let pid = session.pageId(session.currentPage) else { return }
-                            let size = session.pageSize(session.currentPage)
-                            session.upsertBox(TextBox(id: UUID().uuidString, page: pid, x: size.width * 0.08, y: size.height * 0.08,
-                                                      w: size.width * 0.84, text: text, size: max(12, size.width * 0.026)))
-                            dismiss()
-                        }
+                        NavyButton(label: L("إدراج كنص", "Insert as text")) { insert(); dismiss() }
                     }
                 }
             }
             .padding(.horizontal, 22).padding(.bottom, 20)
         }
+        .environment(\.colorScheme, .light)
         .onAppear(perform: recognize)
+    }
+
+    /// يضع النص مكان الكتابة (بخط وحجم يناسبانها)، ويحذف الكتابة إن طُلب، خطوةً واحدة في التراجع.
+    private func insert() {
+        guard let pid = session.pageId(session.currentPage), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let page = session.currentPage
+        let lines = text.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let alive = session.aliveStrokes(pid, source)
+        if alive.isEmpty {
+            let size = session.pageSize(page)
+            session.upsertBox(TextBox(id: UUID().uuidString, page: pid, x: size.width * 0.08, y: size.height * 0.08,
+                                      w: size.width * 0.84, text: text, size: max(12, size.width * 0.026)))
+            return
+        }
+        let f = session.fitText(page: page, strokes: alive, lines: lines, font: "", snap: false)
+        let color = alive.first.map { $0.ink.color.argb } ?? 0xFF1A2230
+        let box = TextBox(id: UUID().uuidString, page: pid, x: f.x, y: f.y, w: f.w, text: lines.joined(separator: "\n"), color: color, size: f.size)
+        if removeInk { session.inkToTextBox(pageId: pid, strokes: alive, box: box) } else { session.upsertBox(box) }
     }
 
     private func recognize() {
         guard let pid = session.pageId(session.currentPage) else { busy = false; return }
         let d = lassoOnly ? (session.lassoDrawing() ?? PKDrawing()) : session.drawing(for: pid)
         guard !d.strokes.isEmpty else { busy = false; return }
+        source = d.strokes.filter(HandwritingWords.eligible)
         Task { @MainActor in
             text = await HandwritingReader.read(d.strokes, lang: nil).joined(separator: "\n")
             busy = false

@@ -35,6 +35,8 @@ final class AppController: ObservableObject {
     // ---------- نوافذ عامة ----------
     @Published var settingsOpen = false
     @Published var toast: String? = nil
+    /// زر في الرسالة المنبثقة (مثل «↶ تراجع» بعد نقل صفحة).
+    @Published var toastAction: (String, () -> Void)? = nil
     @Published var openDeck: String? = nil   // "*" = كل البطاقات
     @Published var statsOpen = false
     private var toastWork: DispatchWorkItem?
@@ -278,10 +280,17 @@ final class AppController: ObservableObject {
         message(s)
     }
 
+    /// رسالة بزر (تبقى أطول قليلًا).
+    func message(_ s: String, action: String, _ run: @escaping () -> Void) {
+        message(s)
+        toastAction = (action, run)
+    }
+
     func message(_ s: String) {
+        toastAction = nil
         toastWork?.cancel()
         withAnimation(Motion.enter) { toast = s }
-        let w = DispatchWorkItem { [weak self] in withAnimation(Motion.exit) { self?.toast = nil } }
+        let w = DispatchWorkItem { [weak self] in withAnimation(Motion.exit) { self?.toast = nil; self?.toastAction = nil } }
         toastWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.2, execute: w)
     }

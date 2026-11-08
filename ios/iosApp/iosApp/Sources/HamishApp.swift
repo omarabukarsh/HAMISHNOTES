@@ -80,7 +80,7 @@ struct RootView: View {
             }
             .background((app.tabs.isEmpty ? Lib.bg : Palette.tabRail).ignoresSafeArea())
             .simultaneousGesture(TapGesture().onEnded { app.noteInteraction() })
-            if let t = app.toast { ToastView(text: t) }
+            if let t = app.toast { ToastView(text: t, action: app.toastAction) }
             PremiumHost()
         }
         .bigSheet(isPresented: $app.settingsOpen) {

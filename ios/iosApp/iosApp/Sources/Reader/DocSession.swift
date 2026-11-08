@@ -564,6 +564,9 @@ final class DocSession: ObservableObject, Identifiable {
         if key.hasPrefix("mine:"), let img = UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(String(key.dropFirst(5))).path) {
             aspect = img.size.width / max(1, img.size.height)
             if aspect > 1.5 { width = 0.26 }
+        } else if let img = badgeImage(key) {
+            aspect = img.size.width / max(1, img.size.height)
+            width = aspect > 1.5 ? 0.26 : 0.16
         }
         let item = placed(file: "sticker:" + key, page: p, pid: pid, width: width, aspect: aspect, at: point, index: 0)
         upsertImage(item)
@@ -589,7 +592,7 @@ final class DocSession: ObservableObject, Identifiable {
             if key.hasPrefix("mine:") {
                 return UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(String(key.dropFirst(5))).path)
             }
-            return UIImage(named: "st_" + key) ?? emojiImage(key)
+            return UIImage(named: "st_" + key) ?? badgeImage(key) ?? emojiImage(key)
         }
         return UIImage(contentsOfFile: repo.mediaDir(id).appendingPathComponent(item.file).path)
     }

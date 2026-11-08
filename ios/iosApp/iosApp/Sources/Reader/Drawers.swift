@@ -553,37 +553,44 @@ struct SideTray: View {
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        ForEach(CoverStickers, id: \.self) { k in
-                            Button { place(.sticker(k)) } label: {
-                                StickerIcon(key: k, size: 44).frame(width: 56, height: 56)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
-                            }
-                            .onDrag { NSItemProvider(object: (StickerDragPrefix + k) as NSString) }
-                        }
-                        ForEach(["⭐️", "✅", "❗️", "❓", "💡", "📌", "🔥", "❤️", "👍", "📝", "⚠️", "🎯"], id: \.self) { e in
-                            Button { place(.sticker(e)) } label: {
-                                Text(e).font(.system(size: 34)).frame(width: 56, height: 56)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
-                            }
-                            .onDrag { NSItemProvider(object: (StickerDragPrefix + e) as NSString) }
-                        }
-                        ForEach(store.mine, id: \.self) { f in
-                            Button { place(.sticker("mine:" + f)) } label: {
-                                Group {
-                                    if let img = UIImage(contentsOfFile: Repository.shared.stickersDir.appendingPathComponent(f).path) {
-                                        Image(uiImage: img).resizable().scaledToFit()
+                    VStack(alignment: .leading, spacing: 10) {
+                        // ملصقاتي أولًا، ثم الأقسام الجاهزة (كما في أندرويد)
+                        if !store.mine.isEmpty {
+                            Text(L("ملصقاتي", "My stickers")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                                ForEach(store.mine, id: \.self) { f in
+                                    Button { place(.sticker("mine:" + f)) } label: {
+                                        Group {
+                                            if let img = UIImage(contentsOfFile: Repository.shared.stickersDir.appendingPathComponent(f).path) {
+                                                Image(uiImage: img).resizable().scaledToFit()
+                                            }
+                                        }
+                                        .frame(width: 48, height: 48).frame(width: 56, height: 56)
+                                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                                     }
+                                    .onDrag { NSItemProvider(object: (StickerDragPrefix + "mine:" + f) as NSString) }
+                                    .contextMenu { Button(role: .destructive) { StickerStore.shared.delete(f) } label: { Text(L("حذف", "Delete")) } }
                                 }
-                                .frame(width: 48, height: 48).frame(width: 56, height: 56)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                             }
-                            .onDrag { NSItemProvider(object: (StickerDragPrefix + "mine:" + f) as NSString) }
-                            .contextMenu { Button(role: .destructive) { StickerStore.shared.delete(f) } label: { Text(L("حذف", "Delete")) } }
+                            Text(L("اضغط مطوّلًا على ملصق لحذفه", "Long-press a sticker to delete it")).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
+                        }
+                        ForEach(Array(StickerCategories.enumerated()), id: \.offset) { _, cat in
+                            Text(cat.0).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy).padding(.top, 4)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                                ForEach(cat.1, id: \.self) { k in
+                                    Button { place(.sticker(k)) } label: {
+                                        StickerIcon(key: k, size: 40).frame(width: 56, height: 56)
+                                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                                    }
+                                    .onDrag { NSItemProvider(object: (StickerDragPrefix + k) as NSString) }
+                                }
+                            }
                         }
                     }
                 }
                 Text(L("انقر الملصق ثم انقر مكانه في الصفحة، أو اضغط عليه مطوّلًا واسحبه إليها", "Tap a sticker, then tap its place on the page; or long-press and drag it there"))
+                    .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                Text(L("من رسمي: حدد رسمك بأداة التحديد الحر ثم اضغط «☺ ملصق»", "From my drawing: select your drawing with the lasso, then tap “☺ Sticker”"))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                 PhotosPicker(selection: $stickerPick, maxSelectionCount: 1, matching: .images) {
                     trayButton("ph_plus", L("ملصق من صورة", "Sticker from a photo"))

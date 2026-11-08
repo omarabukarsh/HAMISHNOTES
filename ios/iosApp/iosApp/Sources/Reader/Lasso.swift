@@ -48,7 +48,7 @@ extension DocSession {
         let notes = !app.lassoStickies ? [] : data.notes.filter { $0.page == pageId && inside(CGPoint(x: $0.x + $0.w / 2, y: $0.y + $0.h / 2)) }.map { $0.id }
         let sel = LassoSel(pageId: pageId, strokes: picked, images: imgs, boxes: boxes, notes: notes)
         lassoSel = sel.isEmpty ? nil : sel
-        if sel.isEmpty { AppController.shared.say(.error, L("لم يُحدَّد شيء", "Nothing selected"))) }
+        if sel.isEmpty { AppController.shared.say(.error, L("لم يُحدَّد شيء", "Nothing selected")) }
     }
 
     func boxHeight(_ b: TextBox) -> CGFloat {
@@ -464,7 +464,7 @@ struct LassoMenuContent: View {
                     action("☺ " + L("ملصق", "Sticker"), has) {
                         if let img = session?.lassoImage() {
                             StickerStore.shared.add(img)
-                            app.say(.done, L("حُفظ في «ملصقاتي» — تجده في أداة الملصقات", "Saved to “My stickers” — find it in the stickers tool")))
+                            app.say(.done, L("حُفظ في «ملصقاتي» — تجده في أداة الملصقات", "Saved to “My stickers” — find it in the stickers tool"))
                         }
                     }
                     action(L("نسخ", "Duplicate"), has) { session?.lassoDuplicate() }

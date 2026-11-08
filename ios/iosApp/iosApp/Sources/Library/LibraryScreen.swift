@@ -219,7 +219,7 @@ struct LibraryScreen: View {
                                     onMove: { sheet = .move([e]) },
                                     onCover: { sheet = .cover(e) },
                                     onShare: {
-                                        if e.locked { app.say(.error, L("افتح قفل المستند أولًا", "Unlock the document first"))) }
+                                        if e.locked { app.say(.error, L("افتح قفل المستند أولًا", "Unlock the document first")) }
                                         else { sheet = .share([e.id]) }
                                     },
                                     onDelete: { deleteTarget = [e]; confirmDelete = true })

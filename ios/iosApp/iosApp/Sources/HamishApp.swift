@@ -229,7 +229,7 @@ private struct SetPinSheet: View {
                     NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
                     NavyButton(label: L("حفظ", "Save")) {
                         guard pin.count >= 4, pin == again else {
-                            app.say(.done, L("الرمزان غير متطابقين أو أقصر من 4 أرقام", "The PINs don’t match or are shorter than 4 digits")))
+                            app.say(.done, L("الرمزان غير متطابقين أو أقصر من 4 أرقام", "The PINs don’t match or are shorter than 4 digits"))
                             return
                         }
                         app.setPin(pin)
@@ -273,7 +273,7 @@ private struct PinPromptSheet: View {
             prompt.done(true)
         } else {
             pin = ""
-            app.say(.done, L("الرمز غير صحيح", "Wrong PIN")))
+            app.say(.done, L("الرمز غير صحيح", "Wrong PIN"))
         }
     }
 }

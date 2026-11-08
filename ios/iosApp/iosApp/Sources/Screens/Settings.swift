@@ -615,7 +615,7 @@ private struct DeleteAccountSheet: View {
                 }
                 Button {
                     app.deleteAccount()
-                    app.say(.done, L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device")))
+                    app.say(.done, L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device"))
                     dismiss()
                 } label: {
                     Text(L("حذف الحساب", "Delete account")).font(Fonts.sans(15, .bold)).foregroundColor(.white)

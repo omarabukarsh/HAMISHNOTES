@@ -48,10 +48,7 @@ struct DeckView: View {
 
     private var title: String {
         guard let d = deck else { return L("كل البطاقات", "All cards") }
-        if d.hasPrefix("doc:") {
-            let n = app.entry(String(d.dropFirst(4)))?.name ?? ""
-            return L("بطاقات \(n)", "\(n) cards")
-        }
+        if d.hasPrefix("doc:") { return L("بطاقات المراجعة", "Review cards") }
         return L("بطاقات \(d)", "\(d) cards")
     }
 
@@ -101,9 +98,10 @@ struct DeckView: View {
     }
 
     private func header(all: [Card], cards: [Card]) -> some View {
-        let sub: String = deck == nil
+        let docId: String? = deck.flatMap { $0.hasPrefix("doc:") ? String($0.dropFirst(4)) : nil }
+        let sub: String = docId.map { app.entry($0)?.name ?? "" } ?? (deck == nil
             ? L("كل بطاقات التطبيق، حتى التي بلا ملف", "Every card in the app, including those without a file")
-            : L("بطاقات مستندات هذه المادة وبطاقاتها بلا ملف فقط", "Only this subject’s documents and its cards without a file")
+            : L("بطاقات مستندات هذه المادة وبطاقاتها بلا ملف فقط", "Only this subject’s documents and its cards without a file"))
         return HStack(spacing: 4) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title + " · \(all.count)").font(Fonts.display(20)).foregroundColor(Palette.navy).lineLimit(1)
@@ -261,6 +259,8 @@ struct CardEditorSheet: View {
     let folder: String
     var title = L("بطاقة جديدة", "New card")
     var confirm = L("إضافة", "Add")
+    var cancelLabel = L("إلغاء", "Cancel")
+    var onSaved: () -> Void = {}
     @State private var front = ""
     @State private var back = ""
     @Environment(\.dismiss) private var dismiss
@@ -277,13 +277,14 @@ struct CardEditorSheet: View {
             }
             .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
         } buttons: {
-            DialogButton(label: L("إلغاء", "Cancel")) { dismiss() }
+            DialogButton(label: cancelLabel) { dismiss() }
             DialogButton(label: confirm, enabled: ok) {
                 guard Premium.shared.require(.cards) else { return }
                 var c = card ?? Card(id: UUID().uuidString, front: "", back: "", folder: folder)
                 c.front = front.trimmingCharacters(in: .whitespacesAndNewlines)
                 c.back = back.trimmingCharacters(in: .whitespacesAndNewlines)
                 if let k = app.cards.firstIndex(where: { $0.id == c.id }) { app.cards[k] = c } else { app.cards.append(c) }
+                onSaved()
                 dismiss()
             }
         }
@@ -320,7 +321,7 @@ struct NewLooseCardSheet: View {
                 if save() { added += 1; front = ""; back = "" }
             }
             DialogButton(label: L("حفظ", "Save"), bold: true, enabled: ok) {
-                if save() { app.say(.done, L("أُضيفت البطاقة", "Card added"))); dismiss() }
+                if save() { app.say(.done, L("أُضيفت البطاقة", "Card added")); dismiss() }
             }
         }
         .onAppear { folder = initialFolder }

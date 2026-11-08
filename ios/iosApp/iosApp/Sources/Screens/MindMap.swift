@@ -1006,7 +1006,7 @@ struct MindMapView: View {
             }
         let r = ImageRenderer(content: content)
         r.scale = 2
-        guard let img = r.uiImage else { app.say(.error, L("تعذر تجهيز الخريطة", "Could not prepare the map"))); return }
+        guard let img = r.uiImage else { app.say(.error, L("تعذر تجهيز الخريطة", "Could not prepare the map")); return }
         let safe = String(session.title.map { "\\/:*?\"<>|".contains($0) ? "_" : $0 }.prefix(60))
         let name = (safe.isEmpty ? "map" : safe) + " - " + L("خريطة", "map")
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
@@ -1043,7 +1043,7 @@ struct MindMapView: View {
                 session.upsertImage(it)
             }
             session.selectedImage = nil
-            app.say(.done, L("أُضيفت الخريطة صفحةً في آخر المستند", "The map was added as the last page")))
+            app.say(.done, L("أُضيفت الخريطة صفحةً في آخر المستند", "The map was added as the last page"))
             onClose()
         }
     }

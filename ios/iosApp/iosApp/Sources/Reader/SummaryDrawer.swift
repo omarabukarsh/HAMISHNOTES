@@ -16,6 +16,11 @@ struct SummaryDrawer: View {
     @State private var editingTable: TableEdit? = nil
     @State private var cardFrom: CardDraft? = nil
     @State private var exportURL: URL? = nil
+    /// صنع بطاقة من النصوص المختارة: لكل نص دوره (true = عنوان). nil = ليس في هذا الوضع.
+    @State private var cardRoles: [String: Bool]? = nil
+    @State private var cardDraft: CardDraft? = nil
+    /// الجزء الذي تُعرض قائمته الآن.
+    @State private var menuKey: String? = nil
 
     struct TableEdit: Identifiable { let id = UUID(); let key: String; let rows: [[String]]; let header: Bool }
     struct CardDraft: Identifiable { let id = UUID(); let front: String; let back: String }
@@ -63,7 +68,7 @@ struct SummaryDrawer: View {
                 Spacer()
                 Button(L("نسخ الكل", "Copy all")) {
                     UIPasteboard.general.string = Summary.plainText(s.title, blocks)
-                    app.say(.done, L("تم النسخ", "Copied")))
+                    app.say(.done, L("تم النسخ", "Copied"))
                 }
                 .font(Fonts.sans(13)).foregroundColor(Palette.navy).disabled(blocks.isEmpty)
                 Button("PDF") { s.flush(); exportURL = Exporter.summaryPDF(s) }
@@ -93,7 +98,11 @@ struct SummaryDrawer: View {
                 .padding(.bottom, 6)
             }
             Rectangle().fill(Palette.gold.opacity(0.45)).frame(height: 1)
-            if selecting { if selectForMap { mapSelectBar } else { tableBar(blocks) } }
+            if selecting {
+                if selectForMap {
+                    if let roles = cardRoles { cardRoleBar(roles, blocks) } else { mapSelectBar }
+                } else { tableBar(blocks) }
+            }
             if blocks.isEmpty {
                 VStack(spacing: 8) {
                     Text(L("لا توجد ملخصات بعد", "No summaries yet")).font(Fonts.sans(16, .bold)).foregroundColor(Palette.textPrimary)
@@ -124,6 +133,12 @@ struct SummaryDrawer: View {
         .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
         .sheet(item: $editing) { m in MarkEditSheet(session: s, mark: m) }
         .sheet(item: $editingTable) { t in TableEditorSheet(rows: t.rows, header: t.header) { rows, header in s.saveTable(t.key, rows: rows, header: header) } }
+        .dialogSheet(item: $cardDraft) { d in
+            CardEditorSheet(card: Card(id: UUID().uuidString, front: d.front, back: d.back, folder: app.entry(s.id)?.folder ?? "", docId: s.id, source: s.title),
+                            folder: app.entry(s.id)?.folder ?? "", confirm: L("حفظ البطاقة", "Save card"),
+                            cancelLabel: L("رجوع إلى التحديد", "Back to selection"), onSaved: { endSelecting() })
+                .environmentObject(app)
+        }
         .dialogSheet(item: $cardFrom) { d in
             CardEditorSheet(card: Card(id: UUID().uuidString, front: d.front, back: d.back, folder: app.entry(s.id)?.folder ?? "", docId: s.id, source: s.title),
                             folder: app.entry(s.id)?.folder ?? "")
@@ -184,6 +199,43 @@ struct SummaryDrawer: View {
         selectForMap = false
         selected = []
         tableTarget = nil
+        cardRoles = nil
+    }
+
+    /// شريط صنع البطاقة: «عنوان» أو «محتوى» على كل نص، ثم التالي.
+    private func cardRoleBar(_ roles: [String: Bool], _ blocks: [SBlock]) -> some View {
+        let titles = roles.values.filter { $0 }.count, contents = roles.values.filter { !$0 }.count
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(L("بطاقة · اختر عنوان أو محتوى على كل نص", "Card · tap Title or Content on each text") +
+                 L("  (\(titles) عنوان، \(contents) محتوى)", "  (\(titles) title, \(contents) content)"))
+                .font(Fonts.sans(13, .bold)).foregroundColor(.white)
+            HStack(spacing: 8) {
+                barButton(L("رجوع", "Back"), fill: Color.white.opacity(0.1), weight: 0.6) { cardRoles = nil }
+                barButton(L("التالي", "Next"), fill: Palette.navy, weight: 1) {
+                    // العنوان: النصوص المختارة عنوانًا بترتيبها، والمحتوى نقاط بترتيب الاختيار
+                    let texts: [(String, String)] = selected.compactMap { k in
+                        blocks.first { $0.key == k }.map { (k, Summary.plainText("", [$0]).trimmingCharacters(in: .whitespacesAndNewlines)) }
+                    }.filter { !$0.1.isEmpty }
+                    let front = texts.filter { roles[$0.0] == true }.map { $0.1.replacingOccurrences(of: "\n", with: " ") }.joined(separator: " · ")
+                    let body = texts.filter { roles[$0.0] != true }.map { $0.1 }
+                    let back = body.count == 1 ? body[0] : body.map { "• " + $0 }.joined(separator: "\n")
+                    if Premium.shared.require(.cards) { cardDraft = CardDraft(front: front, back: back) }
+                }
+                barButton(L("إلغاء", "Cancel"), fill: Color.white.opacity(0.1), weight: 0.6) { endSelecting() }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(hex: 0xFF123B37))
+    }
+
+    private func barButton(_ t: String, fill: Color, weight: CGFloat, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(t).font(Fonts.sans(14, .bold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 12).fill(fill))
+        }
+        .frame(maxWidth: weight >= 1 ? .infinity : 110)
     }
 
     /// شريط «اختيار عدة نصوص» للخريطة.
@@ -202,6 +254,17 @@ struct SummaryDrawer: View {
                     Text("◎ " + L("ضعها في الخريطة", "Place on the map")).font(Fonts.sans(14, .bold)).foregroundColor(Color(hex: 0xFF1A2230).opacity(n > 0 ? 1 : 0.4))
                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                         .background(RoundedRectangle(cornerRadius: 12).fill(Palette.gold.opacity(n > 0 ? 1 : 0.5)))
+                }
+                .disabled(n == 0)
+                Button {
+                    // رقم ١ عنوان تلقائيًا، والباقي محتوى
+                    var r: [String: Bool] = [:]
+                    for (i, k) in selected.enumerated() { r[k] = i == 0 }
+                    cardRoles = r
+                } label: {
+                    Text("▤ " + L("أضفها إلى بطاقة", "Add to card")).font(Fonts.sans(14, .bold)).foregroundColor(Color.white.opacity(n > 0 ? 1 : 0.4))
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(CardTeal.opacity(n > 0 ? 1 : 0.5)))
                 }
                 .disabled(n == 0)
                 Button(action: endSelecting) {
@@ -242,18 +305,77 @@ struct SummaryDrawer: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 5)
         .padding(.horizontal, 6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(selecting && isSel ? Palette.goldSoft : Color.clear))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(selecting ? (isSel ? Palette.gold : Palette.divider) : Color.clear, lineWidth: 1))
-        .contentShape(Rectangle())
+        let role = cardRoles?[b.key]
+        let inCard = cardRoles != nil
+        let fillC: Color = blockFill(inCard: inCard, role: role, sel: isSel)
+        let strokeC: Color = blockStroke(inCard: inCard, role: role, sel: isSel)
+        let lw: CGFloat = inCard && role != nil ? 2 : 1
+        let styled = content
+            .background(RoundedRectangle(cornerRadius: 8).fill(fillC))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeC, lineWidth: lw))
+            .opacity(inCard && role == nil ? 0.4 : 1)
+            .overlay(alignment: .topTrailing) {
+                if let r = role, inCard { roleChips(b.key, title: r).padding(.top, 4).padding(.trailing, 2) }
+            }
+            .contentShape(Rectangle())
         if selecting {
-            content.onTapGesture {
+            styled.onTapGesture {
+                if var cr = cardRoles {
+                    // لمسة على نص مختار تبدّل دوره
+                    if let r = cr[b.key] { cr[b.key] = !r; cardRoles = cr }
+                    return
+                }
                 guard b.key != tableTarget else { return }
+                if selectForMap && MindMap.nodeKey(b.key) == nil { return }
                 if isSel { selected.removeAll { $0 == b.key } } else { selected.append(b.key) }
             }
         } else {
-            Menu { blockMenu(b, shown: shown) } label: { content }
-                .buttonStyle(.plain)
+            // نقرة: قائمة الأوامر؛ ضغط مطوّل: اختيار نص أو أكثر (للخريطة أو البطاقة) كما في أندرويد
+            styled
+                .onTapGesture { menuKey = b.key }
+                .onLongPressGesture(minimumDuration: 0.4) {
+                    if MindMap.nodeKey(b.key) != nil && !app.summaryTidy {
+                        selecting = true; selectForMap = true; tableTarget = nil; selected = [b.key]
+                    } else {
+                        menuKey = b.key
+                    }
+                }
+                .dropdown(isPresented: Binding(get: { menuKey == b.key }, set: { if !$0 { menuKey = nil } })) {
+                    VStack(alignment: .leading, spacing: 0) { blockMenu(b, shown: shown) }
+                        .buttonStyle(MenuRowStyle())
+                        .labelStyle(.titleAndIcon)
+                        .padding(.vertical, 6)
+                        .frame(width: 270)
+                        .simultaneousGesture(TapGesture().onEnded { DispatchQueue.main.async { menuKey = nil } })
+                }
         }
+    }
+
+    private func blockFill(inCard: Bool, role: Bool?, sel: Bool) -> Color {
+        if inCard, let r = role { return r ? Palette.navySoft : CardTeal.opacity(0.08) }
+        return selecting && sel ? Palette.goldSoft : Color.clear
+    }
+
+    private func blockStroke(inCard: Bool, role: Bool?, sel: Bool) -> Color {
+        if inCard, let r = role { return r ? Palette.navy : CardTeal }
+        if !selecting { return .clear }
+        return sel ? Palette.gold : Palette.divider
+    }
+
+    private func roleChips(_ key: String, title: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach([(true, L("عنوان", "Title")), (false, L("محتوى", "Content"))], id: \.0) { v, label in
+                let on = v == title
+                Button { if var cr = cardRoles { cr[key] = v; cardRoles = cr } } label: {
+                    Text(label).font(Fonts.sans(12, .bold)).foregroundColor(on ? .white : Palette.textSecondary)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(on ? (v ? Palette.navy : CardTeal) : Color.clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white).shadow(color: .black.opacity(0.12), radius: 2, y: 1))
     }
 
     @ViewBuilder
@@ -304,7 +426,7 @@ struct SummaryDrawer: View {
             } label: { Label { Text(L("اجعله بطاقة", "Make it a card")) } icon: { Image("ph_cards") } }
             Button {
                 UIPasteboard.general.string = Summary.plainText("", [b]).trimmingCharacters(in: .whitespacesAndNewlines)
-                app.say(.done, L("تم النسخ", "Copied")))
+                app.say(.done, L("تم النسخ", "Copied"))
             } label: { Label { Text(L("نسخ", "Copy")) } icon: { Image("ph_copy") } }
             Button(role: .destructive) { b.marks.forEach { s.deleteMark($0.id) } } label: { Label { Text(L("حذف التمييز", "Delete highlight")) } icon: { Image("ph_trash") } }
         }
@@ -438,5 +560,18 @@ struct MarkEditSheet: View {
             .padding(.horizontal, 22).padding(.bottom, 16)
         }
         .onAppear { text = mark.text }
+    }
+}
+
+/// صف في قائمة أوامر الملخص.
+struct MenuRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Fonts.sans(15))
+            .foregroundColor(Palette.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(configuration.isPressed ? Palette.navySoft : Color.clear)
+            .contentShape(Rectangle())
     }
 }

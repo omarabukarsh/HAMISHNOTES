@@ -150,13 +150,13 @@ final class Premium: ObservableObject {
             await MainActor.run {
                 UserDefaults.standard.set(true, forKey: "test_premium")
                 self.active = true
-                AppController.shared.say(.done, L("وضع تجريبي: فُتحت كل المزايا", "Test mode: every feature unlocked")))
+                AppController.shared.say(.done, L("وضع تجريبي: فُتحت كل المزايا", "Test mode: every feature unlocked"))
             }
             return
         }
         #endif
         guard let p = product else {
-            await MainActor.run { AppController.shared.say(.error, L("تعذر الاتصال بـ App Store، حاول لاحقًا", "Couldn’t reach the App Store, try again later"))) }
+            await MainActor.run { AppController.shared.say(.error, L("تعذر الاتصال بـ App Store، حاول لاحقًا", "Couldn’t reach the App Store, try again later")) }
             return
         }
         await MainActor.run { self.busy = true }
@@ -167,7 +167,7 @@ final class Premium: ObservableObject {
                 await refresh()
             }
         } catch {
-            await MainActor.run { AppController.shared.say(.done, L("لم يكتمل الشراء", "The purchase didn’t complete"))) }
+            await MainActor.run { AppController.shared.say(.done, L("لم يكتمل الشراء", "The purchase didn’t complete")) }
         }
         await MainActor.run { self.busy = false }
     }

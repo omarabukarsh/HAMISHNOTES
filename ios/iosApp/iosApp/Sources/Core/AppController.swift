@@ -411,7 +411,7 @@ final class AppController: ObservableObject {
             for u in office {
                 OfficeConverter.convert(u) { out in
                     if let o = out { converted.append(o) } else {
-                        self.say(.error, L("تعذر تحويل «\(u.lastPathComponent)». صدّره إلى PDF ثم افتحه", "Couldn’t convert “\(u.lastPathComponent)”. Export it to PDF, then open it")))
+                        self.say(.error, L("تعذر تحويل «\(u.lastPathComponent)». صدّره إلى PDF ثم افتحه", "Couldn’t convert “\(u.lastPathComponent)”. Export it to PDF, then open it"))
                     }
                     left -= 1
                     if left == 0 {
@@ -442,8 +442,8 @@ final class AppController: ObservableObject {
                 self.library.append(contentsOf: added)
                 self.saveLibrary()
                 if added.count == 1 { self.openDocument(added[0].id) }
-                else if added.count > 1 { self.say(.done, L("أُضيف \(docsCount(added.count))", "Added \(docsCount(added.count))"))) }
-                else { self.say(.error, L("تعذر فتح الملف", "Could not open the file"))) }
+                else if added.count > 1 { self.say(.done, L("أُضيف \(docsCount(added.count))", "Added \(docsCount(added.count))")) }
+                else { self.say(.error, L("تعذر فتح الملف", "Could not open the file")) }
             }
         }
     }
@@ -825,11 +825,11 @@ final class AppController: ObservableObject {
                     self.stats["pomo|" + self.todayKey(), default: 0] += 1
                     self.pomoPhase = 2
                     self.pomoEndsAt = now + Int64(self.breakMin) * 60_000
-                    self.say(.done, L("انتهت جلسة الدراسة. استرح \(self.breakMin) دقائق", "Study session finished. Take a \(self.breakMin)-minute break")))
+                    self.say(.done, L("انتهت جلسة الدراسة. استرح \(self.breakMin) دقائق", "Study session finished. Take a \(self.breakMin)-minute break"))
                 } else {
                     self.pomoPhase = 1
                     self.pomoEndsAt = now + Int64(self.studyMin) * 60_000
-                    self.say(.done, L("انتهت الراحة. جلسة دراسة جديدة \(self.studyMin) دقيقة", "Break over. New \(self.studyMin)-minute study session")))
+                    self.say(.done, L("انتهت الراحة. جلسة دراسة جديدة \(self.studyMin) دقيقة", "Break over. New \(self.studyMin)-minute study session"))
                 }
                 self.pomoLeftMs = self.pomoEndsAt - now
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -854,7 +854,7 @@ final class AppController: ObservableObject {
                 self.reminderOn = ok
                 self.prefs.set(ok, forKey: "reminder_on")
                 guard ok else {
-                    self.say(.error, L("اسمح بالإشعارات من إعدادات الجهاز", "Allow notifications in the device settings")))
+                    self.say(.error, L("اسمح بالإشعارات من إعدادات الجهاز", "Allow notifications in the device settings"))
                     return
                 }
                 let c = UNMutableNotificationContent()

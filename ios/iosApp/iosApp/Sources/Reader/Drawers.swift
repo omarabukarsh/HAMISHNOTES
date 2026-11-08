@@ -370,7 +370,7 @@ struct PageMenuDrawer: View {
                     divider
                     row(L("تكرار الصفحة", "Duplicate page"), "ph_copy") {
                         s.duplicatePage(p)
-                        app.say(.done, L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated")))
+                        app.say(.done, L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated"))
                     }
                     divider
                     row(L("إضافة صفحة بعدها", "Add page after"), "ph_add_page") { sheet = .addPage }
@@ -426,7 +426,7 @@ struct PageMenuDrawer: View {
         .dialogSheet(isPresented: $outlineAdd) {
             NameSheet(title: L("عنوان للصفحة \(p + 1)", "Heading for page \(p + 1)"), initial: "") { t in
                 s.edit { $0.outline.append(OutlineEntry(title: t, level: 0, page: p)) }
-                app.say(.done, L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline")))
+                app.say(.done, L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
             }
         }
         .sheet(isPresented: $itemsDialog) { ClearItemsSheet(page: p) { ink, hl, tx, im in clear(p, ink: ink, hl: hl, tx: tx, im: im) } }
@@ -679,7 +679,7 @@ final class StickerStore: ObservableObject {
         if let d = out.pngData() {
             try? d.write(to: Repository.shared.stickersDir.appendingPathComponent(name))
             mine.insert(name, at: 0)
-            AppController.shared.say(.done, L("أُضيف إلى «ملصقاتي»", "Added to “My stickers”")))
+            AppController.shared.say(.done, L("أُضيف إلى «ملصقاتي»", "Added to “My stickers”"))
         }
     }
 

@@ -111,7 +111,7 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
                 if let sel = sel { sel.color = UIColor(Palette.navy).withAlphaComponent(0.25); v.setCurrentSelection(sel, animate: false) } else { v.clearSelection() }
             }.store(in: &bag)
         // الكتابة في مربع نص وتحديده
-        session.$inlineEditId.combineLatest(session.$selectedBox).dropFirst().receive(on: RunLoop.main)
+        session.$inlineEditId.combineLatest(session.$selectedBox, session.$selectedNote).dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
         // نتائج البحث مظللة في الصفحة، والنتيجة الحالية محددة
         session.$searchHits.combineLatest(session.$searchIndex).receive(on: RunLoop.main)

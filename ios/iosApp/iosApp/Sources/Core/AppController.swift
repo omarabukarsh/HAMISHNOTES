@@ -61,6 +61,12 @@ final class AppController: ObservableObject {
     @Published var stickyActive = false
     @Published var shapeKind: ShapeKind = .line
     @Published var stickyColor: UInt32 = 0xFFFFF59D
+    /// نمط الملاحظة: 0 سادة، 1 شريط، 2 أسطر، 3 مربعات.
+    @Published var stickyStyle = 0 { didSet { prefs.set(stickyStyle, forKey: "sticky_style") } }
+    /// الاسم على الملاحظات (اختياري).
+    @Published var noteAuthor = "" { didSet { prefs.set(noteAuthor, forKey: "note_author") } }
+    /// ملاحظة منسوخة أو مقصوصة تنتظر اللصق.
+    @Published var noteClipboard: StickyNote? = nil
     @Published var penBarOpen = false
     @Published var fingerWrites = false { didSet { prefs.set(fingerWrites, forKey: "finger_writes") } }
     @Published var toolbarStyle: ToolbarStyle = .penBar { didSet { prefs.set(toolbarStyle.rawValue, forKey: "toolbar_style") } }
@@ -185,6 +191,8 @@ final class AppController: ObservableObject {
         arrowEnd = ArrowHead(rawValue: p.string(forKey: "arrow_e") ?? "") ?? .none
         shapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "shape_color") as? Int ?? 0xFF000000)
         drawAndHold = p.object(forKey: "draw_hold") as? Bool ?? true
+        stickyStyle = p.integer(forKey: "sticky_style")
+        noteAuthor = p.string(forKey: "note_author") ?? ""
         tipsOn = p.object(forKey: "msg_tips") as? Bool ?? true
         doneOn = p.object(forKey: "msg_done") as? Bool ?? true
         errorsOn = p.object(forKey: "msg_err") as? Bool ?? true

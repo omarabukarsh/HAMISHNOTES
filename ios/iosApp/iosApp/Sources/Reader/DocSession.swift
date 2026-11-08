@@ -60,6 +60,9 @@ final class DocSession: ObservableObject, Identifiable {
     /// نص محدد في الكتاب (ضغط مطوّل بالإصبع).
     @Published var textSel: PDFSelection? = nil
     @Published var selectedBox: String? = nil
+    /// الملاحظة اللاصقة المحددة (شريطها أسفل الشاشة)، واللصق ينتظر نقرة على الصفحة.
+    @Published var selectedNote: String? = nil
+    @Published var pastingNote = false
     /// نص المربع أثناء الكتابة (يُحفظ عند الانتهاء).
     var inlineText = ""
     @Published var editingNote: StickyNote? = nil

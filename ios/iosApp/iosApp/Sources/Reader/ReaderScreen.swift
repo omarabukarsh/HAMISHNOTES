@@ -52,7 +52,7 @@ private struct ReaderContent: View {
                             PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
                         }
                         if app.shapeActive && !app.lassoActive { ShapeBar().transition(.move(edge: .top).combined(with: .opacity)) }
-                        if app.stickyActive { StickyBar().transition(.move(edge: .top).combined(with: .opacity)) }
+                        if app.stickyActive { StickyBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
                     }
                     .scaleEffect(app.toolbarScale, anchor: .top)
                     .frame(height: nil)
@@ -109,6 +109,7 @@ private struct ReaderContent: View {
                 if s.textSel != nil { SelectionBar(session: s) }
                 if s.selectedImage != nil { ImageBar(session: s) }
                 if s.selectedBox != nil && s.inlineEditId == nil { TextBoxBar(session: s) }
+                if s.selectedNote != nil { NoteBar(session: s) }
                 AutoFontChip(session: s)
             }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
@@ -871,9 +872,23 @@ struct ShapeSettingsWindow: View {
 
 private struct StickyBar: View {
     @EnvironmentObject var app: AppController
+    @ObservedObject var session: DocSession
+    @State private var naming = false
     var body: some View {
         HStack(spacing: 6) {
-            Text(L("لون الملاحظة", "Note color")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.horizontal, 6)
+            // أنماط الملاحظات (كما في أندرويد): سادة، شريط، أسطر، مربعات
+            ForEach([(0, L("سادة", "Plain")), (1, L("شريط", "Strip")), (2, L("أسطر", "Lined")), (3, L("مربعات", "Grid"))], id: \.0) { st, name in
+                let sel = app.stickyStyle == st
+                Button { app.stickyStyle = st } label: {
+                    VStack(spacing: 2) {
+                        StickyStyleSample(style: st, color: app.stickyColor).frame(width: 26, height: 22)
+                        Text(name).font(Fonts.sans(10)).foregroundColor(sel ? Palette.navy : Palette.textSecondary)
+                    }
+                    .padding(.horizontal, 4).padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navySoft : Color.clear))
+                }
+            }
+            ToolbarSep()
             ForEach(app.stickyPalette, id: \.self) { c in
                 Button { app.stickyColor = c } label: {
                     RoundedRectangle(cornerRadius: 6).fill(Color(hex: c)).frame(width: 30, height: 30)
@@ -881,6 +896,15 @@ private struct StickyBar: View {
                 }
             }
             ToolbarSep()
+            if app.noteClipboard != nil {
+                Button {
+                    session.pastingNote = true
+                    app.say(.tip, L("انقر مكان لصق الملاحظة", "Tap where to paste the note"))
+                } label: { Text(L("لصق", "Paste")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 8) }
+            }
+            Button { naming = true } label: {
+                Text(L("الاسم على الملاحظات…", "Name on notes…")).font(Fonts.sans(13)).foregroundColor(Palette.navy).padding(.horizontal, 8)
+            }
             TBtn(action: { app.stickyActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -888,6 +912,69 @@ private struct StickyBar: View {
         .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
         .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
         .padding(.bottom, 6)
+        .dialogSheet(isPresented: $naming) {
+            NameSheet(title: L("الاسم على الملاحظات", "Name on notes"), initial: app.noteAuthor) { app.noteAuthor = $0.trimmingCharacters(in: .whitespaces) }
+        }
+    }
+}
+
+/// رسم صغير لنمط الملاحظة.
+struct StickyStyleSample: View {
+    let style: Int
+    let color: UInt32
+    var body: some View {
+        Canvas { ctx, size in
+            let r = CGRect(origin: .zero, size: size)
+            ctx.fill(Path(roundedRect: r, cornerRadius: 3), with: .color(Color(hex: color)))
+            let ink = GraphicsContext.Shading.color(.black.opacity(0.25))
+            switch style {
+            case 1: ctx.fill(Path(CGRect(x: 0, y: 0, width: 4, height: size.height)), with: ink)
+            case 2:
+                for i in 1...3 { var p = Path(); let y = size.height * CGFloat(i) / 4; p.move(to: CGPoint(x: 3, y: y)); p.addLine(to: CGPoint(x: size.width - 3, y: y)); ctx.stroke(p, with: ink, lineWidth: 0.8) }
+            case 3:
+                for i in 1...3 {
+                    var p = Path()
+                    let y = size.height * CGFloat(i) / 4, x = size.width * CGFloat(i) / 4
+                    p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
+                    p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height))
+                    ctx.stroke(p, with: ink, lineWidth: 0.6)
+                }
+            default: break
+            }
+            ctx.stroke(Path(roundedRect: r, cornerRadius: 3), with: .color(.black.opacity(0.12)), lineWidth: 1)
+        }
+    }
+}
+
+/// شريط الملاحظة المحددة (كما في أندرويد): كتابة نص، طيّ/فتح، قص، نسخ، تكرار، مسح الكتابة، حذف، تم.
+private struct NoteBar: View {
+    @EnvironmentObject var app: AppController
+    @ObservedObject var session: DocSession
+    var body: some View {
+        if let id = session.selectedNote, let n = session.data.notes.first(where: { $0.id == id }) {
+            HStack(spacing: 0) {
+                DialogButton(label: L("كتابة نص", "Type text")) { session.editingNote = n }
+                DialogButton(label: L("طيّ/فتح", "Collapse/expand")) { var m = n; m.collapsed.toggle(); session.upsertNote(m); session.selectedNote = nil }
+                DialogButton(label: L("قص", "Cut")) {
+                    app.noteClipboard = n
+                    session.deleteNote(id); session.selectedNote = nil
+                    app.say(.done, L("قُصّت الملاحظة؛ الصقها من أداة الملاحظات", "Note cut; paste it from the sticky note tool"))
+                }
+                DialogButton(label: L("نسخ", "Copy")) { app.noteClipboard = n; app.say(.done, L("نُسخت الملاحظة", "Note copied")) }
+                DialogButton(label: L("تكرار", "Duplicate")) {
+                    var m = n; m.id = UUID().uuidString; m.x += 16; m.y += 16
+                    session.upsertNote(m); session.selectedNote = m.id
+                }
+                if n.ink != nil {
+                    DialogButton(label: L("مسح الكتابة داخلها", "Clear its writing")) { var m = n; m.ink = nil; session.upsertNote(m) }
+                }
+                DialogButton(label: L("حذف", "Delete"), color: Palette.danger) { session.deleteNote(id); session.selectedNote = nil }
+                DialogButton(label: L("تم", "Done")) { session.selectedNote = nil }
+            }
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+            .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+        }
     }
 }
 

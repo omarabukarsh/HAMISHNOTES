@@ -372,6 +372,27 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 return
             }
         }
+        // الكتابة بالقلم على ملاحظة لاصقة تصير جزءًا منها (تتحرك معها)
+        if added, !converted, app.tool.isPen, let last = canvas.drawing.strokes.last, last.randomSeed != shapeSeed {
+            let b = last.renderBounds
+            let pb = CGRect(x: b.minX / k, y: b.minY / k, width: b.width / k, height: b.height / k)
+            if let n = s.data.notes.last(where: { $0.page == pageId && !$0.collapsed && CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h).insetBy(dx: -2, dy: -2).contains(pb) }) {
+                var d = canvas.drawing
+                d.strokes.removeLast()
+                applying = true
+                canvas.drawing = d
+                applying = false
+                lastStrokeCount = d.strokes.count
+                var st = last
+                st.transform = last.transform.concatenating(CGAffineTransform(scaleX: 1 / k, y: 1 / k)).concatenating(CGAffineTransform(translationX: -n.x, y: -n.y))
+                var ink = (n.ink.flatMap { try? PKDrawing(data: $0) }) ?? PKDrawing()
+                ink.strokes.append(st)
+                var m = n
+                m.ink = ink.dataRepresentation()
+                s.upsertNote(m)
+                return
+            }
+        }
         // الهايلايتر تحت الكتابة (كما في أندرويد): خطوطه تُنقل تحت خطوط القلم
         if canvas.drawing.strokes.count == baseCount + 1, let last = canvas.drawing.strokes.last, last.ink.inkType == .marker,
            canvas.drawing.strokes.dropLast().contains(where: { $0.ink.inkType != .marker }) {
@@ -514,8 +535,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         topLayer.subviews.forEach { if $0 !== keepInline { $0.removeFromSuperview() } }
         if keepInline == nil { inlineView = nil }
         for n in s.data.notes where n.page == pageId {
-            let v = StickyNoteView(note: n, k: k)
-            v.onTap = { [weak self] in self?.session?.editingNote = n }
+            let v = StickyNoteView(note: n, k: k, selected: s.selectedNote == n.id)
+            v.onTap = { [weak self] in
+                guard let s = self?.session else { return }
+                // نقرة تحدد الملاحظة (وشريطها أسفل الشاشة)، والمطوية تُفتح
+                if n.collapsed { var m = n; m.collapsed = false; s.upsertNote(m); return }
+                s.selectedNote = s.selectedNote == n.id ? nil : n.id
+            }
             v.onMove = { [weak self] delta in
                 var m = n
                 m.x += delta.x / (self?.k ?? 1)
@@ -663,14 +689,27 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
         if s.inlineEditId != nil { s.finishInlineEdit() }
         if s.selectedBox != nil { s.selectedBox = nil }
-        if c.stickyActive {
-            let w = pageSize.width * 0.26
-            let n = StickyNote(id: UUID().uuidString, page: pageId, x: pp.x - w / 2, y: pp.y - w / 2, w: w, h: w, color: c.stickyColor)
+        // لصق ملاحظة منسوخة أو مقصوصة حيث نقرت
+        if s.pastingNote, var n = c.noteClipboard {
+            s.pastingNote = false
+            n.id = UUID().uuidString
+            n.page = pageId
+            n.x = max(0, pp.x - n.w / 2)
+            n.y = max(0, pp.y - n.h / 2)
             s.upsertNote(n)
-            s.editingNote = n
             reloadItems()
             return
         }
+        if c.stickyActive {
+            let w = pageSize.width * 0.26
+            let n = StickyNote(id: UUID().uuidString, page: pageId, x: pp.x - w / 2, y: pp.y - w / 2, w: w, h: w, color: c.stickyColor,
+                               style: c.stickyStyle, author: c.noteAuthor)
+            s.upsertNote(n)
+            s.selectedNote = n.id
+            reloadItems()
+            return
+        }
+        if s.selectedNote != nil { s.selectedNote = nil }
         // نقرة على صورة تحددها، ونقرة خارجها تلغي التحديد
         let hit = s.data.images.last { im in
             im.page == pageId && CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect)).contains(pp)
@@ -1113,7 +1152,8 @@ final class StickyNoteView: UIView {
     var onTap: (() -> Void)?
     var onMove: ((CGPoint) -> Void)?
 
-    init(note: StickyNote, k: CGFloat) {
+    /// الملاحظة بنمطها (سادة، شريط، أسطر، مربعات)، وكتابة القلم عليها، ونصها، والاسم عليها.
+    init(note: StickyNote, k: CGFloat, selected: Bool = false) {
         let collapsed = note.collapsed
         let side: CGFloat = 34
         super.init(frame: collapsed
@@ -1125,29 +1165,76 @@ final class StickyNoteView: UIView {
         layer.shadowOpacity = 0.18
         layer.shadowRadius = 4
         layer.shadowOffset = CGSize(width: 0, height: 2)
+        if selected {
+            layer.borderColor = UIColor(Palette.navy).cgColor
+            layer.borderWidth = 1.5
+        }
         if collapsed {
-            let l = UILabel(frame: bounds)
-            l.text = "✎"
-            l.textAlignment = .center
-            addSubview(l)
+            let iv = UIImageView(image: UIImage(named: "ph_sticky_note")?.withRenderingMode(.alwaysTemplate))
+            iv.tintColor = UIColor(argb: 0xFF6B4E00)
+            iv.frame = bounds.insetBy(dx: 7, dy: 7)
+            iv.contentMode = .scaleAspectFit
+            addSubview(iv)
         } else {
-            if note.style == 1 {
-                let bar = UIView(frame: CGRect(x: 0, y: 0, width: 6, height: bounds.height))
+            let w = bounds.width, h = bounds.height
+            let paper = UIView(frame: bounds)
+            paper.isUserInteractionEnabled = false
+            let lines = CAShapeLayer()
+            let path = UIBezierPath()
+            let step = max(8, w * 0.1)
+            switch note.style {
+            case 1:
+                let bar = UIView(frame: CGRect(x: 0, y: 0, width: max(5, w * 0.05), height: h))
                 bar.backgroundColor = UIColor.black.withAlphaComponent(0.12)
-                addSubview(bar)
+                paper.addSubview(bar)
+            case 2:
+                var y = step * 1.6
+                while y < h - 4 { path.move(to: CGPoint(x: w * 0.06, y: y)); path.addLine(to: CGPoint(x: w * 0.94, y: y)); y += step }
+            case 3:
+                var y = step
+                while y < h { path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: w, y: y)); y += step }
+                var x = step
+                while x < w { path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: h)); x += step }
+            default: break
             }
-            let l = UILabel(frame: bounds.insetBy(dx: bounds.width * 0.07, dy: bounds.width * 0.07))
-            l.numberOfLines = 0
-            l.font = Fonts.ui(max(9, note.w * k * 0.075))
-            l.textColor = UIColor(argb: 0xFF1F2933)
-            l.text = note.text.isEmpty ? L("انقر للكتابة", "Tap to write") : note.text
-            l.alpha = note.text.isEmpty ? 0.45 : 1
-            l.sizeToFit()
-            l.frame.size.width = bounds.width * 0.86
-            addSubview(l)
+            lines.path = path.cgPath
+            lines.strokeColor = UIColor.black.withAlphaComponent(0.14).cgColor
+            lines.lineWidth = 0.8
+            paper.layer.addSublayer(lines)
+            addSubview(paper)
+            if !note.text.isEmpty || note.ink == nil {
+                let l = UILabel(frame: bounds.insetBy(dx: w * 0.07, dy: w * 0.07))
+                l.numberOfLines = 0
+                l.font = Fonts.ui(max(9, note.w * k * 0.075))
+                l.textColor = UIColor(argb: 0xFF1F2933)
+                l.text = note.text.isEmpty ? L("اكتب بالقلم هنا", "Write here with your pen") : note.text
+                l.alpha = note.text.isEmpty ? 0.45 : 1
+                l.sizeToFit()
+                l.frame.size.width = w * 0.86
+                addSubview(l)
+            }
+            // كتابة القلم على الملاحظة (بنقاط الملاحظة)
+            if let raw = note.ink, let d = try? PKDrawing(data: raw), !d.strokes.isEmpty {
+                let iv = UIImageView(frame: bounds)
+                let scaled = d.transformed(using: CGAffineTransform(scaleX: k, y: k))
+                iv.image = scaled.image(from: bounds, scale: UIScreen.main.scale * 2)
+                iv.isUserInteractionEnabled = false
+                addSubview(iv)
+            }
+            if !note.author.isEmpty {
+                let a = UILabel()
+                a.font = Fonts.ui(max(7, note.w * k * 0.055))
+                a.textColor = UIColor.black.withAlphaComponent(0.5)
+                a.text = "— " + note.author
+                a.sizeToFit()
+                a.frame.origin = CGPoint(x: w - a.frame.width - w * 0.05, y: h - a.frame.height - w * 0.03)
+                addSubview(a)
+            }
         }
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(pan(_:))))
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+        pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        addGestureRecognizer(pan)
     }
 
     required init?(coder: NSCoder) { fatalError() }

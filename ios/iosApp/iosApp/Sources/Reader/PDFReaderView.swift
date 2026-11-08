@@ -104,6 +104,9 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.refreshLasso() } }.store(in: &bag)
         session.$selectedImage.dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
+        // الكتابة في مربع نص وتحديده
+        session.$inlineEditId.combineLatest(session.$selectedBox).dropFirst().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
         // نتائج البحث مظللة في الصفحة، والنتيجة الحالية محددة
         session.$searchHits.combineLatest(session.$searchIndex).receive(on: RunLoop.main)
             .sink { [weak self] hits, idx in

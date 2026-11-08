@@ -52,6 +52,11 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var ocrProgress = 0
     @Published var scalePercent = 100
     @Published var editingBox: TextBox? = nil
+    /// مربع النص الذي يُكتب فيه الآن على الصفحة، والمربع المحدد (شريطه أسفل الشاشة).
+    @Published var inlineEditId: String? = nil
+    @Published var selectedBox: String? = nil
+    /// نص المربع أثناء الكتابة (يُحفظ عند الانتهاء).
+    var inlineText = ""
     @Published var editingNote: StickyNote? = nil
     @Published var selectedImage: String? = nil
     /// نافذة الكتابة المكبّرة: المنطقة المعروضة من الصفحة (بنقاط الصفحة).

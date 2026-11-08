@@ -70,6 +70,9 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private let searchCurrent = CAShapeLayer()
     private let insertLayer = CAShapeLayer()
     private var selectionFrame: ImageSelectionView?
+    private var inlineView: InlineTextView?
+    private let textDrag = UIPanGestureRecognizer()
+    private let textDragLayer = CAShapeLayer()
     private var applying = false
     private var lastStrokeCount = 0
     private var k: CGFloat = 1
@@ -129,6 +132,17 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         shapes.isHidden = true
         shapes.onShape = { [weak self] strokes, fill in self?.commitShape(strokes, fill: fill) }
         addSubview(shapes)
+
+        // أداة النص: سحب القلم يرسم مربع الكتابة بالعرض المطلوب
+        textDrag.addTarget(self, action: #selector(onTextDrag(_:)))
+        textDrag.delegate = self
+        textDrag.isEnabled = false
+        addGestureRecognizer(textDrag)
+        textDragLayer.fillColor = UIColor(Palette.navy).withAlphaComponent(0.05).cgColor
+        textDragLayer.strokeColor = UIColor(Palette.navy).cgColor
+        textDragLayer.lineWidth = 1.5
+        textDragLayer.lineDashPattern = [6, 4]
+        layer.addSublayer(textDragLayer)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(onTap(_:)))
         tap.delegate = self
@@ -241,6 +255,9 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         laser.mode = c.laserMode
         shapes.isHidden = !shapeOn
         canvas.isUserInteractionEnabled = !laserOn && !shapeOn && !tapTools
+        textDrag.isEnabled = c.textActive
+        textDrag.allowedTouchTypes = finger ? [NSNumber(value: UITouch.TouchType.pencil.rawValue), NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                                            : [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
 
         lasso.isHidden = !c.lassoActive
         lasso.fingerWrites = finger
@@ -472,7 +489,10 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             v.frame = CGRect(x: im.x * k, y: im.y * k, width: im.w * k, height: im.w / max(0.01, im.aspect) * k)
             imagesLayer.addSubview(v)
         }
-        topLayer.subviews.forEach { $0.removeFromSuperview() }
+        // المربع الذي يُكتب فيه يبقى كما هو (لا يُعاد إنشاؤه فلا تختفي لوحة المفاتيح)
+        let keepInline = inlineView.flatMap { v in s.inlineEditId == v.boxId && s.data.boxes.contains { $0.id == v.boxId && $0.page == pageId } ? v : nil }
+        topLayer.subviews.forEach { if $0 !== keepInline { $0.removeFromSuperview() } }
+        if keepInline == nil { inlineView = nil }
         for n in s.data.notes where n.page == pageId {
             let v = StickyNoteView(note: n, k: k)
             v.onTap = { [weak self] in self?.session?.editingNote = n }
@@ -486,11 +506,24 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             topLayer.addSubview(v)
         }
         for b in s.data.boxes where b.page == pageId {
-            let v = TextBoxView(box: b, k: k)
+            if b.id == s.inlineEditId {
+                if let v = keepInline { v.apply(b, k: k) } else {
+                    let v = InlineTextView(box: b, k: k)
+                    v.text = s.inlineText
+                    v.onChange = { [weak s] t in s?.inlineText = t }
+                    topLayer.addSubview(v)
+                    inlineView = v
+                    DispatchQueue.main.async { v.becomeFirstResponder() }
+                }
+                continue
+            }
+            let v = TextBoxView(box: b, k: k, selected: s.selectedBox == b.id)
             v.onTap = { [weak self] in
                 guard let self = self, let s = self.session else { return }
-                if let d = b.linkDoc { AppController.shared.followLink(from: s, docId: d, page: b.linkPage) }
-                else { s.editingBox = b }
+                // بأداة النص: نقرة تكتب فيه؛ والرابط بنقرة ثانية يُفتح؛ وغير ذلك نقرة تحدده (وشريطه أسفل الشاشة)
+                if AppController.shared.textActive { s.beginInlineEdit(b.id); return }
+                if let d = b.linkDoc, s.selectedBox == b.id { AppController.shared.followLink(from: s, docId: d, page: b.linkPage); return }
+                if s.selectedBox == b.id { s.beginInlineEdit(b.id) } else { s.finishInlineEdit(); s.selectedBox = b.id }
             }
             v.onMove = { [weak self] delta in
                 var m = b
@@ -592,13 +625,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             return
         }
         if c.textActive {
-            let box = TextBox(id: UUID().uuidString, page: pageId, x: pp.x, y: pp.y, w: pageSize.width * 0.4, text: "",
-                              size: max(12, pageSize.width * 0.024))
-            s.editingBox = box
-            c.textActive = false
-            c.objectWillChange.send()
+            // نقرة أثناء الكتابة تنهيها؛ وإلا تضع مربعًا جديدًا وتبدأ الكتابة فيه
+            if s.inlineEditId != nil { s.finishInlineEdit(); return }
+            s.placeTextBox(pageId: pageId, at: pp)
             return
         }
+        if s.inlineEditId != nil { s.finishInlineEdit() }
+        if s.selectedBox != nil { s.selectedBox = nil }
         if c.stickyActive {
             let w = pageSize.width * 0.26
             let n = StickyNote(id: UUID().uuidString, page: pageId, x: pp.x - w / 2, y: pp.y - w / 2, w: w, h: w, color: c.stickyColor)
@@ -617,6 +650,28 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         } else if hit == nil && s.selectedImage != nil && !(selectionFrame?.frame.contains(p) ?? false) {
             s.selectedImage = nil
             reloadItems()
+        }
+    }
+
+    private var textDragStart: CGPoint = .zero
+
+    @objc private func onTextDrag(_ g: UIPanGestureRecognizer) {
+        let p = g.location(in: self)
+        switch g.state {
+        case .began:
+            textDragStart = p
+            session?.finishInlineEdit()
+        case .changed:
+            let r = CGRect(x: min(textDragStart.x, p.x), y: min(textDragStart.y, p.y), width: abs(p.x - textDragStart.x), height: abs(p.y - textDragStart.y))
+            textDragLayer.path = UIBezierPath(roundedRect: r, cornerRadius: 4).cgPath
+        case .ended:
+            textDragLayer.path = nil
+            let r = CGRect(x: min(textDragStart.x, p.x), y: min(textDragStart.y, p.y), width: abs(p.x - textDragStart.x), height: abs(p.y - textDragStart.y))
+            if r.width > bounds.width * 0.04 {
+                session?.placeTextBox(pageId: pageId, at: CGPoint(x: r.minX / k, y: (r.minY + min(r.height, 30)) / k), width: r.width / k)
+            }
+        default:
+            textDragLayer.path = nil
         }
     }
 
@@ -959,29 +1014,25 @@ final class TextBoxView: UILabel {
     var onMove: ((CGPoint) -> Void)?
     private var dragStart: CGPoint = .zero
 
-    init(box: TextBox, k: CGFloat) {
+    init(box: TextBox, k: CGFloat, selected: Bool = false) {
         super.init(frame: .zero)
         numberOfLines = 0
-        text = box.text
         let size = box.size * k
-        if box.font.isEmpty {
-            font = Fonts.ui(size)
-        } else if let f = FontStore.shared.uiFont(box.font, size: size) ?? UIFont(name: box.font, size: size) {
-            font = f
-        } else {
-            font = Fonts.ui(size)
-            let name = box.font
-            Task { @MainActor in await FontStore.shared.ensure(name) }
-        }
-        textColor = box.linkDoc != nil ? UIColor(Palette.navy) : UIColor(argb: box.color)
+        font = textBoxFont(box, size: size)
         if box.linkDoc != nil {
             attributedText = NSAttributedString(string: "🔗 " + box.text, attributes: [
                 .underlineStyle: NSUnderlineStyle.single.rawValue, .font: font as Any, .foregroundColor: UIColor(Palette.navy)
             ])
+        } else {
+            attributedText = textBoxAttributed(box, k: k)
         }
-        textAlignment = .natural
         let fit = sizeThatFits(CGSize(width: box.w * k, height: .greatestFiniteMagnitude))
         frame = CGRect(x: box.x * k, y: box.y * k, width: box.w * k, height: max(fit.height, size * 1.4))
+        if selected {
+            layer.borderColor = UIColor(Palette.navy).cgColor
+            layer.borderWidth = 1.5
+            layer.cornerRadius = 4
+        }
         isUserInteractionEnabled = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))

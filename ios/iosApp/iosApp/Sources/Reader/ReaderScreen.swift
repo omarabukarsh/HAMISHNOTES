@@ -107,6 +107,7 @@ private struct ReaderContent: View {
             VStack(spacing: 8) {
                 if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
                 if s.selectedImage != nil { ImageBar(session: s) }
+                if s.selectedBox != nil && s.inlineEditId == nil { TextBoxBar(session: s) }
                 AutoFontChip(session: s)
             }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
@@ -194,6 +195,7 @@ private struct ReaderTopBar: View {
     @State private var lassoMenu = false
     @State private var autoFont = false
     @State private var audioOpen = false
+    @State private var textMenu = false
 
     var body: some View {
         ZStack {
@@ -356,13 +358,20 @@ private struct ReaderTopBar: View {
                         }
                     }
                     if v("text") {
-                        TBtn(selected: app.textActive, action: {
-                            if app.textActive { app.textActive = false } else {
+                        // نقرة تفعّل أداة النص، ونقرة ثانية (أو أثناء الكتابة في مربع) تفتح نافذة مربع النص
+                        let on = app.textActive || s.inlineEditId != nil
+                        TBtn(selected: on, action: {
+                            if on { textMenu = true } else {
+                                s.finishInlineEdit()
                                 app.lassoActive = false; app.shapeActive = false; app.stickyActive = false
                                 app.textActive = true
-                                app.message(L("انقر على الصفحة حيث تريد الكتابة", "Tap the page where you want to type"))
+                                app.message(L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
-                        }) { PhIcon("ph_text", tintFor(app.textActive)) }
+                        }) { PhIcon("ph_text", tintFor(on)) }
+                        .dropdown(isPresented: $textMenu) {
+                            TextToolWindow(session: s, onTurnOff: { textMenu = false; app.textActive = false; s.finishInlineEdit() })
+                                .environmentObject(app)
+                        }
                     }
                     if v("sticky") {
                         TBtn(selected: app.stickyActive, action: {

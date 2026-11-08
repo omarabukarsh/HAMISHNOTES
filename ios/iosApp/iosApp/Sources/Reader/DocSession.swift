@@ -57,6 +57,8 @@ final class DocSession: ObservableObject, Identifiable {
     /// عنصر من الدرج ينتظر نقرة على الصفحة ليوضع مكانها (ملصق أو صور).
     enum PendingPlace { case sticker(String), images([UIImage]) }
     @Published var pendingPlace: PendingPlace? = nil
+    /// نص محدد في الكتاب (ضغط مطوّل بالإصبع).
+    @Published var textSel: PDFSelection? = nil
     @Published var selectedBox: String? = nil
     /// نص المربع أثناء الكتابة (يُحفظ عند الانتهاء).
     var inlineText = ""

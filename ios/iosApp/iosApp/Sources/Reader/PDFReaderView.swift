@@ -104,6 +104,12 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.refreshLasso() } }.store(in: &bag)
         session.$selectedImage.dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)
+        // تحديد نص الكتاب يظهر في العارض
+        session.$textSel.receive(on: RunLoop.main)
+            .sink { [weak self] sel in
+                guard let v = self?.pdfView else { return }
+                if let sel = sel { sel.color = UIColor(Palette.navy).withAlphaComponent(0.25); v.setCurrentSelection(sel, animate: false) } else { v.clearSelection() }
+            }.store(in: &bag)
         // الكتابة في مربع نص وتحديده
         session.$inlineEditId.combineLatest(session.$selectedBox).dropFirst().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.reloadItems() } }.store(in: &bag)

@@ -144,6 +144,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         textDragLayer.lineDashPattern = [6, 4]
         layer.addSublayer(textDragLayer)
 
+        // ضغط مطوّل بالإصبع على نص الكتاب: تحديده (ثم السحب يمدّه)
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(onPress(_:)))
+        press.minimumPressDuration = 0.45
+        press.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        press.delegate = self
+        addGestureRecognizer(press)
+
         let tap = UITapGestureRecognizer(target: self, action: #selector(onTap(_:)))
         tap.delegate = self
         tap.cancelsTouchesInView = false
@@ -637,6 +644,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             s.zoomBox = b
             return
         }
+        // نقرة تلغي تحديد نص الكتاب
+        if s.textSel != nil { s.textSel = nil; return }
         // عنصر من الدرج: يوضع حيث نقرت
         if let pend = s.pendingPlace, let idx = s.index(of: pageId) {
             s.pendingPlace = nil
@@ -676,6 +685,27 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     }
 
     private var textDragStart: CGPoint = .zero
+    private var selAnchor: CGPoint?
+
+    @objc private func onPress(_ g: UILongPressGestureRecognizer) {
+        guard let s = session, let page = page, let pt = toPdf(g.location(in: self)) else { return }
+        // الإصبع يكتب: الضغط المطوّل للكتابة لا للتحديد
+        if AppController.shared.fingerWrites && AppController.shared.tool.isWriting { return }
+        switch g.state {
+        case .began:
+            selAnchor = pt
+            if let sel = page.selectionForWord(at: pt), !(sel.string ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
+                s.textSel = sel
+            } else {
+                selAnchor = nil
+            }
+        case .changed:
+            guard let a = selAnchor, let sel = page.selection(from: a, to: pt) else { return }
+            s.textSel = sel
+        default:
+            selAnchor = nil
+        }
+    }
 
     @objc private func onTextDrag(_ g: UIPanGestureRecognizer) {
         let p = g.location(in: self)

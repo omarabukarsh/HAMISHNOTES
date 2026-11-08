@@ -106,6 +106,7 @@ private struct ReaderContent: View {
             }
             VStack(spacing: 8) {
                 if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
+                if s.textSel != nil { SelectionBar(session: s) }
                 if s.selectedImage != nil { ImageBar(session: s) }
                 if s.selectedBox != nil && s.inlineEditId == nil { TextBoxBar(session: s) }
                 AutoFontChip(session: s)

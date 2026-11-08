@@ -5,6 +5,9 @@ import UserNotifications
 import LocalAuthentication
 import Combine
 
+/// أنواع الرسائل المنبثقة أسفل الشاشة.
+enum MsgKind { case tip, done, error }
+
 /// حالة التطبيق كله: المكتبة، التبويبات المفتوحة، الأدوات، والإعدادات.
 final class AppController: ObservableObject {
     static let shared = AppController()
@@ -51,6 +54,10 @@ final class AppController: ObservableObject {
     @Published var lassoActive = false
     @Published var shapeActive = false
     @Published var textActive = false
+    // الرسائل المنبثقة حسب النوع
+    @Published var tipsOn = true { didSet { prefs.set(tipsOn, forKey: "msg_tips") } }
+    @Published var doneOn = true { didSet { prefs.set(doneOn, forKey: "msg_done") } }
+    @Published var errorsOn = true { didSet { prefs.set(errorsOn, forKey: "msg_err") } }
     @Published var stickyActive = false
     @Published var shapeKind: ShapeKind = .line
     @Published var stickyColor: UInt32 = 0xFFFFF59D
@@ -178,6 +185,9 @@ final class AppController: ObservableObject {
         arrowEnd = ArrowHead(rawValue: p.string(forKey: "arrow_e") ?? "") ?? .none
         shapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "shape_color") as? Int ?? 0xFF000000)
         drawAndHold = p.object(forKey: "draw_hold") as? Bool ?? true
+        tipsOn = p.object(forKey: "msg_tips") as? Bool ?? true
+        doneOn = p.object(forKey: "msg_done") as? Bool ?? true
+        errorsOn = p.object(forKey: "msg_err") as? Bool ?? true
         penStyle = LineStyle(rawValue: p.integer(forKey: "pen_style")) ?? .solid
         hwLang = p.object(forKey: "hw_lang") as? Int ?? 2
         penSharpness = p.object(forKey: "pen_sharp") as? Double ?? 0.25
@@ -248,6 +258,16 @@ final class AppController: ObservableObject {
     private func loadCodable<T: Decodable>(_ key: String) -> T? {
         guard let d = prefs.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: d)
+    }
+
+    /// رسالة منبثقة حسب نوعها (لكل نوع مفتاح في الإعدادات، كما في أندرويد 1.0.271).
+    func say(_ kind: MsgKind, _ s: String) {
+        switch kind {
+        case .tip: if !tipsOn { return }
+        case .done: if !doneOn { return }
+        case .error: if !errorsOn { return }
+        }
+        message(s)
     }
 
     func message(_ s: String) {
@@ -391,7 +411,7 @@ final class AppController: ObservableObject {
             for u in office {
                 OfficeConverter.convert(u) { out in
                     if let o = out { converted.append(o) } else {
-                        self.message(L("تعذر تحويل «\(u.lastPathComponent)». صدّره إلى PDF ثم افتحه", "Couldn’t convert “\(u.lastPathComponent)”. Export it to PDF, then open it"))
+                        self.say(.error, L("تعذر تحويل «\(u.lastPathComponent)». صدّره إلى PDF ثم افتحه", "Couldn’t convert “\(u.lastPathComponent)”. Export it to PDF, then open it")))
                     }
                     left -= 1
                     if left == 0 {
@@ -422,8 +442,8 @@ final class AppController: ObservableObject {
                 self.library.append(contentsOf: added)
                 self.saveLibrary()
                 if added.count == 1 { self.openDocument(added[0].id) }
-                else if added.count > 1 { self.message(L("أُضيف \(docsCount(added.count))", "Added \(docsCount(added.count))")) }
-                else { self.message(L("تعذر فتح الملف", "Could not open the file")) }
+                else if added.count > 1 { self.say(.done, L("أُضيف \(docsCount(added.count))", "Added \(docsCount(added.count))"))) }
+                else { self.say(.error, L("تعذر فتح الملف", "Could not open the file"))) }
             }
         }
     }
@@ -805,11 +825,11 @@ final class AppController: ObservableObject {
                     self.stats["pomo|" + self.todayKey(), default: 0] += 1
                     self.pomoPhase = 2
                     self.pomoEndsAt = now + Int64(self.breakMin) * 60_000
-                    self.message(L("انتهت جلسة الدراسة. استرح \(self.breakMin) دقائق", "Study session finished. Take a \(self.breakMin)-minute break"))
+                    self.say(.done, L("انتهت جلسة الدراسة. استرح \(self.breakMin) دقائق", "Study session finished. Take a \(self.breakMin)-minute break")))
                 } else {
                     self.pomoPhase = 1
                     self.pomoEndsAt = now + Int64(self.studyMin) * 60_000
-                    self.message(L("انتهت الراحة. جلسة دراسة جديدة \(self.studyMin) دقيقة", "Break over. New \(self.studyMin)-minute study session"))
+                    self.say(.done, L("انتهت الراحة. جلسة دراسة جديدة \(self.studyMin) دقيقة", "Break over. New \(self.studyMin)-minute study session")))
                 }
                 self.pomoLeftMs = self.pomoEndsAt - now
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -834,7 +854,7 @@ final class AppController: ObservableObject {
                 self.reminderOn = ok
                 self.prefs.set(ok, forKey: "reminder_on")
                 guard ok else {
-                    self.message(L("اسمح بالإشعارات من إعدادات الجهاز", "Allow notifications in the device settings"))
+                    self.say(.error, L("اسمح بالإشعارات من إعدادات الجهاز", "Allow notifications in the device settings")))
                     return
                 }
                 let c = UNMutableNotificationContent()

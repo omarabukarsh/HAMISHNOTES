@@ -63,7 +63,7 @@ struct SummaryDrawer: View {
                 Spacer()
                 Button(L("نسخ الكل", "Copy all")) {
                     UIPasteboard.general.string = Summary.plainText(s.title, blocks)
-                    app.message(L("تم النسخ", "Copied"))
+                    app.say(.done, L("تم النسخ", "Copied")))
                 }
                 .font(Fonts.sans(13)).foregroundColor(Palette.navy).disabled(blocks.isEmpty)
                 Button("PDF") { s.flush(); exportURL = Exporter.summaryPDF(s) }
@@ -304,7 +304,7 @@ struct SummaryDrawer: View {
             } label: { Label { Text(L("اجعله بطاقة", "Make it a card")) } icon: { Image("ph_cards") } }
             Button {
                 UIPasteboard.general.string = Summary.plainText("", [b]).trimmingCharacters(in: .whitespacesAndNewlines)
-                app.message(L("تم النسخ", "Copied"))
+                app.say(.done, L("تم النسخ", "Copied")))
             } label: { Label { Text(L("نسخ", "Copy")) } icon: { Image("ph_copy") } }
             Button(role: .destructive) { b.marks.forEach { s.deleteMark($0.id) } } label: { Label { Text(L("حذف التمييز", "Delete highlight")) } icon: { Image("ph_trash") } }
         }

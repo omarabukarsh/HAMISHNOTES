@@ -82,7 +82,7 @@ enum Exporter {
         let app = AppController.shared
         let blocks = Summary.view(s.allMarks(), tidy: app.summaryTidy, edits: s.summaryEdits)
         guard !blocks.isEmpty else {
-            app.message(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
+            app.say(.error, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet")))
             return nil
         }
         return renderHTML("<h1>\(esc(s.title))</h1>" + html(blocks), name: L("ملخص ", "Summary ") + safeFileName(s.title))
@@ -218,7 +218,7 @@ struct ShareExportSheet: View {
         DispatchQueue.main.async {
             let urls = make()
             busy = false
-            if urls.isEmpty { app.message(L("لا يوجد ما يُشارك", "Nothing to share")) } else { items = urls }
+            if urls.isEmpty { app.say(.error, L("لا يوجد ما يُشارك", "Nothing to share"))) } else { items = urls }
         }
     }
 

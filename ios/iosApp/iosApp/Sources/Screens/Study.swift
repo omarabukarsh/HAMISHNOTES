@@ -450,7 +450,7 @@ struct SignInScreen: View {
                         app.setAccount(email: cred.email ?? UserDefaults.standard.string(forKey: "account_email") ?? L("حساب Apple", "Apple account"),
                                        name: name.isEmpty ? nil : name)
                     } else if case .failure = r {
-                        app.message(L("تعذر تسجيل الدخول", "Sign-in failed"))
+                        app.say(.error, L("تعذر تسجيل الدخول", "Sign-in failed")))
                     }
                 }
                 .signInWithAppleButtonStyle(.whiteOutline)

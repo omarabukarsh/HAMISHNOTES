@@ -138,8 +138,7 @@ enum InkReader {
             DispatchQueue.main.async {
                 if !warned {
                     warned = true
-                    AppController.shared.message(L("تُنزَّل حزمة قراءة خط اليد (مرة واحدة)، وحتى تجهز تُستعمل القراءة العادية",
-                                                   "Downloading the handwriting pack (once); until it's ready, standard reading is used"))
+                    AppController.shared.say(.done, L("تُنزَّل حزمة قراءة خط اليد (مرة واحدة)، وحتى تجهز تُستعمل القراءة العادية", "Downloading the handwriting pack (once); until it's ready, standard reading is used")))
                 }
             }
         }

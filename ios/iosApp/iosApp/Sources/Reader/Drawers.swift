@@ -370,7 +370,7 @@ struct PageMenuDrawer: View {
                     divider
                     row(L("تكرار الصفحة", "Duplicate page"), "ph_copy") {
                         s.duplicatePage(p)
-                        app.message(L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated"))
+                        app.say(.done, L("كُرّرت الصفحة \(p + 1)", "Page \(p + 1) duplicated")))
                     }
                     divider
                     row(L("إضافة صفحة بعدها", "Add page after"), "ph_add_page") { sheet = .addPage }
@@ -426,7 +426,7 @@ struct PageMenuDrawer: View {
         .dialogSheet(isPresented: $outlineAdd) {
             NameSheet(title: L("عنوان للصفحة \(p + 1)", "Heading for page \(p + 1)"), initial: "") { t in
                 s.edit { $0.outline.append(OutlineEntry(title: t, level: 0, page: p)) }
-                app.message(L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline"))
+                app.say(.done, L("أُضيفت الصفحة إلى الفهرس", "Page added to the outline")))
             }
         }
         .sheet(isPresented: $itemsDialog) { ClearItemsSheet(page: p) { ink, hl, tx, im in clear(p, ink: ink, hl: hl, tx: tx, im: im) } }
@@ -549,27 +549,27 @@ struct SideTray: View {
                     trayButton("ph_image", L("من مكتبة الصور", "From the photo library"))
                 }
                 Button { importing = true } label: { trayButton("ph_folder", L("من الملفات", "From Files")) }
-                Text(L("تُضاف الصورة وسط الجزء الظاهر من الصفحة. انقر عليها بإصبعك لتحريكها أو تغيير حجمها أو حذفها.", "The picture is added in the middle of what you see on the page. Tap it with your finger to move, resize or delete it."))
+                Text(L("اختر الصورة ثم انقر الصفحة حيث تريد وضعها. انقر عليها بإصبعك لتحريكها أو تغيير حجمها أو حذفها.", "Pick a picture, then tap the page where you want it. Tap it with your finger to move, resize or delete it."))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
             } else {
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                         ForEach(CoverStickers, id: \.self) { k in
-                            Button { s.insertSticker(k) } label: {
+                            Button { place(.sticker(k)) } label: {
                                 StickerIcon(key: k, size: 44).frame(width: 56, height: 56)
                                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                             }
                             .onDrag { NSItemProvider(object: (StickerDragPrefix + k) as NSString) }
                         }
                         ForEach(["⭐️", "✅", "❗️", "❓", "💡", "📌", "🔥", "❤️", "👍", "📝", "⚠️", "🎯"], id: \.self) { e in
-                            Button { s.insertSticker(e) } label: {
+                            Button { place(.sticker(e)) } label: {
                                 Text(e).font(.system(size: 34)).frame(width: 56, height: 56)
                                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                             }
                             .onDrag { NSItemProvider(object: (StickerDragPrefix + e) as NSString) }
                         }
                         ForEach(store.mine, id: \.self) { f in
-                            Button { s.insertSticker("mine:" + f) } label: {
+                            Button { place(.sticker("mine:" + f)) } label: {
                                 Group {
                                     if let img = UIImage(contentsOfFile: Repository.shared.stickersDir.appendingPathComponent(f).path) {
                                         Image(uiImage: img).resizable().scaledToFit()
@@ -583,7 +583,7 @@ struct SideTray: View {
                         }
                     }
                 }
-                Text(L("انقر على الملصق لإضافته، أو اضغط عليه مطوّلًا واسحبه إلى مكانه في الصفحة", "Tap a sticker to add it, or long-press and drag it to its place on the page"))
+                Text(L("انقر الملصق ثم انقر مكانه في الصفحة، أو اضغط عليه مطوّلًا واسحبه إليها", "Tap a sticker, then tap its place on the page; or long-press and drag it there"))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                 PhotosPicker(selection: $stickerPick, maxSelectionCount: 1, matching: .images) {
                     trayButton("ph_plus", L("ملصق من صورة", "Sticker from a photo"))
@@ -603,7 +603,7 @@ struct SideTray: View {
             for (i, it) in items.enumerated() {
                 Task {
                     if let d = try? await it.loadTransferable(type: Data.self), let img = UIImage(data: d) {
-                        await MainActor.run { s.insertImage(img, index: i, select: i == n - 1) }
+                        await MainActor.run { collect(img, total: n) }
                     }
                 }
             }
@@ -623,10 +623,27 @@ struct SideTray: View {
             if case .success(let urls) = r {
                 for (i, u) in urls.enumerated() {
                     let sc = u.startAccessingSecurityScopedResource()
-                    if let d = try? Data(contentsOf: u), let img = UIImage(data: d) { s.insertImage(img, index: i, select: i == urls.count - 1) }
+                    if let d = try? Data(contentsOf: u), let img = UIImage(data: d) { _ = i; collect(img, total: urls.count) }
                     if sc { u.stopAccessingSecurityScopedResource() }
                 }
             }
+        }
+    }
+
+    @State private var gathered: [UIImage] = []
+
+    /// انقر العنصر ثم انقر الصفحة حيث تريد وضعه (كما في أندرويد 1.0.271).
+    private func place(_ p: DocSession.PendingPlace) {
+        session.pendingPlace = p
+        app.say(.tip, L("انقر الصفحة حيث تريد وضعه", "Tap the page where you want to place it"))
+    }
+
+    /// الصور المختارة معًا تُجمع ثم توضع كلها حيث تنقر.
+    private func collect(_ img: UIImage, total: Int) {
+        gathered.append(img)
+        if gathered.count >= total {
+            place(.images(gathered))
+            gathered = []
         }
     }
 
@@ -662,7 +679,7 @@ final class StickerStore: ObservableObject {
         if let d = out.pngData() {
             try? d.write(to: Repository.shared.stickersDir.appendingPathComponent(name))
             mine.insert(name, at: 0)
-            AppController.shared.message(L("أُضيف إلى «ملصقاتي»", "Added to “My stickers”"))
+            AppController.shared.say(.done, L("أُضيف إلى «ملصقاتي»", "Added to “My stickers”")))
         }
     }
 

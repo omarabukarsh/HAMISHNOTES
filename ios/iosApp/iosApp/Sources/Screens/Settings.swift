@@ -194,6 +194,18 @@ struct SettingsView: View {
                     ValueChevron(value: Templates.labelOf(d.kind) + " · " + Templates.sizeOf(d.size).label + (d.landscape ? L(" · أفقي", " · landscape") : ""))
                 }
             }
+            // الرسائل المنبثقة حسب النوع (كما في أندرويد 1.0.271)
+            GroupLabel(L("الرسائل المنبثقة", "Pop-up messages"))
+            SettingsGroup {
+                SwitchRow(icon: "ph_info", color: TileBlue, title: L("الإرشادات", "Tips"),
+                          desc: L("تشرح كيف تُستعمل الأداة، مثل «انقر الأداة مرة ثانية لإعداداتها»", "Explain how to use a tool, like “Tap the tool again to open its settings”"), isOn: $app.tipsOn)
+                GroupDivider()
+                SwitchRow(icon: "ph_check", color: TileGreen, title: L("التأكيدات", "Confirmations"),
+                          desc: L("تخبرك أن شيئًا تم، مثل «تم النسخ» و«أُضيفت البطاقة»", "Tell you something was done, like “Copied” and “Card added”"), isOn: $app.doneOn)
+                GroupDivider()
+                SwitchRow(icon: "ph_info", color: TileGold, title: L("الأخطاء والتنبيهات", "Errors & warnings"),
+                          desc: L("شيء لم ينجح أو يحتاج منك فعلًا، مثل «تعذر تنزيل الخط»", "Something failed or needs you, like “Could not download the font”"), isOn: $app.errorsOn)
+            }
         case .pen:
             GroupLabel("Apple Pencil")
             SettingsGroup {
@@ -603,7 +615,7 @@ private struct DeleteAccountSheet: View {
                 }
                 Button {
                     app.deleteAccount()
-                    app.message(L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device"))
+                    app.say(.done, L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device")))
                     dismiss()
                 } label: {
                     Text(L("حذف الحساب", "Delete account")).font(Fonts.sans(15, .bold)).foregroundColor(.white)

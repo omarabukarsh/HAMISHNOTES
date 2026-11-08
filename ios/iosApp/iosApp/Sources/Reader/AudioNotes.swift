@@ -24,7 +24,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
         AVAudioSession.sharedInstance().requestRecordPermission { ok in
             DispatchQueue.main.async {
                 guard ok else {
-                    AppController.shared.message(L("اسمح باستخدام الميكروفون من إعدادات الجهاز", "Allow microphone access in the device settings"))
+                    AppController.shared.say(.error, L("اسمح باستخدام الميكروفون من إعدادات الجهاز", "Allow microphone access in the device settings")))
                     return
                 }
                 self.begin(s)
@@ -44,7 +44,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
             AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
         ]
         guard let r = try? AVAudioRecorder(url: url, settings: settings), r.record() else {
-            AppController.shared.message(L("تعذر بدء التسجيل", "Could not start recording"))
+            AppController.shared.say(.error, L("تعذر بدء التسجيل", "Could not start recording")))
             return
         }
         recorder = r
@@ -57,7 +57,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
             guard let self = self else { return }
             self.elapsed = nowMs() - self.startedAt
         }
-        AppController.shared.message(L("بدأ التسجيل — اكتب وسيُربط كل خط بلحظته", "Recording — every stroke is linked to its moment"))
+        AppController.shared.say(.tip, L("بدأ التسجيل — اكتب وسيُربط كل خط بلحظته", "Recording — every stroke is linked to its moment")))
     }
 
     func stop() {
@@ -69,7 +69,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
         recSession?.flush()
         recorder = nil
         recordingDoc = nil
-        AppController.shared.message(L("حُفظ التسجيل. تجده في درج الصفحات ← التسجيلات", "Recording saved. Find it in the pages drawer → Recordings"))
+        AppController.shared.say(.done, L("حُفظ التسجيل. تجده في درج الصفحات ← التسجيلات", "Recording saved. Find it in the pages drawer → Recordings")))
     }
 
     func play(_ s: DocSession, _ rec: AudioRec, at offset: TimeInterval = 0) {
@@ -77,7 +77,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let url = Repository.shared.mediaDir(s.id).appendingPathComponent(rec.file)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         guard let p = try? AVAudioPlayer(contentsOf: url) else {
-            AppController.shared.message(L("تعذر تشغيل التسجيل", "Could not play the recording"))
+            AppController.shared.say(.error, L("تعذر تشغيل التسجيل", "Could not play the recording")))
             return
         }
         p.delegate = self
@@ -128,7 +128,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if let rec = s.data.recordings.first(where: { t >= $0.start && t <= $0.start + $0.durationMs }) {
             play(s, rec, at: TimeInterval(t - rec.start) / 1000 - 2)
         } else {
-            AppController.shared.message(L("لم يُكتب هذا أثناء تسجيل", "This wasn’t written during a recording"))
+            AppController.shared.say(.done, L("لم يُكتب هذا أثناء تسجيل", "This wasn’t written during a recording")))
         }
     }
 }
@@ -230,7 +230,7 @@ struct HandwritingSheet: View {
                     TextEditor(text: $text).font(Fonts.sans(16)).frame(minHeight: 200)
                         .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Color.white)).roundedBorder(Palette.divider, radius: 12)
                     HStack {
-                        NavyButton(label: L("نسخ", "Copy"), filled: false) { UIPasteboard.general.string = text; app.message(L("تم النسخ", "Copied")) }
+                        NavyButton(label: L("نسخ", "Copy"), filled: false) { UIPasteboard.general.string = text; app.say(.done, L("تم النسخ", "Copied"))) }
                         Spacer()
                         NavyButton(label: L("إضافة كنص على الصفحة", "Add as text on the page")) {
                             guard let pid = session.pageId(session.currentPage) else { return }

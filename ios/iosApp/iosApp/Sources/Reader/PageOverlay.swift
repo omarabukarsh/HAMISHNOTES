@@ -320,6 +320,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         guard !applying, let s = session else { return }
         let app = AppController.shared
+        let baseCount = lastStrokeCount
         app.noteInteraction()
         // فلتر الممحاة: ما يحميه المستخدم لا يُمسح
         if app.tool == .eraser {
@@ -363,6 +364,18 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 hold.consume()
                 return
             }
+        }
+        // الهايلايتر تحت الكتابة (كما في أندرويد): خطوطه تُنقل تحت خطوط القلم
+        if canvas.drawing.strokes.count == baseCount + 1, let last = canvas.drawing.strokes.last, last.ink.inkType == .marker,
+           canvas.drawing.strokes.dropLast().contains(where: { $0.ink.inkType != .marker }) {
+            var d = canvas.drawing
+            let all = d.strokes
+            let firstInk = all.firstIndex { $0.ink.inkType != .marker } ?? all.count - 1
+            d.strokes.removeLast()
+            d.strokes.insert(last, at: firstInk)
+            applying = true
+            canvas.drawing = d
+            applying = false
         }
         lastStrokeCount = canvas.drawing.strokes.count
         let pd = pageDrawing
@@ -465,7 +478,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             reloadMarks()
             return true
         }
-        c.message(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
+        c.say(.error, L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight")))
         return false
     }
 
@@ -622,6 +635,15 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             b.x = min(max(0, pp.x - b.w / 2), max(0, pageSize.width - b.w))
             b.y = min(max(0, pp.y - b.h / 2), max(0, pageSize.height - b.h))
             s.zoomBox = b
+            return
+        }
+        // عنصر من الدرج: يوضع حيث نقرت
+        if let pend = s.pendingPlace, let idx = s.index(of: pageId) {
+            s.pendingPlace = nil
+            switch pend {
+            case .sticker(let key): s.insertSticker(key, page: idx, at: pp)
+            case .images(let imgs): for (i, im) in imgs.enumerated() { s.insertImage(im, page: idx, at: pp, index: i, select: i == imgs.count - 1) }
+            }
             return
         }
         if c.textActive {

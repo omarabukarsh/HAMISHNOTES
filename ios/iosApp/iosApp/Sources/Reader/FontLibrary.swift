@@ -233,7 +233,7 @@ struct FontLibrarySheet: View {
                                         onPick(e.name)
                                         dismiss()
                                     } else {
-                                        app.message(L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection"))
+                                        app.say(.error, L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection")))
                                     }
                                 }
                             }

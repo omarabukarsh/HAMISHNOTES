@@ -320,7 +320,7 @@ struct NewLooseCardSheet: View {
                 if save() { added += 1; front = ""; back = "" }
             }
             DialogButton(label: L("حفظ", "Save"), bold: true, enabled: ok) {
-                if save() { app.message(L("أُضيفت البطاقة", "Card added")); dismiss() }
+                if save() { app.say(.done, L("أُضيفت البطاقة", "Card added"))); dismiss() }
             }
         }
         .onAppear { folder = initialFolder }

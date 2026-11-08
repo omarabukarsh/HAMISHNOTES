@@ -163,7 +163,7 @@ extension AutoFont {
                 let pos = (o - ws < we - o) ? ws : we
                 insertTarget = InsertTarget(docId: s.id, pageId: pid, boxId: tb.id, offset: min(max(0, pos), chars.count),
                                             area: CGRect(x: apex.x - pw * 0.18, y: b - lineH * 0.2, width: pw * 0.36, height: lineH * 2.6))
-                AppController.shared.message(L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box"))
+                AppController.shared.say(.tip, L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box")))
                 return true
             }
         }
@@ -627,7 +627,7 @@ struct AutoFontSheet: View {
                                       subtitle: L("عند إنهاء الجملة تُعاد كتابتها في مكانها بالخط المختار", "When you finish a sentence it is rewritten in place in the chosen font"),
                                       isOn: Binding(get: { af.on }, set: { v in
                                           af.on = v
-                                          if v { app.message(L("اكتب جملتك، وستتجمّل عند إنهائها", "Write your sentence; it is beautified when you finish")) }
+                                          if v { app.say(.tip, L("اكتب جملتك، وستتجمّل عند إنهائها", "Write your sentence; it is beautified when you finish"))) }
                                       }))
                     }
                     VStack(alignment: .leading, spacing: 0) {
@@ -811,7 +811,7 @@ struct FontPickerSheet: View {
                 let ok = await store.ensure(e.name)
                 busy = nil
                 if ok { store.markUsed(e.name); onPick(e.name); dismiss() }
-                else { app.message(L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection")) }
+                else { app.say(.error, L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection"))) }
             }
         } label: {
             HStack(spacing: 10) {

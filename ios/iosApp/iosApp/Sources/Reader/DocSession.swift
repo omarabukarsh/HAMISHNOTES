@@ -54,6 +54,9 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var editingBox: TextBox? = nil
     /// مربع النص الذي يُكتب فيه الآن على الصفحة، والمربع المحدد (شريطه أسفل الشاشة).
     @Published var inlineEditId: String? = nil
+    /// عنصر من الدرج ينتظر نقرة على الصفحة ليوضع مكانها (ملصق أو صور).
+    enum PendingPlace { case sticker(String), images([UIImage]) }
+    @Published var pendingPlace: PendingPlace? = nil
     @Published var selectedBox: String? = nil
     /// نص المربع أثناء الكتابة (يُحفظ عند الانتهاء).
     var inlineText = ""
@@ -563,7 +566,7 @@ final class DocSession: ObservableObject, Identifiable {
         let item = placed(file: "sticker:" + key, page: p, pid: pid, width: width, aspect: aspect, at: point, index: 0)
         upsertImage(item)
         selectedImage = item.id
-        AppController.shared.message(L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
+        AppController.shared.say(.done, L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize")))
     }
 
     /// موضع عنصر جديد على الصفحة، داخل حدودها.
@@ -617,7 +620,7 @@ final class DocSession: ObservableObject, Identifiable {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let other = PDFDocument(url: url), other.pageCount > 0 else {
-            AppController.shared.message(L("تعذر فتح الملف", "Could not open the file"))
+            AppController.shared.say(.error, L("تعذر فتح الملف", "Could not open the file")))
             return
         }
         var at = max(0, min(doc.pageCount, after + 1))
@@ -636,7 +639,7 @@ final class DocSession: ObservableObject, Identifiable {
 
     func deletePage(_ index: Int) {
         guard let doc = pdf, doc.pageCount > 1, data.pages.indices.contains(index) else {
-            AppController.shared.message(L("لا يمكن حذف الصفحة الوحيدة", "You can’t delete the only page"))
+            AppController.shared.say(.done, L("لا يمكن حذف الصفحة الوحيدة", "You can’t delete the only page")))
             return
         }
         if let p = doc.page(at: index) { trash[data.pages[index].id] = p }
@@ -821,7 +824,7 @@ final class DocSession: ObservableObject, Identifiable {
                 guard let self = self else { return }
                 self.ocrRunning = false
                 self.saveOcr()
-                AppController.shared.message(L("اكتملت قراءة النص", "Text reading finished"))
+                AppController.shared.say(.done, L("اكتملت قراءة النص", "Text reading finished")))
             }
         }
     }

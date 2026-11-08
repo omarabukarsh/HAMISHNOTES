@@ -34,7 +34,7 @@ extension DocSession {
 }
 
 /// شريط النص المحدد في الكتاب.
-struct SelectionBar: View {
+struct TextSelectionBar: View {
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
     @State private var translating = false

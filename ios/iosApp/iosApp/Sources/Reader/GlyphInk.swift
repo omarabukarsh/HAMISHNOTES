@@ -50,39 +50,55 @@ enum GlyphInk {
 
     /// يحوّل المسار إلى مضلعات (المنحنيات تُقسَّم إلى قطع صغيرة).
     static func flatten(_ path: CGPath) -> [[CGPoint]] {
+        let f = Flattener()
+        path.applyWithBlock { e in f.add(e.pointee) }
+        f.finish()
+        return f.out
+    }
+
+    private final class Flattener {
         var out: [[CGPoint]] = []
         var cur: [CGPoint] = []
         var last = CGPoint.zero
-        path.applyWithBlock { e in
-            let el = e.pointee
+
+        func add(_ el: CGPathElement) {
             let p = el.points
             switch el.type {
             case .moveToPoint:
-                if cur.count > 2 { out.append(cur) }
-                cur = [p[0]]; last = p[0]
+                finish()
+                cur = [p[0]]
+                last = p[0]
             case .addLineToPoint:
-                cur.append(p[0]); last = p[0]
+                cur.append(p[0])
+                last = p[0]
             case .addQuadCurveToPoint:
-                let c = p[0], e2 = p[1]
-                for k in 1...6 {
-                    let t = CGFloat(k) / 6, u = 1 - t
-                    cur.append(CGPoint(x: u * u * last.x + 2 * u * t * c.x + t * t * e2.x, y: u * u * last.y + 2 * u * t * c.y + t * t * e2.y))
-                }
-                last = e2
+                quad(last, p[0], p[1])
+                last = p[1]
             case .addCurveToPoint:
-                let c1 = p[0], c2 = p[1], e2 = p[2]
-                for k in 1...8 {
-                    cur.append(Shapes.cubic(last, c1, c2, e2, CGFloat(k) / 8))
-                }
-                last = e2
+                for k in 1...8 { cur.append(Shapes.cubic(last, p[0], p[1], p[2], CGFloat(k) / 8)) }
+                last = p[2]
             case .closeSubpath:
-                if cur.count > 2 { out.append(cur) }
-                cur = []
-            @unknown default: break
+                finish()
+            @unknown default:
+                break
             }
         }
-        if cur.count > 2 { out.append(cur) }
-        return out
+
+        private func quad(_ a: CGPoint, _ c: CGPoint, _ e: CGPoint) {
+            for k in 1...6 {
+                let t = CGFloat(k) / 6
+                let u = 1 - t
+                let w0 = u * u, w1 = 2 * u * t, w2 = t * t
+                let x = w0 * a.x + w1 * c.x + w2 * e.x
+                let y = w0 * a.y + w1 * c.y + w2 * e.y
+                cur.append(CGPoint(x: x, y: y))
+            }
+        }
+
+        func finish() {
+            if cur.count > 2 { out.append(cur) }
+            cur = []
+        }
     }
 
     /// قطع أفقية تملأ داخل الحروف (قاعدة الالتفاف غير الصفرية كما يرسمها الخط).

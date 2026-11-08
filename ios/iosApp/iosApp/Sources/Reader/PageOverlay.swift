@@ -13,7 +13,11 @@ final class InkCanvas: PKCanvasView {
 /// طبقة شفافة تحمل عناصر (نصوص، ملاحظات، إطار صورة): لا تأخذ اللمسة لنفسها أبدًا،
 /// فتصل لمسة القلم أو الإصبع إلى طبقة الكتابة تحتها إلا إذا وقعت على عنصر.
 final class PassThroughView: UIView {
+    /// القلم يكتب فوق النصوص والملاحظات والصور (كما في أندرويد)؛ تُلمس هذه العناصر بالإصبع.
+    var pencilPasses: () -> Bool = { true }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if pencilPasses(), let ts = event?.allTouches, !ts.isEmpty, ts.allSatisfy({ $0.type == .pencil }) { return nil }
         let v = super.hitTest(point, with: event)
         return v === self ? nil : v
     }
@@ -104,6 +108,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         addSubview(canvas)
 
         topLayer.backgroundColor = .clear
+        topLayer.pencilPasses = { let c = AppController.shared; return !c.textActive && !c.stickyActive && !c.lassoActive }
         addSubview(topLayer)
 
         laser.isHidden = true
@@ -523,20 +528,40 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         guard abs(s - renderScale) > 0.01 else { return }
         renderScale = s
         for v in [marksView, topLayer] as [UIView] { applyScale(s, to: v) }
+        // الحبر أيضًا: يُرسم بدقة التكبير لا بدقة الصفحة الأصلية
+        applyScale(s, to: canvas, redraw: false)
         for l in marksView.layer.sublayers ?? [] { l.contentsScale = s }
     }
 
-    private func applyScale(_ s: CGFloat, to v: UIView) {
+    private func applyScale(_ s: CGFloat, to v: UIView, redraw: Bool = true) {
         v.contentScaleFactor = s
         v.layer.contentsScale = s
-        v.setNeedsDisplay()
-        for sub in v.subviews { applyScale(s, to: sub) }
+        for l in v.layer.sublayers ?? [] where l.delegate == nil { l.contentsScale = s }
+        if redraw { v.setNeedsDisplay() } else { v.setNeedsLayout() }
+        for sub in v.subviews { applyScale(s, to: sub, redraw: redraw) }
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         renderScale = 0
         updateRenderScale()
+        linkMultiTouchTaps()
+    }
+
+    private var linkedScroll: UIScrollView?
+
+    /// نقرة الإصبعين (تراجع) والثلاثة (إعادة) تنتظر فشل التكبير والتحريك:
+    /// فلا يُحسب التكبير بإصبعين تراجعًا.
+    private func linkMultiTouchTaps() {
+        var v: UIView? = superview
+        while let x = v, !(x is UIScrollView) { v = x.superview }
+        guard let sv = v as? UIScrollView, sv !== linkedScroll else { return }
+        linkedScroll = sv
+        for g in gestureRecognizers ?? [] {
+            guard let t = g as? UITapGestureRecognizer, t.numberOfTouchesRequired > 1 else { continue }
+            if let pinch = sv.pinchGestureRecognizer { t.require(toFail: pinch) }
+            t.require(toFail: sv.panGestureRecognizer)
+        }
     }
 
     @objc private func onTap(_ g: UITapGestureRecognizer) {
@@ -788,7 +813,9 @@ extension ShapeCaptureView {
         var paths = Shapes.paths(kind, a, b, rounded: rounded)
         if [.line, .elbow, .curve].contains(kind), let main = paths.first, main.count > 1 {
             let back = main[max(0, main.count - 4)], fwd = main[min(main.count - 1, 3)]
-            if let h = StrokeKit.arrow(arrowEnd, tip: main.last!, from: back, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
+            // السهم المنحني سهمٌ كما في أيقونته: رأس في نهايته حتى لو لم يُختر رأس
+            let endHead: ArrowHead = kind == .curve && arrowEnd == .none ? .open : arrowEnd
+            if let h = StrokeKit.arrow(endHead, tip: main.last!, from: back, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
             if let h = StrokeKit.arrow(arrowStart, tip: main.first!, from: fwd, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
         }
         guard style != .solid, let main = paths.first else { return paths }
@@ -822,13 +849,16 @@ enum Shapes {
         case .elbow:
             return [dense([a, CGPoint(x: b.x, y: a.y), b], closed: false)]
         case .curve:
-            let c = CGPoint(x: (a.x + b.x) / 2 - (b.y - a.y) * 0.3, y: (a.y + b.y) / 2 + (b.x - a.x) * 0.3)
-            let pts = (0...40).map { i -> CGPoint in
-                let t = CGFloat(i) / 40
-                let x = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * c.x + t * t * b.x
-                let y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * c.y + t * t * b.y
-                return CGPoint(x: x, y: y)
+            // مثل أيقونتها: منحنى يبدأ أفقيًا ويصعد، ثم جزء مستقيم حتى النهاية (ورأس سهم)
+            let m = CGPoint(x: a.x + (b.x - a.x) * 0.62, y: b.y)
+            let c1 = CGPoint(x: a.x + (m.x - a.x) * 0.6, y: a.y)
+            let c2 = CGPoint(x: a.x + (m.x - a.x) * 0.4, y: m.y)
+            var pts = (0...40).map { i -> CGPoint in
+                let t = CGFloat(i) / 40, u = 1 - t
+                return CGPoint(x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * m.x,
+                               y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * m.y)
             }
+            pts += dense([m, b], closed: false).dropFirst()
             return [pts]
         case .rect, .triangle, .diamond:
             let c: [CGPoint]

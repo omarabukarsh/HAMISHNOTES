@@ -38,7 +38,7 @@ enum InkReader {
     /// يقسم الخطوط إلى أسطر (من الأعلى للأسفل)، وكل سطر بترتيب الكتابة.
     static func lines(_ strokes: [PKStroke]) -> [Line] {
         var out: [Line] = []
-        for s in strokes.sorted(by: { $0.renderBounds.midY < $1.renderBounds.midY }) {
+        for s in strokes.filter(HandwritingWords.eligible).sorted(by: { $0.renderBounds.midY < $1.renderBounds.midY }) {
             let b = s.renderBounds
             if let i = out.firstIndex(where: { l in
                 let ov = min(l.box.maxY, b.maxY) - max(l.box.minY, b.minY)
@@ -161,7 +161,8 @@ enum InkReader {
                 return StrokePoint(x: Float(q.x), y: Float(q.y), t: Int((base + p.timeOffset) * 1000))
             }
             return Stroke(points: pts)
-        }
+        }.filter { $0.points.count >= 2 }
+        guard !strokes.isEmpty else { return "" }
         let ink = Ink(strokes: strokes)
         return await withCheckedContinuation { cont in
             r.recognize(ink: ink) { result, _ in

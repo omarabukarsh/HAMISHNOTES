@@ -16,7 +16,8 @@ enum HandwritingReader {
         guard !strokes.isEmpty else { return [] }
         // محرك ML Kit (من حركة القلم) أولًا، كما في أندرويد؛ وVision حتى تجهز حزمة اللغة
         let code: Int = lang.map { $0 == .arabic ? 0 : 1 } ?? AppController.shared.hwLang
-        let ok = strokes.filter { $0.ink.inkType != .marker && $0.randomSeed != shapeSeed }
+        let ok = strokes.filter(HandwritingWords.eligible)
+        guard !ok.isEmpty else { return [] }
         if let lines = await InkReader.readLines(ok, lang: code) { return lines }
         return await visionRead(strokes, lang: lang)
     }

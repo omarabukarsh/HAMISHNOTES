@@ -342,10 +342,13 @@ struct BigSheet<C: View>: ViewModifier {
     var fitContent = false
     let sheet: () -> C
 
+    @State private var cover = false
+    @State private var shown = false
+
     func body(content: Content) -> some View {
-        content.fullScreenCover(isPresented: $isPresented) {
+        content.fullScreenCover(isPresented: $cover) {
             ZStack {
-                Color.black.opacity(0.32).ignoresSafeArea().onTapGesture { isPresented = false }
+                Color.black.opacity(shown ? 0.32 : 0).ignoresSafeArea().onTapGesture { close() }
                 GeometryReader { g in
                     Group {
                         if fitContent {
@@ -362,12 +365,31 @@ struct BigSheet<C: View>: ViewModifier {
                     }
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
+                        .scaleEffect(shown ? 1 : 0.96)
+                        .opacity(shown ? 1 : 0)
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                 }
             }
             .environment(\.colorScheme, .light)
             .presentationBackground(.clear)
+            .onAppear { withAnimation(Motion.enter) { shown = true } }
+            .onDisappear { shown = false }
         }
+        // تظهر النافذة بتلاشٍ هادئ في مكانها، لا بانزلاق النوافذ الكاملة من الأسفل
+        .onChange(of: isPresented) { _, v in present(v) }
+        .onChange(of: cover) { _, v in if !v && isPresented { isPresented = false } }
+        .onAppear { if isPresented { present(true) } }
+    }
+
+    private func present(_ v: Bool) {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { cover = v }
+    }
+
+    private func close() {
+        withAnimation(.easeOut(duration: 0.14)) { shown = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { isPresented = false }
     }
 }
 

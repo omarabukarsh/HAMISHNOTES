@@ -8,12 +8,19 @@ import PDFKit
 
 enum HandwritingWords {
     /// الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال.
-    static func eligible(_ s: PKStroke) -> Bool { s.ink.inkType != .marker && s.randomSeed != shapeSeed }
+    /// الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال، ولا بقايا المسح الفارغة.
+    static func eligible(_ s: PKStroke) -> Bool {
+        guard s.ink.inkType != .marker, s.randomSeed != shapeSeed, s.path.count >= 2 else { return false }
+        let b = s.renderBounds
+        return !b.isNull && !b.isInfinite && !b.isEmpty && b.width.isFinite && b.height.isFinite
+    }
 
     /// مفتاح يتغيّر مع الكتابة ولغة خط اليد.
+    /// (بعد مسح كل الكتابة تكون الحدود «فارغة» بقيم لا نهائية: تحويلها إلى عدد صحيح كان يُغلق التطبيق)
     static func key(_ d: PKDrawing, lang: Int) -> String {
         let ok = d.strokes.filter(eligible)
         let b = ok.reduce(CGRect.null) { $0.union($1.renderBounds) }
+        guard !b.isNull, b.minX.isFinite, b.minY.isFinite else { return "0|\(lang)" }
         return "\(ok.count)|\(Int(b.minX))|\(Int(b.minY))|\(Int(b.width))|\(Int(b.height))|\(lang)"
     }
 

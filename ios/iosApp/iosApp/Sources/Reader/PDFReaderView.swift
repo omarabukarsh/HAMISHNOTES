@@ -155,7 +155,9 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
     /// يعيد تطبيق الأداة على الصفحات الظاهرة إن تغيّرت.
     func refreshTools() {
         let c = AppController.shared
+        // كل ما يغيّر أداة الرسم: ومنه إعدادات الشكل (رؤوس الأسهم، النمط، السماكة، اللون، الزوايا)
         let key = "\(c.tool)|\(c.colorFor(c.tool))|\(c.sizeFor(c.tool))|\(c.lassoActive)|\(c.shapeActive)|\(c.shapeKind)|\(c.textActive)|\(c.stickyActive)|\(c.fingerWrites)|\(c.eraserMode)|\(c.laserMode)"
+            + "|\(c.arrowStart)|\(c.arrowEnd)|\(c.shapeStyle)|\(c.shapeSize)|\(c.shapeColor)|\(c.shapeRounded)|\(c.lassoRect)"
         guard key != lastToolKey else { return }
         lastToolKey = key
         overlays.values.forEach { $0.applyTool() }
@@ -167,11 +169,11 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
     func applyScrolling() {
         guard let v = pdfView, let sv = PDFCoordinator.scrollView(in: v) else { return }
         let c = AppController.shared
-        let writing = c.tool != .laser || c.lassoActive || c.shapeActive
+        // القلم لا يحرّك الصفحة أبدًا (يكتب، أو يرسم الليزر، أو يحدد)؛ الإصبع يحرّكها،
+        // وإن كان الإصبع يكتب فالتحريك بإصبعين
         let pan = sv.panGestureRecognizer
-        pan.allowedTouchTypes = writing ? [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-                                        : [NSNumber(value: UITouch.TouchType.direct.rawValue), NSNumber(value: UITouch.TouchType.pencil.rawValue)]
-        pan.minimumNumberOfTouches = writing && c.fingerWrites ? 2 : 1
+        pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        pan.minimumNumberOfTouches = c.fingerWrites && !c.textActive && !c.stickyActive ? 2 : 1
     }
 
     /// وسط الجزء الظاهر من الصفحة بنقاط الصفحة.

@@ -318,7 +318,7 @@ private struct ReaderTopBar: View {
                             }
                         }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", tintFor(app.lassoActive)) }
                         .dropdown(isPresented: $lassoMenu) {
-                            LassoMenuContent(onOff: { lassoMenu = false; app.lassoActive = false; s.lassoSel = nil }).environmentObject(app)
+                            LassoMenuContent(session: s, sheet: $sheet, onClose: { lassoMenu = false }, onOff: { lassoMenu = false; app.lassoActive = false; s.lassoSel = nil }).environmentObject(app)
                         }
                     }
                     if v("shapetool") {
@@ -371,7 +371,7 @@ private struct ReaderTopBar: View {
                                 app.stickyActive = true
                                 app.message(L("اختر لونًا ثم انقر على الصفحة", "Pick a color and tap the page"))
                             }
-                        }) { PhIcon("ph_note", tintFor(app.stickyActive)) }
+                        }) { PhIcon("ph_sticky_note", tintFor(app.stickyActive)) }
                     }
                     if v("zoomwin") {
                         TBtn(selected: s.zoomBox != nil, action: {
@@ -650,39 +650,34 @@ struct ColorPickerSheet: View {
 
 private struct ShapeBar: View {
     @EnvironmentObject var app: AppController
-    @State private var strokeMenu = false
-    @State private var colorMenu = false
+    @State private var settings = false
+    @State private var picker = false
     var body: some View {
         let kinds: [(ShapeKind, String)] = [(.line, "ph_shape_line"), (.elbow, "ph_shape_elbow"), (.curve, "ph_shape_curve"), (.rect, "ph_shape_rect"),
                                             (.circle, "ph_shape_circle"), (.triangle, "ph_shape_triangle"), (.diamond, "ph_shape_diamond"), (.ellipse, "ph_shape_ellipse")]
         HStack(spacing: 0) {
             // «ارسم وأبقِ»: التعرف على الشكل المرسوم بالقلم عند إبقائه ثابتًا
-            TBtn(selected: app.drawAndHold, action: {
-                app.drawAndHold.toggle()
-                app.message(app.drawAndHold ? L("ارسم الشكل وأبقِ القلم ثابتًا لحظة فيصير مرتبًا", "Draw a shape and hold the pen still for a moment to tidy it")
-                                            : L("أُوقف «ارسم وأبقِ»", "Draw and hold is off"))
-            }) { PhIcon("ph_shape_detect", tintFor(app.drawAndHold)) }
+            TBtn(selected: app.drawAndHold, action: { app.drawAndHold.toggle() }) { PhIcon("ph_shape_detect", tintFor(app.drawAndHold)) }
             ToolbarSep()
             ForEach(kinds, id: \.0) { item in
                 TBtn(selected: app.shapeKind == item.0, action: { app.shapeKind = item.0 }) { PhIcon(item.1, tintFor(app.shapeKind == item.0)) }
             }
             ToolbarSep()
-            TBtn(action: { strokeMenu = true }) { LineStyleSample(style: app.shapeStyle, color: Palette.textPrimary, width: 4) }
-                .dropdown(isPresented: $strokeMenu) { ShapeStrokePanel().environmentObject(app) }
-            Button { colorMenu = true } label: {
-                Circle().fill(Color(hex: app.shapeColor)).frame(width: 24, height: 24)
-                    .overlay(Circle().stroke(Palette.divider, lineWidth: 1)).frame(width: 42, height: 42)
-            }
-            .dropdown(isPresented: $colorMenu) {
+            // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
+            Button { settings = true } label: {
                 HStack(spacing: 6) {
-                    ForEach(Array((app.penPalette + app.customColors).prefix(10)), id: \.self) { col in
-                        Button { app.shapeColor = col; colorMenu = false } label: {
-                            Circle().fill(Color(hex: col)).frame(width: 32, height: 32)
-                                .overlay(Circle().stroke(col == app.shapeColor ? Palette.navy : Palette.divider, lineWidth: col == app.shapeColor ? 2.5 : 1))
-                        }
-                    }
+                    LineStyleSample(style: app.shapeStyle, color: Color(hex: app.shapeColor), width: min(6, 1.5 + CGFloat(app.shapeSize) * 0.6))
+                    Circle().fill(Color(hex: app.shapeColor)).frame(width: 18, height: 18).overlay(Circle().stroke(Palette.divider, lineWidth: 1))
+                    PhIcon("ph_caret_down", Palette.navy, 12)
                 }
-                .padding(10)
+                .padding(.leading, 10).padding(.trailing, 8).frame(height: 40)
+                .background(Capsule().fill(Palette.navySoft.opacity(0.5)))
+                .overlay(Capsule().stroke(Palette.navy, lineWidth: 1.5))
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(PressScale())
+            .dropdown(isPresented: $settings) {
+                ShapeSettingsWindow(onClose: { settings = false }, onCustom: { settings = false; picker = true }).environmentObject(app)
             }
             ToolbarSep()
             TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق الأشكال", "Close shapes")) }
@@ -692,34 +687,140 @@ private struct ShapeBar: View {
         .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
         .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
         .padding(.bottom, 6)
+        .sheet(isPresented: $picker) { ShapeColorPickerSheet().environmentObject(app) }
     }
 }
 
-/// إعدادات خط الأشكال: النمط، السماكة، الزوايا المستديرة، رؤوس الأسهم.
-private struct ShapeStrokePanel: View {
+/// لون مخصص للأشكال.
+private struct ShapeColorPickerSheet: View {
     @EnvironmentObject var app: AppController
+    @State private var color: Color = .black
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Spacer()
-                Text(String(format: "%.2f mm", Sizes.width(.ballpoint, app.shapeSize) / 595 * 210)).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-                Button {
-                    app.shapeStyle = .solid; app.shapeSize = 2; app.shapeRounded = true; app.arrowStart = .none; app.arrowEnd = .none
-                } label: { PhIcon("ph_undo", Palette.textSecondary, 18, L("استعادة", "Reset")).frame(width: 34, height: 34) }
+        SheetScaffold(title: L("لون آخر", "Other color")) {
+            VStack(spacing: 18) {
+                ColorPicker(L("اللون", "Color"), selection: $color, supportsOpacity: false).font(Fonts.sans(15))
+                HStack {
+                    Spacer()
+                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
+                    NavyButton(label: L("اختيار", "Choose")) {
+                        let c = color.argb | 0xFF000000
+                        app.addCustomColor(c)
+                        app.shapeColor = c
+                        dismiss()
+                    }
+                }
             }
-            StrokeStyleSection(style: $app.shapeStyle)
-            Text(L("السماكة", "Thickness")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-            Slider(value: Binding(get: { Double(app.shapeSize) }, set: { app.shapeSize = Int($0.rounded()) }), in: 0...Double(Sizes.count - 1), step: 1).tint(Palette.navy)
-            Divider()
-            Toggle(L("زوايا مستديرة", "Rounded corners"), isOn: $app.shapeRounded).font(Fonts.sans(13)).tint(Palette.navy)
-            Text(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-            HStack(alignment: .top, spacing: 8) {
-                VStack(spacing: 6) { ForEach(ArrowHead.allCases, id: \.self) { h in arrowOption(h, start: true, selected: app.arrowStart == h) { app.arrowStart = h } } }
-                VStack(spacing: 6) { ForEach(ArrowHead.allCases, id: \.self) { h in arrowOption(h, start: false, selected: app.arrowEnd == h) { app.arrowEnd = h } } }
-            }
+            .padding(.horizontal, 22)
         }
-        .padding(14)
-        .frame(width: 290)
+        .onAppear { color = Color(hex: app.shapeColor) }
+        .presentationDetents([.height(240)])
+    }
+}
+
+/// نافذة «إعدادات الشكل» الموحّدة (نفس ShapeSettingsWindow في أندرويد 1.0.271): معاينة، اللون، نمط الخط،
+/// السماكة، الملء وشفافيته، الزوايا المستديرة ورؤوس الأسهم.
+struct ShapeSettingsWindow: View {
+    @EnvironmentObject var app: AppController
+    let onClose: () -> Void
+    let onCustom: () -> Void
+    private let sizes = [1, 3, 5, 8]
+
+    var body: some View {
+        let col = Color(hex: app.shapeColor)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(L("إعدادات الشكل", "Shape settings")).font(Fonts.sans(16, .bold)).foregroundColor(Palette.textPrimary)
+                Spacer()
+                Button(action: onClose) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق", "Close")).frame(width: 34, height: 34) }
+            }
+            preview(col)
+            label(L("اللون", "Color"))
+            HStack(spacing: 8) {
+                ForEach(Array(NSOrderedSet(array: app.penPalette + app.customColors).array.compactMap { $0 as? UInt32 }.prefix(7)), id: \.self) { c in
+                    let sel = c == app.shapeColor
+                    Button { app.shapeColor = c } label: {
+                        Circle().fill(Color(hex: c)).frame(width: 32, height: 32)
+                            .overlay(Circle().stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2.5 : 1))
+                    }
+                }
+                Button(action: onCustom) {
+                    PhIcon("ph_plus", Palette.textSecondary, 18, L("لون آخر", "Other color")).frame(width: 32, height: 32)
+                        .overlay(Circle().stroke(Palette.divider, lineWidth: 1))
+                }
+            }
+            label(L("نمط الخط", "Line style"))
+            HStack(spacing: 8) {
+                ForEach([LineStyle.solid, .dashed, .dotted], id: \.self) { st in
+                    choice(app.shapeStyle == st, height: 42, { app.shapeStyle = st }) { LineStyleSample(style: st, color: Palette.textPrimary) }
+                }
+            }
+            label(L("السماكة", "Thickness"))
+            let nearest = sizes.min(by: { abs($0 - app.shapeSize) < abs($1 - app.shapeSize) })
+            HStack(spacing: 8) {
+                ForEach(sizes, id: \.self) { sz in
+                    choice(nearest == sz, height: 38, { app.shapeSize = sz }) {
+                        Capsule().fill(Palette.textPrimary).frame(width: 30, height: 1.5 + CGFloat(sz) * 0.8)
+                    }
+                }
+            }
+            PanelDivider().padding(.top, 6)
+            PanelSwitch(label: L("ملء بلون الشكل", "Fill with color"), isOn: $app.shapeFill)
+            if app.shapeFill {
+                PercentSlider(label: L("الشفافية", "Opacity"), value: Binding(get: { app.shapeFillAlpha }, set: { app.shapeFillAlpha = max(0.1, ($0 * 10).rounded() / 10) }), steps: 8)
+            }
+            PanelDivider()
+            PanelSwitch(label: L("زوايا مستديرة", "Rounded corners"), isOn: $app.shapeRounded)
+            label(L("رؤوس الأسهم (للخطوط): النهاية ثم البداية", "Arrowheads (lines): end, then start"))
+            HStack(spacing: 8) {
+                ForEach(ArrowHead.allCases, id: \.self) { h in arrowOption(h, start: false, selected: app.arrowEnd == h) { app.arrowEnd = h } }
+            }
+            HStack(spacing: 8) {
+                ForEach(ArrowHead.allCases, id: \.self) { h in arrowOption(h, start: true, selected: app.arrowStart == h) { app.arrowStart = h } }
+            }
+            .padding(.top, 6).padding(.bottom, 8)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .frame(width: 340)
+    }
+
+    private func label(_ t: String) -> some View {
+        Text(t).font(Fonts.sans(12, .semibold)).foregroundColor(Palette.textSecondary).padding(.top, 10).padding(.bottom, 6)
+    }
+
+    private func choice<C: View>(_ sel: Bool, height: CGFloat, _ action: @escaping () -> Void, @ViewBuilder _ content: () -> C) -> some View {
+        Button(action: action) {
+            content().frame(maxWidth: .infinity).frame(height: height)
+                .background(RoundedRectangle(cornerRadius: 12).fill(sel ? Palette.navySoft : Palette.background))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(sel ? Palette.navy : Color.clear, lineWidth: 2))
+        }
+        .buttonStyle(PressScale())
+    }
+
+    /// معاينة الشكل بإعداداته.
+    private func preview(_ col: Color) -> some View {
+        let kind = app.shapeKind, fill = app.shapeFill, alpha = app.shapeFillAlpha, rounded = app.shapeRounded
+        let sw = 1.5 + CGFloat(app.shapeSize) * 0.7
+        let dash: [CGFloat] = app.shapeStyle == .dashed ? [sw * 3, sw * 2] : (app.shapeStyle == .dotted ? [0.1, sw * 2] : [])
+        return Canvas { ctx, size in
+            let l = size.width * 0.28, r = size.width * 0.72, t = size.height * 0.2, b = size.height * 0.8
+            let cx = (l + r) / 2, cy = (t + b) / 2
+            var p = Path()
+            switch kind {
+            case .line: p.move(to: CGPoint(x: l, y: b)); p.addLine(to: CGPoint(x: r, y: t))
+            case .elbow: p.move(to: CGPoint(x: l, y: t)); p.addLine(to: CGPoint(x: l, y: b)); p.addLine(to: CGPoint(x: r, y: b))
+            case .curve: p.move(to: CGPoint(x: l, y: b)); p.addCurve(to: CGPoint(x: r, y: t), control1: CGPoint(x: cx, y: b), control2: CGPoint(x: cx, y: t))
+            case .rect: p.addRoundedRect(in: CGRect(x: l, y: t, width: r - l, height: b - t), cornerSize: CGSize(width: rounded ? 6 : 0, height: rounded ? 6 : 0))
+            case .circle: p.addEllipse(in: CGRect(x: cx - (b - t) / 2, y: t, width: b - t, height: b - t))
+            case .ellipse: p.addEllipse(in: CGRect(x: l, y: t, width: r - l, height: b - t))
+            case .triangle: p.move(to: CGPoint(x: cx, y: t)); p.addLine(to: CGPoint(x: r, y: b)); p.addLine(to: CGPoint(x: l, y: b)); p.closeSubpath()
+            case .diamond: p.move(to: CGPoint(x: cx, y: t)); p.addLine(to: CGPoint(x: r, y: cy)); p.addLine(to: CGPoint(x: cx, y: b)); p.addLine(to: CGPoint(x: l, y: cy)); p.closeSubpath()
+            }
+            if fill && ![.line, .elbow, .curve].contains(kind) { ctx.fill(p, with: .color(col.opacity(alpha))) }
+            ctx.stroke(p, with: .color(col), style: StrokeStyle(lineWidth: sw, lineCap: .round, lineJoin: rounded ? .round : .miter, dash: dash))
+        }
+        .frame(height: 70)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: 0xFFFCF6E4)))
     }
 
     private func arrowOption(_ h: ArrowHead, start: Bool, selected: Bool, _ action: @escaping () -> Void) -> some View {
@@ -730,21 +831,27 @@ private struct ShapeStrokePanel: View {
                 } else {
                     Canvas { ctx, size in
                         let y = size.height / 2, x0: CGFloat = 6, x1 = size.width - 6
-                        var l = Path(); l.move(to: CGPoint(x: x0, y: y)); l.addLine(to: CGPoint(x: x1, y: y))
-                        ctx.stroke(l, with: .color(Palette.textPrimary), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         let tip = start ? x0 : x1, dir: CGFloat = start ? 1 : -1
+                        let inset: CGFloat = h == .closed ? 9 : 0
+                        let sx: CGFloat = start ? x0 + inset : x0
+                        let ex: CGFloat = start ? x1 : x1 - inset
+                        var l = Path()
+                        l.move(to: CGPoint(x: sx, y: y))
+                        l.addLine(to: CGPoint(x: ex, y: y))
+                        ctx.stroke(l, with: .color(Palette.textPrimary), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         var p = Path()
                         p.move(to: CGPoint(x: tip + dir * 10, y: y - 6)); p.addLine(to: CGPoint(x: tip, y: y)); p.addLine(to: CGPoint(x: tip + dir * 10, y: y + 6))
-                        if h == .closed { p.closeSubpath() }
-                        ctx.stroke(p, with: .color(Palette.textPrimary), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        if h == .closed { p.closeSubpath(); ctx.fill(p, with: .color(Palette.textPrimary)) }
+                        else { ctx.stroke(p, with: .color(Palette.textPrimary), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .miter)) }
                     }
-                    .frame(width: 80, height: 20)
+                    .frame(width: 70, height: 20)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 40)
             .background(RoundedRectangle(cornerRadius: 10).fill(selected ? Palette.navySoft : Palette.background))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Palette.navy : Color.clear, lineWidth: 1.5))
         }
+        .buttonStyle(PressScale())
     }
 }
 

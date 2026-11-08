@@ -221,6 +221,36 @@ final class DocSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
+    /// يضيف شكلًا (خطوطه وملأه إن وُجد) خطوةً واحدة في التراجع.
+    func addShape(_ pageId: String, _ new: PKDrawing, fill: ShapeFill?) {
+        guard let f = fill else { inkChanged(pageId, new); return }
+        let old = drawing(for: pageId)
+        let before = data
+        data.fills.append(f)
+        drawings[pageId] = new
+        dirtyInk.insert(pageId)
+        dataDirty = true
+        push(.both(.ink(page: pageId, before: old, after: new), .data(before: before, after: data)))
+        scheduleSave()
+    }
+
+    /// يحذف ملء الأشكال التي مُسح إطارها، ويضمه إلى خطوة المسح نفسها في التراجع. true = تغيّر شيء.
+    @discardableResult
+    func pruneFills(_ pageId: String) -> Bool {
+        let keys = Set(drawing(for: pageId).strokes.map { $0.path.creationDate.timeIntervalSinceReferenceDate })
+        guard data.fills.contains(where: { $0.page == pageId && !keys.contains($0.key) }) else { return false }
+        let before = data
+        data.fills.removeAll { $0.page == pageId && !keys.contains($0.key) }
+        dataDirty = true
+        if let last = undoStack.popLast() {
+            push(.both(last, .data(before: before, after: data)))
+        } else {
+            push(.data(before: before, after: data))
+        }
+        scheduleSave()
+        return true
+    }
+
     /// مسح الصفحة: الكتابة والتمييز والنصوص والملاحظات والصور، خطوةً واحدة قابلة للتراجع.
     func clearPage(_ page: Int) {
         guard let pid = pageId(page) else { return }
@@ -230,6 +260,7 @@ final class DocSession: ObservableObject, Identifiable {
         data.boxes.removeAll { $0.page == pid }
         data.notes.removeAll { $0.page == pid }
         data.images.removeAll { $0.page == pid }
+        data.fills.removeAll { $0.page == pid }
         drawings[pid] = PKDrawing()
         dirtyInk.insert(pid)
         applyInkHook?(pid, PKDrawing())

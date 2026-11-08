@@ -49,14 +49,62 @@ enum StrokeKit {
     }
 
     /// رأس سهم عند tip باتجاه من from إلى tip.
+    /// طول رأس السهم لسماكة خط.
+    static func headLen(_ width: CGFloat) -> CGFloat { max(10, width * 4.5) }
+    static let spread: CGFloat = .pi * 0.16
+
+    /// رأس السهم عند tip متجهًا من from: حاد دائمًا، والمغلق مثلث مغلق.
     static func arrow(_ head: ArrowHead, tip: CGPoint, from: CGPoint, width: CGFloat) -> [CGPoint]? {
         guard head != .none else { return nil }
         let ang = atan2(tip.y - from.y, tip.x - from.x)
-        let h = max(10, width * 4.5)
-        let a1 = ang + .pi * 0.84, a2 = ang - .pi * 0.84
+        let h = headLen(width)
+        let a1 = ang + .pi - spread, a2 = ang - .pi + spread
         let p1 = CGPoint(x: tip.x + h * cos(a1), y: tip.y + h * sin(a1))
         let p2 = CGPoint(x: tip.x + h * cos(a2), y: tip.y + h * sin(a2))
         return head == .open ? [p1, tip, p2] : [p1, tip, p2, p1]
+    }
+
+    /// خطوط تملأ مثلث الرأس المغلق (PencilKit لا يملأ الأشكال): خطوط متقاربة بعرض القلم.
+    static func fillTriangle(_ t: [CGPoint], width: CGFloat) -> [[CGPoint]] {
+        guard t.count >= 3 else { return [] }
+        let a = t[0], tip = t[1], b = t[2]
+        let step = max(0.6, width * 0.7)
+        let base = hypot(b.x - a.x, b.y - a.y)
+        let n = max(1, Int(base / step))
+        return (0...n).map { i -> [CGPoint] in
+            let f = CGFloat(i) / CGFloat(n)
+            let q = CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)
+            return [q, tip]
+        }
+    }
+
+    /// النقطة على الخط التي تبعد مسافة d عن نهايته (للاتجاه).
+    static func pointBack(_ pts: [CGPoint], _ d: CGFloat) -> CGPoint {
+        guard let last = pts.last else { return .zero }
+        var acc: CGFloat = 0
+        var i = pts.count - 1
+        while i > 0 {
+            let seg = hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+            if acc + seg >= d { let f = (d - acc) / max(0.001, seg); return CGPoint(x: pts[i].x + (pts[i - 1].x - pts[i].x) * f, y: pts[i].y + (pts[i - 1].y - pts[i].y) * f) }
+            acc += seg
+            i -= 1
+        }
+        return pts.first ?? last
+    }
+
+    /// يقص من نهاية الخط مسافة d (فيتوقف الخط عند قاعدة الرأس المغلق).
+    static func trimEnd(_ pts: [CGPoint], _ d: CGFloat) -> [CGPoint] {
+        guard pts.count >= 2 else { return pts }
+        var out = pts
+        var left = d
+        while out.count >= 2 {
+            let a = out[out.count - 2], b = out[out.count - 1]
+            let seg = hypot(b.x - a.x, b.y - a.y)
+            if seg > left { let f = (seg - left) / seg; out[out.count - 1] = CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f); return out }
+            left -= seg
+            out.removeLast()
+        }
+        return out
     }
 
     /// مضلع بزوايا مستديرة (نقاط كثيفة).

@@ -164,8 +164,17 @@ struct ToolSettingsPanel: View {
     @State private var confirmClear = false
 
     var body: some View {
+        if app.tool == .laser {
+            // الليزر: نافذة بتصميم البطاقات (كما في أندرويد 1.0.271)
+            LaserWindow(onCustomColor: onCustomColor)
+        } else {
+            panel
+        }
+    }
+
+    private var panel: some View {
         let t = app.tool
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 PhIcon(filledIcon(t.icon), Palette.navy, 18)
                 Text(t.title).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary)
@@ -347,5 +356,58 @@ struct LaserModeSample: View {
             }
         }
         .frame(width: 64, height: 22)
+    }
+}
+
+
+/// نافذة مؤشر الليزر: نقطة أو أثر مع معاينة حية، اللون، الحجم.
+struct LaserWindow: View {
+    @EnvironmentObject var app: AppController
+    let onCustomColor: () -> Void
+
+    var body: some View {
+        let col = Color(hex: app.colorFor(.laser))
+        let trail = app.laserMode == .line
+        VStack(alignment: .leading, spacing: 0) {
+            ToolWindowHeader(icon: "ph_laser", title: L("مؤشر الليزر", "Laser pointer"))
+                .padding(.bottom, 8)
+            SettingsCard {
+                CardSegmented(options: [(LaserMode.dot, L("● نقطة", "● Dot")), (LaserMode.line, L("〰 أثر", "〰 Trail"))],
+                              selected: app.laserMode) { app.laserMode = $0 }
+                Canvas { ctx, size in
+                    let w = size.width, h = size.height
+                    let end = CGPoint(x: w * 0.86, y: h * 0.42)
+                    if trail {
+                        var p = Path()
+                        p.move(to: CGPoint(x: w * 0.08, y: h * 0.7))
+                        p.addCurve(to: end, control1: CGPoint(x: w * 0.3, y: h * 0.1), control2: CGPoint(x: w * 0.55, y: h * 0.95))
+                        ctx.stroke(p, with: .color(col.opacity(0.25)), style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        ctx.stroke(p, with: .color(col), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    }
+                    let d = trail ? end : CGPoint(x: w / 2, y: h / 2)
+                    ctx.fill(Path(ellipseIn: CGRect(x: d.x - h * 0.32, y: d.y - h * 0.32, width: h * 0.64, height: h * 0.64)), with: .color(col.opacity(0.25)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: d.x - h * 0.15, y: d.y - h * 0.15, width: h * 0.3, height: h * 0.3)), with: .color(col))
+                }
+                .frame(height: 44)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: 0xFFFFFBF2)))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 14).padding(.bottom, 12)
+            }
+            CardTitle(L("اللون", "Color"))
+            SettingsCard {
+                SwatchGrid(colors: app.paletteFor(.laser) + app.customColors, current: app.colorFor(.laser),
+                           onPick: { app.setColor($0) }, onCustom: onCustomColor)
+                    .padding(.top, 8)
+            }
+            SettingsCard {
+                let i = app.sizeFor(.laser)
+                SizeSliderRow(title: L("الحجم", "Size"), index: i,
+                              valueText: String(format: "%.2f mm", Double(Sizes.width(.laser, i) / 600 * 210))) { app.setSize($0) }
+            }
+            .padding(.top, 10)
+        }
+        .padding(12)
+        .frame(width: 320)
+        .background(SheetBg)
     }
 }

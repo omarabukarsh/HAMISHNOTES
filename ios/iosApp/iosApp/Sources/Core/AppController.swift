@@ -65,6 +65,9 @@ final class AppController: ObservableObject {
     @Published var shapeStyle: LineStyle = .solid { didSet { prefs.set(shapeStyle.rawValue, forKey: "shape_style") } }
     @Published var shapeSize = 2 { didSet { prefs.set(shapeSize, forKey: "shape_size") } }
     @Published var shapeRounded = true { didSet { prefs.set(shapeRounded, forKey: "shape_round") } }
+    /// ملء الأشكال المغلقة بلونها، وشفافية الملء.
+    @Published var shapeFill = false { didSet { prefs.set(shapeFill, forKey: "shape_fill") } }
+    @Published var shapeFillAlpha: Double = 0.2 { didSet { prefs.set(shapeFillAlpha, forKey: "shape_fill_a") } }
     @Published var arrowStart: ArrowHead = .none { didSet { prefs.set(arrowStart.rawValue, forKey: "arrow_s") } }
     @Published var arrowEnd: ArrowHead = .none { didSet { prefs.set(arrowEnd.rawValue, forKey: "arrow_e") } }
     @Published var shapeColor: UInt32 = 0xFF000000 { didSet { prefs.set(Int(shapeColor), forKey: "shape_color") } }
@@ -169,6 +172,8 @@ final class AppController: ObservableObject {
         shapeStyle = LineStyle(rawValue: p.integer(forKey: "shape_style")) ?? .solid
         shapeSize = p.object(forKey: "shape_size") as? Int ?? 2
         shapeRounded = p.object(forKey: "shape_round") as? Bool ?? true
+        shapeFill = p.bool(forKey: "shape_fill")
+        shapeFillAlpha = min(1, max(0.1, p.object(forKey: "shape_fill_a") as? Double ?? 0.2))
         arrowStart = ArrowHead(rawValue: p.string(forKey: "arrow_s") ?? "") ?? .none
         arrowEnd = ArrowHead(rawValue: p.string(forKey: "arrow_e") ?? "") ?? .none
         shapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "shape_color") as? Int ?? 0xFF000000)

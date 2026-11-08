@@ -139,6 +139,33 @@ struct TextBox: Codable, Identifiable, Equatable {
     var linkPage = 0
     /// الكتابة اليدوية الأصلية لنص تحوّل منها (لزر «رجوع لخط يدي»).
     var ink: Data? = nil
+    var bold = false
+    var italic = false
+    var underline = false
+    /// 0 بداية، 1 وسط، 2 نهاية.
+    var align = 0
+}
+
+extension TextBox {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        page = try c.decode(String.self, forKey: .page)
+        x = try c.decode(CGFloat.self, forKey: .x)
+        y = try c.decode(CGFloat.self, forKey: .y)
+        w = try c.decode(CGFloat.self, forKey: .w)
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        color = try c.decodeIfPresent(UInt32.self, forKey: .color) ?? 0xFF1A2230
+        size = try c.decodeIfPresent(CGFloat.self, forKey: .size) ?? 16
+        font = try c.decodeIfPresent(String.self, forKey: .font) ?? ""
+        linkDoc = try c.decodeIfPresent(String.self, forKey: .linkDoc)
+        linkPage = try c.decodeIfPresent(Int.self, forKey: .linkPage) ?? 0
+        ink = try c.decodeIfPresent(Data.self, forKey: .ink)
+        bold = try c.decodeIfPresent(Bool.self, forKey: .bold) ?? false
+        italic = try c.decodeIfPresent(Bool.self, forKey: .italic) ?? false
+        underline = try c.decodeIfPresent(Bool.self, forKey: .underline) ?? false
+        align = try c.decodeIfPresent(Int.self, forKey: .align) ?? 0
+    }
 }
 
 /// صورة أو ملصق فوق الصفحة.
@@ -159,6 +186,28 @@ struct StickyNote: Codable, Identifiable, Equatable {
     var style = 0
     var collapsed = false
     var text = ""
+    /// الاسم على الملاحظة (اختياري).
+    var author = ""
+    /// الكتابة بالقلم داخل الملاحظة (بنقاط الملاحظة).
+    var ink: Data? = nil
+}
+
+extension StickyNote {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        page = try c.decode(String.self, forKey: .page)
+        x = try c.decode(CGFloat.self, forKey: .x)
+        y = try c.decode(CGFloat.self, forKey: .y)
+        w = try c.decode(CGFloat.self, forKey: .w)
+        h = try c.decode(CGFloat.self, forKey: .h)
+        color = try c.decodeIfPresent(UInt32.self, forKey: .color) ?? 0xFFFFE27A
+        style = try c.decodeIfPresent(Int.self, forKey: .style) ?? 0
+        collapsed = try c.decodeIfPresent(Bool.self, forKey: .collapsed) ?? false
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        author = try c.decodeIfPresent(String.self, forKey: .author) ?? ""
+        ink = try c.decodeIfPresent(Data.self, forKey: .ink)
+    }
 }
 
 /// عنوان في فهرس المستند.
@@ -189,6 +238,48 @@ struct DocData: Codable {
     var recordings: [AudioRec] = []
     /// تعديلات المستخدم على الملخص (عناوين، ترتيب، جداول).
     var summaryEdits: SummaryEdits? = nil
+    /// ملء الأشكال المغلقة (تحت الكتابة).
+    var fills: [ShapeFill] = []
+    /// نصوص الكتابة المجمَّلة إلى حبر: تُقرأ في البحث والتقاط النص والملخصات.
+    var converted: [ConvertedLine] = []
+}
+
+extension DocData {
+    /// قراءة متسامحة: الحقول الجديدة اختيارية فلا تضيع بيانات الملفات القديمة.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pages = try c.decodeIfPresent([PageInfo].self, forKey: .pages) ?? []
+        bookmarks = try c.decodeIfPresent([String].self, forKey: .bookmarks) ?? []
+        marks = try c.decodeIfPresent([TextMark].self, forKey: .marks) ?? []
+        boxes = try c.decodeIfPresent([TextBox].self, forKey: .boxes) ?? []
+        images = try c.decodeIfPresent([ImageItem].self, forKey: .images) ?? []
+        notes = try c.decodeIfPresent([StickyNote].self, forKey: .notes) ?? []
+        outline = try c.decodeIfPresent([OutlineEntry].self, forKey: .outline) ?? []
+        map = try c.decodeIfPresent(MindMapData.self, forKey: .map)
+        recordings = try c.decodeIfPresent([AudioRec].self, forKey: .recordings) ?? []
+        summaryEdits = try c.decodeIfPresent(SummaryEdits.self, forKey: .summaryEdits)
+        fills = try c.decodeIfPresent([ShapeFill].self, forKey: .fills) ?? []
+        converted = try c.decodeIfPresent([ConvertedLine].self, forKey: .converted) ?? []
+    }
+}
+
+/// ملء شكل مغلق: مضلع بنقاط الصفحة، مرتبط بخط إطاره (وقت إنشائه) فيُمسح ويتحرك معه.
+struct ShapeFill: Codable, Identifiable, Equatable {
+    var id: String
+    var page: String
+    var pts: [CGPoint]
+    var color: UInt32
+    var alpha: CGFloat
+    /// وقت إنشاء خط الإطار (timeIntervalSinceReferenceDate).
+    var key: Double
+}
+
+/// سطر كتابة مجمَّل إلى حبر: نصه وكلماته بمواضعها، ومفتاح خطوطه (وقت إنشائها).
+struct ConvertedLine: Codable, Identifiable, Equatable {
+    var id: String
+    var page: String
+    var key: Double
+    var words: [OcrWord]
 }
 
 /// تسجيل صوتي مرتبط بالمستند.

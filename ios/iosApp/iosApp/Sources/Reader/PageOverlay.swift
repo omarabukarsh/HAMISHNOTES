@@ -127,7 +127,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         lasso.pageId = pageId
         addSubview(lasso)
         shapes.isHidden = true
-        shapes.onShape = { [weak self] strokes in self?.commitShape(strokes) }
+        shapes.onShape = { [weak self] strokes, fill in self?.commitShape(strokes, fill: fill) }
         addSubview(shapes)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(onTap(_:)))
@@ -259,6 +259,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             shapes.rounded = c.shapeRounded
             shapes.arrowStart = c.arrowStart
             shapes.arrowEnd = c.arrowEnd
+            shapes.fill = c.shapeFill
+            shapes.fillAlpha = CGFloat(c.shapeFillAlpha)
         }
     }
 
@@ -348,6 +350,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         lastStrokeCount = canvas.drawing.strokes.count
         let pd = pageDrawing
         s.inkChanged(pageId, pd)
+        if app.tool == .eraser, s.pruneFills(pageId) { reloadMarks() }
         if added, !converted, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = pd.strokes.last {
             AutoFont.shared.onStroke(s, pageId: pageId, stroke: last)
         }
@@ -389,7 +392,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
-    private func commitShape(_ strokes: [PKStroke]) {
+    private func commitShape(_ strokes: [PKStroke], fill: [CGPoint]?) {
         guard let s = session else { return }
         var d = canvas.drawing
         d.strokes.append(contentsOf: strokes)
@@ -397,7 +400,14 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         canvas.drawing = d
         applying = false
         lastStrokeCount = d.strokes.count
-        s.inkChanged(pageId, pageDrawing)
+        var f: ShapeFill? = nil
+        if let poly = fill, let first = strokes.first {
+            let c = AppController.shared
+            f = ShapeFill(id: UUID().uuidString, page: pageId, pts: poly.map { CGPoint(x: $0.x / k, y: $0.y / k) },
+                          color: c.shapeColor, alpha: CGFloat(c.shapeFillAlpha), key: first.path.creationDate.timeIntervalSinceReferenceDate)
+        }
+        s.addShape(pageId, pageDrawing, fill: f)
+        reloadMarks()
     }
 
     // ======================================================== التمييز والتقاط النص
@@ -444,6 +454,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     func reloadMarks() {
         marksView.marks = session?.marks(onPage: pageId).filter { !$0.free } ?? []
+        marksView.fills = session?.data.fills.filter { $0.page == pageId } ?? []
+        marksView.pk = k
         marksView.k = k * pageSize.width
         marksView.setNeedsDisplay()
     }
@@ -617,6 +629,9 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 final class MarksView: UIView {
     var marks: [TextMark] = []
     var k: CGFloat = 1
+    /// ملء الأشكال (بنقاط الصفحة) ونسبة الطبقة إلى الصفحة.
+    var fills: [ShapeFill] = []
+    var pk: CGFloat = 1
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -629,6 +644,14 @@ final class MarksView: UIView {
     /// k = عرض الصفحة بالنقاط على الشاشة (المستطيلات نسبية لعرض الصفحة).
     override func draw(_ rect: CGRect) {
         guard let c = UIGraphicsGetCurrentContext() else { return }
+        // ملء الأشكال تحت الكتابة
+        for f in fills where f.pts.count > 2 {
+            c.setFillColor(UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor)
+            c.move(to: CGPoint(x: f.pts[0].x * pk, y: f.pts[0].y * pk))
+            for q in f.pts.dropFirst() { c.addLine(to: CGPoint(x: q.x * pk, y: q.y * pk)) }
+            c.closePath()
+            c.fillPath()
+        }
         c.setBlendMode(.multiply)
         for m in marks {
             c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
@@ -746,7 +769,11 @@ final class ShapeCaptureView: UIView {
     var rounded = true
     var arrowStart: ArrowHead = .none
     var arrowEnd: ArrowHead = .none
-    var onShape: (([PKStroke]) -> Void)?
+    var fill = false
+    var fillAlpha: CGFloat = 0.2
+    /// الخطوط، ومضلع الملء (للأشكال المغلقة إن كان الملء مفعّلًا).
+    var onShape: (([PKStroke], [CGPoint]?) -> Void)?
+    private let fillPreview = CAShapeLayer()
     private var start: CGPoint?
     private var end: CGPoint?
     private let preview = CAShapeLayer()
@@ -757,6 +784,7 @@ final class ShapeCaptureView: UIView {
         preview.fillColor = UIColor.clear.cgColor
         preview.lineCap = .round
         preview.lineJoin = .round
+        layer.addSublayer(fillPreview)
         layer.addSublayer(preview)
     }
 
@@ -785,14 +813,20 @@ final class ShapeCaptureView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        defer { start = nil; end = nil; preview.path = nil }
+        defer { start = nil; end = nil; preview.path = nil; fillPreview.path = nil }
         guard let a = start, let b = end, hypot(b.x - a.x, b.y - a.y) > 6 else { return }
         let strokes = StrokeKit.strokes(styledPaths(a, b), ink: ink.0, width: ink.1)
-        onShape?(strokes)
+        onShape?(strokes, fillPolygon(a, b))
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        start = nil; end = nil; preview.path = nil
+        start = nil; end = nil; preview.path = nil; fillPreview.path = nil
+    }
+
+    /// مضلع الملء للأشكال المغلقة.
+    func fillPolygon(_ a: CGPoint, _ b: CGPoint) -> [CGPoint]? {
+        guard fill, ![.line, .elbow, .curve].contains(kind) else { return nil }
+        return Shapes.paths(kind, a, b, rounded: rounded).first
     }
 
     private func update() {
@@ -804,6 +838,16 @@ final class ShapeCaptureView: UIView {
             for q in pts.dropFirst() { p.addLine(to: q) }
         }
         preview.path = p.cgPath
+        if let poly = fillPolygon(a, b), let f = poly.first {
+            let fp = UIBezierPath()
+            fp.move(to: f)
+            for q in poly.dropFirst() { fp.addLine(to: q) }
+            fp.close()
+            fillPreview.fillColor = ink.0.color.withAlphaComponent(fillAlpha).cgColor
+            fillPreview.path = fp.cgPath
+        } else {
+            fillPreview.path = nil
+        }
     }
 }
 
@@ -811,20 +855,43 @@ extension ShapeCaptureView {
     /// الشكل بنمطه: الزوايا المستديرة، ورؤوس الأسهم للخطوط، والتقطيع.
     func styledPaths(_ a: CGPoint, _ b: CGPoint) -> [[CGPoint]] {
         var paths = Shapes.paths(kind, a, b, rounded: rounded)
-        if [.line, .elbow, .curve].contains(kind), let main = paths.first, main.count > 1 {
-            let back = main[max(0, main.count - 4)], fwd = main[min(main.count - 1, 3)]
+        var heads: [[CGPoint]] = []
+        if [.line, .elbow, .curve].contains(kind), var main = paths.first, main.count > 1 {
+            let len = StrokeKit.headLen(ink.1)
             // السهم المنحني سهمٌ كما في أيقونته: رأس في نهايته حتى لو لم يُختر رأس
             let endHead: ArrowHead = kind == .curve && arrowEnd == .none ? .open : arrowEnd
-            if let h = StrokeKit.arrow(endHead, tip: main.last!, from: back, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
-            if let h = StrokeKit.arrow(arrowStart, tip: main.first!, from: fwd, width: ink.1) { paths.append(Shapes.dense(h, closed: false)) }
+            let rev = Array(main.reversed())
+            if let h = StrokeKit.arrow(endHead, tip: main.last!, from: StrokeKit.pointBack(main, len), width: ink.1) {
+                heads.append(h)
+                if endHead == .closed { heads += StrokeKit.fillTriangle(h, width: ink.1) }
+            }
+            if let h = StrokeKit.arrow(arrowStart, tip: main.first!, from: StrokeKit.pointBack(rev, len), width: ink.1) {
+                heads.append(h)
+                if arrowStart == .closed { heads += StrokeKit.fillTriangle(h, width: ink.1) }
+            }
+            // الخط يتوقف عند قاعدة الرأس المغلق فيبقى طرفه حادًا
+            let cut = len * cos(StrokeKit.spread)
+            if endHead == .closed { main = StrokeKit.trimEnd(main, cut) }
+            if arrowStart == .closed { main = Array(StrokeKit.trimEnd(main.reversed(), cut).reversed()) }
+            paths[0] = main
         }
-        guard style != .solid, let main = paths.first else { return paths }
-        return StrokeKit.split(main, style: style, width: ink.1) + paths.dropFirst()
+        var body = paths
+        if style != .solid, let main = body.first { body = StrokeKit.split(main, style: style, width: ink.1) + body.dropFirst() }
+        return body + heads.map { Shapes.dense($0, closed: false) }
     }
 }
 
 /// نقاط الأشكال (كل شكل قائمة خطوط، وكل خط نقاط متقاربة).
 enum Shapes {
+    /// نقطة على منحنى بيزييه تكعيبي.
+    static func cubic(_ p0: CGPoint, _ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint, _ t: CGFloat) -> CGPoint {
+        let u = 1 - t
+        let a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t
+        let x = a * p0.x + b * p1.x + c * p2.x + d * p3.x
+        let y = a * p0.y + b * p1.y + c * p2.y + d * p3.y
+        return CGPoint(x: x, y: y)
+    }
+
     static func dense(_ pts: [CGPoint], closed: Bool) -> [CGPoint] {
         var all = pts
         if closed, let f = pts.first { all.append(f) }
@@ -853,12 +920,13 @@ enum Shapes {
             let m = CGPoint(x: a.x + (b.x - a.x) * 0.62, y: b.y)
             let c1 = CGPoint(x: a.x + (m.x - a.x) * 0.6, y: a.y)
             let c2 = CGPoint(x: a.x + (m.x - a.x) * 0.4, y: m.y)
-            var pts = (0...40).map { i -> CGPoint in
-                let t = CGFloat(i) / 40, u = 1 - t
-                return CGPoint(x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * m.x,
-                               y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * m.y)
+            var pts: [CGPoint] = []
+            for i in 0...40 {
+                let t = CGFloat(i) / 40
+                pts.append(Shapes.cubic(a, c1, c2, m, t))
             }
-            pts += dense([m, b], closed: false).dropFirst()
+            let tail: [CGPoint] = dense([m, b], closed: false)
+            pts.append(contentsOf: tail.dropFirst())
             return [pts]
         case .rect, .triangle, .diamond:
             let c: [CGPoint]

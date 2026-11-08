@@ -101,7 +101,15 @@ extension DocSession {
     }
 
     /// تحريك بمقدار (dx, dy) وتكبير بنسبة k حول نقطة.
+    /// مفاتيح الخطوط المحددة (لملء الأشكال المرتبط بها).
+    func lassoKeys() -> Set<Double> {
+        guard let sel = lassoSel else { return [] }
+        let d = drawing(for: sel.pageId)
+        return Set(sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0].path.creationDate.timeIntervalSinceReferenceDate })
+    }
+
     func lassoTransform(dx: CGFloat, dy: CGFloat, k: CGFloat = 1, pivot: CGPoint = .zero) {
+        let keys = lassoKeys()
         let t = CGAffineTransform(translationX: -pivot.x, y: -pivot.y)
             .concatenating(CGAffineTransform(scaleX: k, y: k))
             .concatenating(CGAffineTransform(translationX: pivot.x + dx, y: pivot.y + dy))
@@ -122,11 +130,15 @@ extension DocSession {
                 let p = CGPoint(x: d.notes[i].x, y: d.notes[i].y).applying(t)
                 d.notes[i].x = p.x; d.notes[i].y = p.y
             }
+            for i in d.fills.indices where d.fills[i].page == sel.pageId && keys.contains(d.fills[i].key) {
+                d.fills[i].pts = d.fills[i].pts.map { $0.applying(t) }
+            }
         })
     }
 
     func lassoRecolor(_ argb: UInt32) {
         let col = UIColor(argb: argb)
+        let keys = lassoKeys()
         lassoChange(strokes: { st in
             let a: CGFloat = st.ink.inkType == .marker ? 0.6 : 1
             var s = st
@@ -134,11 +146,14 @@ extension DocSession {
             return s
         }, items: { d, sel in
             for i in d.boxes.indices where sel.boxes.contains(d.boxes[i].id) { d.boxes[i].color = argb }
+            for i in d.fills.indices where d.fills[i].page == sel.pageId && keys.contains(d.fills[i].key) { d.fills[i].color = argb }
         })
     }
 
     func lassoDelete() {
+        let keys = lassoKeys()
         lassoChange(strokes: { _ in nil }, items: { d, sel in
+            d.fills.removeAll { $0.page == sel.pageId && keys.contains($0.key) }
             d.images.removeAll { sel.images.contains($0.id) }
             d.boxes.removeAll { sel.boxes.contains($0.id) }
             d.notes.removeAll { sel.notes.contains($0.id) }
@@ -412,9 +427,14 @@ struct LassoBar: View {
 /// قائمة إعدادات التحديد: النوع وما يدخل فيه.
 struct LassoMenuContent: View {
     @EnvironmentObject var app: AppController
+    @ObservedObject var pm = Premium.shared
+    var session: DocSession? = nil
+    var sheet: Binding<ReaderSheet?>? = nil
+    var onClose: () -> Void = {}
     var onOff: () -> Void
 
     var body: some View {
+        let has = session?.lassoSel.map { !$0.isEmpty } ?? false
         VStack(alignment: .leading, spacing: 8) {
             Text(L("التحديد", "Lasso selection")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary)
             Text(L("نوع التحديد", "Lasso type")).font(Fonts.sans(12, .bold)).foregroundColor(Palette.textSecondary)
@@ -423,12 +443,45 @@ struct LassoMenuContent: View {
                 option(L("مستطيل", "Rectangular"), "ph_select_rect", app.lassoRect) { app.lassoRect = true }
             }
             Text(L("يدخل في التحديد", "Included in selection")).font(Fonts.sans(12, .bold)).foregroundColor(Palette.textSecondary).padding(.top, 6)
-            Toggle(L("الكتابة اليدوية", "Handwriting"), isOn: $app.lassoInk)
-            Toggle(L("الهايلايتر", "Highlighter"), isOn: $app.lassoHighlight)
-            Toggle(L("الأشكال والأسهم", "Shapes and arrows"), isOn: $app.lassoShapes)
-            Toggle(L("الصور", "Images"), isOn: $app.lassoImages)
-            Toggle(L("مربعات النص", "Text boxes"), isOn: $app.lassoTexts)
-            Toggle(L("الملاحظات اللاصقة", "Sticky notes"), isOn: $app.lassoStickies)
+            PanelSwitch(label: L("الكتابة اليدوية", "Handwriting"), isOn: $app.lassoInk)
+            PanelSwitch(label: L("الهايلايتر", "Highlighter"), isOn: $app.lassoHighlight)
+            PanelSwitch(label: L("الأشكال والأسهم", "Shapes and arrows"), isOn: $app.lassoShapes)
+            PanelSwitch(label: L("الصور", "Images"), isOn: $app.lassoImages)
+            PanelSwitch(label: L("مربعات النص", "Text boxes"), isOn: $app.lassoTexts)
+            PanelSwitch(label: L("الملاحظات اللاصقة", "Sticky notes"), isOn: $app.lassoStickies)
+            // أوامر ما بعد التحديد (نفس أوامر الشريط فوق التحديد)
+            Text(L("بعد التحديد", "After selecting")).font(Fonts.sans(12, .bold)).foregroundColor(Palette.textSecondary).padding(.top, 6)
+            if !has {
+                Text(L("أحِط بالقلم حول شيء أولاً لتعمل هذه الأوامر.", "Draw around something first to use these."))
+                    .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    action("Aa " + L("تغيير الخط", "Change font"), has) { if pm.require(.toText) { onClose(); sheet?.wrappedValue = .changeFont } }
+                    action(L("إلى نص", "To text"), has) { if pm.require(.toText) { onClose(); sheet?.wrappedValue = .lassoToText } }
+                }
+                HStack(spacing: 6) {
+                    action("☺ " + L("ملصق", "Sticker"), has) {
+                        if let img = session?.lassoImage() {
+                            StickerStore.shared.add(img)
+                            app.message(L("حُفظ في «ملصقاتي» — تجده في أداة الملصقات", "Saved to “My stickers” — find it in the stickers tool"))
+                        }
+                    }
+                    action(L("نسخ", "Duplicate"), has) { session?.lassoDuplicate() }
+                    action(L("حذف", "Delete"), has, color: Color(hex: 0xFFC62828)) { session?.lassoDelete() }
+                }
+                HStack(spacing: 0) {
+                    Text(L("تلوين", "Recolor")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary).padding(.trailing, 4)
+                    ForEach(Array(app.penPalette.prefix(6)), id: \.self) { col in
+                        Button { session?.lassoRecolor(col) } label: {
+                            Circle().fill(Color(hex: col)).frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(Palette.divider, lineWidth: 1)).frame(width: 32, height: 32)
+                        }
+                        .disabled(!has)
+                    }
+                }
+            }
+            .opacity(has ? 1 : 0.45)
             Button(action: onOff) {
                 Text(L("إيقاف التحديد", "Turn off lasso")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
             }
@@ -437,7 +490,17 @@ struct LassoMenuContent: View {
         .font(Fonts.sans(14))
         .tint(Palette.navy)
         .padding(16)
-        .frame(width: 280)
+        .frame(width: 290)
+    }
+
+    private func action(_ label: String, _ enabled: Bool, color: Color = Palette.textPrimary, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(label).font(Fonts.sans(12.5)).foregroundColor(color).lineLimit(1)
+                .frame(maxWidth: .infinity).padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Palette.background))
+        }
+        .buttonStyle(PressScale())
+        .disabled(!enabled)
     }
 
     private func option(_ label: String, _ icon: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {

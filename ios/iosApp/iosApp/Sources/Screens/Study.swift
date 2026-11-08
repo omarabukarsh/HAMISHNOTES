@@ -122,8 +122,10 @@ struct StatsView: View {
                 .padding(.horizontal, 28).padding(.vertical, 24)
             }
         }
-        .background(Lib.side.ignoresSafeArea())
-        .sheet(isPresented: $goalOpen) { GoalSheet().environmentObject(app) }
+        .background(Lib.side)
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Lib.line, lineWidth: 1))
+        .environment(\.colorScheme, ThemeState.light ? .light : .dark)
+        .dialogSheet(isPresented: $goalOpen) { GoalSheet().environmentObject(app) }
     }
 
     private func reports(_ keys: Set<String>) -> [Report] {
@@ -307,57 +309,81 @@ struct FlameShape: Shape {
     }
 }
 
-/// أعمدة أيام الشهر مع خط هدف متقطع؛ الأيام الفارغة خطوط خفيفة، واليوم محاط بإطار.
+/// أعمدة أيام الشهر مع خط هدف متقطع ووسمه (نفس MonthBars في أندرويد): الأيام الفارغة خطوط خفيفة،
+/// وعمود اليوم محاط بإطار، وأرقام الأيام تحت أعمدتها (الأول وكل خامس واليوم).
 private struct MonthBars: View {
     @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let values: [Int64]
     let goalMs: Int64
     let todayIndex: Int?
-    @Environment(\.layoutDirection) private var dir
+    private let chartH: CGFloat = 170
 
     var body: some View {
         let mx = max(1, Int64(Double(max(values.max() ?? 0, goalMs)) * 1.1))
-        VStack(spacing: 4) {
-            Canvas { ctx, size in
-                let n = values.count
-                let gap: CGFloat = 4
-                let bw = max(1, (size.width - gap * CGFloat(n - 1)) / CGFloat(n))
-                let rtl = dir == .rightToLeft
-                for (i, v) in values.enumerated() {
-                    let x = rtl ? size.width - CGFloat(i + 1) * bw - CGFloat(i) * gap : CGFloat(i) * (bw + gap)
-                    if v <= 0 {
-                        ctx.fill(Path(roundedRect: CGRect(x: x, y: size.height - 4, width: bw, height: 4), cornerRadius: 2), with: .color(Lib.line))
-                    } else {
-                        let h = max(6, size.height * CGFloat(v) / CGFloat(mx))
-                        let r = CGRect(x: x, y: size.height - h, width: bw, height: h)
-                        let path = Path(roundedRect: r, cornerRadius: min(5, bw / 2))
-                        if v >= goalMs {
-                            ctx.fill(path, with: .linearGradient(Gradient(colors: [Color(hex: 0xFFF4C95D), Color(hex: 0xFFE9B73E)]), startPoint: CGPoint(x: 0, y: r.minY), endPoint: CGPoint(x: 0, y: r.maxY)))
-                        } else {
-                            ctx.fill(path, with: .color(Lib.iconBlue.opacity(0.85)))
+        let goalFrac = CGFloat(goalMs) / CGFloat(mx)
+        VStack(spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                Canvas { ctx, size in drawBars(ctx, size, mx: mx, goalFrac: goalFrac) }
+                    .frame(height: chartH)
+                // وسم خط الهدف
+                Text(L("الهدف \(formatReading(goalMs))", "Goal \(formatReading(goalMs))"))
+                    .font(Fonts.sans(10, .bold)).foregroundColor(goldText).lineLimit(1)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Lib.accentSoft))
+                    .padding(.top, max(0, chartH * (1 - goalFrac) - 20))
+            }
+            .frame(height: chartH)
+            HStack(spacing: 0) {
+                ForEach(0..<values.count, id: \.self) { i in
+                    let isToday = todayIndex == i + 1
+                    ZStack {
+                        if (i + 1) % 5 == 0 || i == 0 || isToday {
+                            Text(isToday ? L("اليوم", "Today") : "\(i + 1)")
+                                .font(Fonts.sans(11, isToday ? .bold : .regular))
+                                .foregroundColor(isToday ? Lib.text : Lib.muted)
+                                .lineLimit(1).fixedSize()
                         }
                     }
-                    if let t = todayIndex, t == i + 1 {
-                        ctx.stroke(Path(roundedRect: CGRect(x: x - 2, y: 0, width: bw + 4, height: size.height), cornerRadius: 6), with: .color(Lib.text.opacity(0.35)), lineWidth: 1.5)
-                    }
-                }
-                let gy = size.height - size.height * CGFloat(goalMs) / CGFloat(mx)
-                var g = Path()
-                g.move(to: CGPoint(x: 0, y: gy))
-                g.addLine(to: CGPoint(x: size.width, y: gy))
-                ctx.stroke(g, with: .color(Lib.accentDeep.opacity(0.7)), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-            }
-            .frame(height: 170)
-            HStack {
-                ForEach([1, 5, 10, 15, 20, 25, values.count], id: \.self) { d in
-                    Text("\(d)").font(Fonts.sans(10)).foregroundColor(Lib.muted)
-                    if d != values.count { Spacer() }
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
     }
+
+    private func drawBars(_ ctx: GraphicsContext, _ size: CGSize, mx: Int64, goalFrac: CGFloat) {
+        let n = values.count
+        let gap: CGFloat = 4
+        let bw = max(1, (size.width - gap * CGFloat(n - 1)) / CGFloat(n))
+        let radius = min(5, bw / 2)
+        for (i, v) in values.enumerated() {
+            let x = CGFloat(i) * (bw + gap)
+            let h: CGFloat = v <= 0 ? 4 : max(6, size.height * CGFloat(v) / CGFloat(mx))
+            let r = CGRect(x: x, y: size.height - h, width: bw, height: h)
+            if v <= 0 {
+                ctx.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(Lib.line))
+            } else if v >= goalMs {
+                ctx.fill(Path(roundedRect: r, cornerRadius: radius),
+                         with: .linearGradient(Gradient(colors: [Color(hex: 0xFFF4C95D), Color(hex: 0xFFE9B73E)]),
+                                               startPoint: CGPoint(x: 0, y: r.minY), endPoint: CGPoint(x: 0, y: r.maxY)))
+            } else {
+                ctx.fill(Path(roundedRect: r, cornerRadius: radius), with: .color(Lib.iconBlue))
+            }
+            // عمود اليوم: إطار حوله نفسه
+            if todayIndex == i + 1 {
+                let pad: CGFloat = 2.5
+                let fr = CGRect(x: x - pad, y: size.height - h - pad, width: bw + pad * 2, height: h + pad)
+                ctx.stroke(Path(roundedRect: fr, cornerRadius: radius + pad), with: .color(Lib.text), lineWidth: 1.5)
+            }
+        }
+        let gy = size.height * (1 - goalFrac)
+        var g = Path()
+        g.move(to: CGPoint(x: 0, y: gy))
+        g.addLine(to: CGPoint(x: size.width, y: gy))
+        ctx.stroke(g, with: .color(goldText), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+    }
 }
 
+/// الهدف اليومي بأي عدد من الساعات والدقائق (نفس GoalDialog في أندرويد).
 private struct GoalSheet: View {
     @EnvironmentObject var app: AppController
     @State private var hours = ""
@@ -365,24 +391,24 @@ private struct GoalSheet: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         let total = (Int(hours) ?? 0) * 60 + (Int(minutes) ?? 0)
-        SheetScaffold(title: L("الهدف اليومي", "Daily goal")) {
-            VStack(alignment: .leading, spacing: 10) {
+        let ok = (5...1440).contains(total)
+        AlertDialogCard(title: L("الهدف اليومي", "Daily goal"), width: 380) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
-                    FieldBox(placeholder: L("ساعات", "Hours"), text: $hours).keyboardType(.numberPad)
-                    FieldBox(placeholder: L("دقائق", "Minutes"), text: $minutes).keyboardType(.numberPad)
+                    OutlinedField(label: L("ساعات", "Hours"), text: Binding(get: { hours }, set: { hours = String($0.filter { $0.isNumber }.prefix(2)) }))
+                        .keyboardType(.numberPad)
+                    OutlinedField(label: L("دقائق", "Minutes"), text: Binding(get: { minutes }, set: { minutes = String($0.filter { $0.isNumber }.prefix(2)) }), autoFocus: false)
+                        .keyboardType(.numberPad)
                 }
-                Text((5...1440).contains(total) ? L("الهدف: \(formatReading(Int64(total) * 60_000)) يوميًا", "Goal: \(formatReading(Int64(total) * 60_000)) a day") : L("اختر بين 5 دقائق و24 ساعة", "Choose between 5 minutes and 24 hours"))
-                    .font(Fonts.sans(13)).foregroundColor(Lib.muted)
-                HStack {
-                    Spacer()
-                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
-                    NavyButton(label: L("حفظ", "Save")) { app.setGoal(total); dismiss() }.disabled(!(5...1440).contains(total))
-                }
+                Text(ok ? L("الهدف: \(formatReading(Int64(total) * 60_000)) يوميًا", "Goal: \(formatReading(Int64(total) * 60_000)) a day")
+                        : L("اختر بين 5 دقائق و24 ساعة", "Choose between 5 minutes and 24 hours"))
+                    .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
             }
-            .padding(.horizontal, 22)
+        } buttons: {
+            DialogButton(label: L("إلغاء", "Cancel"), color: Palette.textSecondary) { dismiss() }
+            DialogButton(label: L("حفظ", "Save"), color: Palette.goldDeep, bold: true, enabled: ok) { app.setGoal(total); dismiss() }
         }
         .onAppear { hours = "\(app.goalMinutes / 60)"; minutes = "\(app.goalMinutes % 60)" }
-        .presentationDetents([.height(260)])
     }
 }
 

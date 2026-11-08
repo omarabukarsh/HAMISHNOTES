@@ -86,7 +86,7 @@ struct RootView: View {
         .bigSheet(isPresented: $app.settingsOpen) {
             SettingsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
-        .bigSheet(isPresented: $app.statsOpen, width: 0.92, height: 0.92, maxHeight: 800) {
+        .bigSheet(isPresented: $app.statsOpen, width: 0.92, height: 0.92, maxHeight: 800, maxWidth: 900) {
             StatsView().environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
         .bigSheet(isPresented: Binding(get: { app.openDeck != nil }, set: { if !$0 { app.openDeck = nil } }), width: 0.82, height: 0.85, maxHeight: 700, minHeight: 460, fitContent: true) {

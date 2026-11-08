@@ -192,7 +192,8 @@ extension DocSession {
             let ys = Templates.lineYs(kind: kind, w: size2.width, h: size2.height)
             if let near = ys.min(by: { abs($0 - base) < abs($1 - base) }) {
                 let step = ys.count > 1 ? ys[1] - ys[0] : pw * 0.04
-                if abs(near - base) < step * 0.6 { base = near }
+                let k: CGFloat = [0, 0.3, 0.6, 0.9][min(3, max(0, AutoFont.shared.snap))]
+                if abs(near - base) < step * k { base = near }
             }
         }
         let asc = probe.ascender / 100
@@ -234,6 +235,84 @@ extension DocSession {
         scheduleSave()
     }
 
+    /// يحوّل خطوطًا إلى حبر بشكل الخط (حدود الحروف وملؤها)، خطوةً واحدة في التراجع. يعيد مفتاح الحبر.
+    func inkConvert(pageId: String, page: Int, strokes: [PKStroke], lines: [String], font: String, color: UInt32) -> Double? {
+        let af = AutoFont.shared
+        let pw = pageSize(page).width
+        let bb = strokes.reduce(CGRect.null) { $0.union($1.renderBounds) }
+        guard !bb.isNull, bb.width.isFinite else { return nil }
+        let f = fitText(page: page, strokes: strokes, lines: lines, font: font, snap: af.snap > 0)
+        var size = af.unify ? CGFloat(af.unifySize) * pw / 595 : f.size
+        let rtl = lines.contains { $0.unicodeScalars.contains { (0x0600...0x06FF).contains($0.value) } }
+        var uf = FontStore.shared.uiFont(font, size: size) ?? Fonts.ui(size)
+        var baseline = f.y + uf.ascender
+        var leftX = bb.minX, rightX = bb.maxX
+        // المتابعة على نفس السطر: الكتابة بجانب جملة محوّلة تجلس على سطرها وتأخذ حجمها إن كانت قريبة منه
+        if af.continueLine {
+            let near = data.converted.filter { $0.page == pageId }.filter { c in
+                abs(c.baseline - (bb.minY + bb.height * 0.75)) < c.size * 0.9 && bb.minY < c.baseline + c.size * 0.4
+            }.min { abs($0.baseline - baseline) < abs($1.baseline - baseline) }
+            if let c = near {
+                baseline = c.baseline
+                if !af.unify && bb.height < c.size * 1.6 { size = c.size; uf = FontStore.shared.uiFont(font, size: size) ?? Fonts.ui(size) }
+                if af.contAfter {
+                    let gap = size * 0.3
+                    if rtl { rightX = c.minX - gap } else { leftX = c.maxX + gap }
+                }
+            }
+        }
+        let spacing = CGFloat(af.unify ? af.unifySpacing : 1.25)
+        let date = Date()
+        let ink = UIColor(argb: color)
+        var made: [PKStroke] = []
+        var words: [OcrWord] = []
+        var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = 0
+        for (i, line) in lines.enumerated() {
+            let lay = GlyphInk.layout(line, font: uf)
+            let y = baseline + CGFloat(i) * size * spacing
+            let x = rtl ? rightX - lay.width : leftX
+            made += GlyphInk.strokes(lay, origin: CGPoint(x: x, y: y), size: size, color: ink, bold: af.dynamicBold, date: date)
+            for (w, r) in GlyphInk.words(line, lay, origin: CGPoint(x: x, y: y)) {
+                words.append(OcrWord(text: w, l: r.minX / pw, t: r.minY / pw, r: r.maxX / pw, b: r.maxY / pw, line: i))
+            }
+            minX = min(minX, x); maxX = max(maxX, x + lay.width)
+        }
+        guard !made.isEmpty else { return nil }
+        let old = drawing(for: pageId)
+        var nd = old
+        nd.strokes = old.strokes.filter { s in !strokes.contains { sameStroke($0, s) } } + made
+        let before = data
+        let key = date.timeIntervalSinceReferenceDate
+        data.converted.append(ConvertedLine(id: UUID().uuidString, page: pageId, key: key, words: words, baseline: baseline,
+                                            size: size, minX: minX, maxX: maxX, rtl: rtl, font: font))
+        drawings[pageId] = nd
+        dirtyInk.insert(pageId)
+        dataDirty = true
+        wordCache.removeValue(forKey: pageId)
+        applyInkHook?(pageId, nd)
+        inkVersion += 1
+        push(.both(.ink(page: pageId, before: old, after: nd), .data(before: before, after: data)))
+        scheduleSave()
+        return key
+    }
+
+    /// يعيد الكتابة اليدوية الأصلية مكان الحبر المجمَّل.
+    func inkUnconvert(pageId: String, key: Double, original: [PKStroke]) {
+        let old = drawing(for: pageId)
+        var nd = old
+        nd.strokes = old.strokes.filter { $0.path.creationDate.timeIntervalSinceReferenceDate != key } + original
+        let before = data
+        data.converted.removeAll { $0.key == key }
+        drawings[pageId] = nd
+        dirtyInk.insert(pageId)
+        dataDirty = true
+        wordCache.removeValue(forKey: pageId)
+        applyInkHook?(pageId, nd)
+        inkVersion += 1
+        push(.both(.ink(page: pageId, before: old, after: nd), .data(before: before, after: data)))
+        scheduleSave()
+    }
+
     /// الخطوط التي ما زالت على الصفحة من قائمة.
     func aliveStrokes(_ pageId: String, _ list: [PKStroke]) -> [PKStroke] {
         let present = drawing(for: pageId).strokes
@@ -258,6 +337,23 @@ final class AutoFont: ObservableObject {
     @Published var joinLines = true { didSet { prefs.set(joinLines, forKey: "af_join") } }
     @Published var snapToLine = true { didSet { prefs.set(snapToLine, forKey: "af_snap") } }
     @Published var lang: HwLang = .arabic { didSet { prefs.set(lang.rawValue, forKey: "af_lang") } }
+    // إعدادات أندرويد 1.0.271
+    static let outInk = 0, outText = 1
+    /// تُحفظ على شكل: حبر قلم بشكل الخط، أو مربع نص.
+    @Published var output = 0 { didSet { prefs.set(output, forKey: "af_out") } }
+    @Published var dynamicBold = false { didSet { prefs.set(dynamicBold, forKey: "af_bold") } }
+    /// الكتابة بجانب جملة محوّلة تجلس على سطرها وتأخذ حجمها.
+    @Published var continueLine = true { didSet { prefs.set(continueLine, forKey: "af_cont") } }
+    /// بداية الكتابة الملحقة: بعد آخر كلمة (أو حيث بدأت اليد).
+    @Published var contAfter = false { didSet { prefs.set(contAfter, forKey: "af_contafter") } }
+    @Published var unify = false { didSet { prefs.set(unify, forKey: "af_unify") } }
+    @Published var unifySize = 20 { didSet { prefs.set(unifySize, forKey: "af_usize") } }
+    @Published var unifySpacing: Double = 1.5 { didSet { prefs.set(unifySpacing, forKey: "af_uspace") } }
+    /// قوة الجذب إلى أسطر الدفتر: 0 بلا، 1 ضعيف، 2 عادي، 3 قوي.
+    @Published var snap = 0 { didSet { prefs.set(snap, forKey: "af_snapk") } }
+    static let sizeMin = 8, sizeMax = 60
+    /// آخر تحويل إلى حبر (للرجوع إلى خط اليد): المستند، الصفحة، مفتاح الحبر، الخطوط الأصلية.
+    @Published private(set) var lastInk: (String, String, Double, [PKStroke])? = nil
 
     @Published private(set) var pendingCount = 0
     @Published private(set) var preview: (Int, String)? = nil
@@ -284,6 +380,14 @@ final class AutoFont: ObservableObject {
         joinLines = prefs.object(forKey: "af_join") as? Bool ?? true
         snapToLine = prefs.object(forKey: "af_snap") as? Bool ?? true
         lang = HwLang(rawValue: prefs.object(forKey: "af_lang") as? Int ?? (I18n.english ? 1 : 0)) ?? .arabic
+        output = prefs.object(forKey: "af_out") as? Int ?? 0
+        dynamicBold = prefs.bool(forKey: "af_bold")
+        continueLine = prefs.object(forKey: "af_cont") as? Bool ?? true
+        contAfter = prefs.bool(forKey: "af_contafter")
+        unify = prefs.bool(forKey: "af_unify")
+        unifySize = min(max(prefs.object(forKey: "af_usize") as? Int ?? 20, Self.sizeMin), Self.sizeMax)
+        unifySpacing = min(max(prefs.object(forKey: "af_uspace") as? Double ?? 1.5, 1), 3)
+        snap = min(max(prefs.object(forKey: "af_snapk") as? Int ?? (snapToLine ? 2 : 0), 0), 3)
     }
 
     func penDown() {
@@ -299,7 +403,7 @@ final class AutoFont: ObservableObject {
     /// خط قلم جديد حُفظ على الصفحة (بنقاط الصفحة).
     func onStroke(_ s: DocSession, pageId pid: String, stroke: PKStroke) {
         let ins = insertTarget.flatMap { $0.docId == s.id && $0.pageId == pid ? $0 : nil }
-        guard ins != nil || (on && Premium.shared.active), stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed else { return }
+        guard ins != nil || (on && Premium.shared.active), stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed, stroke.randomSeed != glyphSeed else { return }
         if !pending.isEmpty && (s !== session || pid != pageId || startsNewLine(stroke, page: s.index(of: pid) ?? 0, s)) { flush() }
         session = s
         pageId = pid
@@ -418,7 +522,18 @@ final class AutoFont: ObservableObject {
             }
         }
 
-        let f = s.fitText(page: page, strokes: alive, lines: lineTexts, font: font, snap: snapToLine)
+        // حبر قلم بشكل الخط (الافتراضي في أندرويد 1.0.271)
+        if output == Self.outInk {
+            if let key = s.inkConvert(pageId: pid, page: page, strokes: alive, lines: lineTexts, font: font, color: color) {
+                FontStore.shared.markUsed(font)
+                lastInk = (s.id, pid, key, alive)
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                if lastInk?.2 == key { lastInk = nil }
+            }
+            return
+        }
+
+        let f = s.fitText(page: page, strokes: alive, lines: lineTexts, font: font, snap: snap > 0)
         let box = TextBox(id: UUID().uuidString, page: pid, x: f.x, y: f.y, w: f.w, text: lineTexts.joined(separator: "\n"),
                           color: color, size: f.size, font: font)
         FontStore.shared.markUsed(font)
@@ -430,6 +545,11 @@ final class AutoFont: ObservableObject {
     }
 
     func undoLast(_ s: DocSession) {
+        if let li = lastInk, li.0 == s.id {
+            lastInk = nil
+            s.inkUnconvert(pageId: li.1, key: li.2, original: li.3)
+            return
+        }
         guard let lb = lastBox, lb.0 == s.id else { return }
         lastBox = nil
         s.textBoxToInk(lb.1)
@@ -443,7 +563,7 @@ struct AutoFontChip: View {
     @ObservedObject var af = AutoFont.shared
 
     var body: some View {
-        let last = af.lastBox.flatMap { $0.0 == session.id ? $0 : nil }
+        let last: (String, String)? = af.lastBox.flatMap { $0.0 == session.id ? $0 : nil } ?? af.lastInk.flatMap { $0.0 == session.id ? ($0.0, $0.1) : nil }
         let manual = af.on && af.delayMs == 0 && af.pendingCount > 0
         let ins = af.insertTarget.flatMap { $0.docId == session.id ? $0 : nil }
         if af.preview != nil || last != nil || manual || ins != nil {
@@ -477,79 +597,243 @@ struct AutoFontChip: View {
     }
 }
 
-/// إعدادات «Aa تلقائي»: الخط، ومتى تتحول الجملة، واللغة، والتشغيل/الإيقاف.
+/// إعدادات تجميل خط اليد (نفس AutoFontDialog في أندرويد 1.0.271): بطاقات، وتُطبَّق فورًا.
 struct AutoFontSheet: View {
     @EnvironmentObject var app: AppController
     @ObservedObject var af = AutoFont.shared
     @ObservedObject var store = FontStore.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var font = AutoFont.shared.font
-    @State private var delayMs = AutoFont.shared.delayMs
-    @State private var join = AutoFont.shared.joinLines
-    @State private var snap = AutoFont.shared.snapToLine
-    @State private var lang = AutoFont.shared.lang
-    @State private var library = false
+    @State private var fontPicker = false
+
+    private var sample: String { af.lang == .arabic ? "الخلية وحدة الحياة" : "The cell is the unit of life" }
 
     var body: some View {
-        SheetScaffold(title: "Aa " + L("تحويل الكتابة تلقائياً", "Auto-convert handwriting")) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L("اكتب بالقلم كالعادة، وعندما تنهي الجملة تتحول إلى نص بالخط الذي تختاره، في نفس مكانها وبلونها.",
-                           "Write with your pen as usual; when you finish a sentence it turns into text in the font you choose, in the same place and color."))
-                        .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                    Text(L("الخط", "Font")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy)
-                    Text(L("الخلية وحدة الحياة", "The cell is the unit of life"))
-                        .font(store.font(font, size: 24) ?? Fonts.sans(24)).foregroundColor(Palette.navy)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.ivory))
-                        .task(id: font) { await store.ensure(font) }
-                    QuickFontRow(font: $font, extra: [font])
-                    Button { library = true } label: {
-                        Text(L("مكتبة الخطوط كاملة (\(store.catalog.count))…", "Full font library (\(store.catalog.count))…")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.goldDeep)
+        let ink = af.output == AutoFont.outInk
+        VStack(spacing: 0) {
+            ZStack {
+                Text(L("تجميل خط اليد", "Handwriting beautification")).font(Fonts.display(18)).foregroundColor(Palette.textPrimary)
+                HStack {
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Text(L("تم", "Done")).font(Fonts.sans(16, .semibold)).foregroundColor(Palette.navy).padding(.horizontal, 12).padding(.vertical, 8)
                     }
-                    Text(L("متى تتحول الجملة", "When a sentence converts")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy).padding(.top, 6)
-                    Text(L("وتتحول فوراً عندما تبدأ سطراً جديداً.", "It also converts as soon as you start a new line.")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
-                    HStack(spacing: 6) {
-                        ForEach([(1000, L("بعد ثانية", "After 1 s")), (2000, L("بعد ثانيتين", "After 2 s")), (3000, L("بعد 3 ثوانٍ", "After 3 s")), (0, L("عند الضغط على ✓", "When I tap ✓"))], id: \.0) { v in
-                            ChoiceChip(label: v.1, selected: delayMs == v.0) { delayMs = v.0 }
-                        }
-                    }
-                    Toggle(L("جمع الأسطر المتتالية في فقرة واحدة", "Join consecutive lines into one paragraph"), isOn: $join)
-                    Toggle(L("وضع النص على سطر الدفتر", "Sit text on the page's ruled line"), isOn: $snap)
-                    Text(L("لغة الكتابة", "Handwriting language")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy).padding(.top, 6)
-                    HStack(spacing: 6) {
-                        ChoiceChip(label: L("عربي", "Arabic"), selected: lang == .arabic) { lang = .arabic }
-                        ChoiceChip(label: L("إنجليزي", "English"), selected: lang == .english) { lang = .english }
-                    }
-                    HStack {
-                        if af.on {
-                            Button(L("إيقاف", "Turn off")) { af.on = false; dismiss() }.foregroundColor(Palette.danger)
-                        } else {
-                            Button(L("إلغاء", "Cancel")) { dismiss() }.foregroundColor(Palette.textSecondary)
-                        }
-                        Spacer()
-                        NavyButton(label: af.on ? L("حفظ", "Save") : L("تشغيل", "Turn on")) {
-                            af.font = font
-                            af.delayMs = delayMs
-                            af.joinLines = join
-                            af.snapToLine = snap
-                            af.lang = lang
-                            let was = af.on
-                            af.on = true
-                            if !was { app.message(L("اكتب جملتك، وستتحول عند إنهائها", "Write your sentence; it converts when you finish")) }
-                            dismiss()
-                        }
-                    }
-                    .font(Fonts.sans(15)).padding(.top, 8)
                 }
-                .font(Fonts.sans(14))
-                .tint(Palette.navy)
-                .padding(.horizontal, 22).padding(.bottom, 20)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsCard {
+                        CardSwitchRow(title: L("تجميل خط اليد أثناء الكتابة", "Beautify while writing"),
+                                      subtitle: L("عند إنهاء الجملة تُعاد كتابتها في مكانها بالخط المختار", "When you finish a sentence it is rewritten in place in the chosen font"),
+                                      isOn: Binding(get: { af.on }, set: { v in
+                                          af.on = v
+                                          if v { app.message(L("اكتب جملتك، وستتجمّل عند إنهائها", "Write your sentence; it is beautified when you finish")) }
+                                      }))
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        CardTitle(L("الخط", "Font"))
+                        SettingsCard {
+                            NavRow(title: L("خط الكتابة", "Writing font"), action: { fontPicker = true }) {
+                                Text(af.font).font(store.font(af.font, size: 17) ?? Fonts.sans(17)).foregroundColor(Palette.navy).lineLimit(1)
+                            }
+                            Text(sample).font(store.font(af.font, size: 30) ?? Fonts.sans(30)).foregroundColor(Palette.textPrimary).lineLimit(1)
+                                .frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.vertical, 14)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: 0xFFF7F8FA)))
+                                .padding(.horizontal, 16).padding(.bottom, 14)
+                                .task(id: af.font) { await store.ensure(af.font) }
+                            if ink {
+                                RowDividerLine()
+                                CardSwitchRow(title: L("خط أعرض", "Bolder"), isOn: $af.dynamicBold)
+                            }
+                        }
+                        CardTitle(L("تُحفظ على شكل", "Save as"))
+                        SettingsCard {
+                            CardSegmented(options: [(AutoFont.outInk, L("✎ حبر قلم", "✎ Pen ink")), (AutoFont.outText, L("T مربع نص", "T Text box"))],
+                                          selected: af.output) { af.output = $0 }
+                            Text(ink ? L("حبر بشكل الخط تماماً: تمسحه بالممحاة وتحدده وتلوّنه مثل أي كتابة.", "Ink shaped exactly like the font: erase, select and recolor it like any writing.")
+                                     : L("نص يمكن تعديله؛ شخبطة على كلمة تحذفها و∧ يضيف كلمة.", "Editable text; scribble a word to delete it, ∧ to insert one."))
+                                .font(Fonts.sans(12.5)).foregroundColor(Muted).fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 16).padding(.bottom, 12)
+                        }
+                        CardTitle(L("لغة الكتابة", "Writing language"))
+                        SettingsCard {
+                            CardSegmented(options: [(HwLang.arabic, "العربية"), (HwLang.english, "English")], selected: af.lang) { af.lang = $0 }
+                        }
+                        CardTitle(L("التنسيق", "Layout"))
+                        SettingsCard {
+                            if ink {
+                                CardSwitchRow(title: L("المتابعة على نفس السطر", "Continue on the same line"),
+                                              subtitle: L("الكتابة بجانب جملة محوّلة تجلس على سطرها، وتأخذ حجمها إن كانت قريبة منه", "Writing beside a converted sentence sits on its line, and takes its size when close to it"),
+                                              isOn: $af.continueLine)
+                                if af.continueLine {
+                                    RowDividerLine()
+                                    Text(L("بداية الكتابة الملحقة", "Joined writing starts")).font(Fonts.sans(14)).foregroundColor(Muted)
+                                        .padding(.horizontal, 16).padding(.top, 10)
+                                    CardSegmented(options: [(false, L("حيث بدأت يدي", "Where I started")), (true, L("بعد آخر كلمة", "After the last word"))],
+                                                  selected: af.contAfter) { af.contAfter = $0 }
+                                }
+                                RowDividerLine()
+                            }
+                            CardSwitchRow(title: L("توحيد حجم الخط والمسافة بين الأسطر", "Unify font size & line spacing"), isOn: $af.unify)
+                            if af.unify {
+                                RowDividerLine()
+                                StepperRow(title: L("حجم الخط", "Font size"), value: Double(af.unifySize), range: Double(AutoFont.sizeMin)...Double(AutoFont.sizeMax), step: 1,
+                                           format: { "\(Int($0))" }) { af.unifySize = Int($0) }
+                                StepperRow(title: L("المسافة بين الأسطر", "Line spacing"), value: af.unifySpacing, range: 1...3, step: 0.1,
+                                           format: { String(format: "%.1f", $0) }) { af.unifySpacing = $0 }
+                            }
+                            RowDividerLine()
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L("قوة الجذب إلى أسطر الدفتر", "Snapping intensity")).font(Fonts.sans(16)).foregroundColor(Palette.textPrimary)
+                                Slider(value: Binding(get: { Double(af.snap) }, set: { af.snap = Int($0.rounded()) }), in: 0...3, step: 1).tint(Palette.navy)
+                                HStack {
+                                    ForEach(0..<4, id: \.self) { i in
+                                        let t = [L("بلا", "Off"), L("ضعيف", "Weak"), L("عادي", "Standard"), L("قوي", "Strong")][i]
+                                        Text(t).font(Fonts.sans(12, i == af.snap ? .semibold : .regular)).foregroundColor(i == af.snap ? Palette.navy : Muted)
+                                            .frame(maxWidth: .infinity, alignment: i == 0 ? .leading : (i == 3 ? .trailing : .center))
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                        }
+                        CardTitle(L("متى تتحول الجملة", "When a sentence converts"))
+                        SettingsCard {
+                            CardSegmented(options: [(1000, L("١ ث", "1 s")), (2000, L("٢ ث", "2 s")), (3000, L("٣ ث", "3 s")), (0, L("عند ✓", "On ✓"))],
+                                          selected: af.delayMs) { af.delayMs = $0 }
+                            Text(L("بعد التوقف عن الكتابة، وفوراً عندما تبدأ سطراً جديداً.", "After you pause, and right away when you start a new line."))
+                                .font(Fonts.sans(12.5)).foregroundColor(Muted).padding(.horizontal, 16).padding(.bottom, 12)
+                            if !ink {
+                                RowDividerLine()
+                                CardSwitchRow(title: L("جمع الأسطر المتتالية في فقرة واحدة", "Join consecutive lines into one paragraph"), isOn: $af.joinLines)
+                            }
+                        }
+                    }
+                    .opacity(af.on ? 1 : 0.55)
+                }
+                .padding(.horizontal, 16).padding(.bottom, 20)
             }
         }
-        .sheet(isPresented: $library) {
-            FontLibrarySheet(sample: L("الخلية وحدة الحياة", "The cell"), current: font) { if !$0.isEmpty { font = $0 } }.environmentObject(app)
+        .background(SheetBg)
+        .environment(\.layoutDirection, .leftToRight)
+        .task(id: af.lang) { InkReader.prefetch(af.lang == .arabic ? 0 : 1) }
+        .sheet(isPresented: $fontPicker) {
+            FontPickerSheet(current: af.font, lang: af.lang) { af.font = $0 }.environmentObject(app)
         }
+    }
+}
+
+/// نافذة اختيار الخط (نفس FontPickerSheet في أندرويد): بحث وفئات، وكل خط بنص تجريبي بشكله.
+struct FontPickerSheet: View {
+    let current: String
+    let lang: HwLang
+    let onPick: (String) -> Void
+    @EnvironmentObject var app: AppController
+    @ObservedObject var store = FontStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var tab = FontStore.shared.recent.isEmpty ? "hand" : "recent"
+    @State private var busy: String? = nil
+
+    private var sample: String { lang == .arabic ? "الخلية وحدة الحياة" : "The cell is the unit of life" }
+
+    private var list: [FontEntry] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        let arabic = lang == .arabic
+        if !q.isEmpty { return store.catalog.filter { $0.name.localizedCaseInsensitiveContains(q) } }
+        switch tab {
+        case "recent": return store.recent.compactMap { n in store.catalog.first { $0.name == n } }
+        case "hand": return store.catalog.filter { arabic ? ($0.arabic && $0.cat == "H") || store.isArabicHand($0) : $0.cat == "H" }
+        case "fav": return store.catalog.filter { store.favorites.contains($0.name) }
+        default: return store.catalog.filter { !arabic || $0.arabic }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Text(L("خط الكتابة", "Writing font")).font(Fonts.display(18)).foregroundColor(Palette.textPrimary)
+                HStack {
+                    Button { dismiss() } label: {
+                        Text("‹ " + L("رجوع", "Back")).font(Fonts.sans(16)).foregroundColor(Palette.navy).padding(.horizontal, 10).padding(.vertical, 8)
+                    }
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            HStack(spacing: 8) {
+                Text("⌕").font(.system(size: 18)).foregroundColor(Muted)
+                TextField(L("ابحث في \(store.catalog.count) خطاً", "Search \(store.catalog.count) fonts"), text: $query).font(Fonts.sans(15))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: 0xFFE6E8EC)))
+            .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach([("recent", L("المستعملة", "Recent")), ("hand", L("خط يد", "Handwriting")), ("fav", L("★ المفضلة", "★ Favorites")), ("all", L("الكل", "All"))], id: \.0) { k, label in
+                        let sel = tab == k && query.isEmpty
+                        Button { tab = k; query = "" } label: {
+                            Text(label).font(Fonts.sans(14, sel ? .semibold : .regular)).foregroundColor(sel ? .white : Palette.textPrimary)
+                                .padding(.horizontal, 14).padding(.vertical, 7).background(Capsule().fill(sel ? Palette.navy : Color.white))
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+            if list.isEmpty {
+                Text(tab == "fav" ? L("اضغط ☆ بجانب أي خط ليظهر هنا", "Tap ☆ next to any font to keep it here") : L("لا توجد نتائج", "No results"))
+                    .font(Fonts.sans(14)).foregroundColor(Muted).frame(maxWidth: .infinity, minHeight: 200)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(list) { e in
+                            row(e)
+                            RowDividerLine()
+                        }
+                    }
+                    .background(RoundedRectangle(cornerRadius: 18).fill(CardBg))
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 16).padding(.bottom, 16)
+                }
+            }
+        }
+        .background(SheetBg.ignoresSafeArea())
+        .environment(\.layoutDirection, .leftToRight)
+        .environment(\.colorScheme, .light)
+    }
+
+    private func row(_ e: FontEntry) -> some View {
+        let ready = store.isReady(e.name)
+        let sel = e.name == current
+        return Button {
+            busy = e.name
+            Task { @MainActor in
+                let ok = await store.ensure(e.name)
+                busy = nil
+                if ok { store.markUsed(e.name); onPick(e.name); dismiss() }
+                else { app.message(L("تعذر تنزيل الخط. تأكد من الإنترنت", "Could not download the font. Check your connection")) }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(ready ? sample : e.name).font(ready ? (store.font(e.name, size: 24) ?? Fonts.sans(24)) : Fonts.sans(17))
+                        .foregroundColor(ready ? Palette.textPrimary : Muted).lineLimit(1)
+                    Text(e.name).font(Fonts.sans(12)).foregroundColor(Muted).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if busy == e.name { ProgressView().tint(Palette.navy) }
+                else if sel { Text("✓").font(.system(size: 20, weight: .bold)).foregroundColor(Palette.navy) }
+                else if !ready { Text("⤓").font(.system(size: 20)).foregroundColor(Muted) }
+                Button { store.toggleFavorite(e.name) } label: {
+                    Text(store.favorites.contains(e.name) ? "★" : "☆").font(.system(size: 18)).foregroundColor(Palette.gold).padding(4)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(sel ? Color(hex: 0xFFF1F4FA) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

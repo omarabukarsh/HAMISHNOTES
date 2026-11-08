@@ -216,6 +216,7 @@ final class DocSession: ObservableObject, Identifiable {
         case let .data(before, after):
             let structure = (reverse ? before : after).pages != data.pages
             data = reverse ? before : after
+            wordCache.removeAll()
             dataDirty = true
             if structure { rebuildPDFOrder() }
         case let .both(a, b):
@@ -239,13 +240,17 @@ final class DocSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
-    /// يحذف ملء الأشكال التي مُسح إطارها، ويضمه إلى خطوة المسح نفسها في التراجع. true = تغيّر شيء.
+    /// يحذف ملء الأشكال التي مُسح إطارها، ونصوص الكتابة المجمَّلة التي مُسح حبرها،
+    /// ويضمه إلى خطوة المسح نفسها في التراجع. true = تغيّر شيء.
     @discardableResult
     func pruneFills(_ pageId: String) -> Bool {
         let keys = Set(drawing(for: pageId).strokes.map { $0.path.creationDate.timeIntervalSinceReferenceDate })
-        guard data.fills.contains(where: { $0.page == pageId && !keys.contains($0.key) }) else { return false }
+        guard data.fills.contains(where: { $0.page == pageId && !keys.contains($0.key) })
+            || data.converted.contains(where: { $0.page == pageId && !keys.contains($0.key) }) else { return false }
         let before = data
         data.fills.removeAll { $0.page == pageId && !keys.contains($0.key) }
+        data.converted.removeAll { $0.page == pageId && !keys.contains($0.key) }
+        wordCache.removeValue(forKey: pageId)
         dataDirty = true
         if let last = undoStack.popLast() {
             push(.both(last, .data(before: before, after: data)))
@@ -303,7 +308,7 @@ final class DocSession: ObservableObject, Identifiable {
 
     // ---------- كلمات الصفحة والتقاط النص ----------
 
-    private var wordCache: [String: [OcrWord]] = [:]
+    var wordCache: [String: [OcrWord]] = [:]
     var handWords: [String: [OcrWord]] = [:]
     private var handKeys: [String: String] = [:]
     private var handWork: [String: DispatchWorkItem] = [:]
@@ -321,6 +326,11 @@ final class DocSession: ObservableObject, Identifiable {
             w += h.map { var x = $0; x.line += off; return x }
         } else {
             scheduleHandRead(pid)
+        }
+        // الكتابة المجمَّلة إلى حبر: كلماتها معروفة (تُلتقط بالهايلايتر وتظهر في البحث والملخصات)
+        for c in data.converted where c.page == pid {
+            let off = (w.map { $0.line }.max() ?? -1) + 1
+            w += c.words.map { var x = $0; x.line += off; return x }
         }
         wordCache[pid] = w
         return w

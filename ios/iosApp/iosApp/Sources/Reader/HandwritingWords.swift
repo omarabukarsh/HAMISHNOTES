@@ -10,7 +10,7 @@ enum HandwritingWords {
     /// الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال.
     /// الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال، ولا بقايا المسح الفارغة.
     static func eligible(_ s: PKStroke) -> Bool {
-        guard s.ink.inkType != .marker, s.randomSeed != shapeSeed, s.path.count >= 2 else { return false }
+        guard s.ink.inkType != .marker, s.randomSeed != shapeSeed, s.randomSeed != glyphSeed, s.path.count >= 2 else { return false }
         let b = s.renderBounds
         return !b.isNull && !b.isInfinite && !b.isEmpty && b.width.isFinite && b.height.isFinite
     }

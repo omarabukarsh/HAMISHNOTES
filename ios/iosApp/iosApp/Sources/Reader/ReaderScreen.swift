@@ -146,7 +146,11 @@ private struct ReaderContent: View {
             }
             .environmentObject(app)
         }
-        .sheet(item: Binding(get: { sheet?.id == "addPage" || sheet?.id == "audio" ? nil : sheet }, set: { sheet = $0 })) { sh in
+        // تجميل خط اليد: نافذة في وسط الشاشة بتصميم البطاقات (مثل أندرويد)
+        .bigSheet(isPresented: Binding(get: { sheet?.id == "autoFont" }, set: { if !$0 { sheet = nil } }), width: 0.94, height: 0.9, maxHeight: 900, maxWidth: 560) {
+            AutoFontSheet().environmentObject(app)
+        }
+        .sheet(item: Binding(get: { ["addPage", "audio", "autoFont"].contains(sheet?.id ?? "") ? nil : sheet }, set: { sheet = $0 })) { sh in
             Group {
                 switch sh {
                 case .jump: PageJumpSheet(session: s)

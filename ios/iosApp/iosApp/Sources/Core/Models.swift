@@ -280,6 +280,13 @@ struct ConvertedLine: Codable, Identifiable, Equatable {
     var page: String
     var key: Double
     var words: [OcrWord]
+    /// خط القاعدة والحجم والامتداد الأفقي (بنقاط الصفحة)، لإكمال السطر لاحقًا.
+    var baseline: CGFloat = 0
+    var size: CGFloat = 16
+    var minX: CGFloat = 0
+    var maxX: CGFloat = 0
+    var rtl = false
+    var font = ""
 }
 
 /// تسجيل صوتي مرتبط بالمستند.

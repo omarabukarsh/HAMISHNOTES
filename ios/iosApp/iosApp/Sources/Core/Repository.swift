@@ -11,6 +11,8 @@ import UIKit
 ///   Documents/Hamish/docs/<id>/media/       الصور والتسجيلات
 final class Repository {
     static let shared = Repository()
+    /// طابور الكتابة على القرص (الحبر والبيانات) حتى لا تتوقف الواجهة أثناء الحفظ.
+    static let io = DispatchQueue(label: "hamish.io", qos: .utility)
 
     let root: URL
     private let fm = FileManager.default
@@ -112,6 +114,22 @@ final class Repository {
             try? fm.removeItem(at: dir(id))
             return nil
         }
+        // نسخة «قابلة للتعديل» من هامش: يعود الأصل ومعه الكتابة والتمييز والملاحظات
+        if EditablePDF.restore(pdf: pdfURL(id), into: dir(id)), let orig = PDFDocument(url: pdfURL(id)) {
+            var data = loadData(id)
+            if data.pages.count == orig.pageCount {
+                data.recordings = []
+                saveData(id, data)
+                let n = name ?? url.deletingPathExtension().lastPathComponent
+                return DocEntry(id: id, name: n, sizeBytes: fileSize(id), pageCount: orig.pageCount, addedAt: nowMs(), folder: folder)
+            }
+            try? fm.removeItem(at: dir(id).appendingPathComponent("ink"))
+            return freshEntry(id, orig, name: name, url: url, folder: folder)
+        }
+        return freshEntry(id, pdf, name: name, url: url, folder: folder)
+    }
+
+    private func freshEntry(_ id: String, _ pdf: PDFDocument, name: String?, url: URL, folder: String) -> DocEntry {
         var data = DocData()
         data.pages = (0..<pdf.pageCount).map { _ in PageInfo(id: UUID().uuidString) }
         data.outline = Repository.outline(of: pdf)

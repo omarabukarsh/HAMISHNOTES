@@ -28,7 +28,7 @@ struct HamishApp: App {
                     if (try? FileManager.default.copyItem(at: url, to: tmp)) != nil { app.openExternal(tmp) } else { app.openExternal(url) }
                 }
         }
-        .onChange(of: phase) { p in
+        .onChange(of: phase) { _, p in
             app.setVisible(p == .active)
             if p != .active { WidgetBridge.update(force: true) }
         }
@@ -98,7 +98,7 @@ struct RootView: View {
         .sheet(item: $app.pinPrompt) { p in
             PinPromptSheet(prompt: p).environmentObject(app).environment(\.layoutDirection, .leftToRight)
         }
-        .onChange(of: app.unlockRequest) { id in
+        .onChange(of: app.unlockRequest) { _, id in
             if let id = id { app.requestUnlock(id) }
         }
     }

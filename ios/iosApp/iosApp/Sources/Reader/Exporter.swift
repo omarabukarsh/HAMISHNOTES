@@ -11,38 +11,75 @@ enum Exporter {
         return u
     }
 
-    /// نسخة نهائية: كل صفحة مع التمييز والصور والنصوص والكتابة.
-    static func annotatedPDF(_ docId: String) -> URL? {
+    /// نسخة نهائية: كل صفحة مع التمييز والصور والنصوص والكتابة. تعمل في الخلفية؛ progress(الصفحة، العدد).
+    static func annotatedPDF(_ docId: String, name: String, suffix: String = L(" - نهائي", " - final"),
+                             progress: ((Int, Int) -> Void)? = nil) -> URL? {
         let repo = Repository.shared
-        guard let e = AppController.shared.entry(docId), let pdf = PDFDocument(url: repo.pdfURL(docId)) else { return nil }
+        guard let pdf = PDFDocument(url: repo.pdfURL(docId)), !pdf.isLocked else { return nil }
         let data = repo.loadData(docId)
-        let url = outDir.appendingPathComponent(safeFileName(e.name) + L(" - مع التعليقات.pdf", " - annotated.pdf"))
-        let session = DocSession(entry: e)
+        let url = outDir.appendingPathComponent(safeFileName(name) + suffix + ".pdf")
+        try? FileManager.default.removeItem(at: url)
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
+        let n = pdf.pageCount
         do {
             try renderer.writePDF(to: url) { ctx in
-                for i in 0..<pdf.pageCount {
-                    guard let page = pdf.page(at: i) else { continue }
-                    let b = page.bounds(for: .cropBox)
-                    let rotated = page.rotation % 180 != 0
-                    let size = rotated ? CGSize(width: b.height, height: b.width) : b.size
-                    ctx.beginPage(withBounds: CGRect(origin: .zero, size: size), pageInfo: [:])
-                    let c = ctx.cgContext
-                    c.saveGState()
-                    c.translateBy(x: 0, y: size.height)
-                    c.scaleBy(x: 1, y: -1)
-                    page.draw(with: .cropBox, to: c)
-                    c.restoreGState()
-                    let pid = i < data.pages.count ? data.pages[i].id : ""
-                    drawOverlay(c, size: size, pid: pid, data: data, session: session, docId: docId)
+                for i in 0..<n {
+                    autoreleasepool {
+                        guard let page = pdf.page(at: i) else { return }
+                        let b = page.bounds(for: .cropBox)
+                        let rotated = page.rotation % 180 != 0
+                        let size = rotated ? CGSize(width: b.height, height: b.width) : b.size
+                        ctx.beginPage(withBounds: CGRect(origin: .zero, size: size), pageInfo: [:])
+                        let c = ctx.cgContext
+                        c.saveGState()
+                        c.translateBy(x: 0, y: size.height)
+                        c.scaleBy(x: 1, y: -1)
+                        page.draw(with: .cropBox, to: c)
+                        c.restoreGState()
+                        let pid = i < data.pages.count ? data.pages[i].id : ""
+                        drawOverlay(c, size: size, pid: pid, data: data, docId: docId)
+                        progress?(i + 1, n)
+                    }
                 }
             }
         } catch { return nil }
         return url
     }
 
-    /// يرسم ما فوق الصفحة (التمييز، الصور، الملاحظات، النصوص، الحبر) بإحداثيات الصفحة.
-    static func drawOverlay(_ c: CGContext, size: CGSize, pid: String, data: DocData, session: DocSession, docId: String) {
+    /// نسخة قابلة للتعديل: تظهر الكتابة في أي تطبيق، وداخل الملف نفسه الأصل والبيانات والحبر،
+    /// فإذا فُتح في «هامش» عادت الكتابة والتمييز والملاحظات قابلة للتعديل. nil = تعذّر (تُصنع نسخة نهائية).
+    static func editablePDF(_ docId: String, name: String, progress: ((Int, Int) -> Void)? = nil) -> URL? {
+        guard let url = annotatedPDF(docId, name: name, suffix: "", progress: progress) else { return nil }
+        let repo = Repository.shared
+        let fm = FileManager.default
+        var payload: [String: Data] = [:]
+        guard let orig = try? Data(contentsOf: repo.pdfURL(docId)),
+              let dj = try? Data(contentsOf: repo.dir(docId).appendingPathComponent("data.json")) else { return nil }
+        payload["pdf"] = orig
+        payload["data"] = dj
+        let inkDir = repo.dir(docId).appendingPathComponent("ink", isDirectory: true)
+        for f in (try? fm.contentsOfDirectory(atPath: inkDir.path)) ?? [] {
+            if let d = try? Data(contentsOf: inkDir.appendingPathComponent(f)) { payload["ink/" + f] = d }
+        }
+        let media = repo.dir(docId).appendingPathComponent("media", isDirectory: true)
+        for f in (try? fm.contentsOfDirectory(atPath: media.path)) ?? [] where f.hasPrefix("img-") {
+            if let d = try? Data(contentsOf: media.appendingPathComponent(f)) { payload["media/" + f] = d }
+        }
+        return EditablePDF.append(to: url, payload: payload) ? url : nil
+    }
+
+    static func image(_ docId: String, _ item: ImageItem) -> UIImage? { DocSession.image(docId: docId, item: item) }
+
+    /// يرسم ما فوق الصفحة (الملء، التمييز، الصور، الملاحظات، النصوص، الحبر) بإحداثيات الصفحة.
+    static func drawOverlay(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String) {
+        for f in data.fills where f.page == pid && f.pts.count > 2 {
+            c.saveGState()
+            c.setFillColor(UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor)
+            c.addLines(between: f.pts)
+            c.closePath()
+            c.fillPath()
+            c.restoreGState()
+        }
         c.saveGState()
         c.setBlendMode(.multiply)
         for m in data.marks where m.page == pid && !m.free {
@@ -51,7 +88,7 @@ enum Exporter {
         }
         c.restoreGState()
         for im in data.images where im.page == pid {
-            session.image(for: im)?.draw(in: CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect)))
+            image(docId, im)?.draw(in: CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect)))
         }
         for n in data.notes where n.page == pid {
             let r = n.collapsed ? CGRect(x: n.x, y: n.y, width: 18, height: 18) : CGRect(x: n.x, y: n.y, width: n.w, height: n.h)
@@ -62,14 +99,24 @@ enum Exporter {
                     .font: Fonts.ui(max(6, n.w * 0.075)), .foregroundColor: UIColor(argb: 0xFF1F2933)
                 ])
             }
+            if !n.collapsed, let d = n.ink, let ink = try? PKDrawing(data: d), !ink.strokes.isEmpty {
+                ink.image(from: CGRect(x: 0, y: 0, width: n.w, height: n.h), scale: 3).draw(in: r)
+            }
         }
         for b in data.boxes where b.page == pid {
             let p = NSMutableParagraphStyle()
             p.baseWritingDirection = .natural
-            (b.text as NSString).draw(in: CGRect(x: b.x, y: b.y, width: b.w, height: size.height - b.y), withAttributes: [
-                .font: b.font.isEmpty ? Fonts.ui(b.size) : (UIFont(name: b.font, size: b.size) ?? Fonts.ui(b.size)),
-                .foregroundColor: UIColor(argb: b.linkDoc != nil ? 0xFF1B365D : b.color), .paragraphStyle: p
-            ])
+            p.alignment = b.align == 1 ? .center : (b.align == 2 ? (b.text.unicodeScalars.contains { $0.value >= 0x0600 && $0.value <= 0x06FF } ? .left : .right) : .natural)
+            var font = b.font.isEmpty ? Fonts.ui(b.size) : (UIFont(name: b.font, size: b.size) ?? Fonts.ui(b.size))
+            var traits: UIFontDescriptor.SymbolicTraits = []
+            if b.bold { traits.insert(.traitBold) }
+            if b.italic { traits.insert(.traitItalic) }
+            if !traits.isEmpty, let d = font.fontDescriptor.withSymbolicTraits(traits) { font = UIFont(descriptor: d, size: b.size) }
+            var attrs: [NSAttributedString.Key: Any] = [
+                .font: font, .foregroundColor: UIColor(argb: b.linkDoc != nil ? 0xFF1B365D : b.color), .paragraphStyle: p
+            ]
+            if b.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+            (b.text as NSString).draw(in: CGRect(x: b.x, y: b.y, width: b.w, height: size.height - b.y), withAttributes: attrs)
         }
         let ink = Repository.shared.loadInk(docId, page: pid)
         if !ink.strokes.isEmpty {
@@ -77,25 +124,36 @@ enum Exporter {
         }
     }
 
-    /// ملخص مستند واحد (PDF): نفس أجزاء درج الملخصات (عناوين، فقرات، جداول، والمهم بخط عريض).
-    static func summaryPDF(_ s: DocSession) -> URL? {
-        let app = AppController.shared
-        let blocks = Summary.view(s.allMarks(), tidy: app.summaryTidy, edits: s.summaryEdits)
-        guard !blocks.isEmpty else {
-            app.say(.error, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
-            return nil
+    /// أجزاء ملخص مستند من ملفه المحفوظ (بلا فتحه في جلسة).
+    static func summaryBlocks(_ docId: String, tidy: Bool) -> [SBlock] {
+        let data = Repository.shared.loadData(docId)
+        var order: [String: Int] = [:]
+        for (i, p) in data.pages.enumerated() { order[p.id] = i }
+        let marks = data.marks.filter { $0.inSummary && !$0.free }.sorted { a, b in
+            let ia = order[a.page] ?? 0, ib = order[b.page] ?? 0
+            if ia != ib { return ia < ib }
+            let ta = a.rects.map { $0.t }.min() ?? 0, tb = b.rects.map { $0.t }.min() ?? 0
+            if ta != tb { return ta < tb }
+            return (a.rects.map { $0.l }.min() ?? 0) < (b.rects.map { $0.l }.min() ?? 0)
         }
-        return renderHTML("<h1>\(esc(s.title))</h1>" + html(blocks), name: L("ملخص ", "Summary ") + safeFileName(s.title))
+        return Summary.view(marks, tidy: tidy, edits: data.summaryEdits ?? SummaryEdits())
     }
 
-    /// ملخص مادة كاملة: كل مستنداتها بالترتيب.
+    /// ملخص مستند محفوظ (للمشاركة من المكتبة). يُستدعى على الخيط الرئيسي.
+    static func summaryPDF(docId: String, name: String) -> URL? {
+        let blocks = summaryBlocks(docId, tidy: AppController.shared.summaryTidy)
+        guard !blocks.isEmpty else { return nil }
+        return renderHTML("<h1>\(esc(name))</h1>" + html(blocks), name: L("ملخص ", "Summary ") + safeFileName(name))
+    }
+
+    /// ملخص مادة كاملة: كل مستنداتها بالترتيب. (المستندات المفتوحة تُحفظ أولًا.)
     static func folderSummary(_ folder: String) -> URL? {
         let app = AppController.shared
+        app.tabs.forEach { $0.flush() }
         var body = "<h1>\(esc(L("ملخص مادة", "Subject summary"))): \(esc(folder))</h1>"
         var any = false
-        for e in app.library.filter({ $0.folder == folder && !$0.isMap }).sorted(by: { $0.name < $1.name }) {
-            let s = app.tabs.first { $0.id == e.id } ?? DocSession(entry: e)
-            let blocks = Summary.view(s.allMarks(), tidy: app.summaryTidy, edits: s.summaryEdits)
+        for e in app.library.filter({ $0.folder == folder && !$0.isMap && !$0.locked }).sorted(by: { $0.name < $1.name }) {
+            let blocks = summaryBlocks(e.id, tidy: app.summaryTidy)
             if blocks.isEmpty { continue }
             any = true
             body += "<h2>\(esc(e.name))</h2>" + html(blocks)
@@ -168,74 +226,278 @@ enum Exporter {
     }
 }
 
-/// مشاركة أو حفظ: نسخة نهائية مع التعليقات، أو الأصل، أو الملخصات.
+/// النسخة القابلة للتعديل: الأصل والبيانات والحبر داخل ملف PDF نفسه (كائن مضاف بتحديث تراكمي سليم).
+enum EditablePDF {
+    private static let head = "/Type /HamishEditable /Length "
+    private static let open = " >>\nstream\n"
+
+    static func append(to url: URL, payload: [String: Data]) -> Bool {
+        guard let file = try? Data(contentsOf: url),
+              let blob = try? PropertyListSerialization.data(fromPropertyList: payload, format: .binary, options: 0) else { return false }
+        let from = max(0, file.count - 8192)
+        guard let tail = String(data: file.subdata(in: from..<file.count), encoding: .isoLatin1),
+              let sx = tail.range(of: "startxref", options: .backwards),
+              let tr = tail.range(of: "trailer", options: .backwards, range: tail.startIndex..<sx.lowerBound) else { return false }
+        let dict = String(tail[tr.upperBound..<sx.lowerBound])
+        let prevDigits = tail[sx.upperBound...].drop { !$0.isNumber }.prefix { $0.isNumber }
+        guard let prev = Int(prevDigits), let size = firstInt(dict, "/Size\\s+(\\d+)"),
+              let root = firstMatch(dict, "/Root\\s+(\\d+\\s+\\d+\\s+R)") else { return false }
+        let info = firstMatch(dict, "/Info\\s+(\\d+\\s+\\d+\\s+R)").map { " /Info " + $0 } ?? ""
+        var out = Data()
+        func add(_ s: String) { out.append(s.data(using: .isoLatin1) ?? Data()) }
+        add("\n")
+        let objOffset = file.count + out.count
+        add("\(size) 0 obj\n<< " + head + "\(blob.count)" + open)
+        out.append(blob)
+        add("\nendstream\nendobj\n")
+        let xrefOffset = file.count + out.count
+        add("xref\n\(size) 1\n" + String(format: "%010d 00000 n \n", objOffset))
+        add("trailer\n<< /Size \(size + 1) /Root \(root)\(info) /Prev \(prev) >>\nstartxref\n\(xrefOffset)\n%%EOF\n")
+        guard let h = try? FileHandle(forWritingTo: url) else { return false }
+        defer { try? h.close() }
+        h.seekToEndOfFile()
+        h.write(out)
+        return true
+    }
+
+    /// ما أُرفق داخل الملف، إن كان نسخة قابلة للتعديل.
+    static func extract(_ url: URL) -> [String: Data]? {
+        guard let file = try? Data(contentsOf: url, options: .mappedIfSafe),
+              let r = file.range(of: Data(head.utf8), options: .backwards) else { return nil }
+        var i = r.upperBound
+        var len = 0
+        while i < file.count, file[i] >= 48, file[i] <= 57 { len = len * 10 + Int(file[i] - 48); i += 1 }
+        let o = Data(open.utf8)
+        guard len > 0, file.count >= i + o.count + len, file.subdata(in: i..<(i + o.count)) == o else { return nil }
+        let blob = file.subdata(in: (i + o.count)..<(i + o.count + len))
+        return (try? PropertyListSerialization.propertyList(from: blob, options: [], format: nil)) as? [String: Data]
+    }
+
+    /// يعيد المستند المستورد إلى أصله مع بياناته وحبره وصوره. true = كان نسخة قابلة للتعديل.
+    static func restore(pdf: URL, into dir: URL) -> Bool {
+        guard let p = extract(pdf), let orig = p["pdf"], let data = p["data"] else { return false }
+        let fm = FileManager.default
+        do {
+            try orig.write(to: pdf, options: .atomic)
+            try data.write(to: dir.appendingPathComponent("data.json"), options: .atomic)
+        } catch { return false }
+        try? fm.createDirectory(at: dir.appendingPathComponent("ink"), withIntermediateDirectories: true)
+        try? fm.createDirectory(at: dir.appendingPathComponent("media"), withIntermediateDirectories: true)
+        for (k, v) in p where k.hasPrefix("ink/") || k.hasPrefix("media/") {
+            let name = (k as NSString).lastPathComponent
+            guard !name.isEmpty, name != "..", name != "." else { continue }
+            try? v.write(to: dir.appendingPathComponent(k.hasPrefix("ink/") ? "ink" : "media").appendingPathComponent(name))
+        }
+        return true
+    }
+
+    private static func firstMatch(_ s: String, _ pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)), m.numberOfRanges > 1,
+              let r = Range(m.range(at: 1), in: s) else { return nil }
+        return String(s[r])
+    }
+
+    private static func firstInt(_ s: String, _ pattern: String) -> Int? { firstMatch(s, pattern).flatMap { Int($0) } }
+}
+
+/// حفظ ملفات على الجهاز (تطبيق الملفات): ملف واحد أو عدة ملفات في مجلد تختاره.
+struct FileSaver: UIViewControllerRepresentable {
+    let urls: [URL]
+    let done: (Bool) -> Void
+    func makeCoordinator() -> C { C(done) }
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let p = UIDocumentPickerViewController(forExporting: urls, asCopy: true)
+        p.delegate = context.coordinator
+        return p
+    }
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    final class C: NSObject, UIDocumentPickerDelegate {
+        let done: (Bool) -> Void
+        init(_ d: @escaping (Bool) -> Void) { done = d }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { done(true) }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { done(false) }
+    }
+}
+
+/// مشاركة أو تصدير (نفس ShareExportDialog وShareManyDialog في أندرويد): نوع النسخة (قابلة للتعديل أو نهائية)،
+/// ثم مشاركة أو حفظ على الجهاز، وكذلك الملخصات. التجهيز في الخلفية مع شريط تقدم.
 struct ShareExportSheet: View {
     @EnvironmentObject var app: AppController
     let docIds: [String]
-    @State private var items: [URL]? = nil
+    @State private var editable = true
     @State private var busy = false
+    @State private var progress: Double = 0
+    @State private var status = ""
+    @State private var shareItems: [URL]? = nil
+    @State private var saveItems: [URL]? = nil
     @Environment(\.dismiss) private var dismiss
 
+    private var entries: [DocEntry] { docIds.compactMap { app.entry($0) }.filter { !$0.isMap } }
+    private var locked: Int { entries.filter { $0.locked && !app.unlocked.contains($0.id) }.count }
+
     var body: some View {
-        SheetScaffold(title: docIds.count == 1 ? L("مشاركة أو حفظ", "Share or save") : L("مشاركة \(docIds.count) مستندات", "Share \(docIds.count) documents")) {
-            VStack(alignment: .leading, spacing: 10) {
-                if let urls = items {
-                    ShareSheet(items: urls).frame(minHeight: 380)
-                } else {
-                    option("ph_pen", L("نسخة مع كل ما كتبته", "A copy with everything you wrote"),
-                           L("ملف PDF نهائي: الكتابة والتظليل والنصوص والصور مثبتة في الصفحات", "A final PDF: handwriting, highlights, text and images fixed into the pages")) {
-                        run { docIds.compactMap { Exporter.annotatedPDF($0) } }
+        let many = entries.count > 1
+        SheetScaffold(title: many ? L("مشاركة أو حفظ \(entries.count) مستندات", "Share or save \(entries.count) documents") : L("مشاركة أو تصدير", "Share or export")) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    let names = entries.prefix(4).map { $0.name }.joined(separator: "، ")
+                    Text(names + (entries.count > 4 ? L(" و\(entries.count - 4) غيرها", " and \(entries.count - 4) more") : ""))
+                        .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).lineLimit(2)
+                    if many && locked > 0 {
+                        Text(L("\(locked) مستند مقفل سيُتخطى", "\(locked) locked document(s) will be skipped"))
+                            .font(Fonts.sans(12)).foregroundColor(Palette.danger)
                     }
-                    option("ph_books", L("الملف الأصلي", "The original file"), L("كما استوردته، دون الكتابة", "As you imported it, without your writing")) {
-                        run {
-                            docIds.compactMap { id -> URL? in
-                                guard let e = app.entry(id) else { return nil }
-                                let u = FileManager.default.temporaryDirectory.appendingPathComponent(safeFileName(e.name) + ".pdf")
-                                try? FileManager.default.removeItem(at: u)
-                                try? FileManager.default.copyItem(at: Repository.shared.pdfURL(id), to: u)
-                                return u
+                    Text(L("نوع النسخة", "Copy type")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.top, 6)
+                    copyOption(L("قابلة للتعديل", "Editable"),
+                               many ? L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in Hamish.")
+                                    : L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود الكتابة والتمييز والملاحظات قابلة للتعديل.", "Your writing shows in any app, and when opened in Hamish the writing, highlights and notes become editable again."),
+                               editable) { editable = true }
+                    copyOption(L("نهائية", "Final"),
+                               many ? L("الكتابة مثبتة في الصفحات؛ مناسبة لإرسالها للآخرين.", "Writing is fixed into the pages; good for sending to others.")
+                                    : L("الكتابة مثبتة في الصفحات ولا يمكن تعديلها؛ مناسبة لإرسالها للآخرين.", "Writing is fixed into the pages and can’t be edited; good for sending to others."),
+                               !editable) { editable = false }
+                    HStack(spacing: 8) {
+                        Button { makeDocs { shareItems = $0 } } label: {
+                            HStack(spacing: 6) {
+                                PhIcon("ph_export", .white, 18)
+                                Text(L("مشاركة", "Share")).font(Fonts.sans(15, .bold)).foregroundColor(.white)
                             }
+                            .frame(maxWidth: .infinity).frame(height: 44)
+                            .background(RoundedRectangle(cornerRadius: 22).fill(Palette.navy))
+                        }
+                        Button { makeDocs { saveItems = $0 } } label: {
+                            Text(many ? L("حفظ في مجلد", "Save to folder") : L("حفظ على الجهاز", "Save to device"))
+                                .font(Fonts.sans(15, .bold)).foregroundColor(Palette.navy)
+                                .frame(maxWidth: .infinity).frame(height: 44)
+                                .roundedBorder(Palette.navy, radius: 22)
                         }
                     }
-                    option("ph_summary", L("الملخصات", "Summaries"), L("كل ما ظللته مرتبًا في ملف PDF", "Everything you highlighted, neatly in a PDF")) {
-                        run {
-                            docIds.compactMap { id -> URL? in
-                                guard let e = app.entry(id) else { return nil }
-                                return Exporter.summaryPDF(app.tabs.first { $0.id == id } ?? DocSession(entry: e))
-                            }
+                    .padding(.top, 8)
+                    .disabled(busy)
+                    Text(many ? L("المشاركة ترسل كل الملفات معًا (تلغرام، واتساب، البريد…). الحفظ يضعها في مجلد تختاره.", "Share sends all files together (Telegram, WhatsApp, email…). Save puts them in a folder you choose.")
+                              : L("المشاركة تفتح قائمة التطبيقات: تلغرام، واتساب، البريد…", "Share opens the app list: Telegram, WhatsApp, email…"))
+                        .font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
+                    if !many && app.summariesOn {
+                        Text(L("الملخصات", "Summaries")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.top, 10)
+                        HStack(spacing: 4) {
+                            DialogButton(label: L("مشاركة الملخصات", "Share summaries")) { makeSummary { shareItems = $0 } }
+                            DialogButton(label: L("حفظ الملخصات", "Save summaries")) { makeSummary { saveItems = $0 } }
                         }
+                        .disabled(busy)
                     }
-                    if busy { ProgressView().frame(maxWidth: .infinity).padding() }
+                    if busy {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(status).font(Fonts.sans(12.5)).foregroundColor(Palette.navy)
+                            ProgressView(value: progress).tint(Palette.navy)
+                        }
+                        .padding(.top, 10)
+                    }
                 }
+                .padding(.horizontal, 22).padding(.bottom, 20)
             }
-            .padding(.horizontal, 22).padding(.bottom, 20)
+        }
+        .sheet(item: Binding(get: { shareItems.map { IdURLs(urls: $0) } }, set: { shareItems = $0?.urls })) { u in
+            ShareSheet(items: u.urls)
+        }
+        .sheet(item: Binding(get: { saveItems.map { IdURLs(urls: $0) } }, set: { saveItems = $0?.urls })) { u in
+            FileSaver(urls: u.urls) { ok in
+                saveItems = nil
+                guard ok else { return }
+                if u.urls.count > 1 { app.say(.done, L("حُفظ \(u.urls.count) ملفات في المجلد الذي اخترته", "Saved \(u.urls.count) files to the folder you chose")) }
+                else if u.urls.first?.lastPathComponent.hasPrefix(L("ملخص ", "Summary ")) == true { app.say(.done, L("حُفظت الملخصات", "Summaries saved")) }
+                else { app.say(.done, editable ? L("حُفظت نسخة قابلة للتعديل: افتحها في التطبيق لتعديل الكتابة", "Editable copy saved: open it in the app to edit the writing") : L("حُفظت نسخة نهائية مع التعليقات", "Final copy saved with annotations")) }
+                dismiss()
+            }
         }
     }
 
-    private func run(_ make: @escaping () -> [URL]) {
-        busy = true
-        app.tabs.filter { docIds.contains($0.id) }.forEach { $0.flush() }
-        DispatchQueue.main.async {
-            let urls = make()
-            busy = false
-            if urls.isEmpty { app.say(.error, L("لا يوجد ما يُشارك", "Nothing to share")) } else { items = urls }
-        }
-    }
-
-    private func option(_ icon: String, _ t: String, _ d: String, _ a: @escaping () -> Void) -> some View {
-        Button(action: a) {
-            HStack(spacing: 14) {
-                PhIcon(icon, Palette.navy, 22).frame(width: 44, height: 44).background(RoundedRectangle(cornerRadius: 12).fill(Palette.navySoft))
+    private func copyOption(_ title: String, _ desc: String, _ selected: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Circle().stroke(selected ? Palette.navy : Palette.textSecondary, lineWidth: 2).frame(width: 20, height: 20)
+                    if selected { Circle().fill(Palette.navy).frame(width: 10, height: 10) }
+                }
+                .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(t).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary)
-                    Text(d).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                    Text(title).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary)
+                    Text(desc).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
-            .roundedBorder(Palette.divider, radius: 16)
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(selected ? Palette.navySoft : Color.clear))
+            .roundedBorder(selected ? Palette.navy : Palette.divider, radius: 12)
         }
+        .buttonStyle(.plain)
         .disabled(busy)
     }
+
+    /// يجهّز ملفات PDF في الخلفية (صفحة صفحة مع التقدم) ثم يسلّمها.
+    private func makeDocs(_ then: @escaping ([URL]) -> Void) {
+        let list = entries.filter { !($0.locked && !app.unlocked.contains($0.id)) }
+        let skipped = entries.count - list.count
+        guard !list.isEmpty else {
+            app.say(.error, L("افتح قفل المستندات أولًا", "Unlock the documents first"))
+            return
+        }
+        app.tabs.filter { docIds.contains($0.id) }.forEach { $0.flush() }
+        busy = true
+        progress = 0
+        status = L("جارٍ تجهيز PDF…", "Preparing PDF…")
+        let wantEditable = editable
+        let jobs = list.map { ($0.id, $0.name) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var urls: [URL] = []
+            var failed = 0
+            var fellBack = false
+            for (k, job) in jobs.enumerated() {
+                let report: (Int, Int) -> Void = { i, n in
+                    DispatchQueue.main.async {
+                        progress = (Double(k) + Double(i) / Double(max(1, n))) / Double(jobs.count)
+                        status = jobs.count > 1 ? L("جارٍ تجهيز \(k + 1) من \(jobs.count)…", "Preparing \(k + 1) of \(jobs.count)…")
+                                                : L("جارٍ تجهيز PDF: صفحة \(i) من \(n)", "Preparing PDF: page \(i) of \(n)")
+                    }
+                }
+                var u: URL? = nil
+                if wantEditable {
+                    u = Exporter.editablePDF(job.0, name: job.1, progress: report)
+                    if u == nil { fellBack = true }
+                }
+                if u == nil { u = Exporter.annotatedPDF(job.0, name: job.1, progress: report) }
+                if let u = u { urls.append(u) } else { failed += 1 }
+            }
+            DispatchQueue.main.async {
+                busy = false
+                if fellBack && !urls.isEmpty {
+                    app.say(.error, L("تعذر صنع نسخة قابلة للتعديل لهذا الملف؛ صُنعت نسخة نهائية", "Couldn’t make an editable copy of this file; a final copy was made"))
+                }
+                if failed > 0 {
+                    app.say(.error, jobs.count > 1 ? L("تعذر تجهيز \(failed) من الملفات", "Could not prepare \(failed) of the files") : L("تعذر تجهيز ملف PDF", "Could not prepare the PDF"))
+                }
+                if skipped > 0 { app.say(.done, L("تُخطي \(skipped) مستند مقفل", "Skipped \(skipped) locked document(s)")) }
+                if !urls.isEmpty { then(urls) }
+            }
+        }
+    }
+
+    private func makeSummary(_ then: @escaping ([URL]) -> Void) {
+        guard let e = entries.first else { return }
+        app.tabs.filter { $0.id == e.id }.forEach { $0.flush() }
+        busy = true
+        progress = 0.5
+        status = L("جارٍ تجهيز الملخصات…", "Preparing summaries…")
+        DispatchQueue.main.async {
+            let u = Exporter.summaryPDF(docId: e.id, name: e.name)
+            busy = false
+            if let u = u { then([u]) } else { app.say(.error, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet")) }
+        }
+    }
+}
+
+struct IdURLs: Identifiable {
+    let urls: [URL]
+    var id: String { urls.map { $0.path }.joined(separator: "|") }
 }

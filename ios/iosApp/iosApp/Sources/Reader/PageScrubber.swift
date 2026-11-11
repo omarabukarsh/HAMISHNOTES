@@ -11,6 +11,8 @@ struct PageScrubber: View {
     @State private var dragY: CGFloat = 0
     @State private var dragPage = 0
     @State private var startY: CGFloat = 0
+    @State private var thumb: UIImage? = nil
+    @State private var thumbPage = -1
 
     private let handleH: CGFloat = 54
 
@@ -41,14 +43,11 @@ struct PageScrubber: View {
                                         startY = range * CGFloat(session.currentPage) / last
                                     }
                                     dragY = min(max(0, startY + g.translation.height), range)
-                                    let p = Int((dragY / range * last).rounded())
-                                    if p != dragPage {
-                                        dragPage = p
-                                        session.goTo(page: p)
-                                    }
+                                    // حركة مستمرة ناعمة كما في أندرويد (لا قفزًا صفحة صفحة)
+                                    dragPage = Int((dragY / range * last).rounded())
+                                    if let hook = session.scrubHook { hook(dragY / range) } else { session.goTo(page: dragPage) }
                                 }
                                 .onEnded { _ in
-                                    session.goTo(page: dragPage)
                                     withAnimation(Motion.exit) { dragging = false }
                                 }
                         )
@@ -62,9 +61,8 @@ struct PageScrubber: View {
 
     private func preview(page: Int, n: Int) -> some View {
         let size = session.pageSize(page)
-        let img = session.pdf?.page(at: page)?.thumbnail(of: CGSize(width: 184, height: 184 * size.height / max(1, size.width)), for: .cropBox)
         return VStack(spacing: 4) {
-            if let img = img {
+            if let img = thumb, thumbPage == page {
                 Image(uiImage: img).resizable().aspectRatio(size.width / max(1, size.height), contentMode: .fit)
             } else {
                 Rectangle().fill(Palette.background).aspectRatio(size.width / max(1, size.height), contentMode: .fit)
@@ -74,6 +72,12 @@ struct PageScrubber: View {
         .padding(6)
         .frame(width: 104)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white).shadow(color: .black.opacity(0.2), radius: 8, y: 3))
+        .task(id: page) {
+            guard let p = session.pdf?.page(at: page) else { return }
+            let target = CGSize(width: 184, height: 184 * size.height / max(1, size.width))
+            let img = await Task.detached(priority: .userInitiated) { p.thumbnail(of: target, for: .cropBox) }.value
+            if !Task.isCancelled { thumb = img; thumbPage = page }
+        }
     }
 }
 

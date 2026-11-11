@@ -80,7 +80,7 @@ enum MindMap {
         let raw = e.nodes.filter { index[$0.key] != nil && $0.value.role != .hidden }
         var out: [String: (String?, Double)] = [:]
         for (k, v) in raw {
-            let pos = v.pos ?? Double(index[k]!)
+            let pos = v.pos ?? Double(index[k] ?? 0)
             let p: String? = v.role == .branch ? nil : (v.parent.flatMap { raw[$0] != nil && $0 != k ? $0 : nil })
             out[k] = (p, pos)
         }
@@ -88,7 +88,7 @@ enum MindMap {
             var seen = Set<String>()
             var cur: String? = k
             while let c = cur {
-                if !seen.insert(c).inserted { out[c] = (nil, out[c]!.1); break }
+                if !seen.insert(c).inserted { out[c] = (nil, out[c]?.1 ?? 0); break }
                 cur = out[c]?.0
             }
         }
@@ -115,7 +115,7 @@ enum MindMap {
             visible.filter { $0.value.0 == parent }.sorted { $0.value.1 < $1.value.1 || ($0.value.1 == $1.value.1 && $0.key < $1.key) }.map { $0.key }
         }
         func node(_ k: String) -> MapNode {
-            let it = byKey[k]!
+            guard let it = byKey[k] else { return MapNode(key: k, text: "", original: "", mark: nil, collapsed: false, children: []) }
             let shown = e.texts[k].flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? it.text
             return MapNode(key: k, text: shown, original: it.text, mark: it.mark, collapsed: e.collapsed.contains(k), children: childrenOf(k).map(node))
         }
@@ -168,9 +168,9 @@ enum MindMap {
         let j = i + delta
         guard j >= 0 && j < sibs.count else { return e }
         var nodes = normalized(placed)
-        let a = nodes[key]!, b = nodes[sibs[j]]!
-        nodes[key]!.pos = b.pos
-        nodes[sibs[j]]!.pos = a.pos
+        guard let a = nodes[key], let b = nodes[sibs[j]] else { return e }
+        nodes[key]?.pos = b.pos
+        nodes[sibs[j]]?.pos = a.pos
         var x = e
         x.nodes = nodes
         return x
@@ -683,10 +683,10 @@ struct MindMapView: View {
                     viewport = geo.size
                     if !fitted && geo.size.width > 0 { fit(plan, in: geo.size); fitted = true }
                 }
-                .onChange(of: geo.size) { s in viewport = s; if !userMoved { fit(plan, in: s) } }
-                .onChange(of: fitted) { f in if !f { userMoved = false; fit(plan, in: geo.size); fitted = true } }
+                .onChange(of: geo.size) { _, s in viewport = s; if !userMoved { fit(plan, in: s) } }
+                .onChange(of: fitted) { _, f in if !f { userMoved = false; fit(plan, in: geo.size); fitted = true } }
                 // الخريطة تتوسط من جديد كلما تغيّر حجمها (ما لم يحرّكها المستخدم بيده)
-                .onChange(of: plan.size) { _ in if !userMoved { fit(plan, in: geo.size) } }
+                .onChange(of: plan.size) { _, _ in if !userMoved { fit(plan, in: geo.size) } }
             }
         }
         .background(Palette.ivory.ignoresSafeArea())

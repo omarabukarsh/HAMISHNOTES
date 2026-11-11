@@ -165,11 +165,47 @@ enum InkReader {
         let ink = Ink(strokes: strokes)
         return await withCheckedContinuation { cont in
             r.recognize(ink: ink) { result, _ in
-                cont.resume(returning: result?.candidates.first?.text ?? "")
+                let cands = result?.candidates.map { $0.text } ?? []
+                if let f = cands.first { ReadAlts.note(f, Array(cands.dropFirst().prefix(6))) }
+                cont.resume(returning: cands.first ?? "")
             }
         }
     }
     #else
     private static func read(_ l: Line, lang: Int) async -> String? { nil }
     #endif
+}
+
+/// القراءات الأخرى التي اقترحها قارئ خط اليد لكل سطر (لتصحيح كلمة بنقرة بعد التحويل).
+enum ReadAlts {
+    private static var map: [String: [String]] = [:]
+    private static var order: [String] = []
+    private static let lock = NSLock()
+
+    static func note(_ text: String, _ others: [String]) {
+        let key = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let list = others.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && $0 != key }
+        guard !key.isEmpty, !list.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        if map[key] == nil { order.append(key) }
+        map[key] = list
+        if order.count > 300 { map.removeValue(forKey: order.removeFirst()) }
+    }
+
+    static func of(_ text: String) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return map[text.trimmingCharacters(in: .whitespacesAndNewlines)] ?? []
+    }
+
+    /// قراءات أخرى لكل كلمة في السطر (من القراءات التي لها عدد الكلمات نفسه).
+    static func wordAlts(_ line: String) -> [[String]] {
+        let ws = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        var out = Array(repeating: [String](), count: ws.count)
+        for alt in of(line) {
+            let a = alt.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            guard a.count == ws.count else { continue }
+            for i in ws.indices where a[i] != ws[i] && !out[i].contains(a[i]) { out[i].append(a[i]) }
+        }
+        return out
+    }
 }

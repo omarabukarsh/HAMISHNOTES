@@ -11,6 +11,37 @@ enum EditStep {
     indirect case both(EditStep, EditStep)
 }
 
+/// كلمات محددة في صفحة (بترتيب القراءة).
+struct WordSel: Equatable {
+    var page: Int
+    var words: [OcrWord]
+    var text: String {
+        var out = ""
+        var line: Int? = nil
+        for w in words {
+            if !out.isEmpty { out += w.line == line ? " " : "\n" }
+            out += w.text
+            line = w.line
+        }
+        return out
+    }
+    /// مستطيل لكل سطر (نسبي لعرض الصفحة).
+    var rects: [MarkRect] {
+        var out: [MarkRect] = []
+        var line: Int? = nil
+        for w in words {
+            if w.line == line, var r = out.popLast() {
+                r.l = min(r.l, w.l); r.t = min(r.t, w.t); r.r = max(r.r, w.r); r.b = max(r.b, w.b)
+                out.append(r)
+            } else {
+                out.append(MarkRect(l: w.l, t: w.t, r: w.r, b: w.b))
+            }
+            line = w.line
+        }
+        return out
+    }
+}
+
 /// منطقة نافذة الكتابة المكبّرة على صفحة (بنقاط الصفحة).
 struct ZoomBox: Equatable {
     var page: Int
@@ -60,6 +91,12 @@ final class DocSession: ObservableObject, Identifiable {
     /// نص محدد في الكتاب (ضغط مطوّل بالإصبع).
     @Published var textSel: PDFSelection? = nil
     @Published var selectedBox: String? = nil
+    /// كلمات محددة في صفحة بلا نص رقمي (مقروءة ضوئيًا أو بخط اليد).
+    @Published var wordSel: WordSel? = nil
+    /// طلب نافذة اختيار الخط من الشريط الصغير فوق مربع الكتابة.
+    @Published var fontPickRequest = false
+    /// قراءات أخرى لكلمة محوّلة (نقرة عليها).
+    @Published var altPopup: AltPopup? = nil
     /// الملاحظة اللاصقة المحددة (شريطها أسفل الشاشة)، واللصق ينتظر نقرة على الصفحة.
     @Published var selectedNote: String? = nil
     @Published var pastingNote = false
@@ -90,6 +127,8 @@ final class DocSession: ObservableObject, Identifiable {
     var applyInkHook: ((String, PKDrawing) -> Void)?
     /// وسط الجزء الظاهر من الصفحة على الشاشة (بنقاط الصفحة).
     var visibleCenterHook: ((Int) -> CGPoint?)?
+    /// تمرير مستمر إلى موضع من المستند (0…1) من شريط الصفحات.
+    var scrubHook: ((CGFloat) -> Void)?
 
     init(entry: DocEntry) {
         id = entry.id
@@ -113,8 +152,18 @@ final class DocSession: ObservableObject, Identifiable {
             currentPage = max(0, min(doc.pageCount - 1, entry.lastPage))
             currentOrder = data.pages
             loadOcr()
+            // المستند المستورد يُقرأ نصه تلقائيًا في الخلفية (مرة واحدة)
+            if !FileManager.default.fileExists(atPath: ocrURL.path), Premium.shared.active, !doc.isLocked {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.autoRead() }
+            }
+            if doc.isLocked {
+                pdf = nil
+                failed = L("الملف محمي بكلمة مرور ولا يمكن فتحه.", "The file is password-protected and cannot be opened.")
+            }
+        } else if !FileManager.default.fileExists(atPath: url.path) {
+            failed = L("الملف غير موجود؛ ربما حُذف أو نُقل.", "File not found; it may have been deleted or moved.")
         } else {
-            failed = L("الملف تالف أو محمي بكلمة مرور", "The file is damaged or password protected")
+            failed = L("تعذر فتح الملف؛ قد يكون تالفًا.", "Could not open the file; it may be damaged.")
         }
     }
 
@@ -157,7 +206,7 @@ final class DocSession: ObservableObject, Identifiable {
     /// الكانفاس غيّر الحبر: يُسجَّل للتراجع ويُحفظ لاحقًا.
     func inkChanged(_ pageId: String, _ new: PKDrawing) {
         let old = drawing(for: pageId)
-        if old.dataRepresentation() == new.dataRepresentation() { return }
+        if inkSig(old) == inkSig(new) { return }
         drawings[pageId] = new
         dirtyInk.insert(pageId)
         push(.ink(page: pageId, before: old, after: new))
@@ -295,6 +344,8 @@ final class DocSession: ObservableObject, Identifiable {
         edit { d in
             if let i = d.bookmarks.firstIndex(of: pid) { d.bookmarks.remove(at: i) } else { d.bookmarks.append(pid) }
         }
+        AppController.shared.say(.done, data.bookmarks.contains(pid) ? L("عُلّمت الصفحة \(page + 1)", "Bookmarked page \(page + 1)")
+                                                                     : L("أُزيلت العلامة", "Bookmark removed"))
     }
 
     func isBookmarked(_ page: Int) -> Bool { pageId(page).map { data.bookmarks.contains($0) } ?? false }
@@ -357,9 +408,9 @@ final class DocSession: ObservableObject, Identifiable {
         guard let idx = index(of: pid) else { return }
         let w = pageSize(idx).width
         let work = DispatchWorkItem { [weak self] in
-            Task.detached(priority: .utility) {
+            Task.detached(priority: .utility) { [weak self] in
                 let words = await HandwritingWords.readAsync(d, pageW: w, lang: lang)
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     guard let self = self else { return }
                     self.handWords[pid] = words
                     self.handKeys[pid] = k
@@ -550,13 +601,19 @@ final class DocSession: ObservableObject, Identifiable {
     /// يضيف صورة: at = وسطها بنقاط الصفحة (مكان الإفلات أو وسط الجزء الظاهر)؛ index يزيح الصور المختارة معًا.
     func insertImage(_ img: UIImage, page: Int? = nil, at point: CGPoint? = nil, index: Int = 0, width: CGFloat = 0.45, select: Bool = true) {
         let p = page ?? currentPage
-        guard let pid = pageId(p), let jpg = img.jpegData(compressionQuality: 0.88) else { return }
+        guard let pid = pageId(p), let jpg = img.jpegData(compressionQuality: 0.88) else {
+            AppController.shared.say(.error, L("تعذر إضافة الصورة", "Could not add the image"))
+            return
+        }
         let name = "img-\(UUID().uuidString).jpg"
         try? jpg.write(to: repo.mediaDir(id).appendingPathComponent(name))
         let aspect = img.size.width / max(1, img.size.height)
         let item = placed(file: name, page: p, pid: pid, width: width, aspect: aspect, at: point, index: index)
         upsertImage(item)
-        if select { selectedImage = item.id }
+        if select {
+            selectedImage = item.id
+            AppController.shared.say(.tip, L("أُضيفت الصورة. اسحبها لتحريكها، واسحب نقطة الزاوية لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
+        }
     }
 
     func insertSticker(_ key: String, page: Int? = nil, at point: CGPoint? = nil) {
@@ -589,7 +646,10 @@ final class DocSession: ObservableObject, Identifiable {
         return ImageItem(id: UUID().uuidString, file: file, page: pid, x: x, y: y, w: w, aspect: aspect)
     }
 
-    func image(for item: ImageItem) -> UIImage? {
+    func image(for item: ImageItem) -> UIImage? { DocSession.image(docId: id, item: item) }
+
+    static func image(docId: String, item: ImageItem) -> UIImage? {
+        let repo = Repository.shared
         if item.file.hasPrefix("sticker:") {
             let key = String(item.file.dropFirst(8))
             if key.hasPrefix("mine:") {
@@ -597,10 +657,10 @@ final class DocSession: ObservableObject, Identifiable {
             }
             return UIImage(named: "st_" + key) ?? badgeImage(key) ?? emojiImage(key)
         }
-        return UIImage(contentsOfFile: repo.mediaDir(id).appendingPathComponent(item.file).path)
+        return UIImage(contentsOfFile: repo.mediaDir(docId).appendingPathComponent(item.file).path)
     }
 
-    private func emojiImage(_ s: String) -> UIImage {
+    private static func emojiImage(_ s: String) -> UIImage {
         let size = CGSize(width: 160, height: 160)
         return UIGraphicsImageRenderer(size: size).image { _ in
             (s as NSString).draw(in: CGRect(x: 0, y: 10, width: 160, height: 150),
@@ -620,6 +680,7 @@ final class DocSession: ObservableObject, Identifiable {
         doc.insert(page, at: at)
         structureChanged()
         goTo(page: at)
+        AppController.shared.say(.done, L("أُضيفت صفحة جديدة (الآن \(pageCount) صفحة)", "New page added (\(pageCount) pages now)"))
     }
 
     /// يضيف صفحات ملف PDF آخر بعد الصفحة after.
@@ -628,7 +689,7 @@ final class DocSession: ObservableObject, Identifiable {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let other = PDFDocument(url: url), other.pageCount > 0 else {
-            AppController.shared.say(.error, L("تعذر فتح الملف", "Could not open the file"))
+            AppController.shared.say(.error, L("تعذر إضافة الملف. تأكد أنه PDF صالح.", "Could not add the file. Make sure it is a valid PDF."))
             return
         }
         var at = max(0, min(doc.pageCount, after + 1))
@@ -643,6 +704,7 @@ final class DocSession: ObservableObject, Identifiable {
         edit { d in d.pages.insert(contentsOf: infos, at: start) }
         structureChanged()
         goTo(page: start)
+        AppController.shared.say(.done, L("أُضيفت \(infos.count) صفحة من الملف (الآن \(pageCount) صفحة)", "Added \(infos.count) pages from the file (\(pageCount) pages now)"))
     }
 
     func deletePage(_ index: Int) {
@@ -748,23 +810,33 @@ final class DocSession: ObservableObject, Identifiable {
 
     func scheduleSave() {
         saveWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.flush() }
+        let w = DispatchWorkItem { [weak self] in self?.flush(wait: false) }
         saveWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: w)
     }
 
-    func flush() {
+    /// يحفظ ما تغيّر. الكتابة على القرص في طابور خلفي؛ wait = ننتظرها (قبل التصدير والإغلاق والنسخ).
+    func flush(wait: Bool = true) {
         saveWork?.cancel()
         if currentOrder.isEmpty { currentOrder = data.pages }
-        for pid in dirtyInk { repo.saveInk(id, page: pid, drawings[pid] ?? PKDrawing()) }
-        let inkChanged = !dirtyInk.isEmpty
+        let inks = dirtyInk.map { ($0, drawings[$0] ?? PKDrawing()) }
+        let inkChanged = !inks.isEmpty
         dirtyInk.removeAll()
-        if dataDirty || pdfDirty || inkChanged { repo.saveData(id, data); dataDirty = false }
+        let writeData = dataDirty || pdfDirty || inkChanged
+        dataDirty = false
+        let snapshot = data
+        let docId = id
+        let repo = self.repo
+        let job = {
+            for (pid, d) in inks { repo.saveInk(docId, page: pid, d) }
+            if writeData { repo.saveData(docId, snapshot) }
+            if inkChanged { repo.invalidateThumb(docId) }
+        }
+        if wait { Repository.io.sync(execute: job) } else { Repository.io.async(execute: job) }
         if pdfDirty, let doc = pdf {
             if repo.savePDF(id, doc) { pdfDirty = false }
             AppController.shared.onPagesChanged(id, count: doc.pageCount)
         }
-        if inkChanged { repo.invalidateThumb(id) }
     }
 
     // ======================================================== البحث
@@ -868,4 +940,64 @@ final class DocSession: ObservableObject, Identifiable {
 
     func stopOcr() { ocrRunning = false }
 
+    private var autoReading = false
+
+    /// قراءة هادئة في الخلفية لصفحات بلا نص (بعد الاستيراد): بلا شريط تقدم ولا رسائل.
+    private func autoRead() {
+        guard let doc = pdf, !ocrRunning, !autoReading else { return }
+        autoReading = true
+        let pages = data.pages
+        let done = Set(ocr.keys)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            for (i, info) in pages.enumerated() where !done.contains(info.id) {
+                guard let self = self, !self.ocrRunning else { break }
+                guard let page = doc.page(at: i) else { continue }
+                if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20 { continue }
+                let ws = TextLayout.ocrWords(page)
+                DispatchQueue.main.async {
+                    self.ocr[info.id] = ws
+                    self.wordCache.removeValue(forKey: info.id)
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.autoReading = false
+                self.saveOcr()
+            }
+        }
+    }
+
+    /// يقرأ صفحة واحدة ضوئيًا عند الحاجة (تحديد نص في صفحة ممسوحة).
+    func ocrPage(_ index: Int, then: @escaping () -> Void) {
+        guard let page = pdf?.page(at: index), let pid = pageId(index) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let ws = TextLayout.ocrWords(page)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.ocr[pid] = ws
+                self.wordCache.removeValue(forKey: pid)
+                self.saveOcr()
+                then()
+            }
+        }
+    }
+
+}
+
+/// بصمة سريعة للحبر (بلا تحويله إلى بيانات): تتغير عند إضافة خط أو مسحه أو نقله أو تلوينه.
+func inkSig(_ d: PKDrawing) -> Int {
+    var h = Hasher()
+    h.combine(d.strokes.count)
+    for st in d.strokes {
+        h.combine(st.path.creationDate.timeIntervalSinceReferenceDate)
+        h.combine(st.path.count)
+        h.combine(st.transform.tx); h.combine(st.transform.ty); h.combine(st.transform.a); h.combine(st.transform.d)
+        h.combine(st.transform.b); h.combine(st.transform.c)
+        for v in st.ink.color.cgColor.components ?? [] { h.combine(v) }
+        h.combine(st.ink.inkType.rawValue)
+        if let f = st.path.first { h.combine(f.location.x); h.combine(f.location.y); h.combine(f.size.width) }
+        if let l = st.path.last { h.combine(l.location.x); h.combine(l.location.y) }
+        h.combine(st.mask == nil)
+    }
+    return h.finalize()
 }

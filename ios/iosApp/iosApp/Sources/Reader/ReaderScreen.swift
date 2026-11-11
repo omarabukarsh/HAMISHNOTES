@@ -71,7 +71,10 @@ private struct ReaderContent: View {
                     }
                 }
                 ZStack {
+                    // على الشاشة العريضة: المستند ينزاح بجانب درج الصفحات بدل أن يُغطّى
                     PDFReaderView(session: s)
+                        .padding(.leading, s.drawerOpen && UIScreen.main.bounds.width >= 1000 ? PagesDrawer.width : 0)
+                        .animation(Motion.enter, value: s.drawerOpen)
                     if !s.summaryOpen && !s.pageMenuOpen {
                         PageScrubber(session: s).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     }
@@ -106,7 +109,8 @@ private struct ReaderContent: View {
             }
             VStack(spacing: 8) {
                 if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
-                if s.textSel != nil { TextSelectionBar(session: s) }
+                if s.textSel != nil || s.wordSel != nil { TextSelectionBar(session: s) }
+                if let ap = s.altPopup { AltWordBar(session: s, popup: ap) }
                 if s.selectedImage != nil { ImageBar(session: s) }
                 if s.selectedBox != nil && s.inlineEditId == nil { TextBoxBar(session: s) }
                 if s.selectedNote != nil { NoteBar(session: s) }
@@ -137,7 +141,7 @@ private struct ReaderContent: View {
         // القوائم المنسدلة تحت أزرار الأدوات (إعدادات الأداة، الأحجام، التحديد، الأشكال)
         .dropdownHost()
         .background(Palette.desk)
-        .onChange(of: app.lassoActive) { on in if !on { s.lassoSel = nil } }
+        .onChange(of: app.lassoActive) { _, on in if !on { s.lassoSel = nil } }
         // إضافة صفحة: نافذة كبيرة مثل أندرويد
         .bigSheet(isPresented: Binding(get: { sheet?.id == "addPage" }, set: { if !$0 { sheet = nil } }), width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
             TemplatePickerSheet(mode: .addPage, onPdf: { atEnd in
@@ -173,6 +177,14 @@ private struct ReaderContent: View {
         }
         .sheet(item: Binding(get: { s.editingBox }, set: { s.editingBox = $0 })) { b in
             TextBoxSheet(session: s, box: b).environment(\.layoutDirection, .leftToRight)
+        }
+        .sheet(isPresented: Binding(get: { s.fontPickRequest }, set: { s.fontPickRequest = $0 })) {
+            FontLibrarySheet(sample: L("الميتوكوندريا", "Mitochondria"), current: TextPrefs.shared.font) { f in
+                guard !f.isEmpty else { return }
+                TextPrefs.shared.font = f
+                if let t = s.inlineEditId ?? s.selectedBox { s.applyTextPrefs(to: t) }
+            }
+            .environmentObject(app)
         }
         .sheet(item: Binding(get: { s.editingNote }, set: { s.editingNote = $0 })) { n in
             NoteSheet(session: s, note: n).environment(\.layoutDirection, .leftToRight)

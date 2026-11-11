@@ -401,6 +401,7 @@ private struct FolderSection: View {
     @EnvironmentObject var app: AppController
     @Binding var sheet: LibrarySheet?
     @State private var exportFolder: String? = nil
+    @State private var exportURL: URL? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -424,7 +425,13 @@ private struct FolderSection: View {
                     app.libraryFilter = .all
                 }
                 .contextMenu {
-                    Button { exportFolder = f } label: { Text(L("حفظ ملخص المادة كاملة (PDF)", "Save the whole subject summary (PDF)")) }
+                    Button {
+                        app.message(L("جارٍ حفظ ملخص المادة…", "Saving subject summary…"))
+                        DispatchQueue.main.async {
+                            if let u = Exporter.folderSummary(f) { exportURL = u }
+                            else { app.say(.error, L("لا توجد ملخصات في مستندات هذه المادة", "No summaries in this subject’s documents")) }
+                        }
+                    } label: { Text(L("حفظ ملخص المادة كاملة (PDF)", "Save the whole subject summary (PDF)")) }
                     Button { app.openDeck = f } label: { Text(L("بطاقات المادة", "Subject cards")) }
                     Button { sheet = .exam(f) } label: { Text(L("موعد الامتحان…", "Exam date…")) }
                     Button { sheet = .renameFolder(f) } label: { Text(L("إعادة تسمية", "Rename")) }
@@ -432,9 +439,8 @@ private struct FolderSection: View {
                 }
             }
         }
-        .sheet(item: Binding(get: { exportFolder.map { IdString(id: $0) } }, set: { exportFolder = $0?.id })) { f in
-            if let url = Exporter.folderSummary(f.id) { ShareSheet(items: [url]) }
-            else { Text(L("لا توجد ملخصات في هذه المادة بعد", "No summaries in this subject yet")).font(Fonts.sans(15)).padding(40) }
+        .sheet(item: Binding(get: { exportURL.map { IdURL(url: $0) } }, set: { exportURL = $0?.url })) { u in
+            ShareSheet(items: [u.url])
         }
     }
 }

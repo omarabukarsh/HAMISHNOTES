@@ -71,7 +71,7 @@ struct SummaryDrawer: View {
                     app.say(.done, L("تم النسخ", "Copied"))
                 }
                 .font(Fonts.sans(13)).foregroundColor(Palette.navy).disabled(blocks.isEmpty)
-                Button("PDF") { s.flush(); exportURL = Exporter.summaryPDF(s) }
+                Button("PDF") { s.flush(); exportURL = Exporter.summaryPDF(docId: s.id, name: s.title) ; if exportURL == nil { app.say(.error, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet")) } }
                     .font(Fonts.sans(13)).foregroundColor(Palette.navy).disabled(blocks.isEmpty).padding(.horizontal, 8)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -561,7 +561,7 @@ struct TranslateModifier: ViewModifier {
         if #available(iOS 17.4, *) {
             content.translationPresentation(isPresented: $isPresented, text: text)
         } else {
-            content.onChange(of: isPresented) { v in
+            content.onChange(of: isPresented) { _, v in
                 guard v else { return }
                 isPresented = false
                 let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""

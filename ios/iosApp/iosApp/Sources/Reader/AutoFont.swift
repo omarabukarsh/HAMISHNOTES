@@ -52,7 +52,14 @@ enum HandwritingReader {
                 req.recognitionLanguages = langs.filter { supported.contains($0) }
                 try? VNImageRequestHandler(cgImage: cg).perform([req])
                 let obs = (req.results ?? []).sorted { $0.boundingBox.midY > $1.boundingBox.midY }
-                cont.resume(returning: obs.compactMap { $0.topCandidates(1).first?.string }.filter { !$0.isEmpty })
+                var out: [String] = []
+                for o in obs {
+                    let cands = o.topCandidates(5).map { $0.string }
+                    guard let f = cands.first, !f.isEmpty else { continue }
+                    ReadAlts.note(f, Array(cands.dropFirst()))
+                    out.append(f)
+                }
+                cont.resume(returning: out)
             }
         }
     }
@@ -266,14 +273,17 @@ extension DocSession {
         let ink = UIColor(argb: color)
         var made: [PKStroke] = []
         var words: [OcrWord] = []
+        var alts: [[String]] = []
         var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = 0
         for (i, line) in lines.enumerated() {
             let lay = GlyphInk.layout(line, font: uf)
             let y = baseline + CGFloat(i) * size * spacing
             let x = rtl ? rightX - lay.width : leftX
             made += GlyphInk.strokes(lay, origin: CGPoint(x: x, y: y), size: size, color: ink, bold: af.dynamicBold, date: date)
-            for (w, r) in GlyphInk.words(line, lay, origin: CGPoint(x: x, y: y)) {
+            let la = ReadAlts.wordAlts(line)
+            for (j, (w, r)) in GlyphInk.words(line, lay, origin: CGPoint(x: x, y: y)).enumerated() {
                 words.append(OcrWord(text: w, l: r.minX / pw, t: r.minY / pw, r: r.maxX / pw, b: r.maxY / pw, line: i))
+                alts.append(j < la.count ? la[j] : [])
             }
             minX = min(minX, x); maxX = max(maxX, x + lay.width)
         }
@@ -284,7 +294,8 @@ extension DocSession {
         let before = data
         let key = date.timeIntervalSinceReferenceDate
         data.converted.append(ConvertedLine(id: UUID().uuidString, page: pageId, key: key, words: words, baseline: baseline,
-                                            size: size, minX: minX, maxX: maxX, rtl: rtl, font: font))
+                                            size: size, minX: minX, maxX: maxX, rtl: rtl, font: font,
+                                            alts: alts.contains { !$0.isEmpty } ? alts : nil))
         drawings[pageId] = nd
         dirtyInk.insert(pageId)
         dataDirty = true
@@ -294,6 +305,75 @@ extension DocSession {
         push(.both(.ink(page: pageId, before: old, after: nd), .data(before: before, after: data)))
         scheduleSave()
         return key
+    }
+
+    /// كلمة محوّلة تحت نقطة (نسبية لعرض الصفحة) لها قراءات أخرى.
+    func altWord(pageId: String, at p: RelPt) -> AltPopup? {
+        for c in data.converted where c.page == pageId {
+            guard let alts = c.alts else { continue }
+            for (i, w) in c.words.enumerated() where i < alts.count && !alts[i].isEmpty {
+                if p.x >= w.l && p.x <= w.r && p.y >= w.t && p.y <= w.b {
+                    return AltPopup(lineId: c.id, word: i, text: w.text, alts: alts[i])
+                }
+            }
+        }
+        return nil
+    }
+
+    /// يستبدل كلمة محوّلة بقراءة أخرى: يُعاد رسم سطرها حبرًا بالخط نفسه (خطوة تراجع واحدة).
+    func applyAlt(_ p: AltPopup, _ newWord: String) {
+        altPopup = nil
+        guard let ci = data.converted.firstIndex(where: { $0.id == p.lineId }) else { return }
+        let c = data.converted[ci]
+        guard c.words.indices.contains(p.word), let page = index(of: c.page) else { return }
+        let pw = pageSize(page).width
+        let old = drawing(for: c.page)
+        guard let sample = old.strokes.first(where: { $0.path.creationDate.timeIntervalSinceReferenceDate == c.key }) else { return }
+        let uf = FontStore.shared.uiFont(c.font, size: c.size) ?? Fonts.ui(c.size)
+        var ws = c.words
+        ws[p.word].text = newWord
+        var oldAlts = c.alts ?? []
+        while oldAlts.count < ws.count { oldAlts.append([]) }
+        oldAlts[p.word] = [p.text] + oldAlts[p.word].filter { $0 != newWord }
+        let date = Date()
+        var made: [PKStroke] = []
+        var words: [OcrWord] = []
+        var alts: [[String]] = []
+        var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = 0
+        for li in Set(ws.map { $0.line }).sorted() {
+            let idx = ws.indices.filter { ws[$0].line == li }
+            let text = idx.map { ws[$0].text }.joined(separator: " ")
+            let lay = GlyphInk.layout(text, font: uf)
+            let top = (idx.map { c.words[$0].t }.min() ?? 0) * pw
+            let left = (idx.map { c.words[$0].l }.min() ?? 0) * pw
+            let right = (idx.map { c.words[$0].r }.max() ?? 0) * pw
+            let origin = CGPoint(x: c.rtl ? right - lay.width : left, y: top + lay.ascent)
+            made += GlyphInk.strokes(lay, origin: origin, size: c.size, color: sample.ink.color, bold: AutoFont.shared.dynamicBold, date: date)
+            for (j, (w, r)) in GlyphInk.words(text, lay, origin: origin).enumerated() {
+                words.append(OcrWord(text: w, l: r.minX / pw, t: r.minY / pw, r: r.maxX / pw, b: r.maxY / pw, line: li))
+                alts.append(j < idx.count ? oldAlts[idx[j]] : [])
+            }
+            minX = min(minX, origin.x); maxX = max(maxX, origin.x + lay.width)
+        }
+        guard !made.isEmpty else { return }
+        var nd = old
+        nd.strokes = old.strokes.filter { $0.path.creationDate.timeIntervalSinceReferenceDate != c.key } + made
+        let before = data
+        var nc = c
+        nc.key = date.timeIntervalSinceReferenceDate
+        nc.words = words
+        nc.alts = alts
+        nc.minX = minX
+        nc.maxX = maxX
+        data.converted[ci] = nc
+        drawings[c.page] = nd
+        dirtyInk.insert(c.page)
+        dataDirty = true
+        wordCache.removeValue(forKey: c.page)
+        applyInkHook?(c.page, nd)
+        inkVersion += 1
+        push(.both(.ink(page: c.page, before: old, after: nd), .data(before: before, after: data)))
+        scheduleSave()
     }
 
     /// يعيد الكتابة اليدوية الأصلية مكان الحبر المجمَّل.
@@ -673,6 +753,10 @@ struct AutoFontSheet: View {
                                                   selected: af.contAfter) { af.contAfter = $0 }
                                 }
                                 RowDividerLine()
+                                CardSwitchRow(title: L("قراءات أخرى للكلمة", "Other readings of a word"),
+                                              subtitle: L("النقر على كلمة محوّلة يعرض قراءات أخرى لتصحيحها", "Tapping a converted word shows other readings to correct it"),
+                                              isOn: Binding(get: { app.wordAlts }, set: { app.wordAlts = $0 }))
+                                RowDividerLine()
                             }
                             CardSwitchRow(title: L("توحيد حجم الخط والمسافة بين الأسطر", "Unify font size & line spacing"), isOn: $af.unify)
                             if af.unify {
@@ -917,5 +1001,43 @@ struct ChangeFontSheet: View {
         session.lassoSel = nil
         session.inkToTextBox(pageId: pageId, strokes: strokes, box: box)
         dismiss()
+    }
+}
+
+/// قراءات أخرى لكلمة محوّلة معروضة للتصحيح.
+struct AltPopup: Equatable {
+    var lineId: String
+    var word: Int
+    var text: String
+    var alts: [String]
+}
+
+/// شريط القراءات الأخرى (نفس AltWordPopup في أندرويد): نقرة على قراءة تستبدل الكلمة.
+struct AltWordBar: View {
+    @ObservedObject var session: DocSession
+    let popup: AltPopup
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("«\(popup.text)»").font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(popup.alts, id: \.self) { a in
+                        Button { session.applyAlt(popup, a) } label: {
+                            Text(a).font(Fonts.sans(15, .bold)).foregroundColor(Palette.navy)
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(Capsule().fill(Palette.navySoft))
+                        }
+                        .buttonStyle(PressScale())
+                    }
+                }
+            }
+            .frame(maxWidth: 420)
+            Button { session.altPopup = nil } label: { PhIcon("ph_close", Palette.textSecondary, 16).frame(width: 34, height: 34) }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }

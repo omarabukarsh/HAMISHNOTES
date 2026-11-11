@@ -24,25 +24,65 @@ final class PassThroughView: UIView {
 }
 
 /// يتابع حركة القلم دون أن يعترضها: هل بقي القلم ثابتًا لحظة قبل رفعه؟ («ارسم وأبقِ»)
+/// ويبلّغ بموضعه (لدائرة الممحاة) وبثباته والقلم ما زال على الشاشة (لمعاينة الشكل المرتب مباشرة).
 final class HoldTracker: UIGestureRecognizer {
     private(set) var held = false
     private var lastMove: CFTimeInterval = 0
     private var lastPt: CGPoint = .zero
+    var fingerWrites = false
+    /// القلم ثبت وهو على الشاشة: نقاط الخط حتى الآن. قائمة فارغة = تحرك من جديد.
+    var onHold: (([CGPoint]) -> Void)?
+    /// موضع القلم الآن؛ nil عند رفعه.
+    var onTrack: ((CGPoint?) -> Void)?
+    private var pts: [CGPoint] = []
+    private var timer: Timer?
+    private var tracking = false
+    private var fired = false
+
+    private func arm() {
+        timer?.invalidate()
+        let t = Timer(timeInterval: 0.45, repeats: false) { [weak self] _ in
+            guard let self = self, self.tracking else { return }
+            self.fired = true
+            self.onHold?(self.pts)
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         held = false
         lastMove = CACurrentMediaTime()
         lastPt = touches.first?.location(in: view) ?? .zero
+        guard let t = touches.first, t.type == .pencil || fingerWrites, (event.allTouches?.count ?? 1) == 1 else { tracking = false; return }
+        tracking = true
+        fired = false
+        pts = [lastPt]
+        onTrack?(lastPt)
+        arm()
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let p = touches.first?.location(in: view) else { return }
-        if hypot(p.x - lastPt.x, p.y - lastPt.y) > 6 { lastMove = CACurrentMediaTime(); lastPt = p }
+        if tracking { pts.append(p); onTrack?(p) }
+        if hypot(p.x - lastPt.x, p.y - lastPt.y) > 6 {
+            lastMove = CACurrentMediaTime(); lastPt = p
+            if tracking {
+                if fired { fired = false; onHold?([]) }
+                arm()
+            }
+        }
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         held = CACurrentMediaTime() - lastMove >= 0.45
+        stop()
         state = .failed
     }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { held = false; state = .failed }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { held = false; stop(); onHold?([]); state = .failed }
+    private func stop() {
+        timer?.invalidate(); timer = nil
+        if tracking { onTrack?(nil) }
+        tracking = false
+    }
     override func reset() { }
     /// يصلح سواء وصل رفع القلم إلى هنا قبل حفظ الخط أو بعده.
     var heldNow: Bool { held || (lastMove > 0 && CACurrentMediaTime() - lastMove >= 0.45) }
@@ -73,6 +113,18 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private var inlineView: InlineTextView?
     private let textDrag = UIPanGestureRecognizer()
     private let textDragLayer = CAShapeLayer()
+    private let holdPreview = CAShapeLayer()
+    private let holdFill = CAShapeLayer()
+    private let eraserCursor = CAShapeLayer()
+    private let dropLayer = CAShapeLayer()
+    private let wordSelLayer = CAShapeLayer()
+    private let ribbon = UIImageView()
+    private let pageNo = UILabel()
+    private var miniBar: InlineMiniBar?
+    private var noteEditor: NoteTextEditor?
+    /// مضلع ملء الشكل المرتب الأخير (ارسم وأبقِ مع الملء)، بإحداثيات الكانفاس.
+    private var pendingFill: [CGPoint]?
+    private var lastTouchType: UITouch.TouchType = .direct
     private var applying = false
     private var lastStrokeCount = 0
     private var k: CGFloat = 1
@@ -121,6 +173,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         topLayer.backgroundColor = .clear
         topLayer.pencilPasses = { let c = AppController.shared; return !c.textActive && !c.stickyActive && !c.lassoActive }
+        hold.onHold = { [weak self] pts in self?.showHoldPreview(pts) }
+        hold.onTrack = { [weak self] p in self?.showEraserCursor(p) }
         content.addSubview(topLayer)
 
         laser.isHidden = true
@@ -175,6 +229,32 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         three.delegate = self
         addGestureRecognizer(three)
 
+        // شريط العلامة الذهبي ورقم الصفحة (كما في أندرويد)، تحت الكتابة
+        ribbon.image = UIImage(named: "ph_bookmark_fill")?.withRenderingMode(.alwaysTemplate)
+        ribbon.tintColor = UIColor(Palette.gold)
+        ribbon.contentMode = .scaleAspectFit
+        ribbon.isHidden = true
+        marksView.addSubview(ribbon)
+        pageNo.font = Fonts.ui(11)
+        pageNo.textColor = UIColor(Palette.textSecondary).withAlphaComponent(0.7)
+        marksView.addSubview(pageNo)
+        wordSelLayer.fillColor = UIColor(Palette.navy).withAlphaComponent(0.25).cgColor
+        marksView.layer.addSublayer(wordSelLayer)
+        // معاينة الشكل المرتب والقلم ما زال على الشاشة، ودائرة الممحاة، وإطار الإفلات
+        for l in [holdFill, holdPreview, eraserCursor, dropLayer] {
+            l.zPosition = 50
+            content.layer.addSublayer(l)
+        }
+        holdPreview.fillColor = UIColor.clear.cgColor
+        holdPreview.lineCap = .round
+        holdPreview.lineJoin = .round
+        eraserCursor.fillColor = UIColor.white.withAlphaComponent(0.35).cgColor
+        eraserCursor.strokeColor = UIColor(Palette.textSecondary).cgColor
+        eraserCursor.lineWidth = 1.2
+        dropLayer.fillColor = UIColor.clear.cgColor
+        dropLayer.strokeColor = UIColor(argb: 0xFF2E7D32).cgColor
+        dropLayer.lineWidth = 4
+
         layoutContent()
         setDrawing(session.drawing(for: pageId))
         applyTool()
@@ -182,6 +262,66 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// إطار أخضر على الصفحة التي سيُفلت فوقها عنصر من الدرج.
+    func setDropHighlight(_ on: Bool) {
+        dropLayer.path = on ? UIBezierPath(rect: content.bounds.insetBy(dx: 2, dy: 2)).cgPath : nil
+    }
+
+    /// القلم ثبت وهو على الشاشة: يظهر الشكل المرتب فورًا (ويُملأ إن كان الملء مفعّلًا)، ويُثبَّت عند رفع القلم.
+    private func showHoldPreview(_ pts: [CGPoint]) {
+        let c = AppController.shared
+        guard pts.count > 3, c.drawAndHold, c.tool.isPen, !c.shapeActive, !c.lassoActive, !canvas.isHidden, canvas.isUserInteractionEnabled,
+              let r = ShapeRecognizer.recognize(pts, pageW: pageSize.width * k) else {
+            holdPreview.path = nil
+            holdFill.path = nil
+            return
+        }
+        let p = UIBezierPath()
+        for path in r {
+            guard let f = path.first else { continue }
+            p.move(to: f)
+            for q in path.dropFirst() { p.addLine(to: q) }
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        holdPreview.strokeColor = UIColor(argb: c.colorFor(c.tool)).cgColor
+        holdPreview.lineWidth = max(1, Sizes.width(c.tool, c.sizeFor(c.tool)) * k)
+        holdPreview.path = p.cgPath
+        if c.shapeFill, let poly = PageOverlayView.closedPolygon(r) {
+            let fp = UIBezierPath()
+            fp.move(to: poly[0])
+            for q in poly.dropFirst() { fp.addLine(to: q) }
+            fp.close()
+            holdFill.fillColor = UIColor(argb: c.colorFor(c.tool)).withAlphaComponent(CGFloat(c.shapeFillAlpha)).cgColor
+            holdFill.path = fp.cgPath
+        } else {
+            holdFill.path = nil
+        }
+        CATransaction.commit()
+    }
+
+    /// الشكل مغلق (بدايته عند نهايته)؟ يعيد مضلعه.
+    static func closedPolygon(_ paths: [[CGPoint]]) -> [CGPoint]? {
+        guard paths.count == 1, let p = paths.first, p.count > 3, let a = p.first, let b = p.last else { return nil }
+        let xs = p.map { $0.x }, ys = p.map { $0.y }
+        let diag = hypot((xs.max() ?? 0) - (xs.min() ?? 0), (ys.max() ?? 0) - (ys.min() ?? 0))
+        return hypot(a.x - b.x, a.y - b.y) <= max(2, diag * 0.05) ? p : nil
+    }
+
+    /// دائرة تبيّن مكان الممحاة وحجمها.
+    private func showEraserCursor(_ p: CGPoint?) {
+        let c = AppController.shared
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let p = p, c.tool == .eraser, !c.lassoActive, canvas.isUserInteractionEnabled {
+            let r = c.eraserMode == .stroke ? 9 : max(4, Sizes.width(.eraser, c.sizeFor(.eraser)) * k / 2)
+            eraserCursor.path = UIBezierPath(ovalIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)).cgPath
+        } else {
+            eraserCursor.path = nil
+        }
+        CATransaction.commit()
+    }
 
     /// حد أعلى لنسبة الرسم حتى لا تكبر مساحة الحبر عن الذاكرة المعقولة (نحو 20 مليون بكسل للصفحة).
     static func clampScale(_ eff: CGFloat, size: CGSize, screen: CGFloat) -> CGFloat {
@@ -225,6 +365,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         searchCurrent.frame = marksView.bounds
         if !lastHits.isEmpty { showSearch(lastHits, current: lastHitIndex) }
         showInsert()
+        showWordSel()
+        layoutBadges()
     }
 
     private var lastHits: [SearchHit] = []
@@ -264,6 +406,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        if touch.view is UIControl { return false }
+        if let t = g as? UITapGestureRecognizer, t.numberOfTouchesRequired == 1 { lastTouchType = touch.type }
         if g.numberOfTouches > 1 || (g as? UITapGestureRecognizer)?.numberOfTouchesRequired ?? 1 > 1 {
             return AppController.shared.fingerUndo && touch.type == .direct
         }
@@ -277,6 +421,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let c = AppController.shared
         let finger = c.fingerWrites
         canvas.fingerWrites = finger
+        hold.fingerWrites = finger
+        if c.tool != .eraser { eraserCursor.path = nil }
         canvas.drawingPolicy = finger ? .anyInput : .pencilOnly
         laser.fingerWrites = finger
         shapes.fingerWrites = finger
@@ -361,7 +507,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             let old = s.drawing(for: pageId)
             if let kept = PenProcessing.protect(old: old, new: pageDrawing, canErase: app.canErase) {
                 setDrawing(kept)
-                if kept.dataRepresentation() == old.dataRepresentation() { return }
+                if inkSig(kept) == inkSig(old) { return }
             }
         }
         // خط جديد: تثبيت الخط، حساسية الضغط، حدة الطرف، وخط الهايلايتر المستقيم
@@ -434,7 +580,16 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
         lastStrokeCount = canvas.drawing.strokes.count
         let pd = pageDrawing
-        s.inkChanged(pageId, pd)
+        if let poly = pendingFill, converted, let key = pd.strokes.last?.path.creationDate.timeIntervalSinceReferenceDate {
+            // «ارسم وأبقِ» مع الملء: الشكل المغلق يُملأ بلون القلم
+            let f = ShapeFill(id: UUID().uuidString, page: pageId, pts: poly.map { CGPoint(x: $0.x / k, y: $0.y / k) },
+                              color: app.colorFor(app.tool), alpha: CGFloat(app.shapeFillAlpha), key: key)
+            s.addShape(pageId, pd, fill: f)
+            reloadMarks()
+        } else {
+            s.inkChanged(pageId, pd)
+        }
+        pendingFill = nil
         if app.tool == .eraser, s.pruneFills(pageId) { reloadMarks() }
         if added, !converted, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = pd.strokes.last {
             AutoFont.shared.onStroke(s, pageId: pageId, stroke: last)
@@ -453,6 +608,9 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             shape = true
         }
         hold.consume()
+        holdPreview.path = nil
+        holdFill.path = nil
+        if shape, c.shapeFill, let r = paths { pendingFill = PageOverlayView.closedPolygon(r) }
         if c.penStyle != .solid {
             let base = paths ?? [pts]
             paths = base.flatMap { StrokeKit.split($0, style: c.penStyle, width: w) }
@@ -467,9 +625,16 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         return shape
     }
 
-    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) { AutoFont.shared.penDown() }
+    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+        AutoFont.shared.penDown()
+        // لمس الصفحة للكتابة يغلق لوحة خيارات الصفحة
+        if session?.pageMenuOpen == true { session?.pageMenuOpen = false }
+    }
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         AutoFont.shared.penUp()
+        holdPreview.path = nil
+        holdFill.path = nil
+        eraserCursor.path = nil
         // الرجوع إلى القلم تلقائيًا بعد المسح
         let c = AppController.shared
         if c.tool == .eraser && c.autoDeselect {
@@ -551,15 +716,24 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         guard let s = session else { return }
         reloadMarks()
         imagesLayer.subviews.forEach { $0.removeFromSuperview() }
+        let idxNow = s.index(of: pageId)
+        ribbon.isHidden = !(idxNow.map { s.isBookmarked($0) } ?? false)
+        pageNo.text = idxNow.map { "\($0 + 1)" } ?? ""
+        layoutBadges()
+        let night = AppController.shared.nightPages
         for im in s.data.images where im.page == pageId {
-            let v = UIImageView(image: s.image(for: im))
+            // القراءة الليلية تعكس الورقة والحبر فقط: الصور تبقى بألوانها
+            let v = UIImageView(image: night ? NightImages.inverted(im.file, s.image(for: im)) : s.image(for: im))
             v.contentMode = .scaleAspectFit
             v.frame = CGRect(x: im.x * k, y: im.y * k, width: im.w * k, height: im.w / max(0.01, im.aspect) * k)
             imagesLayer.addSubview(v)
         }
         // المربع الذي يُكتب فيه يبقى كما هو (لا يُعاد إنشاؤه فلا تختفي لوحة المفاتيح)
         let keepInline = inlineView.flatMap { v in s.inlineEditId == v.boxId && s.data.boxes.contains { $0.id == v.boxId && $0.page == pageId } ? v : nil }
+        noteEditor?.commit()
+        noteEditor = nil
         topLayer.subviews.forEach { if $0 !== keepInline { $0.removeFromSuperview() } }
+        miniBar = nil
         if keepInline == nil { inlineView = nil }
         for n in s.data.notes where n.page == pageId {
             let v = StickyNoteView(note: n, k: k, selected: s.selectedNote == n.id)
@@ -567,7 +741,17 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 guard let s = self?.session else { return }
                 // نقرة تحدد الملاحظة (وشريطها أسفل الشاشة)، والمطوية تُفتح
                 if n.collapsed { var m = n; m.collapsed = false; s.upsertNote(m); return }
-                s.selectedNote = s.selectedNote == n.id ? nil : n.id
+                // نقرة ثانية على الملاحظة المحددة: الكتابة فيها بلوحة المفاتيح مباشرة
+                if s.selectedNote == n.id { self?.editNoteInline(n) } else { s.selectedNote = n.id }
+            }
+            v.onResize = { [weak self] size in
+                guard let self = self else { return }
+                var m = n
+                let minSide = self.pageSize.width * 0.08
+                m.w = max(minSide, size.width / self.k)
+                m.h = max(minSide, size.height / self.k)
+                self.session?.upsertNote(m)
+                self.reloadItems()
             }
             v.onMove = { [weak self] delta in
                 var m = n
@@ -588,6 +772,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                     inlineView = v
                     DispatchQueue.main.async { v.becomeFirstResponder() }
                 }
+                if let v = inlineView { addMiniBar(over: v, box: b) }
                 continue
             }
             let v = TextBoxView(box: b, k: k, selected: s.selectedBox == b.id)
@@ -604,6 +789,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 m.y += delta.y / (self?.k ?? 1)
                 self?.session?.upsertBox(m)
                 self?.reloadItems()
+            }
+            v.onResize = { [weak self] w in
+                guard let self = self else { return }
+                var m = b
+                m.w = min(max(self.pageSize.width * 0.06, w / self.k), self.pageSize.width)
+                self.session?.upsertBox(m)
+                self.reloadItems()
             }
             topLayer.addSubview(v)
         }
@@ -628,6 +820,62 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         } else {
             selectionFrame = nil
         }
+    }
+
+    private func layoutBadges() {
+        let b = marksView.bounds
+        ribbon.frame = CGRect(x: b.width - 18 - 30, y: -3, width: 30, height: 30)
+        pageNo.sizeToFit()
+        pageNo.frame.origin = CGPoint(x: b.width - 10 - pageNo.frame.width, y: b.height - 10 - pageNo.frame.height)
+    }
+
+    /// الشريط الصغير فوق مربع الكتابة: الخط، تصغير، تكبير، حذف، تم.
+    private func addMiniBar(over v: InlineTextView, box b: TextBox) {
+        let bar = InlineMiniBar()
+        bar.onAction = { [weak self] i in
+            guard let s = self?.session else { return }
+            switch i {
+            case 0: s.fontPickRequest = true
+            case 1: s.scaleInlineText(1 / 1.15)
+            case 2: s.scaleInlineText(1.15)
+            case 3: s.inlineText = ""; s.finishInlineEdit()
+            default: s.finishInlineEdit()
+            }
+        }
+        let size = bar.fitting()
+        var y = v.frame.minY - size.height - 6
+        if y < 2 { y = v.frame.maxY + 6 }
+        let x = min(max(2, v.frame.minX), max(2, content.bounds.width - size.width - 2))
+        bar.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
+        topLayer.addSubview(bar)
+        miniBar = bar
+    }
+
+    /// الكتابة بلوحة المفاتيح داخل الملاحظة اللاصقة مباشرة.
+    private func editNoteInline(_ n: StickyNote) {
+        noteEditor?.commit()
+        let w = n.w * k
+        let e = NoteTextEditor(frame: CGRect(x: n.x * k, y: n.y * k, width: w, height: n.h * k).insetBy(dx: w * 0.07, dy: w * 0.07))
+        e.font = Fonts.ui(max(9, w * 0.075))
+        e.text = n.text
+        e.onEnd = { [weak self] t in
+            guard let s = self?.session, t != n.text, var m = s.data.notes.first(where: { $0.id == n.id }) else { return }
+            m.text = t
+            s.upsertNote(m)
+        }
+        topLayer.addSubview(e)
+        noteEditor = e
+        e.becomeFirstResponder()
+    }
+
+    /// تحديد الكلمات المقروءة (صفحات ممسوحة ضوئيًا وخط اليد) يظهر مظللًا.
+    func showWordSel() {
+        guard let s = session, let sel = s.wordSel, s.index(of: pageId) == sel.page else { wordSelLayer.path = nil; return }
+        let W = pageSize.width * k
+        let p = UIBezierPath()
+        for w in sel.words { p.append(UIBezierPath(roundedRect: CGRect(x: w.l * W, y: w.t * W, width: (w.r - w.l) * W, height: (w.b - w.t) * W).insetBy(dx: -1, dy: -1), cornerRadius: 2)) }
+        wordSelLayer.frame = marksView.bounds
+        wordSelLayer.path = p.cgPath
     }
 
     // ======================================================== حدّة الرسم (بدقة الشاشة دائمًا)
@@ -685,8 +933,14 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             s.zoomBox = b
             return
         }
+        // نقرة بالإصبع خارج الأدراج تغلقها
+        if lastTouchType == .direct, s.drawerOpen || s.summaryOpen || s.pageMenuOpen {
+            withAnimation(Motion.exit) { s.drawerOpen = false; s.summaryOpen = false; s.pageMenuOpen = false }
+            return
+        }
+        if s.pageMenuOpen { s.pageMenuOpen = false }
         // نقرة تلغي تحديد نص الكتاب
-        if s.textSel != nil { s.textSel = nil; return }
+        if s.textSel != nil || s.wordSel != nil { s.textSel = nil; s.wordSel = nil; return }
         // عنصر من الدرج: يوضع حيث نقرت
         if let pend = s.pendingPlace, let idx = s.index(of: pageId) {
             s.pendingPlace = nil
@@ -700,6 +954,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             // نقرة أثناء الكتابة تنهيها؛ وإلا تضع مربعًا جديدًا وتبدأ الكتابة فيه
             if s.inlineEditId != nil { s.finishInlineEdit(); return }
             s.placeTextBox(pageId: pageId, at: pp)
+            // كما في أندرويد: الأداة تنطفئ بعد وضع مربع واحد (تبقى الكتابة فيه)
+            c.textActive = false
             return
         }
         if s.inlineEditId != nil { s.finishInlineEdit() }
@@ -722,9 +978,17 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             s.upsertNote(n)
             s.selectedNote = n.id
             reloadItems()
+            c.say(.tip, L("أُضيفت الملاحظة. انقر لفتحها، واسحبها لتحريكها", "Sticky note added. Tap to open it, drag to move it"))
             return
         }
         if s.selectedNote != nil { s.selectedNote = nil }
+        // نقرة بالإصبع على كلمة محوّلة: قراءات أخرى لتصحيحها
+        if s.altPopup != nil { s.altPopup = nil }
+        if lastTouchType == .direct, c.wordAlts, !(c.fingerWrites && c.tool.isWriting),
+           let ap = s.altWord(pageId: pageId, at: RelPt(x: pp.x / max(1, pageSize.width), y: pp.y / max(1, pageSize.width))) {
+            s.altPopup = ap
+            return
+        }
         // نقرة على صورة تحددها، ونقرة خارجها تلغي التحديد
         let hit = s.data.images.last { im in
             im.page == pageId && CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect)).contains(pp)
@@ -745,20 +1009,71 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         guard let s = session, let page = page, let pt = toPdf(g.location(in: content)) else { return }
         // الإصبع يكتب: الضغط المطوّل للكتابة لا للتحديد
         if AppController.shared.fingerWrites && AppController.shared.tool.isWriting { return }
+        let lp = g.location(in: content)
+        let W = max(1, pageSize.width * k)
+        let rel = RelPt(x: lp.x / W, y: lp.y / W)
         switch g.state {
         case .began:
             selAnchor = pt
+            wordAnchor = nil
             if let sel = page.selectionForWord(at: pt), !(sel.string ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
+                s.wordSel = nil
                 s.textSel = sel
             } else {
                 selAnchor = nil
+                beginWordSel(rel)
             }
         case .changed:
+            if let a = wordAnchor, let idx = s.index(of: pageId) {
+                let ws = s.words(idx)
+                if let j = PageOverlayView.nearestWord(ws, rel), a < ws.count {
+                    s.wordSel = WordSel(page: idx, words: Array(ws[min(a, j)...max(a, j)]))
+                }
+                return
+            }
             guard let a = selAnchor, let sel = page.selection(from: a, to: pt) else { return }
             s.textSel = sel
         default:
             selAnchor = nil
+            wordAnchor = nil
         }
+    }
+
+    private var wordAnchor: Int?
+
+    /// صفحة بلا نص رقمي: التحديد على الكلمات المقروءة ضوئيًا (تُقرأ الصفحة عند الحاجة) وخط اليد.
+    private func beginWordSel(_ rel: RelPt) {
+        guard let s = session, let idx = s.index(of: pageId) else { return }
+        let ws = s.words(idx)
+        if let i = PageOverlayView.wordAt(ws, rel) {
+            wordAnchor = i
+            s.textSel = nil
+            s.wordSel = WordSel(page: idx, words: [ws[i]])
+            return
+        }
+        guard s.ocr[pageId] == nil, (page?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count <= 20 else { return }
+        AppController.shared.message(L("جارٍ قراءة الصفحة…", "Reading page…"))
+        s.ocrPage(idx) { [weak self] in
+            guard let self = self, let s = self.session else { return }
+            let ws = s.words(idx)
+            if let i = PageOverlayView.wordAt(ws, rel) { s.wordSel = WordSel(page: idx, words: [ws[i]]) }
+        }
+    }
+
+    static func wordAt(_ ws: [OcrWord], _ p: RelPt) -> Int? {
+        ws.firstIndex { p.x >= $0.l - 0.004 && p.x <= $0.r + 0.004 && p.y >= $0.t - 0.004 && p.y <= $0.b + 0.004 }
+    }
+
+    static func nearestWord(_ ws: [OcrWord], _ p: RelPt) -> Int? {
+        if let i = wordAt(ws, p) { return i }
+        var best: Int? = nil
+        var bd = CGFloat.greatestFiniteMagnitude
+        for (i, w) in ws.enumerated() {
+            let dx = max(w.l - p.x, 0, p.x - w.r), dy = max(w.t - p.y, 0, p.y - w.b)
+            let d = dy * 3 + dx
+            if d < bd { bd = d; best = i }
+        }
+        return best
     }
 
     @objc private func onTextDrag(_ g: UIPanGestureRecognizer) {
@@ -775,6 +1090,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             let r = CGRect(x: min(textDragStart.x, p.x), y: min(textDragStart.y, p.y), width: abs(p.x - textDragStart.x), height: abs(p.y - textDragStart.y))
             if r.width > content.bounds.width * 0.04 {
                 session?.placeTextBox(pageId: pageId, at: CGPoint(x: r.minX / k, y: (r.minY + min(r.height, 30)) / k), width: r.width / k)
+                AppController.shared.textActive = false
             }
         default:
             textDragLayer.path = nil
@@ -836,6 +1152,14 @@ final class MarksView: UIView {
                 let sc = markColor(m.color, strong: true)
                 for r in m.strongRects { add(r, sc) }
             }
+            // خط ذهبي تحت المهم (المظلَّل مرتين)
+            for r in (m.level >= 2 ? m.rects : m.strongRects) {
+                let rr = r.scaled(k)
+                let l = CALayer()
+                l.frame = CGRect(x: rr.minX, y: rr.maxY - 2, width: rr.width, height: 2)
+                l.backgroundColor = UIColor(Palette.goldDeep).cgColor
+                host.addSublayer(l)
+            }
         }
         CATransaction.commit()
     }
@@ -856,6 +1180,19 @@ final class LaserView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
+        // القلم يحوم فوق الشاشة دون لمسها: الليزر يتبعه (آيباد يدعم التحويم)
+        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(onHover(_:))))
+    }
+
+    @objc private func onHover(_ g: UIHoverGestureRecognizer) {
+        switch g.state {
+        case .began, .changed:
+            add(g.location(in: self))
+            startLink()
+        default:
+            dot = nil
+            setNeedsDisplay()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -1122,30 +1459,74 @@ enum Shapes {
 
 // ======================================================== عناصر فوق الصفحة
 
-/// مربع نص: نقرة تفتحه للتعديل (أو تتبع الرابط)، وسحب بالإصبع ينقله.
+/// نقطة الزاوية لتغيير الحجم (مربع النص المحدد والملاحظة المحددة).
+final class CornerDot: UIView {
+    init() {
+        super.init(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        backgroundColor = .clear
+        let dot = UIView(frame: CGRect(x: 13, y: 13, width: 18, height: 18))
+        dot.backgroundColor = UIColor(Palette.navy)
+        dot.layer.cornerRadius = 9
+        dot.layer.borderColor = UIColor.white.cgColor
+        dot.layer.borderWidth = 2
+        dot.isUserInteractionEnabled = false
+        addSubview(dot)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// مربع نص: نقرة تفتحه للتعديل (أو تتبع الرابط)، وسحب بالإصبع ينقله، ونقطة الزاوية تغيّر عرضه.
 final class TextBoxView: UILabel {
     var onTap: (() -> Void)?
     var onMove: ((CGPoint) -> Void)?
+    var onResize: ((CGFloat) -> Void)?
     private var dragStart: CGPoint = .zero
+    private var pad: UIEdgeInsets = .zero
+    private var startW: CGFloat = 0
+    private var corner: CornerDot?
 
     init(box: TextBox, k: CGFloat, selected: Bool = false) {
         super.init(frame: .zero)
         numberOfLines = 0
         let size = box.size * k
         font = textBoxFont(box, size: size)
+        var width = box.w * k
         if box.linkDoc != nil {
-            attributedText = NSAttributedString(string: "🔗 " + box.text, attributes: [
-                .underlineStyle: NSUnderlineStyle.single.rawValue, .font: font as Any, .foregroundColor: UIColor(Palette.navy)
-            ])
+            // الرابط شارة بيضاوية بأيقونة رابط (كما في أندرويد)
+            let navy = UIColor(Palette.navy)
+            let a = NSMutableAttributedString()
+            if let icon = UIImage(named: "ph_link")?.withTintColor(navy, renderingMode: .alwaysOriginal) {
+                let att = NSTextAttachment()
+                att.image = icon
+                att.bounds = CGRect(x: 0, y: -size * 0.18, width: size, height: size)
+                a.append(NSAttributedString(attachment: att))
+                a.append(NSAttributedString(string: " "))
+            }
+            a.append(NSAttributedString(string: box.text, attributes: [.font: font as Any, .foregroundColor: navy]))
+            attributedText = a
+            pad = UIEdgeInsets(top: size * 0.25, left: size * 0.6, bottom: size * 0.25, right: size * 0.6)
+            layer.backgroundColor = UIColor(Palette.navySoft).cgColor
+            layer.borderColor = navy.withAlphaComponent(0.35).cgColor
+            layer.borderWidth = 1
+            let natural = a.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil)
+            width = min(width, ceil(natural.width) + pad.left + pad.right + 2)
         } else {
             attributedText = textBoxAttributed(box, k: k)
         }
-        let fit = sizeThatFits(CGSize(width: box.w * k, height: .greatestFiniteMagnitude))
-        frame = CGRect(x: box.x * k, y: box.y * k, width: box.w * k, height: max(fit.height, size * 1.4))
+        let fit = sizeThatFits(CGSize(width: width - pad.left - pad.right, height: .greatestFiniteMagnitude))
+        frame = CGRect(x: box.x * k, y: box.y * k, width: width, height: max(fit.height, size * 1.4) + pad.top + pad.bottom)
+        if box.linkDoc != nil { layer.cornerRadius = min(frame.height / 2, size * 1.1) }
         if selected {
             layer.borderColor = UIColor(Palette.navy).cgColor
             layer.borderWidth = 1.5
-            layer.cornerRadius = 4
+            if box.linkDoc == nil { layer.cornerRadius = 4 }
+            let c = CornerDot()
+            c.center = CGPoint(x: bounds.maxX, y: bounds.maxY)
+            c.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
+            let rp = UIPanGestureRecognizer(target: self, action: #selector(resize(_:)))
+            c.addGestureRecognizer(rp)
+            addSubview(c)
+            corner = c
         }
         isUserInteractionEnabled = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
@@ -1156,7 +1537,29 @@ final class TextBoxView: UILabel {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    override func drawText(in rect: CGRect) { super.drawText(in: rect.inset(by: pad)) }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if let c = corner, c.frame.contains(point) { return true }
+        return super.point(inside: point, with: event)
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let c = corner, c.frame.contains(point) { return c }
+        return super.hitTest(point, with: event)
+    }
+
     @objc private func tap() { onTap?() }
+
+    @objc private func resize(_ g: UIPanGestureRecognizer) {
+        if g.state == .began { startW = frame.width }
+        let w = max(30, startW + g.translation(in: superview).x)
+        switch g.state {
+        case .changed: frame.size.width = w
+        case .ended: onResize?(w)
+        default: frame.size.width = startW
+        }
+    }
 
     @objc private func pan(_ g: UIPanGestureRecognizer) {
         let t = g.translation(in: superview)
@@ -1170,10 +1573,139 @@ final class TextBoxView: UILabel {
     }
 }
 
+/// الشريط الصغير فوق مربع الكتابة (نفس InlineChip في أندرويد): Aa، A−، A+، حذف، ✓ تم.
+final class InlineMiniBar: UIView {
+    var onAction: ((Int) -> Void)?
+    private let stack = UIStackView()
+
+    init() {
+        super.init(frame: .zero)
+        backgroundColor = .white
+        layer.cornerRadius = 12
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.18
+        layer.shadowRadius = 6
+        layer.shadowOffset = CGSize(width: 0, height: 2)
+        stack.axis = .horizontal
+        stack.spacing = 4
+        stack.semanticContentAttribute = .forceLeftToRight
+        let titles = ["Aa", "A−", "A+", L("حذف", "Delete"), "✓ " + L("تم", "Done")]
+        for (i, t) in titles.enumerated() {
+            let b = UIButton(type: .system)
+            b.tag = i
+            b.setTitle(t, for: .normal)
+            b.titleLabel?.font = Fonts.ui(14, bold: i == 4)
+            b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+            b.layer.cornerRadius = 9
+            if i == 4 {
+                b.backgroundColor = UIColor(Palette.navy)
+                b.setTitleColor(.white, for: .normal)
+            } else {
+                b.backgroundColor = UIColor(argb: 0xFFEEF0F3)
+                b.setTitleColor(i == 3 ? UIColor(Palette.danger) : UIColor(Palette.navy), for: .normal)
+            }
+            b.addTarget(self, action: #selector(hit(_:)), for: .touchUpInside)
+            stack.addArrangedSubview(b)
+        }
+        addSubview(stack)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func fitting() -> CGSize {
+        let s = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        return CGSize(width: s.width + 10, height: s.height + 10)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        stack.frame = bounds.insetBy(dx: 5, dy: 5)
+    }
+
+    @objc private func hit(_ b: UIButton) { onAction?(b.tag) }
+}
+
+/// الكتابة بلوحة المفاتيح داخل ملاحظة لاصقة.
+final class NoteTextEditor: UITextView, UITextViewDelegate {
+    var onEnd: ((String) -> Void)?
+    private var done = false
+
+    init(frame: CGRect) {
+        super.init(frame: frame, textContainer: nil)
+        backgroundColor = UIColor.white.withAlphaComponent(0.5)
+        textColor = UIColor(argb: 0xFF1F2933)
+        textContainerInset = .zero
+        textContainer.lineFragmentPadding = 0
+        layer.cornerRadius = 3
+        delegate = self
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func commit() {
+        guard !done else { return }
+        done = true
+        onEnd?(text ?? "")
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) { commit() }
+}
+
+/// الصور معكوسة الألوان للقراءة الليلية (الطبقة الليلية تعكسها ثانيةً فتظهر بألوانها).
+enum NightImages {
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func inverted(_ key: String, _ img: UIImage?) -> UIImage? {
+        guard let img = img else { return nil }
+        if let c = cache.object(forKey: key as NSString) { return c }
+        let maxSide: CGFloat = 1600
+        let sc = min(1, maxSide / max(1, max(img.size.width, img.size.height) * img.scale))
+        let size = CGSize(width: img.size.width * sc, height: img.size.height * sc)
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = img.scale
+        fmt.opaque = false
+        let rect = CGRect(origin: .zero, size: size)
+        let out = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
+            img.draw(in: rect)
+            ctx.cgContext.setBlendMode(.difference)
+            UIColor.white.setFill()
+            ctx.cgContext.fill(rect)
+            // يبقى شفافًا ما كان شفافًا
+            img.draw(in: rect, blendMode: .destinationIn, alpha: 1)
+        }
+        cache.setObject(out, forKey: key as NSString)
+        return out
+    }
+}
+
 /// ملاحظة لاصقة.
 final class StickyNoteView: UIView {
     var onTap: (() -> Void)?
     var onMove: ((CGPoint) -> Void)?
+    var onResize: ((CGSize) -> Void)?
+    private var corner: CornerDot?
+    private var startSize: CGSize = .zero
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if let c = corner, c.frame.contains(point) { return true }
+        return super.point(inside: point, with: event)
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let c = corner, c.frame.contains(point) { return c }
+        return super.hitTest(point, with: event)
+    }
+
+    @objc private func resize(_ g: UIPanGestureRecognizer) {
+        if g.state == .began { startSize = frame.size }
+        let t = g.translation(in: superview)
+        let size = CGSize(width: max(40, startSize.width + t.x), height: max(40, startSize.height + t.y))
+        switch g.state {
+        case .changed: frame.size = size
+        case .ended: onResize?(size)
+        default: frame.size = startSize
+        }
+    }
 
     /// الملاحظة بنمطها (سادة، شريط، أسطر، مربعات)، وكتابة القلم عليها، ونصها، والاسم عليها.
     init(note: StickyNote, k: CGFloat, selected: Bool = false) {
@@ -1253,6 +1785,15 @@ final class StickyNoteView: UIView {
                 a.frame.origin = CGPoint(x: w - a.frame.width - w * 0.05, y: h - a.frame.height - w * 0.03)
                 addSubview(a)
             }
+        }
+        // الملاحظة المحددة: نقطة الزاوية تغيّر حجمها
+        if selected && !collapsed {
+            let c = CornerDot()
+            c.center = CGPoint(x: bounds.maxX, y: bounds.maxY)
+            c.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
+            c.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resize(_:))))
+            addSubview(c)
+            corner = c
         }
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))

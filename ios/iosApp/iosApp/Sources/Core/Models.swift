@@ -287,6 +287,8 @@ struct ConvertedLine: Codable, Identifiable, Equatable {
     var maxX: CGFloat = 0
     var rtl = false
     var font = ""
+    /// قراءات أخرى لكل كلمة (بترتيب words)، لتصحيحها بنقرة.
+    var alts: [[String]]? = nil
 }
 
 /// تسجيل صوتي مرتبط بالمستند.

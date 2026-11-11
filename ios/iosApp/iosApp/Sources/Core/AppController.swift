@@ -120,8 +120,24 @@ final class AppController: ObservableObject {
     let stickyPalette: [UInt32] = [0xFFFFF59D, 0xFFFFCC80, 0xFFF8BBD0, 0xFFB3E5FC, 0xFFC8E6C9, 0xFFE1BEE7]
 
     // ---------- الهايلايتر والملخصات ----------
-    @Published var highlightToSummary = true { didSet { prefs.set(highlightToSummary, forKey: "hl_summary") } }
-    @Published var highlightSnap = false { didSet { prefs.set(highlightSnap, forKey: "hl_snap") } }
+    @Published var highlightToSummary = true {
+        didSet {
+            prefs.set(highlightToSummary, forKey: "hl_summary")
+            if started, oldValue != highlightToSummary {
+                say(.tip, highlightToSummary ? L("التمييز الجديد يُضاف إلى الملخصات", "New highlights are added to summaries")
+                                             : L("التمييز الجديد يبقى على الصفحة فقط ولا يُضاف إلى الملخصات", "New highlights stay on the page only and are not added to summaries"))
+            }
+        }
+    }
+    @Published var highlightSnap = false {
+        didSet {
+            prefs.set(highlightSnap, forKey: "hl_snap")
+            if started, oldValue != highlightSnap {
+                say(.tip, highlightSnap ? L("التقاط النص مفعّل: مرّر الهايلايتر على السطر ليُظلَّل ويُضاف إلى الملخصات", "Text snap on: run the highlighter over a line to mark it and add it to summaries")
+                                        : L("التقاط النص متوقف: الهايلايتر يرسم بحرية", "Text snap off: the highlighter draws freely"))
+            }
+        }
+    }
     @Published var summaryTidy = true { didSet { prefs.set(summaryTidy, forKey: "sum_tidy") } }
     @Published var summariesOn = true { didSet { prefs.set(summariesOn, forKey: "summaries_on") } }
     @Published var summaryByColor = false { didSet { prefs.set(summaryByColor, forKey: "sum_by_color") } }
@@ -139,6 +155,8 @@ final class AppController: ObservableObject {
     @Published var openAsTabs = true { didSet { prefs.set(openAsTabs, forKey: "open_as_tabs") } }
     @Published var penDoubleTapEnabled = true { didSet { prefs.set(penDoubleTapEnabled, forKey: "pen_dbl") } }
     @Published var fingerUndo = true { didSet { prefs.set(fingerUndo, forKey: "finger_undo") } }
+    /// نقرة على كلمة محوّلة تعرض قراءات أخرى لتصحيحها.
+    @Published var wordAlts = true { didSet { prefs.set(wordAlts, forKey: "word_alts") } }
 
     // ---------- المذاكرة ----------
     @Published var stats: [String: Int64] = [:]
@@ -224,6 +242,7 @@ final class AppController: ObservableObject {
         openAsTabs = p.object(forKey: "open_as_tabs") as? Bool ?? true
         penDoubleTapEnabled = p.object(forKey: "pen_dbl") as? Bool ?? true
         fingerUndo = p.object(forKey: "finger_undo") as? Bool ?? true
+        wordAlts = p.object(forKey: "word_alts") as? Bool ?? true
         fingerWrites = p.bool(forKey: "finger_writes")
         nightPages = p.bool(forKey: "night_pages")
         toolbarStyle = ToolbarStyle(rawValue: p.string(forKey: "toolbar_style") ?? "") ?? .penBar
@@ -372,6 +391,8 @@ final class AppController: ObservableObject {
     func moveToFolder(_ id: String, _ folder: String) {
         if !folder.isEmpty { addFolder(folder) }
         update(id) { $0.folder = folder }
+        say(.done, folder.isEmpty ? L("أُزيل المستند من المادة", "Document removed from the subject")
+                                  : L("نُقل المستند إلى «\(folder)»", "Document moved to “\(folder)”"))
     }
 
     // ======================================================== المستندات
@@ -405,6 +426,9 @@ final class AppController: ObservableObject {
         if let n = repo.duplicate(e, newName: e.name + L(" (نسخة)", " (copy)")) {
             library.append(n)
             saveLibrary()
+            say(.done, L("تم تكرار المستند", "Document duplicated"))
+        } else {
+            say(.error, L("تعذر تكرار المستند", "Could not duplicate the document"))
         }
     }
 
@@ -414,6 +438,7 @@ final class AppController: ObservableObject {
         library.removeAll { $0.id == e.id }
         cards.removeAll { $0.docId == e.id }
         saveLibrary()
+        say(.done, L("تم حذف المستند", "Document deleted"))
     }
 
     func importDocuments(_ urls: [URL]) {
@@ -458,9 +483,20 @@ final class AppController: ObservableObject {
                 self.importing = false
                 self.library.append(contentsOf: added)
                 self.saveLibrary()
-                if added.count == 1 { self.openDocument(added[0].id) }
-                else if added.count > 1 { self.say(.done, L("أُضيف \(docsCount(added.count))", "Added \(docsCount(added.count))")) }
-                else { self.say(.error, L("تعذر فتح الملف", "Could not open the file")) }
+                let failed = pdfs.count - added.count
+                let auto = Premium.shared.active
+                if added.count == 1 && failed == 0 {
+                    self.openDocument(added[0].id)
+                    self.say(.done, auto ? L("تم استيراد المستند، ويُقرأ نصه تلقائيًا", "Document imported; its text is read automatically")
+                                         : L("تم استيراد المستند", "Document imported"))
+                } else if added.isEmpty {
+                    self.say(.error, L("فشل الاستيراد. تأكد أن الملف PDF صالح.", "Import failed. Make sure the file is a valid PDF."))
+                } else if failed > 0 {
+                    self.say(.error, L("استُورد \(added.count)، وفشل استيراد \(failed)", "Imported \(added.count), failed to import \(failed)"))
+                } else {
+                    self.say(.done, auto ? L("تم استيراد \(added.count) مستندات، ويُقرأ نصها تلقائيًا", "Imported \(added.count) documents; their text is read automatically")
+                                         : L("تم استيراد \(added.count) مستندات", "Imported \(added.count) documents"))
+                }
             }
         }
     }
@@ -489,6 +525,8 @@ final class AppController: ObservableObject {
             library.append(e)
             saveLibrary()
             openDocument(e.id)
+        } else {
+            say(.error, L("تعذر إنشاء الملاحظة", "Could not create the note"))
         }
     }
 
@@ -537,6 +575,10 @@ final class AppController: ObservableObject {
     }
 
     func followLink(from s: DocSession, docId: String, page: Int) {
+        guard entry(docId) != nil else {
+            say(.error, L("المستند المرتبط لم يعد موجودًا", "The linked document no longer exists"))
+            return
+        }
         linkBack = (s.id, s.currentPage)
         openPage(docId, page)
     }
@@ -905,7 +947,10 @@ final class AppController: ObservableObject {
         guard let e = entry(id) else { return }
         if e.locked {
             authenticate(reason: L("إلغاء قفل المستند", "Unlock the document")) { ok in
-                if ok { self.update(id) { $0.locked = false } }
+                if ok {
+                    self.update(id) { $0.locked = false }
+                    self.say(.done, L("أُلغي قفل المستند", "Document unlocked"))
+                }
             }
             return
         }
@@ -917,7 +962,7 @@ final class AppController: ObservableObject {
         update(id) { $0.locked = true }
         unlocked.remove(id)
         closeTab(id)
-        message(L("قُفل المستند", "Document locked"))
+        message(L("قُفل المستند: يحتاج رمزك أو بصمتك لفتحه", "Document locked: needs your PIN or fingerprint to open"))
     }
 
     /// Face ID / Touch ID، ثم الرمز إن لم تنجح.

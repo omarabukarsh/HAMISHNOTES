@@ -91,6 +91,7 @@ final class InlineTextView: UITextView, UITextViewDelegate {
     let boxId: String
     var onChange: ((String) -> Void)?
     var onEnd: (() -> Void)?
+    private let hint = UILabel()
 
     init(box: TextBox, k: CGFloat) {
         boxId = box.id
@@ -103,6 +104,10 @@ final class InlineTextView: UITextView, UITextViewDelegate {
         textContainer.lineFragmentPadding = 0
         isScrollEnabled = false
         delegate = self
+        hint.text = L("اكتب هنا…", "Type here…")
+        hint.textColor = UIColor(Palette.textSecondary).withAlphaComponent(0.7)
+        hint.isUserInteractionEnabled = false
+        addSubview(hint)
         apply(box, k: k)
     }
 
@@ -125,11 +130,16 @@ final class InlineTextView: UITextView, UITextViewDelegate {
         let w = b.w * k
         let fit = sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude))
         frame = CGRect(x: b.x * k, y: b.y * k, width: w, height: max(fit.height, b.size * k * 1.4))
+        hint.font = font
+        hint.textAlignment = I18n.english ? .left : .right
+        hint.frame = CGRect(x: 0, y: 0, width: w, height: (font?.lineHeight ?? 20) * 1.1)
+        hint.isHidden = !(text ?? "").isEmpty
     }
 
     func textViewDidChange(_ textView: UITextView) {
         let fit = sizeThatFits(CGSize(width: frame.width, height: .greatestFiniteMagnitude))
         frame.size.height = max(fit.height, (font?.lineHeight ?? 20) * 1.1)
+        hint.isHidden = !(text ?? "").isEmpty
         onChange?(text)
     }
 
@@ -154,7 +164,11 @@ extension DocSession {
         if t.isEmpty {
             edit { d in d.boxes.removeAll { $0.id == id } }
         } else if b.text != inlineText {
+            let fresh = b.text.isEmpty
             edit { d in if let i = d.boxes.firstIndex(where: { $0.id == id }) { d.boxes[i].text = self.inlineText } }
+            if fresh {
+                AppController.shared.say(.tip, L("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله", "Text added. Drag it with your finger to move it, tap it again to edit"))
+            }
         }
     }
 
@@ -163,12 +177,25 @@ extension DocSession {
         guard let idx = index(of: pageId) else { return }
         let size = pageSize(idx)
         let tp = TextPrefs.shared
-        let w = min(max(width ?? size.width * 0.4, size.width * 0.06), size.width - p.x)
-        var b = TextBox(id: UUID().uuidString, page: pageId, x: max(0, p.x), y: max(0, p.y), w: max(20, w), text: "")
+        // كما في أندرويد: بالنقر عرض افتراضي 42% من الصفحة، والمربع العربي يمتد يسار نقطة النقر
+        var w = min(max(width ?? size.width * 0.42, size.width * 0.06), size.width)
+        var x = p.x
+        if width == nil && !I18n.english { x = p.x - w }
+        x = min(max(0, x), max(0, size.width - w * 0.3))
+        w = min(w, size.width - x)
+        var b = TextBox(id: UUID().uuidString, page: pageId, x: x, y: max(0, p.y), w: max(20, w), text: "")
         b = tp.apply(to: b, pageW: size.width)
         b.y = max(0, p.y - b.size * 0.7)
         edit { d in d.boxes.append(b) }
         beginInlineEdit(b.id)
+    }
+
+    /// يكبّر أو يصغّر نص المربع الذي يُكتب فيه (A+ وA−)، بحدود أندرويد: 1%–9% من عرض الصفحة.
+    func scaleInlineText(_ f: CGFloat) {
+        guard let id = inlineEditId, let b = data.boxes.first(where: { $0.id == id }), let idx = index(of: b.page) else { return }
+        let w = pageSize(idx).width
+        let ns = min(max(b.size * f, w * 0.010), w * 0.09)
+        edit { d in if let i = d.boxes.firstIndex(where: { $0.id == id }) { d.boxes[i].size = ns } }
     }
 
     /// يطبّق إعدادات أداة النص على مربع.

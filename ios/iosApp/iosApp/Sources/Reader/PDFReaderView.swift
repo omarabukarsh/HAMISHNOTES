@@ -29,6 +29,7 @@ struct PDFReaderView: UIViewRepresentable {
     func updateUIView(_ host: ReaderHostView, context: Context) {
         host.pdfView.backgroundColor = UIColor(Palette.desk)
         host.night.isHidden = !app.nightPages
+        context.coordinator.setNight(app.nightPages)
         context.coordinator.refreshTools()
     }
 }
@@ -95,6 +96,9 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         session.reloadHook = { [weak self] in self?.reload() }
         session.applyInkHook = { [weak self] pid, d in self?.overlays[pid]?.setDrawing(d) }
         session.visibleCenterHook = { [weak self] i in self?.visibleCenter(i) }
+        session.scrubHook = { [weak self] f in self?.scrub(f) }
+        session.$wordSel.receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.overlays.values.forEach { $0.showWordSel() } }.store(in: &bag)
         // سحب ملصق أو صورة من الدرج وإفلاتها على الصفحة في مكانها
         h.addInteraction(UIDropInteraction(delegate: self))
         // أي تغيير في البيانات (تراجع، حذف تمييز من الدرج...) يعيد رسم عناصر الصفحات الظاهرة
@@ -243,6 +247,32 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: w)
     }
 
+    private var night = false
+
+    /// تغيّر وضع القراءة الليلية: الصور تُعاد بألوانها.
+    func setNight(_ on: Bool) {
+        guard on != night else { return }
+        night = on
+        overlays.values.forEach { $0.reloadItems() }
+    }
+
+    /// تمرير مستمر إلى نسبة من طول المستند (شريط الصفحات).
+    private func scrub(_ f: CGFloat) {
+        guard let v = pdfView, let sv = PDFCoordinator.scrollView(in: v) else { return }
+        let minY = -sv.adjustedContentInset.top
+        let maxY = max(minY, sv.contentSize.height - sv.bounds.height + sv.adjustedContentInset.bottom)
+        sv.setContentOffset(CGPoint(x: sv.contentOffset.x, y: minY + (maxY - minY) * min(max(0, f), 1)), animated: false)
+    }
+
+    private var dropPid: String?
+
+    fileprivate func highlightDrop(_ pid: String?) {
+        guard pid != dropPid else { return }
+        if let old = dropPid { overlays[old]?.setDropHighlight(false) }
+        dropPid = pid
+        if let n = pid { overlays[n]?.setDropHighlight(true) }
+    }
+
     private func go(_ i: Int, animated: Bool = true) {
         guard let v = pdfView, let p = v.document?.page(at: i) else { return }
         v.go(to: p)
@@ -299,10 +329,16 @@ extension PDFCoordinator: UIDropInteractionDelegate {
     }
 
     func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
-        UIDropProposal(operation: .copy)
+        // إطار أخضر على الصفحة التي سيقع عليها العنصر
+        if let v = pdfView, let hit = pagePoint(session.location(in: v)) { highlightDrop(self.session.pageId(hit.0)) } else { highlightDrop(nil) }
+        return UIDropProposal(operation: .copy)
     }
 
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) { highlightDrop(nil) }
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) { highlightDrop(nil) }
+
     func dropInteraction(_ interaction: UIDropInteraction, performDrop drop: UIDropSession) {
+        highlightDrop(nil)
         guard let v = pdfView, let hit = pagePoint(drop.location(in: v)) else { return }
         let (page, at) = hit
         let s = session

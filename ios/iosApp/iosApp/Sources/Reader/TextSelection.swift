@@ -33,6 +33,21 @@ extension DocSession {
     }
 }
 
+extension DocSession {
+    /// يضيف الكلمات المحددة (صفحة ممسوحة أو خط يد) إلى الملخصات.
+    func markWords(_ sel: WordSel) {
+        guard let pid = pageId(sel.page) else { return }
+        let text = TextTidy.clean(sel.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let rects = sel.rects
+        guard !text.isEmpty, !rects.isEmpty else { return }
+        let c = AppController.shared
+        addMark(TextMark(id: UUID().uuidString, page: pid, rects: rects, color: c.colorFor(.highlighter), text: text, createdAt: nowMs(),
+                         inSummary: c.summariesOn))
+        c.say(.done, c.summariesOn ? L("أُضيف النص إلى الملخصات", "Text added to summaries")
+                                   : L("ظُلّل النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries"))
+    }
+}
+
 /// شريط النص المحدد في الكتاب.
 struct TextSelectionBar: View {
     @ObservedObject var session: DocSession
@@ -41,7 +56,7 @@ struct TextSelectionBar: View {
     @State private var card: SummaryDrawer.CardDraft? = nil
 
     var body: some View {
-        let text = (session.textSel?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = (session.textSel?.string ?? session.wordSel?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         HStack(spacing: 0) {
             DialogButton(label: L("نسخ", "Copy")) {
                 UIPasteboard.general.string = text
@@ -49,16 +64,18 @@ struct TextSelectionBar: View {
                 clear()
             }
             DialogButton(label: L("إلى الملخصات", "To summaries")) {
-                if let sel = session.textSel { session.markSelection(sel) }
+                if let sel = session.textSel { session.markSelection(sel) } else if let ws = session.wordSel { session.markWords(ws) }
                 clear()
             }
             DialogButton(label: L("اجعله بطاقة", "Make it a card")) {
                 if Premium.shared.require(.cards) { card = SummaryDrawer.CardDraft(front: "", back: text) }
             }
-            DialogButton(label: L("ترجمة", "Translate")) { translating = true }
+            DialogButton(label: L("ترجمة", "Translate")) { if Premium.shared.require(.translate) { translating = true } }
             DialogButton(label: L("تحديد كل الصفحة", "Select whole page")) {
-                if let p = session.textSel?.pages.first ?? session.pdf?.page(at: session.currentPage),
-                   let all = p.selection(for: p.bounds(for: .cropBox)) {
+                if let ws = session.wordSel {
+                    session.wordSel = WordSel(page: ws.page, words: session.words(ws.page))
+                } else if let p = session.textSel?.pages.first ?? session.pdf?.page(at: session.currentPage),
+                          let all = p.selection(for: p.bounds(for: .cropBox)) {
                     session.textSel = all
                 }
             }
@@ -76,5 +93,5 @@ struct TextSelectionBar: View {
         }
     }
 
-    private func clear() { session.textSel = nil }
+    private func clear() { session.textSel = nil; session.wordSel = nil }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import PDFKit
 import PencilKit
 import PhotosUI
+import Photos
 
 // ---------------------------------------------------------------- الصور المصغّرة للصفحات
 
@@ -22,32 +23,38 @@ struct PageThumb: View {
         .frame(width: width, height: h)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
-        .task(id: "\(index)-\(session.pagesVersion)-\(session.inkVersion)-\(session.data.pages.count)") { render() }
+        .task(id: "\(index)-\(session.pagesVersion)-\(session.inkVersion)-\(session.data.pages.count)") { await render() }
     }
 
-    private func render() {
+    /// الرسم في الخلفية حتى لا تتقطع الكتابة والدرج مفتوح.
+    private func render() async {
         guard let page = session.pdf?.page(at: index), let pid = session.pageId(index) else { return }
         let size = session.pageSize(index)
         let scale: CGFloat = 2
         let tw = width * scale
         let k = tw / max(1, size.width)
-        let base = page.thumbnail(of: CGSize(width: tw, height: size.height * k), for: .cropBox)
         let drawing = session.drawing(for: pid)
         let marks = session.marks(onPage: pid).filter { !$0.free }
-        let img = UIGraphicsImageRenderer(size: CGSize(width: tw, height: size.height * k)).image { ctx in
-            base.draw(in: CGRect(x: 0, y: 0, width: tw, height: size.height * k))
-            let c = ctx.cgContext
-            c.setBlendMode(.multiply)
-            for m in marks {
-                c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
-                for r in m.rects { c.fill(r.scaled(tw)) }
+        let th = size.height * k
+        let img = await Task.detached(priority: .utility) { () -> UIImage in
+            let base = page.thumbnail(of: CGSize(width: tw, height: th), for: .cropBox)
+            let fmt = UIGraphicsImageRendererFormat()
+            fmt.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: tw, height: th), format: fmt).image { ctx in
+                base.draw(in: CGRect(x: 0, y: 0, width: tw, height: th))
+                let c = ctx.cgContext
+                c.setBlendMode(.multiply)
+                for m in marks {
+                    c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
+                    for r in m.rects { c.fill(r.scaled(tw)) }
+                }
+                c.setBlendMode(.normal)
+                if !drawing.strokes.isEmpty {
+                    drawing.image(from: CGRect(origin: .zero, size: size), scale: k).draw(in: CGRect(x: 0, y: 0, width: tw, height: th))
+                }
             }
-            c.setBlendMode(.normal)
-            if !drawing.strokes.isEmpty {
-                drawing.image(from: CGRect(origin: .zero, size: size), scale: k).draw(in: CGRect(x: 0, y: 0, width: tw, height: size.height * k))
-            }
-        }
-        image = img
+        }.value
+        if !Task.isCancelled { image = img }
     }
 }
 
@@ -56,6 +63,7 @@ struct PageThumb: View {
 /// درج الصفحات (نفس أندرويد): رأس فيه زر التحديد، وأربعة تبويبات (الصفحات، الفهرس، العلامات، التسجيلات)،
 /// وقائمة خيارات؛ ثم شبكة صور الصفحات برقم الصفحة وزر «⋯» وعلامة في الزاوية، وبطاقة «إضافة صفحة».
 struct PagesDrawer: View {
+    static var width: CGFloat { 300 * Fonts.base }
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
     @ObservedObject var audio = AudioNotes.shared
@@ -133,7 +141,7 @@ struct PagesDrawer: View {
                 }
             }
         }
-        .frame(width: 300 * Fonts.base)
+        .frame(width: PagesDrawer.width)
         .frame(maxHeight: .infinity)
         .background(Palette.drawerBg.shadow(color: .black.opacity(0.16), radius: 10))
         .alert(L("حذف الصفحة \((confirmDelete ?? 0) + 1)؟", "Delete page \((confirmDelete ?? 0) + 1)?"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
@@ -216,7 +224,7 @@ struct PagesDrawer: View {
                 .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 80)
             }
             .onAppear { proxy.scrollTo(max(0, s.currentPage - 2), anchor: .top) }
-            .onChange(of: s.currentPage) { p in withAnimation { proxy.scrollTo(max(0, p - 2), anchor: .top) } }
+            .onChange(of: s.currentPage) { _, p in withAnimation { proxy.scrollTo(max(0, p - 2), anchor: .top) } }
         }
     }
 
@@ -234,7 +242,22 @@ struct PagesDrawer: View {
     private var outline: some View {
         let s = session
         let list = s.data.outline
-        return Group {
+        let orig: [OutlineEntry] = s.pdf.map { Repository.outline(of: $0) } ?? []
+        let sig: ([OutlineEntry]) -> [String] = { $0.map { "\($0.title)|\($0.level)|\($0.page)" } }
+        let changed = !orig.isEmpty && sig(orig) != sig(list)
+        return VStack(spacing: 0) {
+            outlineList(s, list)
+            // فهرس الملف الأصلي يعود إن عُدّل (كما في أندرويد)
+            if changed {
+                Button { s.edit { $0.outline = orig } } label: {
+                    Text(L("استعادة الأصل", "Restore original")).font(Fonts.sans(13)).foregroundColor(Palette.navy).padding(10)
+                }
+            }
+        }
+    }
+
+    private func outlineList(_ s: DocSession, _ list: [OutlineEntry]) -> some View {
+        Group {
             if list.isEmpty {
                 VStack(spacing: 0) {
                     EmptyPanel(icon: "ph_list", title: L("لا توجد عناوين بعد", "No headings yet"),
@@ -535,6 +558,7 @@ struct SideTray: View {
     @State private var picks: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var stickerPick: [PhotosPickerItem] = []
+    @State private var deleteSticker: String? = nil
 
     var body: some View {
         let s = session
@@ -548,8 +572,10 @@ struct SideTray: View {
                 PhotosPicker(selection: $picks, maxSelectionCount: 10, matching: .images) {
                     trayButton("ph_image", L("من مكتبة الصور", "From the photo library"))
                 }
-                Button { importing = true } label: { trayButton("ph_folder", L("من الملفات", "From Files")) }
-                Text(L("اختر الصورة ثم انقر الصفحة حيث تريد وضعها. انقر عليها بإصبعك لتحريكها أو تغيير حجمها أو حذفها.", "Pick a picture, then tap the page where you want it. Tap it with your finger to move, resize or delete it."))
+                Button { importing = true } label: { trayButton("ph_folder", L("أو اختر من الملفات", "Or pick from files")) }
+                // معرض الصور داخل الدرج (كما في أندرويد): انقر للإضافة، أو اسحب الصورة إلى الصفحة
+                PhotoGalleryGrid { img in place(.images([img])) }
+                Text(L("انقر للإضافة · اسحب جانبًا للوضع", "Tap to add · drag sideways to place"))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
             } else {
                 ScrollView {
@@ -569,7 +595,7 @@ struct SideTray: View {
                                         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                                     }
                                     .onDrag { NSItemProvider(object: (StickerDragPrefix + "mine:" + f) as NSString) }
-                                    .contextMenu { Button(role: .destructive) { StickerStore.shared.delete(f) } label: { Text(L("حذف", "Delete")) } }
+                                    .contextMenu { Button(role: .destructive) { deleteSticker = f } label: { Text(L("حذف", "Delete")) } }
                                 }
                             }
                             Text(L("اضغط مطوّلًا على ملصق لحذفه", "Long-press a sticker to delete it")).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
@@ -605,7 +631,11 @@ struct SideTray: View {
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .onChange(of: picks) { items in
+        .alert(L("حذف الملصق؟", "Delete sticker?"), isPresented: Binding(get: { deleteSticker != nil }, set: { if !$0 { deleteSticker = nil } })) {
+            Button(L("حذف", "Delete"), role: .destructive) { if let f = deleteSticker { StickerStore.shared.delete(f) }; deleteSticker = nil }
+            Button(L("إلغاء", "Cancel"), role: .cancel) { deleteSticker = nil }
+        } message: { Text(L("يُزال من «ملصقاتي». النسخ الموضوعة على الصفحات تبقى.", "It is removed from “My stickers”. Copies already on pages stay.")) }
+        .onChange(of: picks) { _, items in
             let n = items.count
             for (i, it) in items.enumerated() {
                 Task {
@@ -616,7 +646,7 @@ struct SideTray: View {
             }
             picks = []
         }
-        .onChange(of: stickerPick) { items in
+        .onChange(of: stickerPick) { _, items in
             for it in items {
                 Task {
                     if let d = try? await it.loadTransferable(type: Data.self), let img = UIImage(data: d) {
@@ -693,5 +723,145 @@ final class StickerStore: ObservableObject {
     func delete(_ f: String) {
         try? FileManager.default.removeItem(at: Repository.shared.stickersDir.appendingPathComponent(f))
         mine.removeAll { $0 == f }
+    }
+}
+
+// ---------------------------------------------------------------- معرض الصور داخل الدرج
+
+/// صور الجهاز (الأحدث أولًا) مع تبويبي الكاميرا ولقطات الشاشة.
+final class PhotoGallery: ObservableObject {
+    static let shared = PhotoGallery()
+    @Published var status: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @Published var assets: [PHAsset] = []
+    @Published var screenshots = false { didSet { load() } }
+    private let manager = PHCachingImageManager()
+
+    func request() {
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { st in
+            DispatchQueue.main.async { self.status = st; self.load() }
+        }
+    }
+
+    func load() {
+        status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { assets = []; return }
+        let wantShots = screenshots
+        DispatchQueue.global(qos: .userInitiated).async {
+            let o = PHFetchOptions()
+            o.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            o.fetchLimit = 150
+            let shot = PHAssetMediaSubtype.photoScreenshot.rawValue
+            o.predicate = wantShots ? NSPredicate(format: "(mediaSubtypes & %d) != 0", shot) : NSPredicate(format: "(mediaSubtypes & %d) == 0", shot)
+            let r = PHAsset.fetchAssets(with: .image, options: o)
+            var list: [PHAsset] = []
+            r.enumerateObjects { a, _, _ in list.append(a) }
+            DispatchQueue.main.async { self.assets = list }
+        }
+    }
+
+    func thumb(_ a: PHAsset, _ done: @escaping (UIImage?) -> Void) {
+        let o = PHImageRequestOptions()
+        o.deliveryMode = .opportunistic
+        o.isNetworkAccessAllowed = true
+        manager.requestImage(for: a, targetSize: CGSize(width: 220, height: 220), contentMode: .aspectFill, options: o) { img, _ in done(img) }
+    }
+
+    func full(_ a: PHAsset, _ done: @escaping (UIImage?) -> Void) {
+        let o = PHImageRequestOptions()
+        o.deliveryMode = .highQualityFormat
+        o.isNetworkAccessAllowed = true
+        manager.requestImage(for: a, targetSize: CGSize(width: 2000, height: 2000), contentMode: .aspectFit, options: o) { img, info in
+            if (info?[PHImageResultIsDegradedKey] as? Bool) == true { return }
+            DispatchQueue.main.async { done(img) }
+        }
+    }
+}
+
+struct PhotoGalleryGrid: View {
+    @ObservedObject var gallery = PhotoGallery.shared
+    @EnvironmentObject var app: AppController
+    let onPick: (UIImage) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch gallery.status {
+            case .authorized, .limited:
+                HStack(spacing: 6) {
+                    chip(L("الكاميرا", "Camera"), !gallery.screenshots) { gallery.screenshots = false }
+                    chip(L("لقطات الشاشة", "Screenshots"), gallery.screenshots) { gallery.screenshots = true }
+                }
+                if gallery.status == .limited {
+                    Button {
+                        if let vc = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController }).first {
+                            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: vc) { _ in gallery.load() }
+                        }
+                    } label: {
+                        Text(L("بعض الصور فقط · انقر للمزيد", "Some photos only · tap for more")).font(Fonts.sans(12)).foregroundColor(Palette.navy)
+                    }
+                }
+                if gallery.assets.isEmpty {
+                    Text(L("لا توجد صور هنا", "No photos here")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.vertical, 14)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+                            ForEach(gallery.assets, id: \.localIdentifier) { a in
+                                GalleryTile(asset: a, onPick: onPick)
+                            }
+                        }
+                    }
+                }
+            default:
+                Text(L("اسمح لهامش بعرض صورك لتسحبها إلى الصفحة.", "Allow Hamish to show your photos so you can drag them in."))
+                    .font(Fonts.sans(12.5)).foregroundColor(Palette.textSecondary)
+                Button {
+                    if gallery.status == .notDetermined { gallery.request() }
+                    else if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
+                } label: {
+                    Text(L("السماح بالصور", "Allow photos")).font(Fonts.sans(14, .bold)).foregroundColor(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 9)
+                        .background(Capsule().fill(Palette.navy))
+                }
+            }
+        }
+        .onAppear { gallery.load() }
+    }
+
+    private func chip(_ t: String, _ on: Bool, _ a: @escaping () -> Void) -> some View {
+        Button(action: a) {
+            Text(t).font(Fonts.sans(12.5, on ? .bold : .regular)).foregroundColor(on ? .white : Palette.navy)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Capsule().fill(on ? Palette.navy : Palette.navySoft))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct GalleryTile: View {
+    let asset: PHAsset
+    let onPick: (UIImage) -> Void
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        Button {
+            PhotoGallery.shared.full(asset) { if let img = $0 { onPick(img) } }
+        } label: {
+            ZStack {
+                Color.white
+                if let img = image { Image(uiImage: img).resizable().scaledToFill() }
+            }
+            .frame(height: 78).frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onDrag {
+            let p = NSItemProvider()
+            let a = asset
+            p.registerObject(ofClass: UIImage.self, visibility: .all) { done in
+                PhotoGallery.shared.full(a) { img in done(img, nil) }
+                return nil
+            }
+            return p
+        }
+        .onAppear { if image == nil { PhotoGallery.shared.thumb(asset) { img in DispatchQueue.main.async { if let i = img { image = i } } } } }
     }
 }

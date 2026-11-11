@@ -61,4 +61,16 @@ final class FixesTests: XCTestCase {
         let lay = GlyphInk.layout("الخلية", font: .systemFont(ofSize: 24))
         XCTAssertGreaterThan(GlyphInk.strokes(lay, origin: CGPoint(x: 20, y: 60), size: 24, color: .black, bold: true, date: Date()).count, 20)
     }
+
+    /// نسبة الرسم = نسبة ظهور الصفحة على الشاشة (فلا يُكبَّر المرسوم)، بحد أعلى للذاكرة.
+    func testRenderScaleFollowsScreenWithMemoryCap() {
+        let a4 = CGSize(width: 595, height: 842)
+        // ملء العرض على آيباد: النسبة كما هي (حادة دون تكبير)
+        XCTAssertEqual(PageOverlayView.clampScale(2.2, size: a4, screen: 2), 2.2, accuracy: 0.001)
+        // تكبير شديد: لا تتجاوز مساحة الرسم نحو 20 مليون بكسل
+        let s = PageOverlayView.clampScale(12, size: a4, screen: 2)
+        XCTAssertLessThanOrEqual(a4.width * s * 2 * a4.height * s * 2, 20_000_001)
+        XCTAssertGreaterThan(s, 2.2)
+        XCTAssertEqual(PageOverlayView.clampScale(.nan, size: a4, screen: 2), 1)
+    }
 }

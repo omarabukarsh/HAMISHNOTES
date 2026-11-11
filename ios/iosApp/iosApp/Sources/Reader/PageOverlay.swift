@@ -76,6 +76,12 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private var applying = false
     private var lastStrokeCount = 0
     private var k: CGFloat = 1
+    /// كل ما فوق الصفحة داخل هذه الحاوية: حجمها بنقاط الشاشة الفعلية (حجم الصفحة × نسبة العرض)،
+    /// وتُصغَّر بعكس تكبير عارض PDF، فيُرسم الحبر والنص والتمييز بدقة الشاشة (كما في أندرويد)
+    /// بدل رسمها بحجم الصفحة الصغير ثم تكبيرها.
+    private let content = UIView()
+    /// نسبة نقاط الشاشة إلى نقاط الطبقة التي رُسم بها المحتوى الآن.
+    private var renderS: CGFloat = 1
 
     init(pageId: String, session: DocSession, pdfView: PDFView, page: PDFPage, size: CGSize) {
         self.pageId = pageId
@@ -87,12 +93,15 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         backgroundColor = .clear
         isOpaque = false
         clipsToBounds = true
+        content.backgroundColor = .clear
+        addSubview(content)
+        renderS = PageOverlayView.clampScale(pdfView.scaleFactor, size: size, screen: UIScreen.main.scale)
 
         marksView.isUserInteractionEnabled = false
         marksView.backgroundColor = .clear
-        addSubview(marksView)
+        content.addSubview(marksView)
         imagesLayer.isUserInteractionEnabled = false
-        addSubview(imagesLayer)
+        content.addSubview(imagesLayer)
 
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
@@ -108,14 +117,14 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         hold.delaysTouchesEnded = false
         hold.delegate = self
         canvas.addGestureRecognizer(hold)
-        addSubview(canvas)
+        content.addSubview(canvas)
 
         topLayer.backgroundColor = .clear
         topLayer.pencilPasses = { let c = AppController.shared; return !c.textActive && !c.stickyActive && !c.lassoActive }
-        addSubview(topLayer)
+        content.addSubview(topLayer)
 
         laser.isHidden = true
-        addSubview(laser)
+        content.addSubview(laser)
         searchLayer.fillColor = UIColor(argb: 0xFFFFEB3B).withAlphaComponent(0.45).cgColor
         searchCurrent.fillColor = UIColor(argb: 0xFFFFAB40).withAlphaComponent(0.55).cgColor
         marksView.layer.addSublayer(searchLayer)
@@ -128,10 +137,10 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         lasso.isHidden = true
         lasso.session = session
         lasso.pageId = pageId
-        addSubview(lasso)
+        content.addSubview(lasso)
         shapes.isHidden = true
         shapes.onShape = { [weak self] strokes, fill in self?.commitShape(strokes, fill: fill) }
-        addSubview(shapes)
+        content.addSubview(shapes)
 
         // أداة النص: سحب القلم يرسم مربع الكتابة بالعرض المطلوب
         textDrag.addTarget(self, action: #selector(onTextDrag(_:)))
@@ -142,7 +151,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         textDragLayer.strokeColor = UIColor(Palette.navy).cgColor
         textDragLayer.lineWidth = 1.5
         textDragLayer.lineDashPattern = [6, 4]
-        layer.addSublayer(textDragLayer)
+        content.layer.addSublayer(textDragLayer)
 
         // ضغط مطوّل بالإصبع على نص الكتاب: تحديده (ثم السحب يمدّه)
         let press = UILongPressGestureRecognizer(target: self, action: #selector(onPress(_:)))
@@ -166,36 +175,54 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         three.delegate = self
         addGestureRecognizer(three)
 
-        applying = true
-        canvas.drawing = session.drawing(for: pageId)
-        applying = false
-        lastStrokeCount = canvas.drawing.strokes.count
+        layoutContent()
+        setDrawing(session.drawing(for: pageId))
         applyTool()
         reloadItems()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// حد أعلى لنسبة الرسم حتى لا تكبر مساحة الحبر عن الذاكرة المعقولة (نحو 20 مليون بكسل للصفحة).
+    static func clampScale(_ eff: CGFloat, size: CGSize, screen: CGFloat) -> CGFloat {
+        let cap = sqrt(20_000_000 / max(1, size.width * size.height * screen * screen))
+        guard eff.isFinite, eff > 0 else { return 1 }
+        return max(0.25, min(eff, cap))
+    }
+
+    /// يضبط الحاوية: حجمها بنقاط الشاشة، ومصغّرة بعكس تكبير العارض. يعيد true إن تغيّرت نسبة الرسم.
+    @discardableResult
+    private func layoutContent() -> Bool {
+        let s = renderS
+        let size = CGSize(width: bounds.width * s, height: bounds.height * s)
+        content.transform = .identity
+        content.bounds = CGRect(origin: .zero, size: size)
+        content.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        content.transform = CGAffineTransform(scaleX: 1 / s, y: 1 / s)
+        for v in [marksView, imagesLayer, canvas, topLayer, laser, shapes, lasso] as [UIView] { v.frame = content.bounds }
+        // الليزر أثر عابر: دقة محدودة تكفيه
+        laser.contentScaleFactor = min(UIScreen.main.scale, 2400 / max(1, max(size.width, size.height)))
+        let nk = size.width / max(1, pageSize.width)
+        guard abs(nk - k) > 0.0001 else { return false }
+        k = nk
+        return true
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        let nk = bounds.width / max(1, pageSize.width)
-        for v in [marksView, imagesLayer, canvas, topLayer, laser, shapes, lasso] as [UIView] { v.frame = bounds }
-        if abs(nk - k) > 0.0001 {
-            let old = k
-            k = nk
-            applying = true
-            canvas.drawing = canvas.drawing.transformed(using: CGAffineTransform(scaleX: nk / old, y: nk / old))
-            applying = false
+        if layoutContent() {
+            // الحبر محفوظ بنقاط الصفحة (متجهات): يُعاد رسمه بالنسبة الجديدة من الأصل، لا بتكبير المرسوم
+            if let s = session { setDrawing(s.drawing(for: pageId)) }
             applyTool()
             reloadItems()
         }
         marksView.k = k * pageSize.width
-        marksView.setNeedsDisplay()
+        marksView.pk = k
+        marksView.rebuild()
         lasso.k = k
         lasso.refresh()
         searchLayer.frame = marksView.bounds
         searchCurrent.frame = marksView.bounds
-        updateRenderScale()
         if !lastHits.isEmpty { showSearch(lastHits, current: lastHitIndex) }
         showInsert()
     }
@@ -473,13 +500,13 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     /// نقطة من الطبقة إلى إحداثيات PDF.
     private func toPdf(_ p: CGPoint) -> CGPoint? {
         guard let v = pdfView, let page = page else { return nil }
-        return v.convert(convert(p, to: v), to: page)
+        return v.convert(content.convert(p, to: v), to: page)
     }
 
     /// مستطيل PDF إلى إحداثيات الصفحة المحفوظة.
     private func fromPdf(_ r: CGRect) -> CGRect? {
         guard let v = pdfView, let page = page else { return nil }
-        let vr = convert(v.convert(r, from: page), from: v)
+        let vr = content.convert(v.convert(r, from: page), from: v)
         return CGRect(x: vr.minX / k, y: vr.minY / k, width: vr.width / k, height: vr.height / k)
     }
 
@@ -515,7 +542,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         marksView.fills = session?.data.fills.filter { $0.page == pageId } ?? []
         marksView.pk = k
         marksView.k = k * pageSize.width
-        marksView.setNeedsDisplay()
+        marksView.rebuild()
     }
 
     // ======================================================== الصور والنصوص والملاحظات
@@ -601,40 +628,28 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         } else {
             selectionFrame = nil
         }
-        updateRenderScale()
     }
 
-    // ======================================================== حدّة النص عند التكبير
+    // ======================================================== حدّة الرسم (بدقة الشاشة دائمًا)
 
-    private var renderScale: CGFloat = 0
-
-    /// الطبقة مرسومة بنقاط الصفحة ثم يكبّرها عارض PDF: النصوص والتمييز تُرسم بدقة حجمها
-    /// الحقيقي على الشاشة، فلا تظهر مبكسلة.
+    /// يقيس نسبة ظهور الطبقة على الشاشة الآن، وإن تغيّرت يعيد رسم كل شيء بها.
+    /// يُستدعى عند ظهور الصفحة وبعد انتهاء التكبير أو التصغير (لا أثناءه).
     func updateRenderScale() {
-        guard let w = window else { return }
-        let onScreen = convert(bounds, to: nil).width
-        let eff = onScreen / max(1, bounds.width)
-        // تقريب لأقرب ربع حتى لا يُعاد الرسم مع كل حركة تكبير صغيرة، وبحد أعلى للذاكرة
-        let s = min(8, max(1, (eff * 4).rounded(.up) / 4)) * w.screen.scale
-        guard abs(s - renderScale) > 0.01 else { return }
-        renderScale = s
-        for v in [marksView, topLayer] as [UIView] { applyScale(s, to: v) }
-        // الحبر أيضًا: يُرسم بدقة التكبير لا بدقة الصفحة الأصلية
-        applyScale(s, to: canvas, redraw: false)
-        for l in marksView.layer.sublayers ?? [] { l.contentsScale = s }
-    }
-
-    private func applyScale(_ s: CGFloat, to v: UIView, redraw: Bool = true) {
-        v.contentScaleFactor = s
-        v.layer.contentsScale = s
-        for l in v.layer.sublayers ?? [] where l.delegate == nil { l.contentsScale = s }
-        if redraw { v.setNeedsDisplay() } else { v.setNeedsLayout() }
-        for sub in v.subviews { applyScale(s, to: sub, redraw: redraw) }
+        guard let v = pdfView, bounds.width > 0 else { return }
+        var eff = v.scaleFactor * pageSize.width / bounds.width
+        if window != nil, isDescendant(of: v) {
+            let m = convert(bounds, to: v).width / bounds.width
+            if m.isFinite, m > 0.05 { eff = m }
+        }
+        let s = PageOverlayView.clampScale(eff, size: bounds.size, screen: window?.screen.scale ?? UIScreen.main.scale)
+        guard abs(s - renderS) > renderS * 0.01 else { return }
+        renderS = s
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        renderScale = 0
         updateRenderScale()
         linkMultiTouchTaps()
     }
@@ -658,7 +673,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     @objc private func onTap(_ g: UITapGestureRecognizer) {
         guard let s = session else { return }
         let c = AppController.shared
-        let p = g.location(in: self)
+        let p = g.location(in: content)
         let pp = CGPoint(x: p.x / k, y: p.y / k)
         if let idx = s.index(of: pageId) { s.setCurrent(idx) }
         // نافذة الكتابة المكبّرة مفتوحة: النقر ينقل منطقتها إلى هنا
@@ -727,7 +742,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private var selAnchor: CGPoint?
 
     @objc private func onPress(_ g: UILongPressGestureRecognizer) {
-        guard let s = session, let page = page, let pt = toPdf(g.location(in: self)) else { return }
+        guard let s = session, let page = page, let pt = toPdf(g.location(in: content)) else { return }
         // الإصبع يكتب: الضغط المطوّل للكتابة لا للتحديد
         if AppController.shared.fingerWrites && AppController.shared.tool.isWriting { return }
         switch g.state {
@@ -747,7 +762,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     }
 
     @objc private func onTextDrag(_ g: UIPanGestureRecognizer) {
-        let p = g.location(in: self)
+        let p = g.location(in: content)
         switch g.state {
         case .began:
             textDragStart = p
@@ -758,7 +773,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         case .ended:
             textDragLayer.path = nil
             let r = CGRect(x: min(textDragStart.x, p.x), y: min(textDragStart.y, p.y), width: abs(p.x - textDragStart.x), height: abs(p.y - textDragStart.y))
-            if r.width > bounds.width * 0.04 {
+            if r.width > content.bounds.width * 0.04 {
                 session?.placeTextBox(pageId: pageId, at: CGPoint(x: r.minX / k, y: (r.minY + min(r.height, 30)) / k), width: r.width / k)
             }
         default:
@@ -772,49 +787,57 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
 // ======================================================== رسم التمييز
 
+/// التمييز وملء الأشكال: طبقات متجهة (لا صورة بحجم الصفحة)، فتبقى حادة بأي تكبير ولا تأخذ ذاكرة.
 final class MarksView: UIView {
     var marks: [TextMark] = []
+    /// عرض الصفحة بالنقاط على الشاشة (مستطيلات التمييز نسبية لعرض الصفحة).
     var k: CGFloat = 1
     /// ملء الأشكال (بنقاط الصفحة) ونسبة الطبقة إلى الصفحة.
     var fills: [ShapeFill] = []
     var pk: CGFloat = 1
+    private let host = CALayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false
-        contentMode = .redraw
+        layer.insertSublayer(host, at: 0)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// k = عرض الصفحة بالنقاط على الشاشة (المستطيلات نسبية لعرض الصفحة).
-    override func draw(_ rect: CGRect) {
-        guard let c = UIGraphicsGetCurrentContext() else { return }
+    func rebuild() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        host.frame = bounds
+        host.sublayers?.forEach { $0.removeFromSuperlayer() }
         // ملء الأشكال تحت الكتابة
         for f in fills where f.pts.count > 2 {
-            c.setFillColor(UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor)
-            c.move(to: CGPoint(x: f.pts[0].x * pk, y: f.pts[0].y * pk))
-            for q in f.pts.dropFirst() { c.addLine(to: CGPoint(x: q.x * pk, y: q.y * pk)) }
-            c.closePath()
-            c.fillPath()
+            let l = CAShapeLayer()
+            let p = UIBezierPath()
+            p.move(to: CGPoint(x: f.pts[0].x * pk, y: f.pts[0].y * pk))
+            for q in f.pts.dropFirst() { p.addLine(to: CGPoint(x: q.x * pk, y: q.y * pk)) }
+            p.close()
+            l.path = p.cgPath
+            l.fillColor = UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor
+            host.addSublayer(l)
         }
-        c.setBlendMode(.multiply)
+        func add(_ r: MarkRect, _ color: UIColor) {
+            let rr = r.scaled(k)
+            let l = CALayer()
+            l.frame = rr
+            l.cornerRadius = rr.height * 0.32
+            l.backgroundColor = color.cgColor
+            host.addSublayer(l)
+        }
         for m in marks {
-            c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
-            for r in m.rects {
-                let rr = r.scaled(k)
-                c.addPath(UIBezierPath(roundedRect: rr, cornerRadius: rr.height * 0.32).cgPath)
-                c.fillPath()
-            }
+            let c = markColor(m.color, strong: m.level >= 2)
+            for r in m.rects { add(r, c) }
             if m.level < 2 {
-                c.setFillColor(markColor(m.color, strong: true).cgColor)
-                for r in m.strongRects {
-                    let rr = r.scaled(k)
-                    c.addPath(UIBezierPath(roundedRect: rr, cornerRadius: rr.height * 0.32).cgPath)
-                    c.fillPath()
-                }
+                let sc = markColor(m.color, strong: true)
+                for r in m.strongRects { add(r, sc) }
             }
         }
+        CATransaction.commit()
     }
 }
 
@@ -1155,7 +1178,7 @@ final class StickyNoteView: UIView {
     /// الملاحظة بنمطها (سادة، شريط، أسطر، مربعات)، وكتابة القلم عليها، ونصها، والاسم عليها.
     init(note: StickyNote, k: CGFloat, selected: Bool = false) {
         let collapsed = note.collapsed
-        let side: CGFloat = 34
+        let side: CGFloat = 34 * k
         super.init(frame: collapsed
                    ? CGRect(x: note.x * k, y: note.y * k, width: side, height: side)
                    : CGRect(x: note.x * k, y: note.y * k, width: note.w * k, height: note.h * k))

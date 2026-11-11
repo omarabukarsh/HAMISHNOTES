@@ -87,6 +87,8 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
             .sink { [weak self] _ in self?.pageChanged() }.store(in: &bag)
         NotificationCenter.default.publisher(for: .PDFViewScaleChanged, object: v)
             .sink { [weak self] _ in self?.scaleChanged() }.store(in: &bag)
+        NotificationCenter.default.publisher(for: .PDFViewVisiblePagesChanged, object: v)
+            .sink { [weak self] _ in self?.scheduleSharpen(0.1) }.store(in: &bag)
         session.goToHook = { [weak self] i in self?.go(i) }
         session.zoomHook = { [weak self] f in self?.zoom(f) }
         session.fitHook = { [weak self] in self?.fit() }
@@ -153,6 +155,9 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
 
     func pdfView(_ pdfView: PDFView, willDisplayOverlayView overlayView: UIView, for page: PDFPage) {
         (overlayView as? PageOverlayView)?.applyTool()
+        // الصفحة ظهرت: تُرسم بدقة الشاشة الحالية فورًا، ثم تُراجع بعد استقرارها في مكانها
+        (overlayView as? PageOverlayView)?.updateRenderScale()
+        scheduleSharpen(0.05)
     }
 
     func pdfView(_ pdfView: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {
@@ -224,8 +229,18 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         guard let v = pdfView else { return }
         let base = v.scaleFactorForSizeToFit
         session.scalePercent = Int((v.scaleFactor / max(0.01, base) * 100).rounded())
-        // النصوص فوق الصفحات تُعاد رسمها بدقة التكبير الجديد
-        DispatchQueue.main.async { [weak self] in self?.overlays.values.forEach { $0.updateRenderScale() } }
+        scheduleSharpen()
+    }
+
+    private var sharpenWork: DispatchWorkItem?
+
+    /// بعد أن يهدأ التكبير أو التصغير: يُعاد رسم ما فوق الصفحات الظاهرة بدقة الشاشة الجديدة
+    /// (أثناء الحركة يُكبَّر المرسوم مؤقتًا، كما في أندرويد).
+    func scheduleSharpen(_ delay: Double = 0.18) {
+        sharpenWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.overlays.values.forEach { $0.updateRenderScale() } }
+        sharpenWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: w)
     }
 
     private func go(_ i: Int, animated: Bool = true) {

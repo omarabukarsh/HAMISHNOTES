@@ -64,8 +64,8 @@ fun LicensesDialog(onDismiss: () -> Unit) {
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Text(
-                    L("يستخدم «هامش» المكوّنات التالية وفق تراخيصها. انقر على أي منها لقراءة نص الترخيص.",
-                        "Hamish uses the following components under their licenses. Tap one to read its license text."),
+                    L("يستخدم «especial notes» المكوّنات التالية وفق تراخيصها. انقر على أي منها لقراءة نص الترخيص.",
+                        "especial notes uses the following components under their licenses. Tap one to read its license text."),
                     fontSize = 13.sp, color = Palette.TextSecondary
                 )
                 Spacer(Modifier.height(10.dp))
@@ -106,7 +106,7 @@ fun LicensesDialog(onDismiss: () -> Unit) {
 
 /** نص سياسة الخصوصية (نفس محتوى PRIVACY_POLICY.md في المستودع). */
 fun privacyText(): String = L(
-    """سياسة الخصوصية — هامش (Hamish)
+    """سياسة الخصوصية — especial notes
 
 آخر تحديث: 1 نوفمبر 2026
 المطوّر: Hamish Notes · للتواصل: noteshamish@gmail.com
@@ -138,7 +138,7 @@ fun privacyText(): String = L(
 • الأطفال: التطبيق أداة دراسة عامة، غير موجّهة للأطفال دون 13 عامًا.
 
 للتواصل أو طلب بياناتك أو حذفها: noteshamish@gmail.com""",
-    """Privacy Policy — Hamish
+    """Privacy Policy — especial notes
 
 Last updated: November 1, 2026
 Developer: Hamish Notes · Contact: noteshamish@gmail.com
@@ -187,7 +187,7 @@ fun PrivacyDialog(onDismiss: () -> Unit) {
 
 /** نص شروط الاستخدام (نفس محتوى TERMS.md في المستودع). */
 fun termsText(): String = L(
-    """شروط الاستخدام — هامش (Hamish)
+    """شروط الاستخدام — especial notes
 
 آخر تحديث: 1 نوفمبر 2026
 المطوّر: Hamish Notes · للتواصل: noteshamish@gmail.com
@@ -200,7 +200,7 @@ fun termsText(): String = L(
 
 4. ملفاتك وملاحظاتك محفوظة على جهازك فقط. أنت مسؤول عن عمل نسخ احتياطية منها؛ قد تضيع عند حذف التطبيق أو تعطل الجهاز.
 
-5. هامش Premium اشتراك سنوي اختياري عبر Google Play:
+5. especial notes Premium اشتراك سنوي اختياري عبر Google Play:
    • يظهر السعر بعملتك قبل الشراء، ويُخصم من حسابك في Google Play.
    • للمشتركين الجدد تجربة مجانية 7 أيام. ألغِ قبل انتهائها حتى لا يُخصم أي مبلغ.
    • يتجدد الاشتراك تلقائيًا كل سنة ما لم تلغِه. يمكنك الإلغاء في أي وقت من Google Play ← الاشتراكات، وتبقى المزايا حتى نهاية المدة المدفوعة.
@@ -217,7 +217,7 @@ fun termsText(): String = L(
 9. قد تُحدَّث هذه الشروط؛ استمرارك في استخدام التطبيق يعني قبولك للنسخة الأحدث.
 
 للتواصل: noteshamish@gmail.com""",
-    """Terms of Use — Hamish
+    """Terms of Use — especial notes
 
 Last updated: November 1, 2026
 Developer: Hamish Notes · Contact: noteshamish@gmail.com
@@ -230,7 +230,7 @@ Developer: Hamish Notes · Contact: noteshamish@gmail.com
 
 4. Your files and notes are stored on your device only. You are responsible for backing them up; they may be lost if the app is uninstalled or the device fails.
 
-5. Hamish Premium is an optional yearly subscription through Google Play:
+5. especial notes Premium is an optional yearly subscription through Google Play:
    • The price is shown in your currency before purchase and charged to your Google Play account.
    • New subscribers get a 7-day free trial. Cancel before it ends to avoid being charged.
    • The subscription renews automatically every year unless you cancel. You can cancel anytime in Google Play → Subscriptions, and keep Premium until the end of the paid period.

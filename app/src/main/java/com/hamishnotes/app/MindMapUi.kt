@@ -1120,7 +1120,7 @@ private suspend fun framed(src: Bitmap): Bitmap = withContext(Dispatchers.Defaul
         color = Palette.GoldDeep.toArgb()
         textSize = (sw.width / 90f).coerceIn(18f, 44f)
     }
-    val tag = L("هامش · Hamish", "Hamish")
+    val tag = L("especial notes", "especial notes")
     cv.drawText(tag, sw.width - p.measureText(tag) - p.textSize, sw.height - p.textSize, p)
     out
 }

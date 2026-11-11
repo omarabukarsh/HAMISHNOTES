@@ -226,7 +226,7 @@ fun PhotoGalleryDialog(multi: Boolean, title: String, onPicked: (List<Uri>) -> U
                 when {
                     access == 0 -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         Text(
-                            L("اسمح لهامش بعرض صورك لتختار منها مباشرة.", "Allow Hamish to show your photos so you can pick them directly."),
+                            L("اسمح لـ especial notes بعرض صورك لتختار منها مباشرة.", "Allow especial notes to show your photos so you can pick them directly."),
                             fontSize = 15.sp, color = Palette.TextSecondary
                         )
                         Spacer(Modifier.height(10.dp))

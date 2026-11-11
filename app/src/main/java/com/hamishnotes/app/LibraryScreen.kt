@@ -392,7 +392,7 @@ private fun Spine() {
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(
-                    L("هامش", "hamish"), color = Lib.text, fontFamily = Fonts.Display,
+                    L("especial notes", "especial notes"), color = Lib.text, fontFamily = Fonts.Display,
                     fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 28.sp
                 )
                 Text(L("مكتبة الدراسة", "Study library"), color = Lib.muted, fontSize = 12.sp, lineHeight = 16.sp)
@@ -422,7 +422,7 @@ private fun Spine() {
         }
 
         if (!Premium.active) {
-            PremiumTeaser(L("هامش Premium", "Hamish Premium"), L("${Premium.TRIAL_DAYS} أيام مجانًا", "${Premium.TRIAL_DAYS} days free"))
+            PremiumTeaser(L("especial notes Premium", "especial notes Premium"), L("${Premium.TRIAL_DAYS} أيام مجانًا", "${Premium.TRIAL_DAYS} days free"))
             Spacer(Modifier.height(10.dp))
         }
         StudyCard()

@@ -3788,7 +3788,7 @@ private fun BoxScope.InlineTextEditor(
         InlineChip("✓ " + L("تم", "Done"), bold = true, fg = Color.White, bg = Palette.Navy) { s.finishInlineEdit() }
     }
     if (fontPick) {
-        FontLibraryDialog(tb.text.ifBlank { L("هامش", "Hamish") }, tb.font, onPick = { f ->
+        FontLibraryDialog(tb.text.ifBlank { L("especial notes", "especial notes") }, tb.font, onPick = { f ->
             s.updateTextBox(tb.id) { it.copy(font = f) }
         }, onDismiss = { fontPick = false })
     }

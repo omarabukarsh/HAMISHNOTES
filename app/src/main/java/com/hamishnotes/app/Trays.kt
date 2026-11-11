@@ -755,7 +755,7 @@ private fun PhotoTrayContent(s: DocSession, forSticker: Boolean) {
     when {
         access == 0 -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(
-                L("اسمح لهامش بعرض صورك لتسحبها مباشرة.", "Allow Hamish to show your photos so you can drag them in."),
+                L("اسمح لـ especial notes بعرض صورك لتسحبها مباشرة.", "Allow especial notes to show your photos so you can drag them in."),
                 fontSize = 12.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
             )
             TextButton(onClick = { permLauncher.launch(PhotoLibrary.permissions()) }) {

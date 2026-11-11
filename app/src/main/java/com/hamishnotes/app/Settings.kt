@@ -158,12 +158,12 @@ private fun SettingsPage.title(): String = when (this) {
 }
 
 private fun SettingsPage.lead(): String = when (this) {
-    SettingsPage.ACCOUNT -> L("حساب Google المرتبط بهامش.", "Your Google account linked to Hamish.")
+    SettingsPage.ACCOUNT -> L("حساب Google المرتبط بـ especial notes.", "Your Google account linked to especial notes.")
     SettingsPage.GENERAL -> L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
     SettingsPage.PEN -> L("قلمك، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Your pen, pen or finger writing, and the toolbar.")
     SettingsPage.HIGHLIGHTS -> L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
     SettingsPage.STUDY -> L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
-    SettingsPage.APPEARANCE -> L("اجعل هامش يبدو كما تحب.", "Make Hamish look and feel the way you like.")
+    SettingsPage.APPEARANCE -> L("اجعل especial notes يبدو كما تحب.", "Make especial notes look and feel the way you like.")
     SettingsPage.PRIVACY -> L("قفل المستندات وما يحفظه التطبيق.", "Document lock and what the app stores.")
     SettingsPage.ABOUT -> L("الإصدار والتراخيص والشروط.", "Version, licenses and terms.")
 }
@@ -317,7 +317,7 @@ private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose
             }
         }
         Text(
-            L("هامش", "Hamish") + " " + BuildConfig.VERSION_NAME,
+            L("especial notes", "especial notes") + " " + BuildConfig.VERSION_NAME,
             fontSize = 11.sp, color = Palette.TextSecondary, modifier = Modifier.padding(start = 10.dp, top = 8.dp)
         )
     }
@@ -366,7 +366,7 @@ private fun SettingsPane(
                         if (Premium.active && Premium.testMode) {
                             GroupRow(
                                 R.drawable.ph_star_fill, TileGold,
-                                L("هامش Premium", "Hamish Premium"),
+                                L("especial notes Premium", "especial notes Premium"),
                                 L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")
                             ) {
                                 Text(
@@ -380,7 +380,7 @@ private fun SettingsPane(
                             val end = g?.let { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale(if (I18n.english) "en" else "ar")).format(java.util.Date(it.exp)) }
                             GroupRow(
                                 R.drawable.ph_star_fill, TileGold,
-                                L("هامش Premium", "Hamish Premium"),
+                                L("especial notes Premium", "especial notes Premium"),
                                 when {
                                     end == null -> L("كل المزايا مفتوحة", "Every feature unlocked")
                                     g?.trial == true -> L("فترة تجربة · تنتهي $end", "Free trial · ends $end")
@@ -637,7 +637,7 @@ private fun SettingsPane(
                             Image(painterResource(R.drawable.logo_app), null, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
                             Spacer(Modifier.width(14.dp))
                             Column {
-                                Text(L("هامش", "Hamish"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
+                                Text(L("especial notes", "especial notes"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
                                 Text(L("الإصدار", "Version") + " " + BuildConfig.VERSION_NAME, fontSize = 13.sp, color = Palette.TextSecondary)
                             }
                         }
@@ -1203,7 +1203,7 @@ private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, on
             AccountAvatar(name, 52.dp)
             Spacer(Modifier.height(14.dp))
             Text(
-                L("تسجيل الخروج من هامش؟", "Sign out of Hamish?"),
+                L("تسجيل الخروج من especial notes؟", "Sign out of especial notes?"),
                 fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(10.dp))

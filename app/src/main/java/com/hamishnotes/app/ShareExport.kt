@@ -67,8 +67,8 @@ fun ShareExportDialog(docId: String, onDismiss: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 CopyOption(
                     L("قابلة للتعديل", "Editable"),
-                    L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود الكتابة والتمييز والملاحظات قابلة للتعديل.",
-                        "Your writing shows in any app, and when opened in Hamish the writing, highlights and notes become editable again."),
+                    L("تظهر كتابتك في أي تطبيق، وعند فتحها في especial notes تعود الكتابة والتمييز والملاحظات قابلة للتعديل.",
+                        "Your writing shows in any app, and when opened in especial notes the writing, highlights and notes become editable again."),
                     editable
                 ) { editable = true }
                 Spacer(Modifier.height(8.dp))
@@ -154,7 +154,7 @@ fun ShareManyDialog(ids: List<String>, onDismiss: () -> Unit, onStarted: () -> U
                 Spacer(Modifier.height(6.dp))
                 CopyOption(
                     L("قابلة للتعديل", "Editable"),
-                    L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in Hamish."),
+                    L("تظهر كتابتك في أي تطبيق، وعند فتحها في especial notes تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in especial notes."),
                     editable
                 ) { editable = true }
                 Spacer(Modifier.height(8.dp))

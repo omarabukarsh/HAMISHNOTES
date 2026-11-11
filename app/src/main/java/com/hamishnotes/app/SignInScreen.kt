@@ -65,7 +65,7 @@ fun SignInScreen() {
                 Image(painterResource(R.drawable.logo_app), null, Modifier.size(96.dp).clip(RoundedCornerShape(22.dp)))
             }
             Spacer(Modifier.height(22.dp))
-            UnderlinedTitle(L("هامش", "Hamish"), size = 44)
+            UnderlinedTitle(L("especial notes", "especial notes"), size = 44)
             Spacer(Modifier.height(16.dp))
             Text(
                 L("ملاحظاتك وملفات PDF وأدوات المذاكرة في مكان واحد.\nسجّل الدخول لربط حسابك، أو تخطَّ وابدأ مباشرة.", "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."),

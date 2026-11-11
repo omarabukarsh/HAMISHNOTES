@@ -54,7 +54,7 @@ import java.io.IOException
 import java.lang.ref.WeakReference
 import kotlin.random.Random
 
-/** الخصائص المدفوعة في هامش Premium. */
+/** الخصائص المدفوعة في especial notes Premium. */
 enum class PremiumFeature(val icon: Int) {
     DOCS(R.drawable.ph_books),
     SUMMARIES(R.drawable.ph_summary),
@@ -299,7 +299,7 @@ object Premium {
     internal fun submitPurchase(purchaseToken: String, done: () -> Unit = {}) {
         AppController.scope.launch {
             val o = call("verify", purchaseToken)
-            report(o, success = L("مرحبًا بك في هامش Premium", "Welcome to Hamish Premium"))
+            report(o, success = L("مرحبًا بك في especial notes Premium", "Welcome to especial notes Premium"))
             if (o == Outcome.OK) paywallOpen = false
             done()
         }
@@ -383,14 +383,14 @@ object Premium {
             Outcome.OK -> success?.let { AppController.say(MsgKind.DONE, it) }
             Outcome.NONE -> if (success != null) AppController.say(MsgKind.ERROR, L("لا يوجد اشتراك فعّال في هذا الحساب", "No active subscription on this account"))
             Outcome.UNLICENSED -> {
-                AppController.say(MsgKind.ERROR, L("Premium يعمل مع نسخة هامش من Google Play فقط", "Premium works only with Hamish from Google Play"))
+                AppController.say(MsgKind.ERROR, L("Premium يعمل مع نسخة especial notes من Google Play فقط", "Premium works only with especial notes from Google Play"))
                 if (a != null) Integrity.showGetLicensed(a)
             }
             Outcome.DEVICE -> {
                 AppController.say(MsgKind.ERROR, L("تعذّر التحقق من سلامة هذا الجهاز", "This device couldn’t be verified"))
                 if (a != null) Integrity.showGetIntegrity(a)
             }
-            Outcome.OTHER_ACCOUNT -> AppController.say(MsgKind.ERROR, L("هذا الاشتراك مربوط بحساب هامش آخر", "This subscription is linked to another Hamish account"))
+            Outcome.OTHER_ACCOUNT -> AppController.say(MsgKind.ERROR, L("هذا الاشتراك مربوط بحساب especial notes آخر", "This subscription is linked to another especial notes account"))
             Outcome.OFFLINE -> if (success != null) AppController.say(MsgKind.ERROR, L("تحقق من اتصالك بالإنترنت", "Check your internet connection"))
             Outcome.SIGN_IN -> if (success != null) AppController.say(MsgKind.ERROR, L("سجّل الدخول بحساب Google أولًا", "Sign in with Google first"))
             Outcome.FAILED -> if (success != null) AppController.say(MsgKind.ERROR, L("تعذّر التحقق من الاشتراك، حاول لاحقًا", "Couldn’t verify the subscription, try later"))
@@ -576,7 +576,7 @@ private fun BenefitsSide(modifier: Modifier) {
             )
             Spacer(Modifier.width(12.dp))
             Column {
-                Text(L("هامش", "Hamish"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color.White)
+                Text(L("especial notes", "especial notes"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color.White)
                 Text(
                     "PREMIUM", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PwInk, letterSpacing = 1.sp,
                     modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(PwGold).padding(horizontal = 8.dp, vertical = 2.dp)
@@ -585,7 +585,7 @@ private fun BenefitsSide(modifier: Modifier) {
         }
         Spacer(Modifier.height(22.dp))
         Text(L("ذاكر بذكاء مع", "Study smarter with"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White, lineHeight = 32.sp)
-        Text(L("هامش Premium", "Hamish Premium"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 28.sp, color = PwGold, lineHeight = 32.sp)
+        Text(L("especial notes Premium", "especial notes Premium"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 28.sp, color = PwGold, lineHeight = 32.sp)
         Spacer(Modifier.height(8.dp))
         Text(
             L("كل ما تحتاجه للمحاضرات والملاحظات والامتحانات.", "Everything you need for lectures, notes and exams."),

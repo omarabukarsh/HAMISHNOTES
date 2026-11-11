@@ -157,6 +157,15 @@ object Premium {
                 delay(Random.nextLong(20_000, 75_000))
                 background()
             }
+            // تربّص متأخر مستقل: فحص سلامة طازج (يتجاوز المخزّن) من موضع وزمن مختلفين عن evaluate.
+            // إن كُسر فحص التوقيع في موضعه المعتاد، تُسحب القسيمة هنا بهدوء دون رسالة تدل على موضع الفحص.
+            AppController.scope.launch {
+                delay(Random.nextLong(90_000, 240_000))
+                if (grant != null && !Lic.signerOk(c, fresh = true)) {
+                    sp?.edit()?.remove("grant")?.apply()
+                    evaluate()
+                }
+            }
         }
     }
 
@@ -235,7 +244,9 @@ object Premium {
 
     /** true إن كانت الخاصية متاحة؛ وإلا تظهر نافذة الخاصية المقفلة. */
     fun require(f: PremiumFeature): Boolean {
-        if (active) return true
+        // لا نكتفي بالراية active في الذاكرة: نعيد اشتقاق الحق من القسيمة الموقّعة نفسها (confirm)،
+        // فقلب قيمة واحدة لا يفتح الخاصية ما لم يُهزم توقيع القسيمة وفحص سلامة التطبيق أيضًا.
+        if (active && (BuildConfig.TEST_PREMIUM || confirm())) return true
         lockedFeature = f
         return false
     }

@@ -99,19 +99,47 @@ internal object Lic {
      * هل وُقّع التطبيق بمفتاحنا (مفتاح Google Play أو مفتاح الرفع)؟
      * النسخة المعدّلة يعاد توقيعها بمفتاح آخر، فتفشل هنا.
      */
-    fun signerOk(context: Context): Boolean {
+    fun signerOk(context: Context, fresh: Boolean = false): Boolean {
         val now = android.os.SystemClock.elapsedRealtime()
-        signerCache?.let { if (now - signerCacheAt < SIGNER_TTL) return it }
+        if (!fresh) signerCache?.let { if (now - signerCacheAt < SIGNER_TTL) return it }
         val allowed = BuildConfig.SIGNERS.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         if (allowed.isEmpty()) return true
         val ok = try {
-            signerMatches(context, allowed)
+            // فحصان مستقلان: سجل التثبيت الحي في الذاكرة، وشهادة ملف الـ APK نفسه على القرص.
+            // أدوات إعادة التوقيع تزيّف جواب PackageManager الحي غالبًا، لكنها نادرًا ما تزيّف قراءة الأرشيف.
+            signerMatches(context, allowed) && archiveSignerMatches(context, allowed)
         } catch (e: Throwable) {
             false
         }
         signerCache = ok
         signerCacheAt = now
         return ok
+    }
+
+    /** الفحص الثاني: شهادة ملف الـ APK على القرص مباشرة (sourceDir)، لا سجل التثبيت في الذاكرة. */
+    @Suppress("DEPRECATION")
+    private fun archiveSignerMatches(context: Context, allowed: List<String>): Boolean = try {
+        val path = context.applicationInfo.sourceDir
+        val pm = context.packageManager
+        when {
+            // تعذّرت قراءة مسار الأرشيف: لا نعاقب المستخدم الشرعي، ونكتفي بالفحص الحي
+            path == null -> true
+            Build.VERSION.SDK_INT >= 28 -> {
+                val si = pm.getPackageArchiveInfo(path, PackageManager.GET_SIGNING_CERTIFICATES)?.signingInfo
+                // null: تعذّر تحليل الأرشيف (قيود مصنّع مثلًا)؛ نعود إلى الفحص الحي وحده
+                if (si == null) true
+                else {
+                    val s = si.apkContentsSigners.orEmpty()
+                    s.isNotEmpty() && s.all { sha256(it.toByteArray()) in allowed }
+                }
+            }
+            else -> {
+                val s = pm.getPackageArchiveInfo(path, PackageManager.GET_SIGNATURES)?.signatures.orEmpty()
+                s.isNotEmpty() && s.all { sha256(it.toByteArray()) in allowed }
+            }
+        }
+    } catch (e: Throwable) {
+        true // تعذّر فحص الأرشيف: نعود إلى الفحص الحي وحده بدل معاقبة المستخدم الشرعي
     }
 
     /** عدة موقّعين: يجب أن يكونوا كلهم لنا. موقّع واحد: يكفي أن يكون في سلسلته (عند تدوير المفتاح) مفتاح لنا. */

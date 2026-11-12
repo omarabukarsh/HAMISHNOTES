@@ -56,6 +56,8 @@ class LibraryRepository(context: Context) {
     private val imgRoot = File(root, "images").apply { mkdirs() }
     private val ocrRoot = File(root, "ocr").apply { mkdirs() }
     private val partsRoot = File(root, "parts").apply { mkdirs() }
+    /** مرفقات تطبيق الآيباد في النسخ القابلة للتعديل: تُحفظ كما هي ويُعاد إرفاقها عند التصدير. */
+    private val extrasRoot = File(root, "extras").apply { mkdirs() }
     private val pagesDir = File(root, "pages").apply { mkdirs() }
     private val indexFile = File(root, "library.json")
     private val statsFile = File(root, "stats.json")
@@ -72,6 +74,8 @@ class LibraryRepository(context: Context) {
     fun imageFile(docId: String, name: String): File = File(File(imgRoot, docId), name)
 
     fun partsDir(docId: String): File = File(partsRoot, docId)
+
+    fun extrasDir(docId: String): File = File(extrasRoot, docId)
 
     // ---------- أدوات مساعدة ----------
 
@@ -262,7 +266,7 @@ class LibraryRepository(context: Context) {
             input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
             // نسخة «قابلة للتعديل» من هامش: تُستعاد تعليقاتها قابلة للتعديل
             if (type == DocType.PDF) {
-                EditablePdf.restore(dest, { json -> atomicWrite(File(annDir, "$id.json"), json) }, File(imgRoot, id))
+                EditablePdf.restore(dest, { json -> atomicWrite(File(annDir, "$id.json"), json) }, File(imgRoot, id), File(extrasRoot, id))
             }
             val pages = probePageCount(dest)
             if (pages <= 0) throw IOException(L("الملف فارغ", "The file is empty"))
@@ -297,6 +301,7 @@ class LibraryRepository(context: Context) {
         File(ocrRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(ocrRoot, id))
         File(pagesDir, "${src.id}.json").takeIf { it.exists() }?.copyTo(File(pagesDir, "$id.json"))
         File(partsRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(partsRoot, id))
+        File(extrasRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(extrasRoot, id))
         return src.copy(
             id = id,
             name = src.name + suffix,
@@ -317,6 +322,7 @@ class LibraryRepository(context: Context) {
         File(ocrRoot, entry.id).deleteRecursively()
         File(pagesDir, "${entry.id}.json").delete()
         File(partsRoot, entry.id).deleteRecursively()
+        File(extrasRoot, entry.id).deleteRecursively()
         File(srsDir, "${entry.id}.json").delete()
         thumbCache.remove(entry.id)
         PageCache.removePrefix("${entry.id}:")

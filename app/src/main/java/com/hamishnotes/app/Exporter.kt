@@ -116,7 +116,34 @@ object Exporter {
         onPage: (Int) -> Unit,
         /** بيانات النسخة القابلة للتعديل (null = نسخة نهائية). */
         editableData: String? = null,
-        editableImages: List<java.io.File> = emptyList()
+        editableImages: List<java.io.File> = emptyList(),
+        /** مرفقات الآيباد المحفوظة من الاستيراد: يُعاد إرفاقها كما هي. */
+        editableExtras: List<java.io.File> = emptyList()
+    ): Int {
+            val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
+            os.use { out.writeTo(it) }
+            return snap.pages.size
+        } finally {
+            out.close()
+        }
+    }
+
+    /**
+     * حفظ بنص قابل للتحديد: تُنسخ صفحات الملف الأصلية كما هي (نصها يبقى نصًا)، وتُرسم فوقها
+     * التمييزات والكتابة اليدوية والصور ومربعات النص. الصفحات الفارغة والمدوّرة تُرسم كصورة.
+     * إن فشل أي شيء يرجع المستدعي للحفظ كصور.
+     */
+    fun exportVector(
+        context: Context,
+        snap: Snapshot,
+        fileFor: (String) -> java.io.File?,
+        uri: Uri,
+        onPage: (Int) -> Unit,
+        /** بيانات النسخة القابلة للتعديل (null = نسخة نهائية). */
+        editableData: String? = null,
+        editableImages: List<java.io.File> = emptyList(),
+        /** مرفقات الآيباد المحفوظة من الاستيراد: يُعاد إرفاقها كما هي. */
+        editableExtras: List<java.io.File> = emptyList()
     ): Int {
         val out = com.tom_roush.pdfbox.pdmodel.PDDocument()
         val counts = ArrayList<Int>()
@@ -169,6 +196,7 @@ object Exporter {
                 out.close()
             } catch (e: Throwable) {
             }
+            origFile?.delete()
             sources.values.forEach {
                 try {
                     it.close()

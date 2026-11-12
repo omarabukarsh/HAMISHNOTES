@@ -1227,6 +1227,7 @@ object AppController {
             DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes)
         ) else null
         val imgs = if (editable) s.images.values.flatten().map { repo.imageFile(s.id, it.file) } else emptyList()
+        val extras = if (editable) repo.extrasDir(s.id).listFiles()?.toList() ?: emptyList() else emptyList()
         return withContext(Dispatchers.IO) {
             val entry = library.firstOrNull { it.id == s.id }
             val partsDir = repo.partsDir(s.id)
@@ -1238,7 +1239,7 @@ object AppController {
                         src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
                         else -> null
                     }
-                }, uri, { i -> exporting = L("جارٍ تجهيز PDF: صفحة ${i + 1} من $total", "Preparing PDF: page ${i + 1} of $total") }, data, imgs)
+                }, uri, { i -> exporting = L("جارٍ تجهيز PDF: صفحة ${i + 1} من $total", "Preparing PDF: page ${i + 1} of $total") }, data, imgs, extras)
                 true
             } catch (t: Throwable) {
                 // احتياط: صفحات كصور (نسخة نهائية فقط)

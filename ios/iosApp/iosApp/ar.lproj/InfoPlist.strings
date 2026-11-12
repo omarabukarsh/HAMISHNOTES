@@ -1,4 +1,4 @@
-CFBundleDisplayName = "هامش";
+CFBundleDisplayName = "especial notes";
 NSMicrophoneUsageDescription = "لتسجيل صوت المحاضرة وربطه بما تكتبه.";
 NSFaceIDUsageDescription = "لفتح المستندات المقفلة.";
 NSPhotoLibraryUsageDescription = "لإضافة صور إلى صفحاتك.";

@@ -311,7 +311,7 @@ struct PaywallView: View {
             HStack(spacing: 12) {
                 AppLogo(size: 52).background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: 0xFFFFFDF7)))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("هامش", "Hamish")).font(Fonts.display(20)).foregroundColor(.white)
+                    Text(L("especial notes", "especial notes")).font(Fonts.display(20)).foregroundColor(.white)
                     Text("PREMIUM").font(Fonts.sans(11, .bold)).kerning(1).foregroundColor(Pw.ink)
                         .padding(.horizontal, 8).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 7).fill(Pw.gold))
@@ -319,7 +319,7 @@ struct PaywallView: View {
             }
             Spacer().frame(height: 22)
             Text(L("ذاكر بذكاء مع", "Study smarter with")).font(Fonts.display(28)).foregroundColor(.white)
-            Text(L("هامش Premium", "Hamish Premium")).font(Fonts.display(28)).foregroundColor(Pw.gold)
+            Text(L("especial notes Premium", "especial notes Premium")).font(Fonts.display(28)).foregroundColor(Pw.gold)
             Spacer().frame(height: 8)
             Text(L("كل ما تحتاجه للمحاضرات والملاحظات والامتحانات.", "Everything you need for lectures, notes and exams."))
                 .font(Fonts.sans(13)).foregroundColor(.white.opacity(0.8))

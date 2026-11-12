@@ -19,12 +19,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var lead: String {
         switch self {
-        case .account: return L("حسابك المرتبط بهامش واشتراكك.", "Your account linked to Hamish and your subscription.")
+        case .account: return L("حسابك المرتبط بـ especial notes واشتراكك.", "Your account linked to especial notes and your subscription.")
         case .general: return L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
         case .pen: return L("Apple Pencil، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Apple Pencil, pen or finger writing, and the toolbar.")
         case .highlights: return L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
         case .study: return L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
-        case .appearance: return L("اجعل هامش يبدو كما تحب.", "Make Hamish look and feel the way you like.")
+        case .appearance: return L("اجعل especial notes يبدو كما تحب.", "Make especial notes look and feel the way you like.")
         case .privacy: return L("قفل المستندات وما يحفظه التطبيق.", "Document lock and what the app stores.")
         case .about: return L("الإصدار والتراخيص والشروط.", "Version, licenses and terms.")
         }
@@ -145,7 +145,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            Text(L("هامش", "Hamish") + " " + appVersion).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary).padding(.leading, 10).padding(.top, 8)
+            Text(L("especial notes", "especial notes") + " " + appVersion).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary).padding(.leading, 10).padding(.top, 8)
         }
         .padding(.horizontal, 12).padding(.vertical, 16)
         .frame(maxHeight: .infinity)
@@ -344,7 +344,7 @@ struct SettingsView: View {
                 HStack(spacing: 14) {
                     AppLogo(size: 56)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L("هامش", "Hamish")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
+                        Text(L("especial notes", "especial notes")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
                         Text(L("الإصدار", "Version") + " " + appVersion).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                     }
                     Spacer()
@@ -390,7 +390,7 @@ private struct AccountPane: View {
                             .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0xFFF8E7E6)))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(L("حذف حسابي", "Delete my account")).font(Fonts.sans(15, .bold)).foregroundColor(Lib.exam)
-                            Text(L("يحذف حسابك وبيانات اشتراكك من هامش", "Deletes your account and subscription data from Hamish"))
+                            Text(L("يحذف حسابك وبيانات اشتراكك من especial notes", "Deletes your account and subscription data from especial notes"))
                                 .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                         }
                         Spacer()
@@ -413,12 +413,12 @@ private struct AccountPane: View {
         GroupLabel(L("الاشتراك", "Subscription"))
         SettingsGroup {
             if pm.active && pm.testMode && pm.product == nil {
-                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("هامش Premium", "Hamish Premium"), desc: L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")) {
+                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("especial notes Premium", "especial notes Premium"), desc: L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")) {
                     Button(L("إنهاء التجربة", "End test")) { pm.endTest() }.font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
                 }
             } else if pm.active {
                 let end = pm.expires.map { $0.formatted(date: .abbreviated, time: .omitted) }
-                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("هامش Premium", "Hamish Premium"),
+                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("especial notes Premium", "especial notes Premium"),
                          desc: end == nil ? L("كل المزايا مفتوحة", "Every feature unlocked") : pm.trial ? L("فترة تجربة · تنتهي \(end!)", "Free trial · ends \(end!)") : L("يتجدد في \(end!)", "Renews on \(end!)")) {
                     Button(L("إدارة", "Manage")) {
                         if let u = URL(string: "https://apps.apple.com/account/subscriptions") { UIApplication.shared.open(u) }
@@ -590,10 +590,10 @@ private struct DeleteAccountSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             PhIcon("ph_trash", Lib.exam, 26).frame(width: 52, height: 52).background(Circle().fill(Color(hex: 0xFFF8E7E6)))
             Text(L("حذف حسابك نهائيًا؟", "Delete your account for good?")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
-            (Text(L("سيُحذف حساب ", "The account ")) + Text(app.accountEmail ?? "").bold() + Text(L(" من هامش.\nلا يمكن التراجع عن الحذف.", " will be deleted from Hamish.\nThis can’t be undone.")))
+            (Text(L("سيُحذف حساب ", "The account ")) + Text(app.accountEmail ?? "").bold() + Text(L(" من especial notes.\nلا يمكن التراجع عن الحذف.", " will be deleted from especial notes.\nThis can’t be undone.")))
                 .font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
             VStack(alignment: .leading, spacing: 8) {
-                line(false, L("حسابك في هامش (البريد والاسم)", "Your Hamish account (email and name)"))
+                line(false, L("حسابك في especial notes (البريد والاسم)", "Your especial notes account (email and name)"))
                 line(false, L("ربط تسجيل الدخول بـ Apple في هذا التطبيق", "The Sign in with Apple link in this app"))
                 line(true, L("مستنداتك وملاحظاتك تبقى على هذا الجهاز", "Your documents and notes stay on this device"))
             }
@@ -615,7 +615,7 @@ private struct DeleteAccountSheet: View {
                 }
                 Button {
                     app.deleteAccount()
-                    app.say(.done, L("حُذف حسابك من هامش. ملاحظاتك باقية على هذا الجهاز", "Your Hamish account was deleted. Your notes stay on this device"))
+                    app.say(.done, L("حُذف حسابك من especial notes. ملاحظاتك باقية على هذا الجهاز", "Your especial notes account was deleted. Your notes stay on this device"))
                     dismiss()
                 } label: {
                     Text(L("حذف الحساب", "Delete account")).font(Fonts.sans(15, .bold)).foregroundColor(.white)

@@ -433,7 +433,7 @@ struct SignInScreen: View {
                 }
                 .frame(width: 112, height: 112)
                 Spacer().frame(height: 22)
-                UnderlinedTitle(text: L("هامش", "Hamish"), size: 44)
+                UnderlinedTitle(text: L("especial notes", "especial notes"), size: 34)
                 Spacer().frame(height: 16)
                 Text(L("ملاحظاتك وملفات PDF وأدوات المذاكرة في مكان واحد.\nسجّل الدخول لربط حسابك، أو تخطَّ وابدأ مباشرة.",
                        "Your notes, PDFs and study tools in one place.\nSign in to link your account, or skip and start right away."))

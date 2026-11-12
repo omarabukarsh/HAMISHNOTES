@@ -54,7 +54,7 @@ struct StudyWidgetView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "flame.fill").foregroundColor(Color(red: 0.91, green: 0.47, blue: 0.24))
-                Text(L("هامش", "Hamish", en)).font(.system(size: 13, weight: .heavy)).foregroundColor(Color(red: 0.96, green: 0.79, blue: 0.36))
+                Text(L("especial notes", "especial notes", en)).font(.system(size: 13, weight: .heavy)).foregroundColor(Color(red: 0.96, green: 0.79, blue: 0.36))
                 Spacer()
             }
             Text(L("اليوم \(reading(e.todayMs, en)) من \(reading(e.goalMs, en))", "Today \(reading(e.todayMs, en)) of \(reading(e.goalMs, en))", en))
@@ -71,7 +71,7 @@ struct StudyWidgetView: View {
                 .font(.system(size: 12)).foregroundColor(Color(red: 0.95, green: 0.6, blue: 0.6)).lineLimit(1)
             Spacer(minLength: 0)
             Link(destination: URL(string: "hamish://open-last")!) {
-                Text(e.last.isEmpty ? L("فتح هامش", "Open Hamish", en) : L("متابعة: ", "Continue: ", en) + e.last)
+                Text(e.last.isEmpty ? L("فتح especial notes", "Open especial notes", en) : L("متابعة: ", "Continue: ", en) + e.last)
                     .font(.system(size: 12, weight: .bold)).foregroundColor(Color(red: 0.12, green: 0.16, blue: 0.27)).lineLimit(1)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Capsule().fill(Color(red: 0.96, green: 0.79, blue: 0.36)))
@@ -89,7 +89,7 @@ struct StudyWidgetView: View {
 struct HamishWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "HamishStudy", provider: StudyProvider()) { e in StudyWidgetView(e: e) }
-            .configurationDisplayName("هامش")
+            .configurationDisplayName("especial notes")
             .description("وقت دراستك اليوم، وأقرب امتحان، ومتابعة آخر مستند.")
             .supportedFamilies([.systemSmall, .systemMedium])
     }

@@ -1,4 +1,4 @@
-CFBundleDisplayName = "Hamish";
+CFBundleDisplayName = "especial notes";
 NSMicrophoneUsageDescription = "To record the lecture audio and link it to what you write.";
 NSFaceIDUsageDescription = "To open locked documents.";
 NSPhotoLibraryUsageDescription = "To add pictures to your pages.";

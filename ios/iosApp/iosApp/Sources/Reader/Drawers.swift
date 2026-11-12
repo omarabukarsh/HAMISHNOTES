@@ -811,7 +811,7 @@ struct PhotoGalleryGrid: View {
                     }
                 }
             default:
-                Text(L("اسمح لهامش بعرض صورك لتسحبها إلى الصفحة.", "Allow Hamish to show your photos so you can drag them in."))
+                Text(L("اسمح لـ especial notes بعرض صورك لتسحبها إلى الصفحة.", "Allow especial notes to show your photos so you can drag them in."))
                     .font(Fonts.sans(12.5)).foregroundColor(Palette.textSecondary)
                 Button {
                     if gallery.status == .notDetermined { gallery.request() }

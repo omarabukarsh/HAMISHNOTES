@@ -23,7 +23,7 @@ private let ossItems: [OssItem] = [
 
 func privacyText() -> String {
     L("""
-سياسة الخصوصية — هامش (Hamish) لـ iPad
+سياسة الخصوصية — especial notes لـ iPad
 
 المطوّر: Hamish Notes · للتواصل: noteshamish@gmail.com
 
@@ -45,7 +45,7 @@ func privacyText() -> String {
 
 للتواصل: noteshamish@gmail.com
 """, """
-Privacy Policy — Hamish for iPad
+Privacy Policy — especial notes for iPad
 
 Developer: Hamish Notes · Contact: noteshamish@gmail.com
 
@@ -71,7 +71,7 @@ Contact: noteshamish@gmail.com
 
 func termsText() -> String {
     L("""
-شروط الاستخدام — هامش
+شروط الاستخدام — especial notes
 
 • التطبيق أداة دراسة شخصية. أنت مسؤول عن الملفات التي تضيفها وعن حقك في استخدامها.
 
@@ -83,7 +83,7 @@ func termsText() -> String {
 
 للتواصل: noteshamish@gmail.com
 """, """
-Terms of use — Hamish
+Terms of use — especial notes
 
 • The app is a personal study tool. You are responsible for the files you add and your right to use them.
 
@@ -111,8 +111,8 @@ struct LegalSheet: View {
                     case .privacy: Text(privacyText()).font(Fonts.sans(14)).lineSpacing(5)
                     case .terms: Text(termsText()).font(Fonts.sans(14)).lineSpacing(5)
                     case .licenses:
-                        Text(L("يستخدم «هامش» المكوّنات التالية وفق تراخيصها. انقر على أي منها لقراءة نص الترخيص.",
-                               "Hamish uses the following components under their licenses. Tap one to read its license text."))
+                        Text(L("يستخدم especial notes المكوّنات التالية وفق تراخيصها. انقر على أي منها لقراءة نص الترخيص.",
+                               "especial notes uses the following components under their licenses. Tap one to read its license text."))
                             .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                         ForEach(ossItems) { it in
                             Button { if it.asset != nil { shown = it } } label: {

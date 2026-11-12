@@ -918,7 +918,7 @@ final class AppController: ObservableObject {
                 }
                 let c = UNMutableNotificationContent()
                 c.title = L("وقت المذاكرة", "Study time")
-                c.body = L("افتح هامش وتابع من حيث توقفت", "Open Hamish and continue where you left off")
+                c.body = L("افتح especial notes وتابع من حيث توقفت", "Open especial notes and continue where you left off")
                 c.sound = .default
                 var dc = DateComponents()
                 dc.hour = self.reminderMinute / 60

@@ -320,7 +320,7 @@ private struct Spine: View {
             HStack(spacing: 10) {
                 Art(name: "ic_logo", size: 42)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(L("هامش", "hamish")).font(Fonts.display(26)).foregroundColor(Lib.text)
+                    Text(L("especial notes", "especial notes")).font(Fonts.display(26)).foregroundColor(Lib.text)
                     Text(L("مكتبة الدراسة", "Study library")).font(Fonts.sans(12)).foregroundColor(Lib.muted)
                 }
             }
@@ -345,7 +345,7 @@ private struct Spine: View {
             ScrollView(showsIndicators: false) { FolderSection(sheet: $sheet) }
 
             if !pm.active {
-                PremiumTeaser(title: L("هامش Premium", "Hamish Premium"), desc: L("\(Premium.trialDays) أيام مجانًا", "\(Premium.trialDays) days free"))
+                PremiumTeaser(title: L("especial notes Premium", "especial notes Premium"), desc: L("\(Premium.trialDays) أيام مجانًا", "\(Premium.trialDays) days free"))
                 Spacer().frame(height: 10)
             }
             Group {

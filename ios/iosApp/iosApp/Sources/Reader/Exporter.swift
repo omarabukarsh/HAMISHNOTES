@@ -2,6 +2,7 @@ import UIKit
 import PDFKit
 import PencilKit
 import SwiftUI
+import CryptoKit
 
 /// التصدير: نسخة PDF مع كل ما كُتب عليها، وملخصات بصيغة PDF.
 enum Exporter {
@@ -46,26 +47,38 @@ enum Exporter {
         return url
     }
 
-    /// نسخة قابلة للتعديل: تظهر الكتابة في أي تطبيق، وداخل الملف نفسه الأصل والبيانات والحبر،
-    /// فإذا فُتح في «هامش» عادت الكتابة والتمييز والملاحظات قابلة للتعديل. nil = تعذّر (تُصنع نسخة نهائية).
+    /// نسخة قابلة للتعديل بالصيغة الموحدة (v2) مع تطبيق أندرويد: تظهر الكتابة في أي تطبيق، وداخل الملف مرفقات قياسية:
+    /// الأصل النظيف، والبيانات بمخطط أندرويد (الحبر نقاط)، والصور، ومعها حبر PencilKit وبيانات الآيباد
+    /// ليعود الملف هنا بلا فقد. nil = تعذّر (تُصنع نسخة نهائية).
     static func editablePDF(_ docId: String, name: String, progress: ((Int, Int) -> Void)? = nil) -> URL? {
         guard let url = annotatedPDF(docId, name: name, suffix: "", progress: progress) else { return nil }
         let repo = Repository.shared
         let fm = FileManager.default
-        var payload: [String: Data] = [:]
         guard let orig = try? Data(contentsOf: repo.pdfURL(docId)),
-              let dj = try? Data(contentsOf: repo.dir(docId).appendingPathComponent("data.json")) else { return nil }
-        payload["pdf"] = orig
-        payload["data"] = dj
+              let dj = try? Data(contentsOf: repo.dir(docId).appendingPathComponent("data.json")),
+              let pdf = PDFDocument(url: repo.pdfURL(docId)) else { return nil }
+        let data = repo.loadData(docId)
+        let widths = (0..<pdf.pageCount).map { AndroidSchema.pageSize(pdf, $0).width }
+        let raw = (try? Data(contentsOf: repo.dir(docId).appendingPathComponent(EditablePDF.androidRaw))).flatMap { AJSON.parse($0) }
+        let media = repo.mediaDir(docId)
+        let ex = AndroidSchema.export(data, widths: widths, ink: { repo.loadInk(docId, page: $0) }, raw: raw) { item in
+            if item.file.hasPrefix("sticker:") { return image(docId, item)?.pngData() }
+            return try? Data(contentsOf: media.appendingPathComponent(item.file))
+        }
+        var files: [(name: String, data: Data)] = [
+            (EditablePDF.dataName, ex.json),
+            // counts فارغة: نسخ أندرويد القديمة (1.0.271) ترفض الاستعادة وتفتح الملف نسخة نهائية
+            (EditablePDF.metaName, Data("{\"v\":2,\"counts\":[]}".utf8)),
+            (EditablePDF.origName, orig),
+            (EditablePDF.iosData, dj),
+            (EditablePDF.iosMeta, Data("{\"v\":1,\"sha256\":\"\(EditablePDF.sha256(ex.json))\"}".utf8))
+        ]
+        for im in ex.images { files.append((EditablePDF.imgPrefix + im.name, im.data)) }
         let inkDir = repo.dir(docId).appendingPathComponent("ink", isDirectory: true)
-        for f in (try? fm.contentsOfDirectory(atPath: inkDir.path)) ?? [] {
-            if let d = try? Data(contentsOf: inkDir.appendingPathComponent(f)) { payload["ink/" + f] = d }
+        for f in (try? fm.contentsOfDirectory(atPath: inkDir.path)) ?? [] where PdfAttachments.isSafe(f) {
+            if let d = try? Data(contentsOf: inkDir.appendingPathComponent(f)) { files.append((EditablePDF.iosInk + f, d)) }
         }
-        let media = repo.dir(docId).appendingPathComponent("media", isDirectory: true)
-        for f in (try? fm.contentsOfDirectory(atPath: media.path)) ?? [] where f.hasPrefix("img-") {
-            if let d = try? Data(contentsOf: media.appendingPathComponent(f)) { payload["media/" + f] = d }
-        }
-        return EditablePDF.append(to: url, payload: payload) ? url : nil
+        return PdfAttachments.append(to: url, files: files) ? url : nil
     }
 
     static func image(_ docId: String, _ item: ImageItem) -> UIImage? { DocSession.image(docId: docId, item: item) }
@@ -273,8 +286,78 @@ enum EditablePDF {
         return (try? PropertyListSerialization.propertyList(from: blob, options: [], format: nil)) as? [String: Data]
     }
 
+    // ---------- الصيغة الموحدة (v2): مرفقات PDF قياسية يقرؤها أندرويد والآيباد ----------
+    static let origName = "hamish-orig.pdf"
+    static let dataName = "hamish-data.json"
+    static let metaName = "hamish-meta.json"
+    static let imgPrefix = "hamish-img-"
+    /// مرفقات الآيباد: بياناته وحبر PencilKit، وبصمة hamish-data.json كما كتبها (إن تغيّرت فقد عُدّل الملف في أندرويد).
+    static let iosData = "hamish-ios-data.json"
+    static let iosMeta = "hamish-ios-meta.json"
+    static let iosInk = "hamish-ios-ink-"
+    /// ملف أندرويد الخام بجانب المستند المستورد منه: ما لا يفهمه الآيباد يعاد كما هو عند التصدير.
+    static let androidRaw = "android.json"
+
+    static func sha256(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }
+
     /// يعيد المستند المستورد إلى أصله مع بياناته وحبره وصوره. true = كان نسخة قابلة للتعديل.
     static func restore(pdf: URL, into dir: URL) -> Bool {
+        if let files = PdfAttachments.read(pdf), files[origName] != nil, files[dataName] != nil {
+            return restoreUnified(files, pdf: pdf, into: dir)
+        }
+        return restoreLegacy(pdf: pdf, into: dir)
+    }
+
+    /// الصيغة الموحدة: الأصل المرفق يصير هو المستند. ملف الآيباد الذي لم يُعدَّل خارجه يعود بحبره كما هو،
+    /// وغيره (ملف أندرويد، أو ملف آيباد عُدّل في أندرويد) يُبنى حبره من النقاط.
+    private static func restoreUnified(_ files: [String: Data], pdf: URL, into dir: URL) -> Bool {
+        guard let orig = files[origName], let dj = files[dataName],
+              let doc = PDFDocument(data: orig), doc.pageCount > 0 else { return false }
+        let fm = FileManager.default
+        let inkDir = dir.appendingPathComponent("ink", isDirectory: true)
+        let mediaDir = dir.appendingPathComponent("media", isDirectory: true)
+        let ios = files[iosData]
+        let stamp = files[iosMeta].flatMap { AJSON.parse($0) }?["sha256"] as? String
+        let untouched = ios != nil && stamp == sha256(dj)
+
+        var dataFile: Data
+        var inkFiles: [String: Data] = [:]
+        if untouched, let ios = ios {
+            dataFile = ios
+            for (k, v) in files where k.hasPrefix(iosInk) {
+                let name = String(k.dropFirst(iosInk.count))
+                if PdfAttachments.isSafe(name) { inkFiles[name] = v }
+            }
+        } else {
+            let old = ios.flatMap { try? JSONDecoder().decode(DocData.self, from: $0) }
+            let keep = old != nil && old!.pages.count == doc.pageCount
+            let pages = keep ? old!.pages : (0..<doc.pageCount).map { _ in PageInfo(id: UUID().uuidString) }
+            let widths = (0..<doc.pageCount).map { AndroidSchema.pageSize(doc, $0).width }
+            guard let imp = AndroidSchema.importJSON(dj, pages: pages, widths: widths) else { return false }
+            var data = imp.data
+            // ما لا مقابل له في أندرويد يعود من بيانات الآيباد: الفهرس والخريطة وقوالب الصفحات (في pages)
+            data.outline = keep ? old!.outline : Repository.outline(of: doc)
+            if keep { data.map = old!.map }
+            guard let enc = try? JSONEncoder().encode(data) else { return false }
+            dataFile = enc
+            for (pid, d) in imp.ink { inkFiles[pid] = d.dataRepresentation() }
+        }
+        do {
+            try orig.write(to: pdf, options: .atomic)
+            try dataFile.write(to: dir.appendingPathComponent("data.json"), options: .atomic)
+        } catch { return false }
+        try? fm.createDirectory(at: inkDir, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: mediaDir, withIntermediateDirectories: true)
+        for (name, d) in inkFiles { try? d.write(to: inkDir.appendingPathComponent(name)) }
+        for (k, v) in files where k.hasPrefix(imgPrefix) {
+            try? v.write(to: mediaDir.appendingPathComponent(AndroidSchema.safeName(String(k.dropFirst(imgPrefix.count)))))
+        }
+        try? dj.write(to: dir.appendingPathComponent(androidRaw))
+        return true
+    }
+
+    /// الصيغة القديمة للآيباد (كائن /HamishEditable): تبقى تُفتح.
+    private static func restoreLegacy(pdf: URL, into dir: URL) -> Bool {
         guard let p = extract(pdf), let orig = p["pdf"], let data = p["data"] else { return false }
         let fm = FileManager.default
         do {
@@ -350,8 +433,8 @@ struct ShareExportSheet: View {
                     }
                     Text(L("نوع النسخة", "Copy type")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.top, 6)
                     copyOption(L("قابلة للتعديل", "Editable"),
-                               many ? L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in Hamish.")
-                                    : L("تظهر كتابتك في أي تطبيق، وعند فتحها في هامش تعود الكتابة والتمييز والملاحظات قابلة للتعديل.", "Your writing shows in any app, and when opened in Hamish the writing, highlights and notes become editable again."),
+                               many ? L("تظهر كتابتك في أي تطبيق، وعند فتحها في especial notes تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in especial notes.")
+                                    : L("تظهر كتابتك في أي تطبيق، وعند فتحها في especial notes تعود الكتابة والتمييز والملاحظات قابلة للتعديل.", "Your writing shows in any app, and when opened in especial notes the writing, highlights and notes become editable again."),
                                editable) { editable = true }
                     copyOption(L("نهائية", "Final"),
                                many ? L("الكتابة مثبتة في الصفحات؛ مناسبة لإرسالها للآخرين.", "Writing is fixed into the pages; good for sending to others.")

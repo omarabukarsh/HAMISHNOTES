@@ -309,7 +309,7 @@ final class Repository {
         }
         for u in (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
             let name = u.lastPathComponent
-            if name == "export" {
+            if name == "export" || name == "share" {
                 for f in (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] where old(f) {
                     try? fm.removeItem(at: f)
                 }

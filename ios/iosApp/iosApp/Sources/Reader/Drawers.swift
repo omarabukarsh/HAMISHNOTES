@@ -196,6 +196,8 @@ struct PagesDrawer: View {
                             .onTapGesture {
                                 if selecting { if isPicked { picked.remove(i) } else { picked.insert(i) } } else { s.goTo(page: i) }
                             }
+                            // ضغط مطوّل على الصفحة: تحريك أو نسخ أو حذف (نفس قائمة زر «⋯»)
+                            .contextMenu { if !selecting { pageMenu(i) } }
                             HStack {
                                 Text("\(i + 1)").font(Fonts.sans(13, cur ? .bold : .regular)).foregroundColor(cur ? Palette.navy : Palette.textSecondary).padding(.leading, 2)
                                 Spacer()

@@ -242,7 +242,6 @@ final class Repository {
         n.addedAt = nowMs()
         n.lastOpened = 0
         n.readMs = 0
-        n.locked = false
         return n
     }
 

@@ -155,6 +155,17 @@ extension DocSession {
         inlineEditId = id
     }
 
+    /// يحفظ ما كُتب حتى الآن في المربع دون إنهاء الكتابة (قبل كل حفظ: فلا يضيع النص إن أُغلق التطبيق).
+    func commitInlineText() {
+        guard let id = inlineEditId, let b = data.boxes.first(where: { $0.id == id }), b.text != inlineText,
+              !inlineText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let t = inlineText
+        let before = data
+        if let i = data.boxes.firstIndex(where: { $0.id == id }) { data.boxes[i].text = t }
+        push(.data(before: before, after: data))
+        dataDirty = true
+    }
+
     /// ينهي الكتابة: يُحفظ النص، والمربع الفارغ يُحذف.
     func finishInlineEdit() {
         guard let id = inlineEditId else { return }

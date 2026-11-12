@@ -421,6 +421,9 @@ struct ShareExportSheet: View {
     @State private var status = ""
     @State private var shareItems: [URL]? = nil
     @State private var saveItems: [URL]? = nil
+    /// مستندات بالاسم نفسه: التصدير ينتظر اختيار المستخدم.
+    @State private var sameNameThen: (([URL]) -> Void)? = nil
+    @State private var sameNameAlways = false
     @Environment(\.dismiss) private var dismiss
 
     private var entries: [DocEntry] { docIds.compactMap { app.entry($0) }.filter { !$0.isMap } }
@@ -476,6 +479,26 @@ struct ShareExportSheet: View {
                         }
                         .disabled(busy)
                     }
+                    if let then = sameNameThen {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L("بعض المستندات المختارة لها الاسم نفسه", "Some of the selected documents have the same name"))
+                                .font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary)
+                            Text(L("ملفان بالاسم نفسه يكتب أحدهما فوق الآخر. اختر ما تريد:", "Two files with the same name overwrite each other. Choose what to do:"))
+                                .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                            Toggle(isOn: $sameNameAlways) {
+                                Text(L("اجعل اختياري دائمًا (يتغير من الإعدادات)", "Always use my choice (change it in Settings)")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
+                            }
+                            .tint(Palette.navy)
+                            HStack(spacing: 4) {
+                                DialogButton(label: L("أبقِ الجميع بترقيم الاسم", "Keep all, number the names"), bold: true) { chooseSameName(1, then) }
+                                DialogButton(label: L("صدّر الأول فقط", "Export the first only")) { chooseSameName(2, then) }
+                                DialogButton(label: L("إلغاء", "Cancel"), color: Palette.textSecondary) { sameNameThen = nil }
+                            }
+                        }
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.goldSoft))
+                        .padding(.top, 10)
+                    }
                     if busy {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(status).font(Fonts.sans(12.5)).foregroundColor(Palette.navy)
@@ -525,10 +548,40 @@ struct ShareExportSheet: View {
         .disabled(busy)
     }
 
+    private func chooseSameName(_ mode: Int, _ then: @escaping ([URL]) -> Void) {
+        if sameNameAlways { app.exportSameName = mode }
+        sameNameThen = nil
+        makeDocs(sameName: mode, then)
+    }
+
     /// يجهّز ملفات PDF في الخلفية (صفحة صفحة مع التقدم) ثم يسلّمها.
-    private func makeDocs(_ then: @escaping ([URL]) -> Void) {
-        let list = entries.filter { !($0.locked && !app.unlocked.contains($0.id)) }
-        let skipped = entries.count - list.count
+    /// sameName: ما يُفعل بمستندات لها الاسم نفسه (nil = حسب الإعداد، ويُسأل المستخدم إن لم يختر بعد).
+    private func makeDocs(sameName: Int? = nil, _ then: @escaping ([URL]) -> Void) {
+        let all = entries.filter { !($0.locked && !app.unlocked.contains($0.id)) }
+        let mode = sameName ?? app.exportSameName
+        let bases = all.map { safeFileName($0.name) }
+        if Set(bases).count != bases.count && mode == 0 {
+            sameNameAlways = false
+            sameNameThen = then
+            return
+        }
+        // اسم ملف فريد لكل مستند: المكرر يُرقَّم «اسم (2)» أو يُتخطى حسب الاختيار
+        var usedNames = Set<String>()
+        var fileNames: [String: String] = [:]
+        var list: [DocEntry] = []
+        for (e, base) in zip(all, bases) {
+            if usedNames.insert(base).inserted {
+                fileNames[e.id] = e.name
+                list.append(e)
+            } else if mode == 1 {
+                var n = 2
+                while !usedNames.insert(safeFileName("\(e.name) (\(n))")).inserted { n += 1 }
+                fileNames[e.id] = "\(e.name) (\(n))"
+                list.append(e)
+            }
+        }
+        let sameSkipped = all.count - list.count
+        let skipped = entries.count - all.count
         guard !list.isEmpty else {
             app.say(.error, L("افتح قفل المستندات أولًا", "Unlock the documents first"))
             return
@@ -538,7 +591,7 @@ struct ShareExportSheet: View {
         progress = 0
         status = L("جارٍ تجهيز PDF…", "Preparing PDF…")
         let wantEditable = editable
-        let jobs = list.map { ($0.id, $0.name) }
+        let jobs = list.map { ($0.id, fileNames[$0.id] ?? $0.name) }
         DispatchQueue.global(qos: .userInitiated).async {
             var urls: [URL] = []
             var failed = 0
@@ -568,6 +621,7 @@ struct ShareExportSheet: View {
                     app.say(.error, jobs.count > 1 ? L("تعذر تجهيز \(failed) من الملفات", "Could not prepare \(failed) of the files") : L("تعذر تجهيز ملف PDF", "Could not prepare the PDF"))
                 }
                 if skipped > 0 { app.say(.done, L("تُخطي \(skipped) مستند مقفل", "Skipped \(skipped) locked document(s)")) }
+                if sameSkipped > 0 { app.say(.done, L("تُخطي \(sameSkipped) مستند بالاسم نفسه", "Skipped \(sameSkipped) document(s) with the same name")) }
                 if !urls.isEmpty { then(urls) }
             }
         }

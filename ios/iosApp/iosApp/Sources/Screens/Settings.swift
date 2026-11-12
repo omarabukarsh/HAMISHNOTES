@@ -189,6 +189,11 @@ struct SettingsView: View {
                 SwitchRow(icon: "ph_pages", color: TileGray, title: L("فتح المستندات في تبويبات", "Open documents as tabs"),
                           desc: L("كل مستند في تبويب جديد. أوقفه ليحل الجديد محل المفتوح", "Each document opens in a new tab. Turn off to replace the open one"), isOn: $app.openAsTabs)
                 GroupDivider()
+                GroupRow(icon: "ph_export", color: TileBlue, title: L("تصدير مستندات بالاسم نفسه", "Exporting documents with the same name"),
+                         desc: L("انقر لتغيير الاختيار", "Tap to change"), action: { app.exportSameName = (app.exportSameName + 1) % 3 }) {
+                    ValueChevron(value: app.exportSameNameLabel)
+                }
+                GroupDivider()
                 let d = Templates.defaultChoice()
                 GroupRow(icon: "ph_note", color: TileGold, title: L("القالب الافتراضي للملاحظات", "Default notebook template"), action: { templateOpen = true }) {
                     ValueChevron(value: Templates.labelOf(d.kind) + " · " + Templates.sizeOf(d.size).label + (d.landscape ? L(" · أفقي", " · landscape") : ""))

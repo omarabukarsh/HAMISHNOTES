@@ -116,7 +116,8 @@ enum InkReader {
     #if canImport(MLKitDigitalInkRecognition)
     private static var models: [String: DigitalInkRecognitionModel] = [:]
     private static var recognizers: [String: DigitalInkRecognizer] = [:]
-    private static var downloading: Set<String> = []
+    /// وقت بدء تنزيل كل حزمة: إن لم تجهز بعد دقيقتين (انقطع الاتصال مثلًا) يُعاد طلبها.
+    private static var downloading: [String: Date] = [:]
     private static let lock = NSLock()
 
     /// النموذج جاهز للاستعمال؛ وإلا يبدأ تنزيله ويعيد false.
@@ -132,8 +133,8 @@ enum InkReader {
             if recognizers[tag] == nil { recognizers[tag] = DigitalInkRecognizer.digitalInkRecognizer(options: DigitalInkRecognizerOptions(model: m)) }
             return true
         }
-        if !downloading.contains(tag) {
-            downloading.insert(tag)
+        if downloading[tag].map({ Date().timeIntervalSince($0) > 120 }) ?? true {
+            downloading[tag] = Date()
             _ = mm.download(m, conditions: ModelDownloadConditions(allowsCellularAccess: true, allowsBackgroundDownloading: true))
             DispatchQueue.main.async {
                 if !warned {

@@ -129,6 +129,13 @@ extension DocSession {
             for i in d.notes.indices where sel.notes.contains(d.notes[i].id) {
                 let p = CGPoint(x: d.notes[i].x, y: d.notes[i].y).applying(t)
                 d.notes[i].x = p.x; d.notes[i].y = p.y
+                // التكبير يشمل الملاحظة وما كُتب عليها بالقلم (كالصور والنصوص)
+                if k != 1 {
+                    d.notes[i].w *= k; d.notes[i].h *= k
+                    if let raw = d.notes[i].ink, let dr = try? PKDrawing(data: raw) {
+                        d.notes[i].ink = dr.transformed(using: CGAffineTransform(scaleX: k, y: k)).dataRepresentation()
+                    }
+                }
             }
             for i in d.fills.indices where d.fills[i].page == sel.pageId && keys.contains(d.fills[i].key) {
                 d.fills[i].pts = d.fills[i].pts.map { $0.applying(t) }
@@ -169,13 +176,36 @@ extension DocSession {
         let old = drawing(for: sel.pageId)
         var nd = old
         var copies: [Int] = []
+        // النسخة تأخذ مفتاحًا (وقت إنشاء) خاصًا بها: فلا تشارك الأصل ملأه ولا نصه المجمَّل
+        let keys = lassoKeys()
+        let taken = Set(old.strokes.map { $0.path.creationDate.timeIntervalSinceReferenceDate })
+        var dt = 0.001
+        while keys.contains(where: { taken.contains($0 + dt) }) { dt += 0.001 }
         for i in sel.strokes where old.strokes.indices.contains(i) {
             var s = old.strokes[i]
+            s.path = PKStrokePath(controlPoints: Array(s.path), creationDate: s.path.creationDate.addingTimeInterval(dt))
             s.transform = s.transform.concatenating(shift)
             copies.append(nd.strokes.count)
             nd.strokes.append(s)
         }
         let before = data
+        let pw = max(1, pageSize(index(of: sel.pageId) ?? 0).width)
+        for f in data.fills where f.page == sel.pageId && keys.contains(f.key) {
+            var c = f
+            c.id = UUID().uuidString
+            c.key = f.key + dt
+            c.pts = f.pts.map { CGPoint(x: $0.x + off, y: $0.y + off) }
+            data.fills.append(c)
+        }
+        for line in data.converted where line.page == sel.pageId && keys.contains(line.key) {
+            var c = line
+            c.id = UUID().uuidString
+            c.key = line.key + dt
+            c.words = line.words.map { w in var x = w; x.l += off / pw; x.r += off / pw; x.t += off / pw; x.b += off / pw; return x }
+            c.baseline += off; c.minX += off; c.maxX += off
+            data.converted.append(c)
+        }
+        wordCache.removeValue(forKey: sel.pageId)
         var newImgs: [String] = [], newBoxes: [String] = [], newNotes: [String] = []
         for im in data.images where sel.images.contains(im.id) {
             var c = im; c.id = UUID().uuidString; c.x += off; c.y += off

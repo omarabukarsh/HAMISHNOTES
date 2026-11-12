@@ -153,10 +153,20 @@ final class AppController: ObservableObject {
     // ---------- المستندات ----------
     @Published var resumeLast = true { didSet { prefs.set(resumeLast, forKey: "resume_last") } }
     @Published var openAsTabs = true { didSet { prefs.set(openAsTabs, forKey: "open_as_tabs") } }
+    /// تصدير مستندات بالاسم نفسه: 0 اسأل كل مرة، 1 أبقِ الجميع بترقيم الاسم، 2 صدّر الأول فقط.
+    @Published var exportSameName = 0 { didSet { prefs.set(exportSameName, forKey: "export_same_name") } }
     @Published var penDoubleTapEnabled = true { didSet { prefs.set(penDoubleTapEnabled, forKey: "pen_dbl") } }
     @Published var fingerUndo = true { didSet { prefs.set(fingerUndo, forKey: "finger_undo") } }
     /// نقرة على كلمة محوّلة تعرض قراءات أخرى لتصحيحها.
     @Published var wordAlts = true { didSet { prefs.set(wordAlts, forKey: "word_alts") } }
+
+    var exportSameNameLabel: String {
+        switch exportSameName {
+        case 1: return L("ترقيم الأسماء", "Number the names")
+        case 2: return L("الأول فقط", "First only")
+        default: return L("اسأل كل مرة", "Ask every time")
+        }
+    }
 
     // ---------- المذاكرة ----------
     @Published var stats: [String: Int64] = [:]
@@ -240,6 +250,7 @@ final class AppController: ObservableObject {
         colorLabels = p.dictionary(forKey: "color_labels") as? [String: String] ?? [:]
         resumeLast = p.object(forKey: "resume_last") as? Bool ?? true
         openAsTabs = p.object(forKey: "open_as_tabs") as? Bool ?? true
+        exportSameName = min(2, max(0, p.integer(forKey: "export_same_name")))
         penDoubleTapEnabled = p.object(forKey: "pen_dbl") as? Bool ?? true
         fingerUndo = p.object(forKey: "finger_undo") as? Bool ?? true
         wordAlts = p.object(forKey: "word_alts") as? Bool ?? true
@@ -421,6 +432,15 @@ final class AppController: ObservableObject {
     }
 
     func duplicate(_ e: DocEntry) {
+        // المستند المقفل: نسخه يحتاج الرمز أو البصمة، والنسخة تبقى مقفلة
+        if e.locked && !unlocked.contains(e.id) {
+            authenticate(reason: L("إنشاء نسخة من المستند المقفل", "Duplicate the locked document")) { ok in
+                guard ok else { return }
+                self.unlocked.insert(e.id)
+                self.duplicate(e)
+            }
+            return
+        }
         guard Premium.shared.canAdd() else { return }
         tabs.first { $0.id == e.id }?.flush()
         if let n = repo.duplicate(e, newName: e.name + L(" (نسخة)", " (copy)")) {
@@ -552,6 +572,7 @@ final class AppController: ObservableObject {
         if tabs.first(where: { $0.id == id }) == nil {
             let s = DocSession(entry: e)
             if !openAsTabs, let cur = activeId, let i = tabs.firstIndex(where: { $0.id == cur }) {
+                tabs[i].finishInlineEdit()
                 tabs[i].flush()
                 tabs[i] = s
             } else {
@@ -598,6 +619,7 @@ final class AppController: ObservableObject {
 
     func closeTab(_ id: String) {
         guard let i = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[i].finishInlineEdit()
         tabs[i].flush()
         tabs.remove(at: i)
         if splitId == id { splitId = nil }

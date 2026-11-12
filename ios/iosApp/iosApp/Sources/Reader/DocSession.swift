@@ -150,6 +150,11 @@ final class DocSession: ObservableObject, Identifiable {
                 if data.pages.count > doc.pageCount { data.pages.removeLast(data.pages.count - doc.pageCount) }
                 dataDirty = true
             }
+            // مربعات نص بقيت فارغة (أُغلق التطبيق أثناء الكتابة فيها) تُزال
+            if data.boxes.contains(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                data.boxes.removeAll { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                dataDirty = true
+            }
             currentPage = max(0, min(doc.pageCount - 1, entry.lastPage))
             currentOrder = data.pages
             loadOcr()
@@ -823,6 +828,7 @@ final class DocSession: ObservableObject, Identifiable {
     /// يحفظ ما تغيّر. الكتابة على القرص في طابور خلفي؛ wait = ننتظرها (قبل التصدير والإغلاق والنسخ).
     func flush(wait: Bool = true) {
         saveWork?.cancel()
+        commitInlineText()
         if currentOrder.isEmpty { currentOrder = data.pages }
         let inks = dirtyInk.map { ($0, drawings[$0] ?? PKDrawing()) }
         let inkChanged = !inks.isEmpty

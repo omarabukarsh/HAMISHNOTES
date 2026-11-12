@@ -14,6 +14,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
 /**
@@ -21,6 +22,7 @@ import java.io.File
  * والصيغة القديمة (v1 بلا أصل) تبقى تُفتح بحذف الطبقات، ومرفقات الآيباد تُحفظ ويُعاد إرفاقها.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class EditablePdfTest {
     @get:Rule
     val tmp = TemporaryFolder()

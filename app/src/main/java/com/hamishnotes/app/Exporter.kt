@@ -120,33 +120,10 @@ object Exporter {
         /** مرفقات الآيباد المحفوظة من الاستيراد: يُعاد إرفاقها كما هي. */
         editableExtras: List<java.io.File> = emptyList()
     ): Int {
-            val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
-            os.use { out.writeTo(it) }
-            return snap.pages.size
-        } finally {
-            out.close()
-        }
-    }
-
-    /**
-     * حفظ بنص قابل للتحديد: تُنسخ صفحات الملف الأصلية كما هي (نصها يبقى نصًا)، وتُرسم فوقها
-     * التمييزات والكتابة اليدوية والصور ومربعات النص. الصفحات الفارغة والمدوّرة تُرسم كصورة.
-     * إن فشل أي شيء يرجع المستدعي للحفظ كصور.
-     */
-    fun exportVector(
-        context: Context,
-        snap: Snapshot,
-        fileFor: (String) -> java.io.File?,
-        uri: Uri,
-        onPage: (Int) -> Unit,
-        /** بيانات النسخة القابلة للتعديل (null = نسخة نهائية). */
-        editableData: String? = null,
-        editableImages: List<java.io.File> = emptyList(),
-        /** مرفقات الآيباد المحفوظة من الاستيراد: يُعاد إرفاقها كما هي. */
-        editableExtras: List<java.io.File> = emptyList()
-    ): Int {
         val out = com.tom_roush.pdfbox.pdmodel.PDDocument()
         val counts = ArrayList<Int>()
+        val built = ArrayList<com.tom_roush.pdfbox.pdmodel.PDPage>()
+        var origFile: java.io.File? = null
         val sources = HashMap<String, com.tom_roush.pdfbox.pdmodel.PDDocument>()
         try {
             snap.pages.forEachIndexed { i, ref ->
@@ -184,10 +161,24 @@ object Exporter {
                         bmp.recycle()
                     }
                 }
+                built.add(page)
+            }
+            // النسخة القابلة للتعديل: الملف النظيف (قبل رسم التعليقات) يُرفق داخلها أصلًا للفتح
+            if (editableData != null) {
+                try {
+                    val f = java.io.File.createTempFile("hamish-orig", ".pdf", context.cacheDir)
+                    origFile = f
+                    out.save(f)
+                } catch (t: Throwable) {
+                    origFile?.delete()
+                    origFile = null
+                }
+            }
+            built.forEachIndexed { i, page ->
                 counts.add(EditablePdf.contentCount(page))
                 drawOverlay(out, page, snap, i)
             }
-            if (editableData != null) EditablePdf.embed(out, editableData, counts, editableImages)
+            if (editableData != null) EditablePdf.embed(out, editableData, counts, editableImages, origFile, editableExtras)
             val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
             os.use { out.save(it) }
             return snap.pages.size

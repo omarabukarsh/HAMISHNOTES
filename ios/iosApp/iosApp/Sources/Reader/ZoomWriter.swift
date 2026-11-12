@@ -204,7 +204,28 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
         guard !applying, let s = session, let b = box, let pid = s.pageId(b.page) else { return }
         AppController.shared.noteInteraction()
         let c = AppController.shared
+        let before = s.drawing(for: pid)
+        // خط جديد: تثبيت الخط وحساسية الضغط وحدة الطرف وخط الهايلايتر المستقيم، كما على الصفحة
+        if canvas.drawing.strokes.count == before.strokes.count + 1, let last = canvas.drawing.strokes.last,
+           c.tool.isPen || c.tool == .highlighter,
+           let ns = PenProcessing.apply(last, tool: c.tool, pageW: s.pageSize(b.page).width * zoom,
+                                        stabilize: c.tool == .highlighter ? c.hlStabilize : c.penStabilize,
+                                        pressure: c.penPressure, sharpness: c.penSharpness, straight: c.hlStraight) {
+            var cd = canvas.drawing
+            cd.strokes[cd.strokes.count - 1] = ns
+            applying = true
+            canvas.drawing = cd
+            applying = false
+        }
         var d = canvas.drawing.transformed(using: toView.inverted())
+        // فلتر الممحاة: ما يحميه المستخدم لا يُمسح
+        if c.tool == .eraser, let kept = PenProcessing.protect(old: before, new: d, canErase: c.canErase) {
+            d = kept
+            applying = true
+            canvas.drawing = d.transformed(using: toView)
+            applying = false
+            if inkSig(kept) == inkSig(before) { return }
+        }
         // تمييز بالتقاط النص: يُستبدل الخط بتمييز على الكلمات تحته
         if c.tool == .highlighter && c.highlightSnap && Premium.shared.active,
            let last = d.strokes.last, last.ink.inkType == .marker,
@@ -226,5 +247,8 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
         }
         shownVersion = s.inkVersion + 1
         s.setInk(pid, d)
+        // مسح إطار شكل مملوء يحذف ملأه، وما كُتب هنا يُقرأ للبحث والتقاط النص
+        if c.tool == .eraser { s.pruneFills(pid) }
+        s.scheduleHandRead(pid)
     }
 }

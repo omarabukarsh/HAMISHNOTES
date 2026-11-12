@@ -688,7 +688,11 @@ final class DocSession: ObservableObject, Identifiable {
         let s = size ?? pageSize(max(0, min(pageCount - 1, after)))
         guard let page = Templates.makePage(kind: kind, bg: color, size: s) else { return }
         let at = max(0, min(doc.pageCount, after + 1))
-        edit { d in d.pages.insert(PageInfo(id: UUID().uuidString, src: Templates.src(kind, color)), at: at) }
+        edit { d in
+            let old = d.pages
+            d.pages.insert(PageInfo(id: UUID().uuidString, src: Templates.src(kind, color)), at: at)
+            self.remapOutline(&d, from: old)
+        }
         doc.insert(page, at: at)
         structureChanged()
         goTo(page: at)
@@ -713,7 +717,11 @@ final class DocSession: ObservableObject, Identifiable {
             infos.append(PageInfo(id: UUID().uuidString))
             at += 1
         }
-        edit { d in d.pages.insert(contentsOf: infos, at: start) }
+        edit { d in
+            let old = d.pages
+            d.pages.insert(contentsOf: infos, at: start)
+            self.remapOutline(&d, from: old)
+        }
         structureChanged()
         goTo(page: start)
         AppController.shared.say(.done, L("أُضيفت \(infos.count) صفحة من الملف (الآن \(pageCount) صفحة)", "Added \(infos.count) pages from the file (\(pageCount) pages now)"))
@@ -728,7 +736,9 @@ final class DocSession: ObservableObject, Identifiable {
         if let p = doc.page(at: index) { trash[gone] = p }
         // ما كُتب على الصفحة يُحذف معها (ويعود معها بالتراجع)، فلا يبقى في الملف بلا صفحة
         edit { d in
+            let old = d.pages
             d.pages.remove(at: index)
+            self.remapOutline(&d, from: old)
             d.marks.removeAll { $0.page == gone }
             d.boxes.removeAll { $0.page == gone }
             d.images.removeAll { $0.page == gone }
@@ -748,7 +758,9 @@ final class DocSession: ObservableObject, Identifiable {
         doc.insert(p, at: index + 1)
         setInk(nid, drawing(for: old), record: false)
         edit { d in
+            let old = d.pages
             d.pages.insert(PageInfo(id: nid, src: src), at: index + 1)
+            self.remapOutline(&d, from: old)
             d.boxes += d.boxes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
             d.images += d.images.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
             d.notes += d.notes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
@@ -760,8 +772,10 @@ final class DocSession: ObservableObject, Identifiable {
         guard let doc = pdf, data.pages.indices.contains(from), to >= 0, to < data.pages.count, from != to,
               let page = doc.page(at: from) else { return }
         edit { d in
+            let old = d.pages
             let p = d.pages.remove(at: from)
             d.pages.insert(p, at: to)
+            self.remapOutline(&d, from: old)
         }
         doc.removePage(at: from)
         doc.insert(page, at: to)
@@ -776,12 +790,37 @@ final class DocSession: ObservableObject, Identifiable {
         guard let doc = pdf, data.pages.indices.contains(from), to >= 0, to < data.pages.count, from != to,
               let page = doc.page(at: from) else { return }
         edit { d in
+            let old = d.pages
             let p = d.pages.remove(at: from)
             d.pages.insert(p, at: to)
+            self.remapOutline(&d, from: old)
         }
         doc.removePage(at: from)
         doc.insert(page, at: to)
         structureChanged()
+    }
+
+    /// يبدّل قالب صفحة فارغة، ويُحفظ في الملف (وبالتراجع يعود القالب السابق).
+    func changeTemplate(_ index: Int, kind: String, color: UInt32) {
+        guard let doc = pdf, data.pages.indices.contains(index),
+              let page = Templates.makePage(kind: kind, bg: color, size: pageSize(index)) else { return }
+        doc.removePage(at: index)
+        doc.insert(page, at: index)
+        edit { d in d.pages[index].src = Templates.src(kind, color) }
+        structureChanged()
+    }
+
+    /// عناوين الفهرس تتبع صفحاتها عند إضافة صفحة أو حذفها أو نقلها (كانت تبقى على رقم الصفحة القديم).
+    private func remapOutline(_ d: inout DocData, from old: [PageInfo]) {
+        guard !d.outline.isEmpty, !d.pages.isEmpty else { return }
+        var now: [String: Int] = [:]
+        for (i, p) in d.pages.enumerated() { now[p.id] = i }
+        for k in d.outline.indices {
+            let p = d.outline[k].page
+            guard old.indices.contains(p) else { continue }
+            // صفحة العنوان حُذفت: يبقى العنوان على أقرب صفحة في مكانها
+            d.outline[k].page = now[old[p].id] ?? min(p, d.pages.count - 1)
+        }
     }
 
     func rotatePage(_ index: Int) {
@@ -801,9 +840,17 @@ final class DocSession: ObservableObject, Identifiable {
         for (pid, p) in pagesById where !keep.contains(pid) && trash[pid] == nil {
             trash[pid] = (p.copy() as? PDFPage) ?? p
         }
+        var shownSrc: [String: String] = [:]
+        for info in currentOrder { shownSrc[info.id] = info.src }
         let n = PDFDocument()
         for info in data.pages {
-            if let p = pagesById[info.id] {
+            if let p = pagesById[info.id], let was = shownSrc[info.id], was != info.src, info.src.hasPrefix("blank:") {
+                // القالب تغيّر (تراجع أو إعادة): تُرسم الصفحة بقالبها المحفوظ وبمقاسها نفسه
+                let b = p.bounds(for: .cropBox)
+                let size = (p.rotation % 180) != 0 ? CGSize(width: b.height, height: b.width) : b.size
+                let (kind, bg) = Templates.parse(info.src)
+                n.insert(Templates.makePage(kind: kind, bg: bg, size: size) ?? (p.copy() as? PDFPage ?? p), at: n.pageCount)
+            } else if let p = pagesById[info.id] {
                 n.insert(p.copy() as? PDFPage ?? p, at: n.pageCount)
             } else {
                 let (kind, bg) = Templates.parse(info.src)

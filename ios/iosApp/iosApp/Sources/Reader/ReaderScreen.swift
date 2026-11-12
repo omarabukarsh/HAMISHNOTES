@@ -580,7 +580,9 @@ struct ColorDots: View {
     var body: some View {
         let current = app.colorFor(app.tool)
         HStack(spacing: 0) {
-            ForEach(app.paletteFor(app.tool) + app.customColors, id: \.self) { col in
+            // لون مخصص يطابق لونًا من اللوحة لا يظهر مرتين
+            let palette = app.paletteFor(app.tool)
+            ForEach(palette + app.customColors.filter { !palette.contains($0) }, id: \.self) { col in
                 let sel = col == current
                 Button { app.setColor(col) } label: {
                     Circle().fill(Color(hex: col)).frame(width: sel ? 26 : 22, height: sel ? 26 : 22)
@@ -1204,8 +1206,10 @@ private struct LinkSheet: View {
                         let pg = min(max(1, Int(page) ?? 1), targetPages)
                         let name = targetId == session.id ? session.title : (app.entry(targetId)?.name ?? "")
                         let title = label.trimmingCharacters(in: .whitespaces).isEmpty ? name + L(" — ص \(pg)", " — p. \(pg)") : label
-                        session.upsertBox(TextBox(id: UUID().uuidString, page: pid, x: size.width * 0.1, y: size.height * 0.1, w: size.width * 0.5,
-                                                  text: title, size: max(12, size.width * 0.022), linkDoc: targetId, linkPage: pg - 1))
+                        var box = TextBox(id: UUID().uuidString, page: pid, x: size.width * 0.1, y: size.height * 0.1, w: size.width * 0.5,
+                                          text: title, size: max(12, size.width * 0.022), linkDoc: targetId, linkPage: pg - 1)
+                        box.linkPageId = app.pageId(of: targetId, index: pg - 1)
+                        session.upsertBox(box)
                         app.say(.tip, L("أُضيف الرابط: اسحبه إلى مكانه، وانقره مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
                         dismiss()
                     }

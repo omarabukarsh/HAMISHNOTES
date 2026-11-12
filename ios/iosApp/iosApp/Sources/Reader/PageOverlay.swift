@@ -782,7 +782,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 guard let self = self, let s = self.session else { return }
                 // بأداة النص: نقرة تكتب فيه؛ والرابط بنقرة ثانية يُفتح؛ وغير ذلك نقرة تحدده (وشريطه أسفل الشاشة)
                 if AppController.shared.textActive { s.beginInlineEdit(b.id); return }
-                if let d = b.linkDoc, s.selectedBox == b.id { AppController.shared.followLink(from: s, docId: d, page: b.linkPage); return }
+                if let d = b.linkDoc, s.selectedBox == b.id { AppController.shared.followLink(from: s, docId: d, page: b.linkPage, pageId: b.linkPageId); return }
                 if s.selectedBox == b.id { s.beginInlineEdit(b.id) } else { s.finishInlineEdit(); s.selectedBox = b.id }
             }
             v.onMove = { [weak self] delta in

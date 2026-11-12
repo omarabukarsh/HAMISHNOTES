@@ -14,6 +14,7 @@ struct DeckView: View {
     @State private var page = 0
     @State private var adding = false
     @State private var editing: Card? = nil
+    @State private var deleting: Card? = nil
     @Environment(\.dismiss) private var dismiss
 
     private func folderOf(_ c: Card) -> String {
@@ -84,6 +85,19 @@ struct DeckView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .environment(\.colorScheme, .light)
         .dialogSheet(isPresented: $adding) { addSheet }
+        .alert(L("حذف البطاقة؟", "Delete this card?"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button(L("حذف", "Delete"), role: .destructive) {
+                if let c = deleting {
+                    let left = ordered.count - 1
+                    app.cards.removeAll { $0.id == c.id }
+                    page = max(0, min(page, left - 1))
+                }
+                deleting = nil
+            }
+            Button(L("إلغاء", "Cancel"), role: .cancel) { deleting = nil }
+        } message: {
+            Text(L("لا يمكن التراجع عن حذف البطاقة.", "Deleting a card can’t be undone."))
+        }
         .dialogSheet(item: $editing) { c in
             CardEditorSheet(card: c, folder: c.folder, title: L("تعديل البطاقة", "Edit card"), confirm: L("حفظ", "Save")).environmentObject(app)
         }
@@ -187,7 +201,7 @@ struct DeckView: View {
                 .padding(14)
             Spacer()
             Button { editing = c } label: { PhIcon("ph_pencil", Palette.textSecondary, 20, L("تعديل البطاقة", "Edit card")).frame(width: 40, height: 40) }
-            Button { app.cards.removeAll { $0.id == c.id } } label: { PhIcon("ph_trash", Palette.textSecondary, 20, L("حذف البطاقة", "Delete card")).frame(width: 40, height: 40) }
+            Button { deleting = c } label: { PhIcon("ph_trash", Palette.textSecondary, 20, L("حذف البطاقة", "Delete card")).frame(width: 40, height: 40) }
             Button { toggleStar(c.id) } label: { PhIcon(c.starred ? "ph_star_fill" : "ph_star", Palette.gold, 24).frame(width: 40, height: 40) }
         }
         .padding(.trailing, 8).padding(.top, 2)

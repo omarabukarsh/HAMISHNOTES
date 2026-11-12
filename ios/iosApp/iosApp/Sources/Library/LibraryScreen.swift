@@ -402,6 +402,8 @@ private struct FolderSection: View {
     @Binding var sheet: LibrarySheet?
     @State private var exportFolder: String? = nil
     @State private var exportURL: URL? = nil
+    /// مادة لها بطاقات تنتظر اختيار المستخدم: حذف البطاقات معها أو إبقاؤها.
+    @State private var folderToDelete: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -435,12 +437,29 @@ private struct FolderSection: View {
                     Button { app.openDeck = f } label: { Text(L("بطاقات المادة", "Subject cards")) }
                     Button { sheet = .exam(f) } label: { Text(L("موعد الامتحان…", "Exam date…")) }
                     Button { sheet = .renameFolder(f) } label: { Text(L("إعادة تسمية", "Rename")) }
-                    Button(role: .destructive) { app.deleteFolder(f) } label: { Text(L("حذف المادة (تبقى المستندات)", "Delete subject (documents stay)")) }
+                    Button(role: .destructive) {
+                        if app.folderCardCount(f) > 0 { folderToDelete = f } else { app.deleteFolder(f) }
+                    } label: { Text(L("حذف المادة (تبقى المستندات)", "Delete subject (documents stay)")) }
                 }
             }
         }
         .sheet(item: Binding(get: { exportURL.map { IdURL(url: $0) } }, set: { exportURL = $0?.url })) { u in
             ShareSheet(items: [u.url])
+        }
+        .alert(L("حذف المادة «\(folderToDelete ?? "")»؟", "Delete the subject “\(folderToDelete ?? "")”?"),
+               isPresented: Binding(get: { folderToDelete != nil }, set: { if !$0 { folderToDelete = nil } })) {
+            Button(L("حذف المادة وبطاقاتها", "Delete the subject and its cards"), role: .destructive) {
+                if let f = folderToDelete { app.deleteFolder(f, deleteCards: true) }
+                folderToDelete = nil
+            }
+            Button(L("حذف المادة وإبقاء البطاقات", "Delete the subject, keep the cards")) {
+                if let f = folderToDelete { app.deleteFolder(f, deleteCards: false) }
+                folderToDelete = nil
+            }
+            Button(L("إلغاء", "Cancel"), role: .cancel) { folderToDelete = nil }
+        } message: {
+            Text(L("لهذه المادة \(app.folderCardCount(folderToDelete ?? "")) بطاقة. المستندات تبقى في المكتبة، والبطاقات التي تُبقيها تصير بلا مادة.",
+                   "This subject has \(app.folderCardCount(folderToDelete ?? "")) card(s). Documents stay in the library; cards you keep will have no subject."))
         }
     }
 }

@@ -147,7 +147,7 @@ struct PagesDrawer: View {
         .alert(L("حذف الصفحة \((confirmDelete ?? 0) + 1)؟", "Delete page \((confirmDelete ?? 0) + 1)?"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
             Button(L("حذف", "Delete"), role: .destructive) { if let i = confirmDelete { s.deletePage(i) }; confirmDelete = nil }
             Button(L("إلغاء", "Cancel"), role: .cancel) { confirmDelete = nil }
-        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) }
+        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها. يمكنك التراجع.", "The page and everything written on it will be deleted. You can undo.")) }
         .alert(L("حذف \(picked.count) صفحة؟", "Delete \(picked.count) pages?"), isPresented: $confirmDeleteMany) {
             Button(L("حذف", "Delete"), role: .destructive) {
                 for i in picked.sorted(by: >) { s.deletePage(i) }
@@ -445,7 +445,7 @@ struct PageMenuDrawer: View {
         .alert(L("حذف الصفحة \(p + 1)؟", "Delete page \(p + 1)?"), isPresented: $confirmDelete) {
             Button(L("حذف", "Delete"), role: .destructive) { s.deletePage(p) }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
-        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها، ولا يمكن التراجع.", "The page and everything written on it will be deleted. This cannot be undone.")) }
+        } message: { Text(L("ستُحذف الصفحة وكل ما كتبته عليها. يمكنك التراجع.", "The page and everything written on it will be deleted. You can undo.")) }
         .dialogSheet(isPresented: $outlineAdd) {
             NameSheet(title: L("عنوان للصفحة \(p + 1)", "Heading for page \(p + 1)"), initial: "") { t in
                 s.edit { $0.outline.append(OutlineEntry(title: t, level: 0, page: p)) }
@@ -455,12 +455,7 @@ struct PageMenuDrawer: View {
         .sheet(isPresented: $itemsDialog) { ClearItemsSheet(page: p) { ink, hl, tx, im in clear(p, ink: ink, hl: hl, tx: tx, im: im) } }
         .bigSheet(isPresented: $changeTemplate, width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
             TemplatePickerSheet(mode: .change, sizeLocked: true) { choice, _, _ in
-                guard let pid = s.pageId(p), let doc = s.pdf,
-                      let page = Templates.makePage(kind: choice.kind, bg: choice.color, size: s.pageSize(p)) else { return }
-                doc.removePage(at: p)
-                doc.insert(page, at: p)
-                s.edit { d in if let i = d.pages.firstIndex(where: { $0.id == pid }) { d.pages[i].src = Templates.src(choice.kind, choice.color) } }
-                s.reloadHook?()
+                s.changeTemplate(p, kind: choice.kind, color: choice.color)
             }
         }
     }

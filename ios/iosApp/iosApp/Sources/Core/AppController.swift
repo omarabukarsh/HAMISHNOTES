@@ -280,6 +280,7 @@ final class AppController: ObservableObject {
         loginSeen = p.bool(forKey: "login_seen")
         stats = (p.dictionary(forKey: "stats") as? [String: Int64]) ?? [:]
         cards = repo.loadList("cards.json", Card.self)
+        pruneStats()
 
         library = repo.loadLibrary()
         libraryLoaded = true
@@ -393,7 +394,20 @@ final class AppController: ObservableObject {
         saveLibrary()
     }
 
-    func deleteFolder(_ name: String) {
+    /// عدد البطاقات المسجّلة على المادة نفسها (لا بطاقات مستنداتها).
+    func folderCardCount(_ name: String) -> Int { cards.filter { $0.folder == name }.count }
+
+    /// deleteCards: تُحذف بطاقات المادة معها؛ وإلا تبقى البطاقات بلا مادة.
+    func deleteFolder(_ name: String, deleteCards: Bool = false) {
+        if cards.contains(where: { $0.folder == name }) {
+            if deleteCards {
+                cards.removeAll { $0.folder == name }
+            } else {
+                var list = cards
+                for k in list.indices where list[k].folder == name { list[k].folder = "" }
+                cards = list
+            }
+        }
         folders.removeAll { $0 == name }
         prefs.set(folders, forKey: "folders")
         for k in library.indices where library[k].folder == name { library[k].folder = "" }
@@ -458,6 +472,12 @@ final class AppController: ObservableObject {
     func delete(_ e: DocEntry) {
         if AudioNotes.shared.recordingDoc == e.id { AudioNotes.shared.stop() }
         pendingRead.removeValue(forKey: e.id)
+        // تفاصيل وقت هذا المستند في الأيام (مجموع كل يوم يبقى)
+        let suffix = "|" + e.id
+        if stats.keys.contains(where: { $0.hasSuffix(suffix) }) {
+            stats = stats.filter { !$0.key.hasSuffix(suffix) }
+            prefs.set(stats, forKey: "stats")
+        }
         closeTab(e.id)
         repo.delete(e.id)
         library.removeAll { $0.id == e.id }
@@ -600,13 +620,23 @@ final class AppController: ObservableObject {
         }
     }
 
-    func followLink(from s: DocSession, docId: String, page: Int) {
+    func followLink(from s: DocSession, docId: String, page: Int, pageId: String? = nil) {
         guard entry(docId) != nil else {
             say(.error, L("المستند المرتبط لم يعد موجودًا", "The linked document no longer exists"))
             return
         }
         linkBack = (s.id, s.currentPage)
-        openPage(docId, page)
+        openDocument(docId)
+        guard let t = tabs.first(where: { $0.id == docId }) else { return }
+        // الصفحة نفسها إن عُرفت (حتى لو تغيّر رقمها)، وإلا الرقم المحفوظ
+        t.goTo(page: pageId.flatMap { t.index(of: $0) } ?? page)
+    }
+
+    /// معرّف صفحة في مستند (مفتوح أو لا) برقمها.
+    func pageId(of docId: String, index: Int) -> String? {
+        if let t = tabs.first(where: { $0.id == docId }) { return t.pageId(index) }
+        let pages = repo.loadData(docId).pages
+        return pages.indices.contains(index) ? pages[index].id : nil
     }
 
     func openLast() {
@@ -823,6 +853,20 @@ final class AppController: ObservableObject {
         pendingRead[id, default: 0] += 5000
         pendingTicks += 1
         if pendingTicks >= 6 { commitReading() }
+    }
+
+    /// تفاصيل «اليوم|المستند» الأقدم من 13 شهرًا تُحذف (يبقى مجموع كل يوم)، فلا تكبر الإحصاءات بلا حد.
+    private func pruneStats() {
+        let limit = Self.dayKey(Date().addingTimeInterval(-400 * 86400))
+        let old = stats.keys.filter { k in
+            guard !k.hasPrefix("pomo|"), let bar = k.firstIndex(of: "|") else { return false }
+            return String(k[..<bar]) < limit
+        }
+        guard !old.isEmpty else { return }
+        var st = stats
+        old.forEach { st.removeValue(forKey: $0) }
+        stats = st
+        prefs.set(stats, forKey: "stats")
     }
 
     private var pendingRead: [String: Int64] = [:]

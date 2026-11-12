@@ -144,6 +144,8 @@ struct TextBox: Codable, Identifiable, Equatable {
     var underline = false
     /// 0 بداية، 1 وسط، 2 نهاية.
     var align = 0
+    /// معرّف الصفحة المرتبط بها: الرابط يتبعها إن تغيّر ترتيب الصفحات (linkPage يبقى للملفات القديمة ولأندرويد).
+    var linkPageId: String? = nil
 }
 
 extension TextBox {
@@ -165,6 +167,7 @@ extension TextBox {
         italic = try c.decodeIfPresent(Bool.self, forKey: .italic) ?? false
         underline = try c.decodeIfPresent(Bool.self, forKey: .underline) ?? false
         align = try c.decodeIfPresent(Int.self, forKey: .align) ?? 0
+        linkPageId = try? c.decodeIfPresent(String.self, forKey: .linkPageId)
     }
 }
 

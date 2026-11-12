@@ -354,7 +354,7 @@ struct TextBoxBar: View {
         if let id = session.selectedBox, let b = session.data.boxes.first(where: { $0.id == id }) {
             HStack(spacing: 0) {
                 if let d = b.linkDoc {
-                    DialogButton(label: L("فتح الرابط", "Open link"), bold: true) { app.followLink(from: session, docId: d, page: b.linkPage) }
+                    DialogButton(label: L("فتح الرابط", "Open link"), bold: true) { app.followLink(from: session, docId: d, page: b.linkPage, pageId: b.linkPageId) }
                 }
                 DialogButton(label: L("تعديل", "Edit")) { session.beginInlineEdit(id) }
                 DialogButton(label: L("خط أصغر", "Smaller text")) { resize(id, 1 / 1.15) }

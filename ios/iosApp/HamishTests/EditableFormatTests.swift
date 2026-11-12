@@ -36,9 +36,17 @@ final class EditableFormatTests: XCTestCase {
         return a
     }
 
-    private let wave: [(Double, Double, Double)] = (0...20).map { i in
-        (0.1 + Double(i) * 0.02, 0.2 + sin(Double(i) / 3) * 0.03, 0.2 + Double(i) * 0.035)
-    }
+    private let wave: [(Double, Double, Double)] = {
+        var out: [(Double, Double, Double)] = []
+        for i in 0...20 {
+            let f = Double(i)
+            let x: Double = 0.1 + f * 0.02
+            let y: Double = 0.2 + sin(f / 3) * 0.03
+            let p: Double = 0.2 + f * 0.035
+            out.append((x, y, p))
+        }
+        return out
+    }()
 
     // ---------------------------------------------------------------- المرفقات
 

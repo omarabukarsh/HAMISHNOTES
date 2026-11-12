@@ -823,7 +823,8 @@ private struct ExamPlanCard: View {
                          : L("باقي \(left) صفحة لم تصلها: نحو \(perDay) صفحة يوميًا", "\(left) pages left: about \(perDay) pages a day"))
                         .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                 } else {
-                    Text(L("حدد موعد امتحان المادة لترى خطتك اليومية", "Set the exam date to see your daily plan"))
+                    Text(app.examPassed(folder) ? L("مضى موعد امتحان هذه المادة. حدد موعدًا جديدًا لترى خطتك اليومية", "This subject’s exam date has passed. Set a new date to see your daily plan")
+                         : L("حدد موعد امتحان المادة لترى خطتك اليومية", "Set the exam date to see your daily plan"))
                         .font(Fonts.sans(14, .medium)).foregroundColor(Palette.navy)
                 }
             }

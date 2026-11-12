@@ -23,7 +23,7 @@ struct PageThumb: View {
         .frame(width: width, height: h)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
-        .task(id: "\(index)-\(session.pagesVersion)-\(session.inkVersion)-\(session.data.pages.count)") { await render() }
+        .task(id: "\(index)-\(session.pagesVersion)-\(session.inkVersion)-\(session.dataVersion)") { await render() }
     }
 
     /// الرسم في الخلفية حتى لا تتقطع الكتابة والدرج مفتوح.
@@ -34,7 +34,8 @@ struct PageThumb: View {
         let tw = width * scale
         let k = tw / max(1, size.width)
         let drawing = session.drawing(for: pid)
-        let marks = session.marks(onPage: pid).filter { !$0.free }
+        let data = session.data
+        let docId = session.id
         let th = size.height * k
         let img = await Task.detached(priority: .utility) { () -> UIImage in
             let base = page.thumbnail(of: CGSize(width: tw, height: th), for: .cropBox)
@@ -42,16 +43,12 @@ struct PageThumb: View {
             fmt.scale = 1
             return UIGraphicsImageRenderer(size: CGSize(width: tw, height: th), format: fmt).image { ctx in
                 base.draw(in: CGRect(x: 0, y: 0, width: tw, height: th))
+                // كل ما على الصفحة كما في التصدير: تمييز، تعبئة، صور، ملاحظات، نصوص، حبر
                 let c = ctx.cgContext
-                c.setBlendMode(.multiply)
-                for m in marks {
-                    c.setFillColor(markColor(m.color, strong: m.level >= 2).cgColor)
-                    for r in m.rects { c.fill(r.scaled(tw)) }
-                }
-                c.setBlendMode(.normal)
-                if !drawing.strokes.isEmpty {
-                    drawing.lightImage(from: CGRect(origin: .zero, size: size), scale: k).draw(in: CGRect(x: 0, y: 0, width: tw, height: th))
-                }
+                c.saveGState()
+                c.scaleBy(x: k, y: k)
+                Exporter.drawOverlay(c, size: size, pid: pid, data: data, docId: docId, ink: drawing, inkScale: max(0.5, k))
+                c.restoreGState()
             }
         }.value
         if !Task.isCancelled { image = img }

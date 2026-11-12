@@ -60,7 +60,9 @@ final class DocSession: ObservableObject, Identifiable {
 
     @Published var pdf: PDFDocument?
     @Published var failed: String? = nil
-    @Published var data = DocData()
+    @Published var data = DocData() { didSet { dataVersion &+= 1 } }
+    /// يزيد مع كل تغيير في بيانات المستند (لتحديث الصور المصغّرة).
+    private(set) var dataVersion = 0
     @Published var currentPage = 0
     @Published var pageCount = 0
     /// يتغير عند أي تعديل في بنية الصفحات (لإعادة رسم الصور المصغّرة).
@@ -823,10 +825,79 @@ final class DocSession: ObservableObject, Identifiable {
         }
     }
 
+    /// يدوّر الصفحة ربع دورة مع كل ما عليها (حبر، تمييز، تعبئة، نصوص، صور، ملاحظات، نص مقروء).
+    /// النصوص والصور والملاحظات تبقى قائمة وتنتقل إلى مكانها الجديد. سجل التراجع يُفرَّغ: خطواته
+    /// تحمل الصفحة بوضعها القديم.
     func rotatePage(_ index: Int) {
-        guard let p = pdf?.page(at: index) else { return }
+        guard let p = pdf?.page(at: index), let pid = pageId(index) else { return }
+        finishInlineEdit()
+        lassoSel = nil
+        let old = pageSize(index)
+        let W = max(1, old.width), H = max(1, old.height)      // المقاس الجديد: H × W
         p.rotation = (p.rotation + 90) % 360
+        // ربع دورة مع عقارب الساعة: (x, y) ← (H − y, x)
+        let t = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: H, ty: 0)
+        func rel(_ l: CGFloat, _ tp: CGFloat, _ r: CGFloat, _ b: CGFloat) -> CGRect {
+            CGRect(x: l * W, y: tp * W, width: (r - l) * W, height: (b - tp) * W).applying(t)
+        }
+        func mark(_ m: MarkRect) -> MarkRect {
+            let q = rel(m.l, m.t, m.r, m.b)
+            return MarkRect(l: q.minX / H, t: q.minY / H, r: q.maxX / H, b: q.maxY / H)
+        }
+        func word(_ w: OcrWord) -> OcrWord {
+            let q = rel(w.l, w.t, w.r, w.b)
+            return OcrWord(text: w.text, l: q.minX / H, t: q.minY / H, r: q.maxX / H, b: q.maxY / H, line: w.line)
+        }
+        /// عنصر يبقى قائمًا: مركزه ينتقل مع الصفحة ويبقى داخلها.
+        func moved(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGPoint {
+            let c = CGPoint(x: x + w / 2, y: y + h / 2).applying(t)
+            return CGPoint(x: min(max(0, c.x - w / 2), max(0, H - w)), y: min(max(0, c.y - h / 2), max(0, W - h)))
+        }
+        let ink = drawing(for: pid)
+        if !ink.strokes.isEmpty {
+            let nd = ink.transformed(using: t)
+            drawings[pid] = nd
+            dirtyInk.insert(pid)
+            applyInkHook?(pid, nd)
+            inkVersion += 1
+        }
+        var d = data
+        for i in d.marks.indices where d.marks[i].page == pid {
+            d.marks[i].rects = d.marks[i].rects.map(mark)
+            d.marks[i].strongRects = d.marks[i].strongRects.map(mark)
+        }
+        for i in d.fills.indices where d.fills[i].page == pid { d.fills[i].pts = d.fills[i].pts.map { $0.applying(t) } }
+        for i in d.converted.indices where d.converted[i].page == pid {
+            d.converted[i].words = d.converted[i].words.map(word)
+            // السطر لم يعد أفقيًا: لا يُكمَل عليه ولا تُبدَّل كلماته، ويبقى نصه للبحث
+            d.converted[i].alts = nil
+            d.converted[i].baseline = -1_000_000
+        }
+        for i in d.boxes.indices where d.boxes[i].page == pid {
+            let q = moved(d.boxes[i].x, d.boxes[i].y, d.boxes[i].w, boxHeight(d.boxes[i]))
+            d.boxes[i].x = q.x; d.boxes[i].y = q.y
+        }
+        for i in d.images.indices where d.images[i].page == pid {
+            let q = moved(d.images[i].x, d.images[i].y, d.images[i].w, d.images[i].w / max(0.01, d.images[i].aspect))
+            d.images[i].x = q.x; d.images[i].y = q.y
+        }
+        for i in d.notes.indices where d.notes[i].page == pid {
+            let q = moved(d.notes[i].x, d.notes[i].y, d.notes[i].w, d.notes[i].h)
+            d.notes[i].x = q.x; d.notes[i].y = q.y
+        }
+        data = d
+        dataDirty = true
+        if let ws = ocr[pid] {
+            ocr[pid] = ws.map(word)
+            saveOcr()
+        }
+        handWords.removeValue(forKey: pid)
+        handKeys.removeValue(forKey: pid)
+        wordCache.removeValue(forKey: pid)
+        undoStack = []
+        redoStack = []
         structureChanged()
+        scheduleHandRead(pid)
     }
 
     /// بعد تراجع عن تغيير في الصفحات: نعيد ترتيب صفحات PDF حسب البيانات.
@@ -923,6 +994,8 @@ final class DocSession: ObservableObject, Identifiable {
 
     // ======================================================== البحث
 
+    /// الصفحة المطلوبة من نتيجة بحث المكتبة: أول نتيجة فيها هي التي تُعرض.
+    var searchPreferPage: Int?
     private var finder: FindCollector?
     private var findToken = 0
 
@@ -932,7 +1005,7 @@ final class DocSession: ObservableObject, Identifiable {
         findToken += 1
         let token = findToken
         pdf?.cancelFindString()
-        guard let doc = pdf, !q.isEmpty else { searchHits = []; return }
+        guard let doc = pdf, !q.isEmpty else { searchHits = []; searchPreferPage = nil; return }
         var hits: [SearchHit] = []
         // خط اليد والصفحات المقروءة ضوئيًا
         let tokens = q.split(separator: " ").map(String.init)
@@ -975,7 +1048,17 @@ final class DocSession: ObservableObject, Identifiable {
         }.map { $0.element }
         searchHits = hits
         searchIndex = 0
-        if let first = hits.first { goTo(page: first.page) }
+        let want = searchPreferPage
+        searchPreferPage = nil
+        if let p = want, let i = hits.firstIndex(where: { $0.page == p }) {
+            searchIndex = i
+            goTo(page: p)
+        } else if let p = want {
+            // النتيجة من نص مقروء أو كتابة مجمَّلة لا تُظلَّل هنا: تبقى الصفحة المطلوبة
+            goTo(page: p)
+        } else if let first = hits.first {
+            goTo(page: first.page)
+        }
     }
 
     func ocrHits(_ q: String) -> [(Int, String)] {

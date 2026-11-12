@@ -555,6 +555,8 @@ final class AppController: ObservableObject {
             library.append(e)
             saveLibrary()
             openDocument(e.id)
+        } else {
+            say(.error, L("تعذر حفظ المسح. تأكد من وجود مساحة كافية على الجهاز", "Couldn’t save the scan. Make sure the device has enough free space"))
         }
     }
 
@@ -617,6 +619,8 @@ final class AppController: ObservableObject {
         if let s = tabs.first(where: { $0.id == id }) {
             s.searchQuery = query
             s.searchOpen = true
+            s.searchPreferPage = page
+            s.runSearch()
         }
     }
 
@@ -948,6 +952,9 @@ final class AppController: ObservableObject {
         return n < 0 ? nil : n
     }
 
+    /// موعد الامتحان محفوظ لكنه مضى.
+    func examPassed(_ folder: String) -> Bool { examDate(folder) != nil && daysToExam(folder) == nil }
+
     func pagesLeft(_ folder: String) -> Int {
         library.filter { $0.folder == folder && !$0.isMap }.reduce(0) { $0 + max(0, $1.pageCount - ($1.lastPage + 1)) }
     }
@@ -1177,6 +1184,29 @@ final class AppController: ObservableObject {
                     ext.extendForLineBoundaries()
                     let snippet = (ext.string ?? query).replacingOccurrences(of: "\n", with: " ")
                     hits.append(LibraryHit(docId: e.id, docName: e.name, page: pdf.index(for: p), snippet: snippet))
+                }
+                // الصفحات التي قُرئ نصها (صور ممسوحة) والكتابة المجمَّلة
+                let data = self.repo.loadData(e.id)
+                var pageIndex: [String: Int] = [:]
+                for (i, p) in data.pages.enumerated() { pageIndex[p.id] = i }
+                var texts: [Int: [String]] = [:]
+                if let d = try? Data(contentsOf: self.repo.dir(e.id).appendingPathComponent("ocr.json")),
+                   let ocr = try? JSONDecoder().decode([String: [OcrWord]].self, from: d) {
+                    for (pid, words) in ocr {
+                        guard let i = pageIndex[pid], (pdf.page(at: i)?.string ?? "").count <= 20 else { continue }
+                        texts[i, default: []].append(words.map { $0.text }.joined(separator: " "))
+                    }
+                }
+                for line in data.converted {
+                    guard let i = pageIndex[line.page] else { continue }
+                    texts[i, default: []].append(line.words.map { $0.text }.joined(separator: " "))
+                }
+                for i in texts.keys.sorted() {
+                    let text = (texts[i] ?? []).joined(separator: " ")
+                    guard let r = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else { continue }
+                    let from = text.index(r.lowerBound, offsetBy: -40, limitedBy: text.startIndex) ?? text.startIndex
+                    let to = text.index(r.upperBound, offsetBy: 60, limitedBy: text.endIndex) ?? text.endIndex
+                    hits.append(LibraryHit(docId: e.id, docName: e.name, page: i, snippet: String(text[from..<to])))
                 }
                 if hits.count > 200 { break }
             }

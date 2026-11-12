@@ -7,13 +7,12 @@ import PDFKit
 extension DocSession {
     /// التحديد بمستطيلات نسبية لعرض الصفحة (الأصل أعلى اليسار).
     func selectionRects(_ sel: PDFSelection, page: PDFPage) -> [MarkRect] {
-        let b = page.bounds(for: .cropBox)
-        let w = max(1, b.width)
+        let w = max(1, TextLayout.displaySize(page).width)
         return sel.selectionsByLine().compactMap { line -> MarkRect? in
-            let r = line.bounds(for: page)
-            guard r.width > 0.5, r.height > 0.5 else { return nil }
-            let top = b.maxY - r.maxY, bottom = b.maxY - r.minY
-            return MarkRect(l: (r.minX - b.minX) / w, t: top / w, r: (r.maxX - b.minX) / w, b: bottom / w)
+            let raw = line.bounds(for: page)
+            guard raw.width > 0.5, raw.height > 0.5 else { return nil }
+            let r = TextLayout.displayRect(raw, page: page)
+            return MarkRect(l: r.minX / w, t: r.minY / w, r: r.maxX / w, b: r.maxY / w)
         }
     }
 

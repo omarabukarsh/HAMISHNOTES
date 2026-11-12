@@ -84,14 +84,17 @@ enum Exporter {
     static func image(_ docId: String, _ item: ImageItem) -> UIImage? { DocSession.image(docId: docId, item: item) }
 
     /// يرسم ما فوق الصفحة (الملء، التمييز، الصور، الملاحظات، النصوص، الحبر) بإحداثيات الصفحة.
-    static func drawOverlay(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String) {
+    /// ink: حبر الصفحة إن كان في اليد (وإلا يُقرأ من الملف). inkScale: دقة صورة الحبر.
+    static func drawOverlay(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String,
+                            ink: PKDrawing? = nil, inkScale: CGFloat = 3) {
         // الحبر يُرسم بألوانه الأصلية دائمًا: PencilKit يعكس الألوان الداكنة في المظهر الداكن
         UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-            drawOverlayItems(c, size: size, pid: pid, data: data, docId: docId)
+            drawOverlayItems(c, size: size, pid: pid, data: data, docId: docId, ink: ink, inkScale: inkScale)
         }
     }
 
-    private static func drawOverlayItems(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String) {
+    private static func drawOverlayItems(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String,
+                                         ink given: PKDrawing?, inkScale: CGFloat) {
         for f in data.fills where f.page == pid && f.pts.count > 2 {
             c.saveGState()
             c.setFillColor(UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor)
@@ -138,9 +141,9 @@ enum Exporter {
             if b.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
             (b.text as NSString).draw(in: CGRect(x: b.x, y: b.y, width: b.w, height: size.height - b.y), withAttributes: attrs)
         }
-        let ink = Repository.shared.loadInk(docId, page: pid)
+        let ink = given ?? Repository.shared.loadInk(docId, page: pid)
         if !ink.strokes.isEmpty {
-            ink.lightImage(from: CGRect(origin: .zero, size: size), scale: 3).draw(in: CGRect(origin: .zero, size: size))
+            ink.lightImage(from: CGRect(origin: .zero, size: size), scale: inkScale).draw(in: CGRect(origin: .zero, size: size))
         }
     }
 

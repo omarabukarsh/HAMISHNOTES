@@ -307,12 +307,34 @@ enum TextLayout {
     // ---------- كلمات الصفحة ----------
 
     /// كلمات صفحة PDF من طبقة النص، بإحداثيات نسبية لعرض الصفحة (الأصل أعلى اليسار).
+    /// مقاس الصفحة كما تُعرض (بعد تدويرها).
+    static func displaySize(_ page: PDFPage) -> CGSize {
+        let b = page.bounds(for: .cropBox)
+        return (page.rotation % 180) != 0 ? CGSize(width: b.height, height: b.width) : b.size
+    }
+
+    /// مستطيل من إحداثيات ملف PDF إلى إحداثيات العرض (بعد تدوير الصفحة، الأصل أعلى اليسار) بالنقاط.
+    static func displayRect(_ r: CGRect, page: PDFPage) -> CGRect {
+        let b = page.bounds(for: .cropBox)
+        let rot = ((page.rotation % 360) + 360) % 360
+        func map(_ p: CGPoint) -> CGPoint {
+            let u = p.x - b.minX, v = p.y - b.minY
+            switch rot {
+            case 90: return CGPoint(x: v, y: u)
+            case 180: return CGPoint(x: b.width - u, y: v)
+            case 270: return CGPoint(x: b.height - v, y: b.width - u)
+            default: return CGPoint(x: u, y: b.height - v)
+            }
+        }
+        let a = map(CGPoint(x: r.minX, y: r.minY)), c = map(CGPoint(x: r.maxX, y: r.maxY))
+        return CGRect(x: min(a.x, c.x), y: min(a.y, c.y), width: abs(a.x - c.x), height: abs(a.y - c.y))
+    }
+
     static func pdfWords(_ page: PDFPage) -> [OcrWord] {
         let n = page.numberOfCharacters
         guard n > 0, let str = page.string else { return [] }
         let chars = Array(str.utf16)
-        let crop = page.bounds(for: .cropBox)
-        let W = max(1, crop.width)
+        let W = max(1, displaySize(page).width)
         var words: [OcrWord] = []
         var cur = ""
         var rect = CGRect.null
@@ -320,8 +342,7 @@ enum TextLayout {
         var lastMidY: CGFloat? = nil
         func flush() {
             if !cur.trimmingCharacters(in: .whitespaces).isEmpty && !rect.isNull {
-                words.append(OcrWord(text: cur, l: (rect.minX - crop.minX) / W, t: (crop.maxY - rect.maxY) / W,
-                                     r: (rect.maxX - crop.minX) / W, b: (crop.maxY - rect.minY) / W, line: line))
+                words.append(OcrWord(text: cur, l: rect.minX / W, t: rect.minY / W, r: rect.maxX / W, b: rect.maxY / W, line: line))
             }
             cur = ""
             rect = .null
@@ -339,8 +360,10 @@ enum TextLayout {
                 flush()
                 continue
             }
-            let b = page.characterBounds(at: i)
-            if b.isEmpty || b.width <= 0 { cur += s; continue }
+            let raw = page.characterBounds(at: i)
+            if raw.isEmpty || raw.width <= 0 { cur += s; continue }
+            // بإحداثيات العرض: الصفحة المدوَّرة تُلتقط كلماتها في مكانها الصحيح
+            let b = displayRect(raw, page: page)
             // قفزة رأسية كبيرة دون سطر جديد في النص = سطر آخر
             if let m = lastMidY, abs(b.midY - m) > b.height * 0.8 {
                 flush()
@@ -356,7 +379,7 @@ enum TextLayout {
 
     /// كلمات صورة الصفحة بالقراءة الضوئية (Vision)، بإحداثيات نسبية لعرض الصفحة.
     static func ocrWords(_ page: PDFPage) -> [OcrWord] {
-        let b = page.bounds(for: .cropBox)
+        let b = CGRect(origin: .zero, size: displaySize(page))
         let scale: CGFloat = 2.5
         let img = page.thumbnail(of: CGSize(width: b.width * scale, height: b.height * scale), for: .cropBox)
         guard let cg = img.cgImage else { return [] }

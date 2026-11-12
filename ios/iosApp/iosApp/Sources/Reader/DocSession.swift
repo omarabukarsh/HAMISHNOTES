@@ -117,6 +117,7 @@ final class DocSession: ObservableObject, Identifiable {
     var dirtyInk: Set<String> = []
     var dataDirty = false
     private var pdfDirty = false
+    private var pdfSaveWarned = false
     private var saveWork: DispatchWorkItem?
 
     /// خطافات يضبطها عارض PDF.
@@ -773,15 +774,19 @@ final class DocSession: ObservableObject, Identifiable {
         // صفحات الملف الآن حسب معرّفاتها، ومعها الصفحات المحذوفة (لاسترجاعها بالتراجع)
         var pagesById: [String: PDFPage] = trash
         for (i, info) in currentOrder.enumerated() { if let p = doc.page(at: i) { pagesById[info.id] = p } }
+        // ما خرج من الترتيب (تراجع عن إضافة، أو إعادة حذف) يبقى محفوظًا ليعود بمحتواه لا صفحة بيضاء
+        let keep = Set(data.pages.map { $0.id })
+        for (pid, p) in pagesById where !keep.contains(pid) && trash[pid] == nil {
+            trash[pid] = (p.copy() as? PDFPage) ?? p
+        }
         let n = PDFDocument()
-        for (i, info) in data.pages.enumerated() {
+        for info in data.pages {
             if let p = pagesById[info.id] {
-                n.insert(p.copy() as? PDFPage ?? p, at: i)
-                trash.removeValue(forKey: info.id)
+                n.insert(p.copy() as? PDFPage ?? p, at: n.pageCount)
             } else {
                 let (kind, bg) = Templates.parse(info.src)
                 if let p = Templates.makePage(kind: info.src.hasPrefix("blank:") ? kind : "plain", bg: bg, size: CGSize(width: 595, height: 842)) {
-                    n.insert(p, at: i)
+                    n.insert(p, at: n.pageCount)
                 }
             }
         }
@@ -834,20 +839,31 @@ final class DocSession: ObservableObject, Identifiable {
         }
         if wait { Repository.io.sync(execute: job) } else { Repository.io.async(execute: job) }
         if pdfDirty, let doc = pdf {
-            if repo.savePDF(id, doc) { pdfDirty = false }
+            if repo.savePDF(id, doc) {
+                pdfDirty = false
+                pdfSaveWarned = false
+            } else if !pdfSaveWarned {
+                // يبقى التغيير معلّمًا فيُعاد الحفظ لاحقًا، ويُنبَّه المستخدم مرة واحدة
+                pdfSaveWarned = true
+                AppController.shared.say(.error, L("تعذر حفظ تغييرات الصفحات. تأكد من وجود مساحة كافية على الجهاز", "Couldn’t save the page changes. Make sure the device has enough free space"))
+            }
             AppController.shared.onPagesChanged(id, count: doc.pageCount)
         }
     }
 
     // ======================================================== البحث
 
+    private var finder: FindCollector?
+    private var findToken = 0
+
+    /// البحث في نص الملف يجري على مراحل دون تجميد الواجهة (الملفات الكبيرة)، ثم تُعرض النتائج.
     func runSearch() {
         let q = searchQuery.trimmingCharacters(in: .whitespaces)
+        findToken += 1
+        let token = findToken
+        pdf?.cancelFindString()
         guard let doc = pdf, !q.isEmpty else { searchHits = []; return }
-        var hits: [SearchHit] = doc.findString(q, withOptions: [.caseInsensitive, .diacriticInsensitive]).compactMap { sel in
-            guard let p = sel.pages.first else { return nil }
-            return SearchHit(page: doc.index(for: p), sel: sel, rect: nil)
-        }
+        var hits: [SearchHit] = []
         // خط اليد والصفحات المقروءة ضوئيًا
         let tokens = q.split(separator: " ").map(String.init)
         for (i, info) in data.pages.enumerated() {
@@ -862,11 +878,31 @@ final class DocSession: ObservableObject, Identifiable {
                 if !r.isNull { hits.append(SearchHit(page: i, sel: nil, rect: r.insetBy(dx: -2, dy: -2))) }
             }
         }
-        hits.sort { a, b in
-            if a.page != b.page { return a.page < b.page }
-            let ya = a.rect?.minY ?? 0, yb = b.rect?.minY ?? 0
-            return ya < yb
+        let inkHits = hits
+        let collector = FindCollector()
+        collector.onEnd = { [weak self, weak doc] sels in
+            DispatchQueue.main.async {
+                guard let self = self, let doc = doc, self.findToken == token, !self.searchQuery.isEmpty else { return }
+                let textHits: [SearchHit] = sels.compactMap { sel in
+                    guard let p = sel.pages.first else { return nil }
+                    return SearchHit(page: doc.index(for: p), sel: sel, rect: nil)
+                }
+                self.showHits(textHits + inkHits)
+            }
         }
+        finder = collector
+        doc.delegate = collector
+        doc.beginFindString(q, withOptions: [.caseInsensitive, .diacriticInsensitive])
+    }
+
+    private func showHits(_ found: [SearchHit]) {
+        // ترتيب ثابت: نتائج نص الملف تبقى بترتيبها داخل الصفحة، وبعدها نتائج خط اليد
+        let hits = found.enumerated().sorted { a, b in
+            if a.element.page != b.element.page { return a.element.page < b.element.page }
+            let ya = a.element.rect?.minY ?? 0, yb = b.element.rect?.minY ?? 0
+            if ya != yb { return ya < yb }
+            return a.offset < b.offset
+        }.map { $0.element }
         searchHits = hits
         searchIndex = 0
         if let first = hits.first { goTo(page: first.page) }
@@ -982,6 +1018,22 @@ final class DocSession: ObservableObject, Identifiable {
         }
     }
 
+}
+
+/// يجمع نتائج البحث في نص الملف (PDFDocument.beginFindString) ويسلّمها عند انتهائه.
+final class FindCollector: NSObject, PDFDocumentDelegate {
+    private var found: [PDFSelection] = []
+    private let lock = NSLock()
+    var onEnd: (([PDFSelection]) -> Void)?
+
+    func didMatchString(_ instance: PDFSelection) {
+        lock.lock(); found.append(instance); lock.unlock()
+    }
+
+    func documentDidEndDocumentFind(_ notification: Notification) {
+        lock.lock(); let all = found; found = []; lock.unlock()
+        onEnd?(all)
+    }
 }
 
 /// بصمة سريعة للحبر (بلا تحويله إلى بيانات): تتغير عند إضافة خط أو مسحه أو نقله أو تلوينه.

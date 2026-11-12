@@ -18,7 +18,9 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var startedAt: Int64 = 0
     private var file = ""
     private var timer: Timer?
-    private weak var recSession: DocSession?
+    /// المستند الذي يُسجَّل له (قد يُغلق تبويبه قبل إيقاف التسجيل).
+    private var recDocId: String?
+    private var interruption: NSObjectProtocol?
 
     func start(_ s: DocSession) {
         AVAudioSession.sharedInstance().requestRecordPermission { ok in
@@ -48,8 +50,16 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
             return
         }
         recorder = r
-        recSession = s
+        recDocId = s.id
         recordingDoc = s.id
+        // مكالمة أو تطبيق آخر أخذ الميكروفون: يُحفظ ما سُجّل حتى تلك اللحظة
+        if interruption == nil {
+            interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
+                guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
+                self?.stop()
+            }
+        }
         startedAt = nowMs()
         elapsed = 0
         timer?.invalidate()
@@ -62,17 +72,39 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func stop() {
         guard let r = recorder else { return }
+        // المدة من المسجّل نفسه (لا من الساعة) حتى لا تختل إن توقف التسجيل لحظة
+        let recorded = Int64(r.currentTime * 1000)
         r.stop()
         timer?.invalidate()
-        let rec = AudioRec(id: UUID().uuidString, start: startedAt, durationMs: nowMs() - startedAt, file: file)
-        recSession?.edit { $0.recordings.append(rec) }
-        recSession?.flush()
+        let rec = AudioRec(id: UUID().uuidString, start: startedAt, durationMs: recorded > 500 ? recorded : nowMs() - startedAt, file: file)
+        let docId = recDocId
         recorder = nil
         recordingDoc = nil
-        AppController.shared.say(.done, L("حُفظ التسجيل. تجده في درج الصفحات ← التسجيلات", "Recording saved. Find it in the pages drawer → Recordings"))
+        recDocId = nil
+        var saved = false
+        if let id = docId {
+            let app = AppController.shared
+            if let s = app.tabs.first(where: { $0.id == id }) {
+                s.edit { $0.recordings.append(rec) }
+                s.flush()
+                saved = true
+            } else if app.entry(id) != nil {
+                // التبويب أُغلق أثناء التسجيل: يُضاف التسجيل إلى ملف المستند مباشرة
+                Repository.io.sync { saved = Repository.shared.updateData(id) { $0.recordings.append(rec) } }
+            }
+        }
+        if saved {
+            AppController.shared.say(.done, L("حُفظ التسجيل. تجده في درج الصفحات ← التسجيلات", "Recording saved. Find it in the pages drawer → Recordings"))
+        } else {
+            AppController.shared.say(.error, L("تعذر حفظ التسجيل في المستند", "Couldn’t save the recording to the document"))
+        }
     }
 
     func play(_ s: DocSession, _ rec: AudioRec, at offset: TimeInterval = 0) {
+        guard recorder == nil else {
+            AppController.shared.say(.error, L("أوقف التسجيل أولًا لتستمع", "Stop the recording first to listen"))
+            return
+        }
         stopPlayback()
         let url = Repository.shared.mediaDir(s.id).appendingPathComponent(rec.file)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)

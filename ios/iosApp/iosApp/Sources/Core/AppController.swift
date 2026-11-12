@@ -268,7 +268,7 @@ final class AppController: ObservableObject {
         accountName = p.string(forKey: "account_name")
         loginSeen = p.bool(forKey: "login_seen")
         stats = (p.dictionary(forKey: "stats") as? [String: Int64]) ?? [:]
-        cards = repo.loadJSON("cards.json", [Card].self) ?? []
+        cards = repo.loadList("cards.json", Card.self)
 
         library = repo.loadLibrary()
         libraryLoaded = true
@@ -433,6 +433,8 @@ final class AppController: ObservableObject {
     }
 
     func delete(_ e: DocEntry) {
+        if AudioNotes.shared.recordingDoc == e.id { AudioNotes.shared.stop() }
+        pendingRead.removeValue(forKey: e.id)
         closeTab(e.id)
         repo.delete(e.id)
         library.removeAll { $0.id == e.id }
@@ -625,6 +627,7 @@ final class AppController: ObservableObject {
     }
 
     func flush() {
+        commitReading()
         tabs.forEach { $0.flush() }
         saveLibrary()
         prefs.set(stats, forKey: "stats")
@@ -791,13 +794,34 @@ final class AppController: ObservableObject {
     /// كل 5 ثوانٍ: إن كان مستند مفتوحًا والمستخدم تفاعل خلال دقيقتين، يُضاف الوقت.
     private func tickReading() {
         guard visible, let id = activeId, nowMs() - lastInteraction < 120_000 else { return }
-        let add: Int64 = 5000
-        update(id) { $0.readMs += add }
+        // الوقت يُجمع هنا ويُضاف كل نصف دقيقة: لا تُكتب المكتبة ولا تُعاد رسم الواجهة كل 5 ثوانٍ
+        pendingRead[id, default: 0] += 5000
+        pendingTicks += 1
+        if pendingTicks >= 6 { commitReading() }
+    }
+
+    private var pendingRead: [String: Int64] = [:]
+    private var pendingTicks = 0
+
+    /// يضيف وقت القراءة المجموع إلى المستندات والإحصاءات ويحفظه.
+    private func commitReading() {
+        pendingTicks = 0
+        guard !pendingRead.isEmpty else { return }
+        let add = pendingRead
+        pendingRead = [:]
         let k = todayKey()
-        stats[k, default: 0] += add
-        // وقت كل مستند في كل يوم (للتقرير حسب المادة)، بنفس مفاتيح أندرويد: «اليوم|المستند»
-        stats["\(k)|\(id)", default: 0] += add
-        if Int.random(in: 0..<6) == 0 { prefs.set(stats, forKey: "stats") }
+        var lib = library
+        var st = stats
+        for (id, ms) in add {
+            if let i = lib.firstIndex(where: { $0.id == id }) { lib[i].readMs += ms }
+            st[k, default: 0] += ms
+            // وقت كل مستند في كل يوم (للتقرير حسب المادة)، بنفس مفاتيح أندرويد: «اليوم|المستند»
+            st["\(k)|\(id)", default: 0] += ms
+        }
+        library = lib
+        stats = st
+        saveLibrary()
+        prefs.set(stats, forKey: "stats")
         WidgetBridge.update()
     }
 
@@ -816,13 +840,36 @@ final class AppController: ObservableObject {
         return n
     }
 
+    /// رقم اليوم (منذ 1970) لتاريخ كما يراه المستخدم في تقويمه، بلا تأثر بفرق التوقيت عن UTC.
+    static func civilDay(_ d: Date = Date()) -> Int {
+        var local = Calendar(identifier: .gregorian)
+        local.timeZone = .current
+        let c = local.dateComponents([.year, .month, .day], from: d)
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        guard let u = utc.date(from: DateComponents(year: c.year, month: c.month, day: c.day)) else {
+            return Int(d.timeIntervalSince1970 / 86400)
+        }
+        return Int((u.timeIntervalSince1970 / 86400).rounded())
+    }
+
+    /// بداية ذلك اليوم بتوقيت المستخدم.
+    static func date(civilDay n: Int) -> Date {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let c = utc.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: Double(n) * 86400))
+        var local = Calendar(identifier: .gregorian)
+        local.timeZone = .current
+        return local.date(from: DateComponents(year: c.year, month: c.month, day: c.day)) ?? Date(timeIntervalSince1970: Double(n) * 86400)
+    }
+
     func setExamDate(_ folder: String, _ date: Date?) {
-        if let d = date { examDates[folder] = Int(d.timeIntervalSince1970 / 86400) }
+        if let d = date { examDates[folder] = Self.civilDay(d) }
         else { examDates.removeValue(forKey: folder) }
     }
 
     func examDate(_ folder: String) -> Date? {
-        examDates[folder].map { Date(timeIntervalSince1970: Double($0) * 86400) }
+        examDates[folder].map { Self.date(civilDay: $0) }
     }
 
     func daysToExam(_ folder: String) -> Int? {

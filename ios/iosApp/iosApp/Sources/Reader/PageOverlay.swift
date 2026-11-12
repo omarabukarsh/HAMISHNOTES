@@ -157,6 +157,8 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
+        // الورقة بيضاء في كل الثيمات: الحبر بألوانه كما اختيرت (PencilKit يعكس الداكن في المظهر الداكن)
+        canvas.overrideUserInterfaceStyle = .light
         canvas.delegate = self
         canvas.isScrollEnabled = false
         canvas.contentInsetAdjustmentBehavior = .never
@@ -1772,7 +1774,7 @@ final class StickyNoteView: UIView {
             if let raw = note.ink, let d = try? PKDrawing(data: raw), !d.strokes.isEmpty {
                 let iv = UIImageView(frame: bounds)
                 let scaled = d.transformed(using: CGAffineTransform(scaleX: k, y: k))
-                iv.image = scaled.image(from: bounds, scale: UIScreen.main.scale * 2)
+                iv.image = scaled.lightImage(from: bounds, scale: UIScreen.main.scale * 2)
                 iv.isUserInteractionEnabled = false
                 addSubview(iv)
             }

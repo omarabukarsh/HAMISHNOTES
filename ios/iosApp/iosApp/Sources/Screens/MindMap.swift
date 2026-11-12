@@ -27,6 +27,16 @@ struct MapEdits: Codable, Equatable {
     var isEmpty: Bool { nodes.isEmpty && collapsed.isEmpty && texts.isEmpty && free.isEmpty }
 }
 
+extension MapEdits {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        nodes = c.opt(.nodes, [:])
+        collapsed = c.opt(.collapsed, [])
+        texts = c.opt(.texts, [:])
+        free = c.opt(.free, [:])
+    }
+}
+
 struct MapNode {
     let key: String
     let text: String

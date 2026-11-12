@@ -48,7 +48,7 @@ enum HandwritingWords {
         let img = UIGraphicsImageRenderer(size: size).image { ctx in
             UIColor.white.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
-            dd.image(from: r, scale: scale).draw(in: CGRect(origin: .zero, size: size))
+            dd.lightImage(from: r, scale: scale).draw(in: CGRect(origin: .zero, size: size))
         }
         guard let cg = img.cgImage else { return [] }
         let req = VNRecognizeTextRequest()

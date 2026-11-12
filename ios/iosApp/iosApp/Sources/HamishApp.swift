@@ -229,7 +229,7 @@ private struct SetPinSheet: View {
                     NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
                     NavyButton(label: L("حفظ", "Save")) {
                         guard pin.count >= 4, pin == again else {
-                            app.say(.done, L("الرمزان غير متطابقين أو أقصر من 4 أرقام", "The PINs don’t match or are shorter than 4 digits"))
+                            app.say(.error, L("الرمزان غير متطابقين أو أقصر من 4 أرقام", "The PINs don’t match or are shorter than 4 digits"))
                             return
                         }
                         app.setPin(pin)
@@ -248,6 +248,7 @@ private struct PinPromptSheet: View {
     @EnvironmentObject var app: AppController
     let prompt: AppController.PinPrompt
     @State private var pin = ""
+    @State private var answered = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -258,22 +259,25 @@ private struct PinPromptSheet: View {
                     .onSubmit(check)
                 HStack {
                     Spacer()
-                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { prompt.done(false); dismiss() }
+                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { answered = true; prompt.done(false); dismiss() }
                     NavyButton(label: L("فتح", "Unlock"), action: check)
                 }
             }
             .padding(.horizontal, 22)
         }
         .presentationDetents([.height(230)])
+        // إغلاق النافذة بالسحب = إلغاء، فلا يبقى طلب الفتح معلّقًا
+        .onDisappear { if !answered { answered = true; prompt.done(false) } }
     }
 
     private func check() {
         if app.checkPin(pin) {
+            answered = true
             dismiss()
             prompt.done(true)
         } else {
             pin = ""
-            app.say(.done, L("الرمز غير صحيح", "Wrong PIN"))
+            app.say(.error, L("الرمز غير صحيح", "Wrong PIN"))
         }
     }
 }

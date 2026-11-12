@@ -85,6 +85,13 @@ enum Exporter {
 
     /// يرسم ما فوق الصفحة (الملء، التمييز، الصور، الملاحظات، النصوص، الحبر) بإحداثيات الصفحة.
     static func drawOverlay(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String) {
+        // الحبر يُرسم بألوانه الأصلية دائمًا: PencilKit يعكس الألوان الداكنة في المظهر الداكن
+        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+            drawOverlayItems(c, size: size, pid: pid, data: data, docId: docId)
+        }
+    }
+
+    private static func drawOverlayItems(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String) {
         for f in data.fills where f.page == pid && f.pts.count > 2 {
             c.saveGState()
             c.setFillColor(UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor)
@@ -113,7 +120,7 @@ enum Exporter {
                 ])
             }
             if !n.collapsed, let d = n.ink, let ink = try? PKDrawing(data: d), !ink.strokes.isEmpty {
-                ink.image(from: CGRect(x: 0, y: 0, width: n.w, height: n.h), scale: 3).draw(in: r)
+                ink.lightImage(from: CGRect(x: 0, y: 0, width: n.w, height: n.h), scale: 3).draw(in: r)
             }
         }
         for b in data.boxes where b.page == pid {
@@ -133,7 +140,7 @@ enum Exporter {
         }
         let ink = Repository.shared.loadInk(docId, page: pid)
         if !ink.strokes.isEmpty {
-            ink.image(from: CGRect(origin: .zero, size: size), scale: 3).draw(in: CGRect(origin: .zero, size: size))
+            ink.lightImage(from: CGRect(origin: .zero, size: size), scale: 3).draw(in: CGRect(origin: .zero, size: size))
         }
     }
 

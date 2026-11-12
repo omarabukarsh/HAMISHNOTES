@@ -211,7 +211,7 @@ extension DocSession {
     func lassoImage() -> UIImage? {
         guard let d = lassoDrawing() else { return nil }
         let r = d.bounds.insetBy(dx: -6, dy: -6)
-        return d.image(from: r, scale: 3)
+        return d.lightImage(from: r, scale: 3)
     }
 
     /// وقت كتابة أول خط محدد.

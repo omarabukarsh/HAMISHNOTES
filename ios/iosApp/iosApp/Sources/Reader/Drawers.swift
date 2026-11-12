@@ -50,7 +50,7 @@ struct PageThumb: View {
                 }
                 c.setBlendMode(.normal)
                 if !drawing.strokes.isEmpty {
-                    drawing.image(from: CGRect(origin: .zero, size: size), scale: k).draw(in: CGRect(x: 0, y: 0, width: tw, height: th))
+                    drawing.lightImage(from: CGRect(origin: .zero, size: size), scale: k).draw(in: CGRect(x: 0, y: 0, width: tw, height: th))
                 }
             }
         }.value

@@ -34,7 +34,7 @@ enum HandwritingReader {
         let img = UIGraphicsImageRenderer(size: CGSize(width: r.width * scale, height: r.height * scale)).image { ctx in
             UIColor.white.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: r.width * scale, height: r.height * scale))
-            d.image(from: r, scale: scale).draw(in: CGRect(x: 0, y: 0, width: r.width * scale, height: r.height * scale))
+            d.lightImage(from: r, scale: scale).draw(in: CGRect(x: 0, y: 0, width: r.width * scale, height: r.height * scale))
         }
         guard let cg = img.cgImage else { return [] }
         return await withCheckedContinuation { cont in

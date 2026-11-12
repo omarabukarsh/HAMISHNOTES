@@ -14,7 +14,7 @@ enum WidgetBridge {
         d.set(c.goalMinutes * 60_000, forKey: "w_goal")
         d.set(c.english, forKey: "w_en")
         // أقرب امتحان
-        let now = Int(Date().timeIntervalSince1970 / 86400)
+        let now = AppController.civilDay()
         var exam = ""
         if let best = c.examDates.compactMap({ k, v -> (String, Int)? in v - now >= 0 ? (k, v - now) : nil }).min(by: { $0.1 < $1.1 }) {
             switch best.1 {

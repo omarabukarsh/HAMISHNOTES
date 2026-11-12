@@ -59,6 +59,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- تسجيل المحاضرة يستمر عند قفل الشاشة أو الانتقال إلى تطبيق آخر -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>لتسجيل صوت المحاضرة وربطه بما تكتبه.</string>
 	<key>NSFaceIDUsageDescription</key>

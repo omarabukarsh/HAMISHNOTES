@@ -52,6 +52,28 @@ struct SummaryEdits: Codable, Equatable {
     var isEmpty: Bool { order.isEmpty && kinds.isEmpty && tables.isEmpty && (map?.isEmpty ?? true) }
 }
 
+extension TableGroup {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        keys = c.opt(.keys, [])
+        oneRow = c.opt(.oneRow, false)
+        cols = c.opt(.cols, 0)
+        rows = try? c.decodeIfPresent([[String]].self, forKey: .rows)
+        header = c.opt(.header, true)
+    }
+}
+
+extension SummaryEdits {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        order = c.opt(.order, [])
+        kinds = c.opt(.kinds, [:])
+        tables = c.opt(.tables, [])
+        map = try? c.decodeIfPresent(MapEdits.self, forKey: .map)
+    }
+}
+
 private let TERMINAL: Set<Character> = [".", "!", "?", "؟", "…"]
 
 private extension Character {

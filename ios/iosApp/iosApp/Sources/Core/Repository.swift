@@ -32,9 +32,22 @@ final class Repository {
     private var libraryURL: URL { root.appendingPathComponent("library.json") }
 
     func loadLibrary() -> [DocEntry] {
-        guard let d = try? Data(contentsOf: libraryURL),
-              let list = try? dec.decode([DocEntry].self, from: d) else { return [] }
+        guard let d = try? Data(contentsOf: libraryURL) else { return [] }
+        // كل مستند يُقرأ وحده: مدخل تالف لا يُضيع المكتبة كلها
+        guard let items = try? dec.decode([Lossy<DocEntry>].self, from: d) else {
+            keepUnreadable(libraryURL)
+            return []
+        }
+        let list = items.compactMap { $0.value }
+        if list.count != items.count { keepUnreadable(libraryURL) }
         return list.filter { fm.fileExists(atPath: pdfURL($0.id).path) || $0.isMap }
+    }
+
+    /// ملف تعذرت قراءته: تبقى منه نسخة بجانبه قبل أن يُكتب فوقه، فلا تضيع البيانات بصمت.
+    private func keepUnreadable(_ url: URL) {
+        guard fm.fileExists(atPath: url.path) else { return }
+        let copy = url.deletingPathExtension().appendingPathExtension("unreadable-\(nowMs()).json")
+        try? fm.copyItem(at: url, to: copy)
     }
 
     func saveLibrary(_ list: [DocEntry]) {
@@ -42,8 +55,24 @@ final class Repository {
     }
 
     func loadJSON<T: Decodable>(_ name: String, _ type: T.Type) -> T? {
-        guard let d = try? Data(contentsOf: root.appendingPathComponent(name)) else { return nil }
-        return try? dec.decode(T.self, from: d)
+        let url = root.appendingPathComponent(name)
+        guard let d = try? Data(contentsOf: url) else { return nil }
+        if let v = try? dec.decode(T.self, from: d) { return v }
+        keepUnreadable(url)
+        return nil
+    }
+
+    /// قائمة تُقرأ عنصرًا عنصرًا: العنصر التالف يُتخطى وحده.
+    func loadList<T: Decodable>(_ name: String, _ type: T.Type) -> [T] {
+        let url = root.appendingPathComponent(name)
+        guard let d = try? Data(contentsOf: url) else { return [] }
+        guard let items = try? dec.decode([Lossy<T>].self, from: d) else {
+            keepUnreadable(url)
+            return []
+        }
+        let list = items.compactMap { $0.value }
+        if list.count != items.count { keepUnreadable(url) }
+        return list
     }
 
     func saveJSON<T: Encodable>(_ name: String, _ value: T) {
@@ -62,9 +91,25 @@ final class Repository {
     var stickersDir: URL { root.appendingPathComponent("stickers", isDirectory: true) }
 
     func loadData(_ id: String) -> DocData {
-        guard let d = try? Data(contentsOf: dir(id).appendingPathComponent("data.json")),
-              let v = try? dec.decode(DocData.self, from: d) else { return DocData() }
-        return v
+        let url = dir(id).appendingPathComponent("data.json")
+        guard let d = try? Data(contentsOf: url) else { return DocData() }
+        if let v = try? dec.decode(DocData.self, from: d) { return v }
+        keepUnreadable(url)
+        return DocData()
+    }
+
+    /// يعدّل بيانات مستند غير مفتوح في تبويب. لا يكتب شيئًا إن وُجد الملف وتعذرت قراءته.
+    @discardableResult
+    func updateData(_ id: String, _ f: (inout DocData) -> Void) -> Bool {
+        let url = dir(id).appendingPathComponent("data.json")
+        var data = DocData()
+        if let d = try? Data(contentsOf: url) {
+            guard let v = try? dec.decode(DocData.self, from: d) else { return false }
+            data = v
+        }
+        f(&data)
+        saveData(id, data)
+        return true
     }
 
     func saveData(_ id: String, _ data: DocData) {
@@ -89,7 +134,16 @@ final class Repository {
     func savePDF(_ id: String, _ doc: PDFDocument) -> Bool {
         let tmp = dir(id).appendingPathComponent("doc.tmp.pdf")
         guard doc.write(to: tmp) else { return false }
-        _ = try? fm.replaceItemAt(pdfURL(id), withItemAt: tmp)
+        do {
+            if fm.fileExists(atPath: pdfURL(id).path) {
+                _ = try fm.replaceItemAt(pdfURL(id), withItemAt: tmp)
+            } else {
+                try fm.moveItem(at: tmp, to: pdfURL(id))
+            }
+        } catch {
+            try? fm.removeItem(at: tmp)
+            return false
+        }
         invalidateThumb(id)
         return true
     }
@@ -235,7 +289,7 @@ final class Repository {
             if let pid = data.pages.first?.id {
                 let dr = loadInk(id, page: pid)
                 if !dr.strokes.isEmpty {
-                    let im = dr.image(from: CGRect(origin: .zero, size: b.size), scale: k * 2)
+                    let im = dr.lightImage(from: CGRect(origin: .zero, size: b.size), scale: k * 2)
                     im.draw(in: CGRect(origin: .zero, size: size))
                 }
             }

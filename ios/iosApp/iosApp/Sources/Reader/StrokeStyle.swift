@@ -366,3 +366,14 @@ enum PenProcessing {
         return PKDrawing(strokes: merged)
     }
 }
+
+extension PKDrawing {
+    /// صورة الحبر بألوانه الأصلية أيًّا كان مظهر التطبيق (PencilKit يعكس الألوان الداكنة في المظهر الداكن).
+    func lightImage(from rect: CGRect, scale: CGFloat) -> UIImage {
+        var img = UIImage()
+        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+            img = image(from: rect, scale: scale)
+        }
+        return img
+    }
+}

@@ -102,6 +102,7 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
         addSubview(baseline)
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
+        canvas.overrideUserInterfaceStyle = .light
         canvas.delegate = self
         canvas.isScrollEnabled = false
         canvas.contentInsetAdjustmentBehavior = .never

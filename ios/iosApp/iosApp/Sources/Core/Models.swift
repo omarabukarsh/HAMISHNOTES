@@ -345,3 +345,128 @@ struct PenPreset: Codable, Identifiable, Equatable {
     var color: UInt32
     var size: Int
 }
+
+// ---------- قراءة متسامحة ----------
+// الحقول الناقصة (ملف من نسخة أقدم) تأخذ قيمها الافتراضية بدل أن تفشل قراءة الملف كله.
+
+extension KeyedDecodingContainer {
+    /// قيمة الحقل، أو d إن كان ناقصًا أو بنوع غير متوقع.
+    func opt<T: Decodable>(_ key: Key, _ d: T) -> T { (try? decodeIfPresent(T.self, forKey: key)) ?? d }
+}
+
+/// عنصر في قائمة: إن تعذرت قراءته يُتخطى وحده ولا تضيع القائمة.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+extension DocEntry {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = c.opt(.name, "")
+        fileName = c.opt(.fileName, "doc.pdf")
+        sizeBytes = c.opt(.sizeBytes, 0)
+        pageCount = c.opt(.pageCount, 0)
+        addedAt = c.opt(.addedAt, 0)
+        lastOpened = c.opt(.lastOpened, 0)
+        favorite = c.opt(.favorite, false)
+        lastPage = c.opt(.lastPage, 0)
+        isNote = c.opt(.isNote, false)
+        readMs = c.opt(.readMs, 0)
+        folder = c.opt(.folder, "")
+        locked = c.opt(.locked, false)
+        coverColor = c.opt(.coverColor, 0)
+        sticker = c.opt(.sticker, "")
+        isMap = c.opt(.isMap, false)
+    }
+}
+
+extension OutlineEntry {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.opt(.id, UUID().uuidString)
+        title = c.opt(.title, "")
+        level = c.opt(.level, 0)
+        page = c.opt(.page, 0)
+    }
+}
+
+extension PageInfo {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        src = c.opt(.src, "pdf")
+    }
+}
+
+extension ConvertedLine {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        page = try c.decode(String.self, forKey: .page)
+        key = try c.decode(Double.self, forKey: .key)
+        words = c.opt(.words, [])
+        baseline = c.opt(.baseline, 0)
+        size = c.opt(.size, 16)
+        minX = c.opt(.minX, 0)
+        maxX = c.opt(.maxX, 0)
+        rtl = c.opt(.rtl, false)
+        font = c.opt(.font, "")
+        alts = try? c.decodeIfPresent([[String]].self, forKey: .alts)
+    }
+}
+
+extension SrsState {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ease = c.opt(.ease, 2.5)
+        interval = c.opt(.interval, 0)
+        due = c.opt(.due, 0)
+        reps = c.opt(.reps, 0)
+    }
+}
+
+extension Card {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        front = c.opt(.front, "")
+        back = c.opt(.back, "")
+        folder = c.opt(.folder, "")
+        docId = try? c.decodeIfPresent(String.self, forKey: .docId)
+        source = c.opt(.source, "")
+        starred = c.opt(.starred, false)
+        srs = c.opt(.srs, SrsState())
+        createdAt = c.opt(.createdAt, nowMs())
+    }
+}
+
+extension MapNodeData {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.opt(.id, UUID().uuidString)
+        text = c.opt(.text, "")
+        markId = try? c.decodeIfPresent(String.self, forKey: .markId)
+        collapsed = c.opt(.collapsed, false)
+        children = c.opt(.children, [])
+    }
+}
+
+extension MindMapData {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        title = c.opt(.title, "")
+        branches = c.opt(.branches, [])
+    }
+}
+
+extension PenPreset {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.opt(.id, UUID().uuidString)
+        tool = c.opt(.tool, Tool.fountain)
+        color = c.opt(.color, 0xFF000000)
+        size = c.opt(.size, 2)
+    }
+}

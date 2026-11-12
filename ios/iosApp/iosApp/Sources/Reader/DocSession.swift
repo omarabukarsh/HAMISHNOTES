@@ -758,9 +758,9 @@ final class DocSession: ObservableObject, Identifiable {
         doc.insert(p, at: index + 1)
         setInk(nid, drawing(for: old), record: false)
         edit { d in
-            let old = d.pages
+            let pagesBefore = d.pages
             d.pages.insert(PageInfo(id: nid, src: src), at: index + 1)
-            self.remapOutline(&d, from: old)
+            self.remapOutline(&d, from: pagesBefore)
             d.boxes += d.boxes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
             d.images += d.images.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
             d.notes += d.notes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }

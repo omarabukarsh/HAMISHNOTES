@@ -149,6 +149,12 @@ final class DocSession: ObservableObject, Identifiable {
                 while data.pages.count < doc.pageCount { data.pages.append(PageInfo(id: UUID().uuidString)) }
                 if data.pages.count > doc.pageCount { data.pages.removeLast(data.pages.count - doc.pageCount) }
                 dataDirty = true
+            } else if !data.pages.isEmpty {
+                // حبر صفحات حُذفت في جلسة سابقة (لا يُمَس إن اختلف عدد الصفحات: قد تكون البيانات هي الناقصة)
+                let keep = Set(data.pages.map { $0.id })
+                let docId = entry.id
+                let repo = self.repo
+                Repository.io.async { repo.removeOrphanInk(docId, keep: keep) }
             }
             // مربعات نص بقيت فارغة (أُغلق التطبيق أثناء الكتابة فيها) تُزال
             if data.boxes.contains(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
@@ -718,8 +724,19 @@ final class DocSession: ObservableObject, Identifiable {
             AppController.shared.say(.done, L("لا يمكن حذف الصفحة الوحيدة", "You can’t delete the only page"))
             return
         }
-        if let p = doc.page(at: index) { trash[data.pages[index].id] = p }
-        edit { d in d.pages.remove(at: index) }
+        let gone = data.pages[index].id
+        if let p = doc.page(at: index) { trash[gone] = p }
+        // ما كُتب على الصفحة يُحذف معها (ويعود معها بالتراجع)، فلا يبقى في الملف بلا صفحة
+        edit { d in
+            d.pages.remove(at: index)
+            d.marks.removeAll { $0.page == gone }
+            d.boxes.removeAll { $0.page == gone }
+            d.images.removeAll { $0.page == gone }
+            d.notes.removeAll { $0.page == gone }
+            d.fills.removeAll { $0.page == gone }
+            d.converted.removeAll { $0.page == gone }
+            d.bookmarks.removeAll { $0 == gone }
+        }
         doc.removePage(at: index)
         structureChanged()
     }
@@ -958,16 +975,17 @@ final class DocSession: ObservableObject, Identifiable {
         guard let doc = pdf, !ocrRunning else { return }
         ocrRunning = true
         ocrProgress = 0
-        let pages = data.pages
+        // كل صفحة تُربط بمعرّفها الآن: حذف صفحة أو نقلها أثناء القراءة لا ينسب النص إلى صفحة أخرى
+        let pages: [(Int, String, PDFPage)] = data.pages.enumerated().compactMap { i, info in doc.page(at: i).map { (i, info.id, $0) } }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            for (i, info) in pages.enumerated() {
+            for (i, pid, page) in pages {
                 guard let self = self, self.ocrRunning else { break }
-                guard let page = doc.page(at: i) else { continue }
                 if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20 { continue }
                 let ws = TextLayout.ocrWords(page)
                 DispatchQueue.main.async {
-                    self.ocr[info.id] = ws
-                    self.wordCache.removeValue(forKey: info.id)
+                    guard self.index(of: pid) != nil else { return }
+                    self.ocr[pid] = ws
+                    self.wordCache.removeValue(forKey: pid)
                     self.ocrProgress = i + 1
                 }
             }
@@ -988,17 +1006,17 @@ final class DocSession: ObservableObject, Identifiable {
     private func autoRead() {
         guard let doc = pdf, !ocrRunning, !autoReading else { return }
         autoReading = true
-        let pages = data.pages
         let done = Set(ocr.keys)
+        let pages: [(String, PDFPage)] = data.pages.enumerated().compactMap { i, info in doc.page(at: i).map { (info.id, $0) } }
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            for (i, info) in pages.enumerated() where !done.contains(info.id) {
+            for (pid, page) in pages where !done.contains(pid) {
                 guard let self = self, !self.ocrRunning else { break }
-                guard let page = doc.page(at: i) else { continue }
                 if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20 { continue }
                 let ws = TextLayout.ocrWords(page)
                 DispatchQueue.main.async {
-                    self.ocr[info.id] = ws
-                    self.wordCache.removeValue(forKey: info.id)
+                    guard self.index(of: pid) != nil else { return }
+                    self.ocr[pid] = ws
+                    self.wordCache.removeValue(forKey: pid)
                 }
             }
             DispatchQueue.main.async {

@@ -298,6 +298,35 @@ final class Repository {
         return img
     }
 
+    /// ملفات مؤقتة قديمة (نسخ الاستيراد والتحويل والتصدير) تُحذف عند التشغيل بعد يوم من إنشائها.
+    static func cleanTemp() {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory
+        let limit = Date().addingTimeInterval(-24 * 3600)
+        func old(_ u: URL) -> Bool {
+            let d = (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            return (d ?? Date()) < limit
+        }
+        for u in (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            let name = u.lastPathComponent
+            if name == "export" {
+                for f in (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] where old(f) {
+                    try? fm.removeItem(at: f)
+                }
+            } else if (name.hasPrefix("convert-") || u.pathExtension.lowercased() == "pdf") && old(u) {
+                try? fm.removeItem(at: u)
+            }
+        }
+    }
+
+    /// ملفات حبر لصفحات لم تعد في المستند (حُذفت في جلسة سابقة).
+    func removeOrphanInk(_ id: String, keep: Set<String>) {
+        let folder = dir(id).appendingPathComponent("ink", isDirectory: true)
+        for f in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where !keep.contains(f) {
+            try? fm.removeItem(at: folder.appendingPathComponent(f))
+        }
+    }
+
     // ---------- الفهرس الداخلي للـ PDF ----------
 
     static func outline(of pdf: PDFDocument) -> [OutlineEntry] {

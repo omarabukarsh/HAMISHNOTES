@@ -289,6 +289,7 @@ final class AppController: ObservableObject {
             if let a = p.string(forKey: "active_tab"), tabs.contains(where: { $0.id == a }) { activeId = a }
         }
         startReadTimer()
+        Repository.io.async { Repository.cleanTemp() }
     }
 
     private func saveCodable<T: Encodable>(_ v: T, _ key: String) {
@@ -380,11 +381,13 @@ final class AppController: ObservableObject {
 
     func renameFolder(_ old: String, _ new: String) {
         let n = new.trimmingCharacters(in: .whitespaces)
-        guard !n.isEmpty, let i = folders.firstIndex(of: old) else { return }
-        folders[i] = n
+        guard !n.isEmpty, n != old, let i = folders.firstIndex(of: old) else { return }
+        // الاسم الجديد موجود: تُدمج المادتان في واحدة بدل ظهور مادتين بالاسم نفسه
+        let merging = folders.contains(n)
+        if merging { folders.remove(at: i) } else { folders[i] = n }
         prefs.set(folders, forKey: "folders")
         for k in library.indices where library[k].folder == old { library[k].folder = n }
-        if let d = examDates.removeValue(forKey: old) { examDates[n] = d }
+        if let d = examDates.removeValue(forKey: old), examDates[n] == nil { examDates[n] = d }
         if libraryFolder == old { libraryFolder = n }
         for k in cards.indices where cards[k].folder == old { cards[k].folder = n }
         saveLibrary()
@@ -926,6 +929,7 @@ final class AppController: ObservableObject {
         pomoLeftMs = max(0, pomoEndsAt - nowMs())
         pomoPaused = true
         pomoTimer?.invalidate()
+        schedulePomoNotice()
     }
 
     func resumePomodoro() {
@@ -938,10 +942,37 @@ final class AppController: ObservableObject {
         pomoPhase = 0
         pomoPaused = false
         pomoTimer?.invalidate()
+        schedulePomoNotice()
+    }
+
+    /// إشعار بانتهاء الجلسة الحالية إن كان التطبيق في الخلفية (في الواجهة تظهر الرسالة المنبثقة).
+    private func schedulePomoNotice() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["pomo"])
+        guard pomoPhase != 0, !pomoPaused else { return }
+        let ends = pomoEndsAt
+        let study = pomoPhase == 1
+        let rest = breakMin, work = studyMin
+        center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+            guard ok else { return }
+            DispatchQueue.main.async {
+                // المؤقت أُوقف أو تغيّر قبل وصول الإذن
+                guard self.pomoPhase != 0, !self.pomoPaused, self.pomoEndsAt == ends else { return }
+                let secs = Double(ends - nowMs()) / 1000
+                guard secs > 1 else { return }
+                let c = UNMutableNotificationContent()
+                c.title = study ? L("انتهت جلسة الدراسة", "Study session finished") : L("انتهت الراحة", "Break over")
+                c.body = study ? L("استرح \(rest) دقائق", "Take a \(rest)-minute break") : L("جلسة دراسة جديدة \(work) دقيقة", "New \(work)-minute study session")
+                c.sound = .default
+                center.add(UNNotificationRequest(identifier: "pomo", content: c,
+                                                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)))
+            }
+        }
     }
 
     private func runPomodoro() {
         pomoEndsAt = nowMs() + pomoLeftMs
+        schedulePomoNotice()
         pomoTimer?.invalidate()
         pomoTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
@@ -960,6 +991,7 @@ final class AppController: ObservableObject {
                     self.say(.done, L("انتهت الراحة. جلسة دراسة جديدة \(self.studyMin) دقيقة", "Break over. New \(self.studyMin)-minute study session"))
                 }
                 self.pomoLeftMs = self.pomoEndsAt - now
+                self.schedulePomoNotice()
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         }
@@ -1001,16 +1033,26 @@ final class AppController: ObservableObject {
 
     // ======================================================== قفل المستندات
 
-    func hasPin() -> Bool { prefs.string(forKey: "lock_pin") != nil }
+    func hasPin() -> Bool { PinStore.load() != nil || prefs.string(forKey: "lock_pin") != nil }
 
-    private func hashPin(_ pin: String) -> String {
+    /// الصيغة القديمة للرمز (تبقى تُقبل مرة واحدة ثم تُحوَّل إلى الجديدة).
+    private func legacyHash(_ pin: String) -> String {
         var h: UInt64 = 1469598103934665603
         for b in ("hamish:" + pin).utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
         return String(h, radix: 16)
     }
 
-    func setPin(_ pin: String) { prefs.set(hashPin(pin), forKey: "lock_pin") }
-    func checkPin(_ pin: String) -> Bool { prefs.string(forKey: "lock_pin") == hashPin(pin) }
+    func setPin(_ pin: String) {
+        PinStore.save(pin)
+        prefs.removeObject(forKey: "lock_pin")
+    }
+
+    func checkPin(_ pin: String) -> Bool {
+        if let stored = PinStore.load() { return PinStore.matches(pin, stored) }
+        guard prefs.string(forKey: "lock_pin") == legacyHash(pin) else { return false }
+        setPin(pin)
+        return true
+    }
 
     func toggleLock(_ id: String) {
         guard let e = entry(id) else { return }

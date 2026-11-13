@@ -62,9 +62,41 @@ object Flashcards {
 
     fun today(): Long = LocalDate.now().toEpochDay()
 
-    /** 0 مرة أخرى، 1 صعب، 2 جيد، 3 سهل. */
-    fun schedule(s: SrsState?, rating: Int): SrsState {
+    /** أطول مدة تتأجل إليها بطاقة، مهما تكررت الإجابة الصحيحة عنها. */
+    const val MAX_INTERVAL_DAYS = 180
+
+    /** سقف معامل السهولة: «سهل» المتكرر لا يسرّع التباعد بلا نهاية. */
+    const val MAX_EASE = 3.0f
+
+    /**
+     * 0 مرة أخرى، 1 صعب، 2 جيد، 3 سهل.
+     * examDay: يوم امتحان مادة البطاقة (epochDay) إن وُجد؛ لا تتأجل البطاقة إلى ما بعده، فتُراجع قبله.
+     */
+    fun schedule(s: SrsState?, rating: Int, examDay: Long? = null): SrsState {
         val cur = s ?: SrsState(2.5f, 0, today(), 0, intro = today())
+        return capped(rawSchedule(cur, rating), examDay)
+    }
+
+    /**
+     * السقفان: المدة لا تتجاوز MAX_INTERVAL_DAYS، ولا يتجاوز الموعد يوم الامتحان
+     * (والأفضل اليوم الذي قبله، ليبقى يوم الامتحان نفسه للمراجعة الأخيرة).
+     */
+    private fun capped(next: SrsState, examDay: Long?): SrsState {
+        val t = today()
+        var interval = next.interval.coerceAtMost(MAX_INTERVAL_DAYS)
+        if (examDay != null && examDay > t) {
+            val latest = if (examDay - t >= 2) examDay - 1 else examDay
+            interval = interval.coerceAtMost((latest - t).toInt())
+        }
+        if (interval == next.interval && next.ease <= MAX_EASE) return next
+        return next.copy(
+            interval = interval,
+            due = if (next.interval <= 0) next.due else t + interval,
+            ease = next.ease.coerceAtMost(MAX_EASE)
+        )
+    }
+
+    private fun rawSchedule(cur: SrsState, rating: Int): SrsState {
         return when (rating) {
             0 -> cur.copy(ease = (cur.ease - 0.2f).coerceAtLeast(1.3f), interval = 0, due = today(), reps = 0)
             1 -> {
@@ -97,10 +129,22 @@ object Flashcards {
         else -> L("${days / 30} شهر", "${days / 30} months")
     }
 
-    /** البطاقات المستحقة اليوم، والجديدة بحد 20 بطاقة جديدة في اليوم (لا في كل جلسة). */
-    fun dueCards(cards: List<Card>, state: Map<String, SrsState>): List<Card> {
+    /**
+     * موعد البطاقة الفعلي: بطاقة جدولتها مراجعة قديمة إلى ما بعد امتحان مادتها تُقدَّم إلى اليوم الذي قبله،
+     * فتُراجع قبل الامتحان. (بعد مراجعتها يجعل schedule موعدها الجديد يوم الامتحان على الأكثر، فلا تتكرر.)
+     */
+    fun effectiveDue(st: SrsState, examDay: Long?): Long {
         val t = today()
-        val due = cards.filter { c -> state[c.id]?.let { it.due <= t } ?: false }
+        return if (examDay != null && examDay > t && st.due > examDay) examDay - 1 else st.due
+    }
+
+    /**
+     * البطاقات المستحقة اليوم، والجديدة بحد 20 بطاقة جديدة في اليوم (لا في كل جلسة).
+     * examDayOf: يوم امتحان مادة كل بطاقة (null = بلا امتحان).
+     */
+    fun dueCards(cards: List<Card>, state: Map<String, SrsState>, examDayOf: (Card) -> Long? = { null }): List<Card> {
+        val t = today()
+        val due = cards.filter { c -> state[c.id]?.let { effectiveDue(it, examDayOf(c)) <= t } ?: false }
         val introducedToday = state.values.count { it.intro == t }
         val fresh = cards.filter { it.id !in state }.take((20 - introducedToday).coerceAtLeast(0))
         return due + fresh

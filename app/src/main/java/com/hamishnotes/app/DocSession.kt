@@ -923,7 +923,12 @@ class DocSession(entry: DocEntry) {
     fun rearrangePages(order: List<Int>) {
         val doc = pdf ?: return
         val old = doc.pages
-        if (order.isEmpty() || order.any { it !in old.indices }) return
+        if (order.isEmpty()) {
+            // حذف كل الصفحات: المستند يحتاج صفحة واحدة على الأقل (لحذفه كاملًا: من المكتبة)
+            AppController.say(MsgKind.ERROR, L("لا يمكن حذف كل الصفحات. أبقِ صفحة واحدة على الأقل، أو احذف المستند من المكتبة", "You can’t delete every page. Keep at least one, or delete the document from the library"))
+            return
+        }
+        if (order.any { it !in old.indices }) return
         stopOcr()
         // فهرس الملف الأصلي (غير المعدّل) يتبع صفحاته تلقائيًا؛ المعدّل يُنقل هنا قبل تغيير الصفحات
         remapOutline { oi -> order.indexOf(oi).takeIf { it >= 0 } }
@@ -1099,7 +1104,8 @@ class DocSession(entry: DocEntry) {
                 }
                 // 2) خط اليد: يُقرأ من خطوط القلم نفسها بالعربية والإنجليزية (null = حزمة اللغة غير جاهزة)
                 val hand: List<OcrWord>? = try {
-                    HandwritingReader.read(strokes, lang, 0)
+                    // قراءة تلقائية في الخلفية: بلا تنزيل حزمة لغة على بيانات الجوال (تُستعمل الطريقة الاحتياطية حتى Wi‑Fi)
+                    HandwritingReader.read(strokes, lang, 0, allowMetered = false)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (t: Throwable) {
@@ -1201,7 +1207,7 @@ class DocSession(entry: DocEntry) {
         // القراءة التلقائية مجانية للجميع (للبحث في الملفات الممسوحة)؛ Premium يقفل الزر اليدوي والتقاط النص فقط
         val doc = pdf ?: return null
         // حزم لغة خط اليد تُنزَّل في الخلفية أول مرة، ثم تعمل دون إنترنت
-        HandwritingReader.prefetch(PenPrefs.hwLang)
+        HandwritingReader.prefetch(PenPrefs.hwLang, allowMetered = false)
         val job = AppController.scope.launch {
             ocrRunning = true
             ocrTotal = doc.count

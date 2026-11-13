@@ -126,10 +126,43 @@ class PdfTextLayer(private val fileFor: (String) -> File?) {
             val ordered = if (rtl) parts.reversed() else parts
             if (ordered.size == groups.size) {
                 groups.forEachIndexed { k, g -> emit(ordered[k], g) }
-            } else {
+            } else if (!splitByChars(parts, textPositions.filter { !(it.unicode ?: "").isBlank() }, rtl)) {
                 emit(parts.joinToString(" "), textPositions.filter { !(it.unicode ?: "").isBlank() })
             }
             lineHasWords = true
+        }
+
+        /**
+         * الكلمات مفصولة بفراغ بين الحروف لا بحرف مسافة (شائع في ملفات PDF): عدد الكلمات لا يطابق
+         * مجموعات المواضع، فتُوزَّع المواضع على الكلمات حرفًا بحرف. يُستعمل فقط إن تطابق عدد الحروف تمامًا،
+         * وفي العربية فقط لكلمات بلا أرقام أو حروف لاتينية (ترتيبها البصري يخالف المنطقي)؛ وإلا يُعاد false
+         * ويبقى السطر كلمة واحدة كما كان.
+         */
+        private fun splitByChars(parts: List<String>, ps: List<TextPosition>, rtl: Boolean): Boolean {
+            if (parts.size < 2 || ps.isEmpty()) return false
+            if (rtl && parts.any { w -> w.any { it.isDigit() || it in 'A'..'Z' || it in 'a'..'z' } }) return false
+            // المواضع بترتيب بصري (يسار ← يمين)؛ في العربية عكسها هو ترتيب القراءة
+            val pos = if (rtl) ps.asReversed() else ps
+            val lens = pos.map { normalize(it.unicode ?: "").filterNot { c -> c.isWhitespace() }.length }
+            if (lens.any { it == 0 } || lens.sum() != parts.sumOf { it.length }) return false
+            val words = ArrayList<Pair<String, List<TextPosition>>>(parts.size)
+            var k = 0
+            for (w in parts) {
+                var need = w.length
+                val g = ArrayList<TextPosition>()
+                while (need > 0 && k < pos.size) {
+                    need -= lens[k]
+                    g.add(pos[k])
+                    k++
+                }
+                // حرف مركّب عبر حدّ كلمتين (مثل ﻻ): لا نخمّن
+                if (need != 0) return false
+                words.add(w to g)
+            }
+            if (k != pos.size) return false
+            // بنفس ترتيب المسار الأصلي أعلاه (بصريًا من اليسار): في العربية عكس ترتيب القراءة
+            (if (rtl) words.asReversed() else words).forEach { (w, g) -> emit(w, g) }
+            return true
         }
 
         private fun emit(word: String, ps: List<TextPosition>) {

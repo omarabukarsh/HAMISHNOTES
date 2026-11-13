@@ -210,9 +210,21 @@ object HandwritingReader {
 
     fun isReady(lang: Int): Boolean = tagsFor(lang).all { it in ready }
 
-    /** ينزّل حزم اللغة في الخلفية إن لم تكن موجودة. */
-    fun prefetch(lang: Int) {
-        AppController.scope.launch { tagsFor(lang).forEach { ensure(it) } }
+    /**
+     * ينزّل حزم اللغة في الخلفية إن لم تكن موجودة.
+     * allowMetered=false (التنزيل التلقائي عند فتح مستند): على Wi‑Fi أو شبكة غير محدودة فقط،
+     * فلا تُستهلك باقة الجوال (نحو 20 ميغابايت للحزمة) دون أن يطلب المستخدم شيئًا.
+     */
+    fun prefetch(lang: Int, allowMetered: Boolean = true) {
+        AppController.scope.launch { tagsFor(lang).forEach { ensure(it, allowMetered) } }
+    }
+
+    /** الشبكة الحالية محدودة (بيانات الجوال أو نقطة اتصال)، أو لا شبكة. */
+    private fun metered(): Boolean = try {
+        val cm = AppController.appContext.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.isActiveNetworkMetered
+    } catch (t: Throwable) {
+        true
     }
 
     private fun model(tag: String): DigitalInkRecognitionModel? = synchronized(lock) {
@@ -240,8 +252,11 @@ object HandwritingReader {
         addOnCompleteListener { cont.resume(it.isSuccessful) }
     }
 
-    /** true إن كانت حزمة اللغة جاهزة (تُنزَّل إن لزم، بمحاولة كل دقيقة على الأكثر). */
-    suspend fun ensure(tag: String): Boolean {
+    /**
+     * true إن كانت حزمة اللغة جاهزة (تُنزَّل إن لزم، بمحاولة كل دقيقة على الأكثر).
+     * allowMetered=false: لا تنزيل على شبكة محدودة (يعيد false فورًا، ويُعاد المحاولة لاحقًا على Wi‑Fi).
+     */
+    suspend fun ensure(tag: String, allowMetered: Boolean = true): Boolean {
         if (tag in ready) return true
         val m = model(tag) ?: return false
         val mgr = RemoteModelManager.getInstance()
@@ -249,6 +264,7 @@ object HandwritingReader {
             synchronized(lock) { ready = ready + tag }
             return true
         }
+        if (!allowMetered && metered()) return false
         val now = System.currentTimeMillis()
         synchronized(lock) {
             if (now - (lastTry[tag] ?: 0L) < 60_000L) return false
@@ -301,12 +317,14 @@ object HandwritingReader {
     suspend fun read(
         strokes: List<Ink>, lang: Int, firstLine: Int,
         /** إن أُعطيت: تُملأ ببدائل كل كلمة (بنفس ترتيب الكلمات المُرجعة). */
-        altsOut: MutableList<List<String>>? = null
+        altsOut: MutableList<List<String>>? = null,
+        /** false للقراءة التلقائية في الخلفية: لا تنزّل حزمة لغة على بيانات الجوال. */
+        allowMetered: Boolean = true
     ): List<OcrWord>? {
         val lines = HandwritingLayout.lines(strokes, lang, defaultRtl = !I18n.english)
         if (lines.isEmpty()) return emptyList()
         val needed = lines.flatMap { l -> l.runs.map { if (it.rtl) AR else EN } }.toSet()
-        for (t in needed) if (!ensure(t)) return null
+        for (t in needed) if (!ensure(t, allowMetered)) return null
         val out = ArrayList<OcrWord>()
         lines.forEachIndexed { i, line ->
             val lineNo = firstLine + i
@@ -319,7 +337,7 @@ object HandwritingReader {
                 var cands = candidates(tag, run.words.flatMap { it.strokes }, w, lineB - lineT)
                 // كلمة إنجليزية قُرئت بقارئ العربية (لغة الكتابة «العربية»): حروفها لاتينية فقط،
                 // فتُقرأ من جديد من اليسار لليمين بقارئ الإنجليزية (وإلا تنقلب أجزاؤها مثل Omar ← arom)
-                if (run.rtl && HandwritingLayout.latinOnly(cands.firstOrNull()) && ensure(EN)) {
+                if (run.rtl && HandwritingLayout.latinOnly(cands.firstOrNull()) && ensure(EN, allowMetered)) {
                     val ltr = HandwritingLayout.Run(
                         run.words.sortedBy { it.l }.map { HandwritingLayout.Word(it.strokes, it.l, it.t, it.r, it.b, false) }, false
                     )

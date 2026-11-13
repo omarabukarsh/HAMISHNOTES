@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- النسخ الاحتياطي حتى Android 11: المستندات والإعدادات تُنسخ، أما جلسة الدخول وقسيمة الاشتراك فلا
+     (رمز التحديث سر لا يجوز أن يُستعاد على جهاز آخر، والقسيمة مربوطة بهذا الجهاز أصلًا). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="cloud.xml" />
+    <exclude domain="sharedpref" path="premium.xml" />
+    <exclude domain="file" path="crash.txt" />
+</full-backup-content>

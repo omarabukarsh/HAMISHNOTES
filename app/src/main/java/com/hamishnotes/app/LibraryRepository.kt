@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -60,6 +61,26 @@ class LibraryRepository(context: Context) {
     private val extrasRoot = File(root, "extras").apply { mkdirs() }
     private val pagesDir = File(root, "pages").apply { mkdirs() }
     private val indexFile = File(root, "library.json")
+    /** آخر فهرس حُفظ بنجاح قبل الحالي: يُستعاد منه إن تلف الفهرس. */
+    private val indexBackup = File(root, "library.json.bak")
+
+    /**
+     * false إن تعذّرت قراءة الفهرس ولم تنجح الاستعادة: نمنع الكتابة فوقه
+     * فلا يحلّ فهرس فيه المستند الجديد وحده محل مكتبة كاملة.
+     */
+    @Volatile
+    private var indexWritable = true
+
+    /** يُستدعى (من خيط الكتابة) عند فشل حفظ بيانات المستخدم، ليُبلَّغ بدل الفقد الصامت. */
+    @Volatile
+    var onWriteError: ((Throwable) -> Unit)? = null
+
+    private fun reportWriteError(e: Throwable) {
+        try {
+            onWriteError?.invoke(e)
+        } catch (_: Throwable) {
+        }
+    }
     private val statsFile = File(root, "stats.json")
     private val srsDir = File(root, "srs").apply { mkdirs() }
 
@@ -79,12 +100,19 @@ class LibraryRepository(context: Context) {
 
     // ---------- أدوات مساعدة ----------
 
+    /**
+     * كتابة لا تترك ملفًا نصف مكتوب: نكتب نسخة مؤقتة ونثبّتها على القرص (fsync) ثم نستبدل بها الأصل.
+     * إن فشل الاستبدال (نادر) نُبقي الأصل حتى تنجح نسخة كاملة فوقه، ولا نحذفه أولًا.
+     */
     private fun atomicWrite(target: File, text: String) {
         val tmp = File(target.parentFile, target.name + ".tmp")
-        tmp.writeText(text)
+        FileOutputStream(tmp).use { out ->
+            out.write(text.toByteArray(Charsets.UTF_8))
+            out.fd.sync()
+        }
         if (!tmp.renameTo(target)) {
-            target.delete()
-            tmp.renameTo(target)
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
         }
     }
 
@@ -114,40 +142,85 @@ class LibraryRepository(context: Context) {
     // ---------- الفهرس ----------
 
     fun loadIndex(): List<DocEntry> {
-        if (!indexFile.exists()) return emptyList()
+        if (!indexFile.exists()) {
+            // لا فهرس، لكن ملفات مستندات موجودة: حُذف الفهرس أو لم يُكتب، فنستعيد المكتبة بدل إظهارها فارغة
+            indexBackup.takeIf { it.exists() }?.let { b -> runCatching { parseIndex(b) }.getOrNull()?.let { return it } }
+            return rebuildIndex()
+        }
         return try {
-            val arr = JSONObject(indexFile.readText()).getJSONArray("docs")
-            (0 until arr.length()).mapNotNull { i ->
-                try {
-                    val o = arr.getJSONObject(i)
-                    DocEntry(
-                        id = o.getString("id"),
-                        name = o.getString("name"),
-                        type = DocType.fromExt(o.optString("type", "pdf")) ?: DocType.PDF,
-                        fileName = o.getString("file"),
-                        sizeBytes = o.optLong("size"),
-                        pageCount = o.optInt("pages"),
-                        addedAt = o.optLong("added"),
-                        lastOpened = o.optLong("opened"),
-                        favorite = o.optBoolean("fav"),
-                        lastPage = o.optInt("page"),
-                        isNote = o.optBoolean("note"),
-                        readMs = o.optLong("read"),
-                        folder = o.optString("folder", ""),
-                        locked = o.optBoolean("lock", false),
-                        coverColor = o.optInt("cover", 0),
-                        sticker = o.optString("sticker", ""),
-                        isMap = o.optBoolean("map", false)
-                    )
-                } catch (e: Throwable) {
-                    null
-                }
-            }
+            parseIndex(indexFile)
         } catch (e: Throwable) {
             try {
                 indexFile.copyTo(File(root, "library.json.bad"), overwrite = true)
             } catch (x: Throwable) {
             }
+            // الفهرس تالف: النسخة السابقة أولًا، ثم إعادة البناء من ملفات المستندات نفسها
+            runCatching { parseIndex(indexBackup) }.getOrNull() ?: rebuildIndex()
+        }
+    }
+
+    private fun parseIndex(f: File): List<DocEntry> {
+        val arr = JSONObject(f.readText()).getJSONArray("docs")
+        return (0 until arr.length()).mapNotNull { i ->
+            try {
+                val o = arr.getJSONObject(i)
+                DocEntry(
+                    id = o.getString("id"),
+                    name = o.getString("name"),
+                    type = DocType.fromExt(o.optString("type", "pdf")) ?: DocType.PDF,
+                    fileName = o.getString("file"),
+                    sizeBytes = o.optLong("size"),
+                    pageCount = o.optInt("pages"),
+                    addedAt = o.optLong("added"),
+                    lastOpened = o.optLong("opened"),
+                    favorite = o.optBoolean("fav"),
+                    lastPage = o.optInt("page"),
+                    isNote = o.optBoolean("note"),
+                    readMs = o.optLong("read"),
+                    folder = o.optString("folder", ""),
+                    locked = o.optBoolean("lock", false),
+                    coverColor = o.optInt("cover", 0),
+                    sticker = o.optString("sticker", ""),
+                    isMap = o.optBoolean("map", false)
+                )
+            } catch (e: Throwable) {
+                null
+            }
+        }
+    }
+
+    /**
+     * يعيد بناء الفهرس من ملفات docs/ حين يتعذّر كل شيء آخر. الكتابة والتعليقات مربوطة بمعرّف المستند
+     * (اسم الملف)، فتعود كما هي؛ يضيع فقط الاسم والمادة والمفضلة. إن فشلت الاستعادة نمنع الكتابة فوق الفهرس.
+     */
+    private fun rebuildIndex(): List<DocEntry> {
+        return try {
+            val files = docsDir.listFiles().orEmpty()
+                .filter { it.isFile && DocType.fromExt(it.extension) != null }
+                .sortedByDescending { it.lastModified() }
+            var n = 0
+            val out = files.mapNotNull { f ->
+                val type = DocType.fromExt(f.extension) ?: return@mapNotNull null
+                val pages = if (type == DocType.PDF) runCatching { probePageCount(f) }.getOrDefault(0) else 0
+                if (pages <= 0) return@mapNotNull null
+                n++
+                DocEntry(
+                    id = f.nameWithoutExtension,
+                    name = L("مستند مستعاد $n", "Recovered document $n"),
+                    type = type,
+                    fileName = f.name,
+                    sizeBytes = f.length(),
+                    pageCount = pages,
+                    addedAt = f.lastModified(),
+                    lastOpened = 0L,
+                    favorite = false,
+                    lastPage = 0
+                )
+            }
+            indexWritable = true
+            out
+        } catch (e: Throwable) {
+            indexWritable = false
             emptyList()
         }
     }
@@ -178,8 +251,12 @@ class LibraryRepository(context: Context) {
                             .put("map", e.isMap)
                     )
                 }
+                if (!indexWritable) throw IOException("library index could not be read; refusing to overwrite it")
+                // الفهرس الحالي (المقروء بنجاح) يصبح النسخة الاحتياطية قبل استبداله
+                if (indexFile.exists()) indexFile.copyTo(indexBackup, overwrite = true)
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
             } catch (e: Throwable) {
+                reportWriteError(e)
             }
         }
     }
@@ -206,6 +283,7 @@ class LibraryRepository(context: Context) {
                 stats.forEach { (k, v) -> o.put(k, v) }
                 atomicWrite(statsFile, o.toString())
             } catch (e: Throwable) {
+                reportWriteError(e)
             }
         }
     }
@@ -237,6 +315,7 @@ class LibraryRepository(context: Context) {
                 }
                 atomicWrite(File(srsDir, "$docId.json"), o.toString())
             } catch (e: Throwable) {
+                reportWriteError(e)
             }
         }
     }
@@ -294,14 +373,21 @@ class LibraryRepository(context: Context) {
     fun duplicate(src: DocEntry, suffix: String): DocEntry {
         val id = UUID.randomUUID().toString()
         val fileName = "$id.${src.type.ext}"
-        file(src).copyTo(File(docsDir, fileName))
-        File(annDir, "${src.id}.json").takeIf { it.exists() }?.copyTo(File(annDir, "$id.json"))
-        File(thumbDir, "${src.id}.jpg").takeIf { it.exists() }?.copyTo(File(thumbDir, "$id.jpg"))
-        File(imgRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(imgRoot, id))
-        File(ocrRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(ocrRoot, id))
-        File(pagesDir, "${src.id}.json").takeIf { it.exists() }?.copyTo(File(pagesDir, "$id.json"))
-        File(partsRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(partsRoot, id))
-        File(extrasRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(extrasRoot, id))
+        val copy = src.copy(id = id, fileName = fileName)
+        try {
+            file(src).copyTo(File(docsDir, fileName))
+            File(annDir, "${src.id}.json").takeIf { it.exists() }?.copyTo(File(annDir, "$id.json"))
+            File(thumbDir, "${src.id}.jpg").takeIf { it.exists() }?.copyTo(File(thumbDir, "$id.jpg"))
+            File(imgRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(imgRoot, id))
+            File(ocrRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(ocrRoot, id))
+            File(pagesDir, "${src.id}.json").takeIf { it.exists() }?.copyTo(File(pagesDir, "$id.json"))
+            File(partsRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(partsRoot, id))
+            File(extrasRoot, src.id).takeIf { it.exists() }?.copyRecursively(File(extrasRoot, id))
+        } catch (t: Throwable) {
+            // نسخ لم يكتمل (امتلاء الذاكرة مثلًا): نحذف ما نُسخ فلا تبقى ملفات يتيمة تأخذ المساحة
+            runCatching { delete(copy) }
+            throw t
+        }
         return src.copy(
             id = id,
             name = src.name + suffix,
@@ -737,6 +823,7 @@ class LibraryRepository(context: Context) {
             try {
                 atomicWrite(File(annDir, "$id.json"), docDataJson(data))
             } catch (e: Throwable) {
+                reportWriteError(e)
             }
         }
     }
@@ -952,6 +1039,7 @@ class LibraryRepository(context: Context) {
                     JSONObject().put("version", 1).put("pages", arr).toString()
                 )
             } catch (e: Throwable) {
+                reportWriteError(e)
             }
         }
     }

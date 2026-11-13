@@ -1,9 +1,14 @@
 // إشعارات Google Play الفورية (Real-time developer notifications) عبر Pub/Sub push.
 // تحدّث جدول الاشتراكات عند التجديد والإلغاء والانتهاء والاسترداد، فلا يحتفظ من استرد ماله بالاشتراك.
 //
-// رابط الاشتراك في Pub/Sub:
-//   https://<project>.supabase.co/functions/v1/play-rtdn?secret=<RTDN_SECRET>
-// تُنشر هذه الدالة بلا تحقق JWT (Google لا ترسل رمز Supabase)، والحماية بالسر في الرابط.
+// التحقق من المرسل (تُنشر الدالة بلا تحقق JWT من Supabase لأن Google لا ترسل رمز Supabase):
+//   المفضّل: مصادقة OIDC في اشتراك Pub/Sub ("Enable authentication" بحساب خدمة).
+//     ضع في أسرار Supabase: RTDN_PUSH_SERVICE_ACCOUNT=<بريد حساب الخدمة>
+//     و RTDN_AUDIENCE=<الـ audience المضبوط في الاشتراك، افتراضيًا رابط الدالة>.
+//     عندها يُرفض أي طلب بلا رمز Google صالح، ولا حاجة إلى السر في الرابط.
+//   القديم (يبقى يعمل إن لم يُضبط OIDC): سر في الرابط
+//     https://<project>.supabase.co/functions/v1/play-rtdn?secret=<RTDN_SECRET>
+//     عيبه أن الروابط تُحفظ في سجلات الخوادم.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { PKG, syncFromGoogle } from "../_shared/subscriptions.ts";
@@ -19,10 +24,36 @@ function same(a: string, b: string): boolean {
   return d === 0;
 }
 
+/** رمز OIDC من Pub/Sub: تتحقق Google نفسها من توقيعه (tokeninfo)، ونتحقق نحن من المرسل والجمهور والمدة. */
+async function oidcOk(req: Request, account: string): Promise<boolean> {
+  const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return false;
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(jwt));
+    if (!res.ok) return false;
+    const t = await res.json();
+    // req.url داخل Supabase قد لا يكون الرابط العام، فالافتراضي مبني من SUPABASE_URL
+    const audience = Deno.env.get("RTDN_AUDIENCE") ??
+      (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "") + "/functions/v1/play-rtdn";
+    return t.email === account && (t.email_verified === true || t.email_verified === "true") &&
+      t.aud === audience && (t.iss === "https://accounts.google.com" || t.iss === "accounts.google.com") &&
+      Number(t.exp) * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
-  const secret = Deno.env.get("RTDN_SECRET") ?? "";
-  const given = new URL(req.url).searchParams.get("secret") ?? "";
-  if (!secret || !same(given, secret)) return new Response("forbidden", { status: 403 });
+  const account = Deno.env.get("RTDN_PUSH_SERVICE_ACCOUNT") ?? "";
+  let allowed: boolean;
+  if (account) {
+    allowed = await oidcOk(req, account);
+  } else {
+    const secret = Deno.env.get("RTDN_SECRET") ?? "";
+    const given = new URL(req.url).searchParams.get("secret") ?? "";
+    allowed = !!secret && same(given, secret);
+  }
+  if (!allowed) return new Response("forbidden", { status: 403 });
   if (req.method !== "POST") return new Response("method", { status: 405 });
 
   let note: Record<string, any>;
@@ -41,9 +72,10 @@ Deno.serve(async (req) => {
       await syncFromGoogle(db, note.subscriptionNotification.purchaseToken);
     } else if (note.voidedPurchaseNotification?.purchaseToken) {
       // استرداد أو إلغاء من Google: يُسحب الاشتراك فورًا
-      await db.from("subscriptions")
+      const { error } = await db.from("subscriptions")
         .update({ revoked: true, state: "REVOKED", updated_at: new Date().toISOString() })
         .eq("purchase_token", note.voidedPurchaseNotification.purchaseToken);
+      if (error) throw error;
     }
   } catch (e) {
     console.error(e);

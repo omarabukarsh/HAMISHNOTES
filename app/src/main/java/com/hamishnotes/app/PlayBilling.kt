@@ -15,6 +15,8 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.resume
 
 /**
@@ -24,6 +26,10 @@ import kotlin.coroutines.resume
 internal object PlayBilling {
     private var client: BillingClient? = null
     private var details: ProductDetails? = null
+    /** اتصال واحد في كل مرة: startConnection مرتين معًا يفشل الثاني منهما. */
+    private val connectLock = Mutex()
+    /** مشتريات تُرسل إلى الخادم الآن؛ busy يبقى true حتى ينتهي آخرها. */
+    private var submitting = 0
 
     /** السعر كما تعرضه Google Play بعملة المستخدم (مثل "US$4.00")؛ null قبل التحميل. */
     var price by mutableStateOf<String?>(null)
@@ -43,7 +49,9 @@ internal object PlayBilling {
             .build()
     }
 
-    private suspend fun ready(): BillingClient? {
+    private suspend fun ready(): BillingClient? = connectLock.withLock { connect() }
+
+    private suspend fun connect(): BillingClient? {
         val c = client ?: return null
         if (c.isReady) return c
         val ok = suspendCancellableCoroutine { k ->
@@ -124,12 +132,28 @@ internal object PlayBilling {
 
     private fun onPurchases(result: BillingResult, purchases: List<Purchase>?) {
         when (result.responseCode) {
-            BillingClient.BillingResponseCode.OK -> purchases.orEmpty()
-                .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                .forEach { p ->
-                    busy = true
-                    Premium.submitPurchase(p.purchaseToken) { busy = false }
+            BillingClient.BillingResponseCode.OK -> {
+                val list = purchases.orEmpty()
+                list.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                    .forEach { p ->
+                        submitting++
+                        busy = true
+                        Premium.submitPurchase(p.purchaseToken) {
+                            submitting--
+                            if (submitting <= 0) {
+                                submitting = 0
+                                busy = false
+                            }
+                        }
+                    }
+                // دفع معلّق (نقدًا في متجر مثلًا): يُفعَّل تلقائيًا عند اكتماله عبر الفحص الخلفي أو «استعادة الشراء»
+                if (list.any { it.purchaseState == Purchase.PurchaseState.PENDING }) {
+                    AppController.say(
+                        MsgKind.DONE,
+                        L("الدفع قيد المعالجة. يُفعَّل Premium تلقائيًا عند اكتماله", "Payment is pending. Premium turns on automatically once it completes")
+                    )
                 }
+            }
             BillingClient.BillingResponseCode.USER_CANCELED -> Unit
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> Premium.restore(quiet = false)
             else -> AppController.say(MsgKind.ERROR, L("تعذّر إتمام الشراء، حاول مرة أخرى", "Purchase couldn’t be completed, please try again"))

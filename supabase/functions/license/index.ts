@@ -105,9 +105,13 @@ Deno.serve(async (req) => {
     if (action === "verify") {
       row = await syncFromGoogle(db, purchaseToken, user.id);
     } else {
-      const { data } = await db.from("subscriptions").select("*").eq("user_id", user.id).eq("revoked", false)
-        .order("expires_at", { ascending: false }).limit(1).maybeSingle();
-      row = data as Row | null;
+      // كل صفوف المستخدم، لا الأول فقط: صف بلا تاريخ انتهاء (شراء معلّق أُلغي) أو صف قديم
+      // لا يجوز أن يحجب اشتراكًا فعّالًا. nullsFirst: false لأن Postgres يضع NULL أولًا في الترتيب التنازلي.
+      const { data, error } = await db.from("subscriptions").select("*").eq("user_id", user.id).eq("revoked", false)
+        .order("expires_at", { ascending: false, nullsFirst: false });
+      if (error) throw error;
+      const rows = (data ?? []) as Row[];
+      row = rows.find(entitled) ?? rows[0] ?? null;
       // إشعارات Google تحدّث الجدول عادة؛ وإن قارب الانتهاء أو قدم التحديث نسأل Google مباشرة
       if (row && (Date.parse(row.expires_at ?? "0") - Date.now() < 2 * DAY ||
         Date.now() - Date.parse(row.updated_at ?? "0") > 3 * DAY)) {

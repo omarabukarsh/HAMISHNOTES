@@ -22,9 +22,13 @@
         </intent>
     </queries>
     <application
+        android:name=".HamishApp"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true"
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@style/Theme.MyNotes">
 
         <activity

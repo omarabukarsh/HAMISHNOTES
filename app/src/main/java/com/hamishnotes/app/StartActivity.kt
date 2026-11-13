@@ -3,7 +3,6 @@ package com.hamishnotes.app
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.widget.ScrollView
 import android.widget.TextView
 import java.io.File
@@ -11,7 +10,7 @@ import java.io.File
 class StartActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val f = File(filesDir, "crash.txt")
+        val f = File(filesDir, HamishApp.CRASH_FILE)
         if (f.exists()) {
             val tv = TextView(this)
             tv.text = f.readText()
@@ -25,11 +24,6 @@ class StartActivity : Activity() {
             f.delete()
             return
         }
-        val old = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            try { f.writeText(Log.getStackTraceString(e)) } catch (_: Throwable) {}
-            old?.uncaughtException(t, e)
-        }
         // ملف مفتوح من تطبيق آخر (عرض أو مشاركة): نمرره مع صلاحية القراءة إلى الشاشة الرئيسية
         val next = Intent(this, MainActivity::class.java)
         val src = intent
@@ -41,6 +35,12 @@ class StartActivity : Activity() {
             }
             else -> null
         }
+        if (uri != null && isPrivateFile(uri)) {
+            // رابط file:// يشير إلى ملفات التطبيق الخاصة (الجلسة، القسيمة، الإعدادات): تطبيق آخر لا يفتحها عبرنا
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+            return
+        }
         if (uri != null) {
             next.action = Intent.ACTION_VIEW
             val type = src?.type
@@ -51,5 +51,20 @@ class StartActivity : Activity() {
         next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(next)
         finish()
+    }
+
+    /** هل الرابط ملف داخل مجلد بيانات التطبيق نفسه؟ (بعد حل الروابط الرمزية و «..») */
+    private fun isPrivateFile(uri: android.net.Uri): Boolean {
+        if (uri.scheme != "file") return false
+        val path = uri.path ?: return true
+        return try {
+            val target = File(path).canonicalPath
+            listOfNotNull(applicationInfo.dataDir, filesDir.parent, noBackupFilesDir.parent).any { dir ->
+                val d = File(dir).canonicalPath
+                target == d || target.startsWith(d + File.separator)
+            }
+        } catch (e: Throwable) {
+            true
+        }
     }
 }

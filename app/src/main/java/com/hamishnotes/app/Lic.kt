@@ -91,29 +91,81 @@ internal object Lic {
     }
 
     // لا نحفظ النتيجة للأبد: نعيد الفحص بعد مدة، فلا تكفي ضربة واحدة من أداة حقن لتعطيله دائمًا
-    private var signerCache: Boolean? = null
-    private var signerCacheAt = 0L
+    @Volatile private var signerCache: Boolean? = null
+    @Volatile private var signerCacheAt = 0L
     private const val SIGNER_TTL = 5 * 60 * 1000L
+
+    // فحص الأرشيف يحلّل ملف الـ APK كله (بطيء)، فلا يجري أبدًا على الخيط الرئيسي:
+    // نتيجته تُحسب في الخلفية وتُخزَّن، وحتى تجهز أول مرة يكفي الفحص الحي.
+    @Volatile private var archiveCache: Boolean? = null
+    @Volatile private var archiveCacheAt = 0L
+    private val archiveRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** يُستدعى (من خيط خلفي) إن كشف فحص الأرشيف في الخلفية توقيعًا غريبًا، ليعيد Premium التقييم. */
+    @Volatile var onSignerMismatch: (() -> Unit)? = null
+
+    private fun allowedSigners(): List<String> =
+        BuildConfig.SIGNERS.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
 
     /**
      * هل وُقّع التطبيق بمفتاحنا (مفتاح Google Play أو مفتاح الرفع)؟
      * النسخة المعدّلة يعاد توقيعها بمفتاح آخر، فتفشل هنا.
+     *
+     * fresh=false (الاستعمال العادي، آمن على الخيط الرئيسي): الفحص الحي + آخر نتيجة لفحص الأرشيف.
+     * fresh=true: كل شيء من جديد ومباشرة، ويجب استدعاؤها خارج الخيط الرئيسي.
      */
     fun signerOk(context: Context, fresh: Boolean = false): Boolean {
         val now = android.os.SystemClock.elapsedRealtime()
         if (!fresh) signerCache?.let { if (now - signerCacheAt < SIGNER_TTL) return it }
-        val allowed = BuildConfig.SIGNERS.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        val allowed = allowedSigners()
         if (allowed.isEmpty()) return true
         val ok = try {
             // فحصان مستقلان: سجل التثبيت الحي في الذاكرة، وشهادة ملف الـ APK نفسه على القرص.
             // أدوات إعادة التوقيع تزيّف جواب PackageManager الحي غالبًا، لكنها نادرًا ما تزيّف قراءة الأرشيف.
-            signerMatches(context, allowed) && archiveSignerMatches(context, allowed)
+            signerMatches(context, allowed) && (if (fresh) archiveNow(context, allowed) else archiveCached(context, allowed, now))
         } catch (e: Throwable) {
             false
         }
         signerCache = ok
         signerCacheAt = now
         return ok
+    }
+
+    /** يبدأ فحص الأرشيف في الخلفية مبكرًا (عند فتح التطبيق)، فتكون نتيجته جاهزة حين تُطلب. */
+    fun warmUp(context: Context) {
+        val allowed = allowedSigners()
+        if (allowed.isNotEmpty()) refreshArchiveAsync(context.applicationContext, allowed)
+    }
+
+    private fun archiveNow(context: Context, allowed: List<String>): Boolean {
+        val r = archiveSignerMatches(context, allowed)
+        archiveCache = r
+        archiveCacheAt = android.os.SystemClock.elapsedRealtime()
+        return r
+    }
+
+    private fun archiveCached(context: Context, allowed: List<String>, now: Long): Boolean {
+        val cached = archiveCache
+        if (cached == null || now - archiveCacheAt >= SIGNER_TTL) refreshArchiveAsync(context.applicationContext, allowed)
+        return cached ?: true
+    }
+
+    private fun refreshArchiveAsync(app: Context, allowed: List<String>) {
+        if (!archiveRunning.compareAndSet(false, true)) return
+        Thread({
+            try {
+                val before = archiveCache
+                val r = archiveNow(app, allowed)
+                if (!r && before != false) {
+                    // نتيجة الفحص الحي المخزّنة لم تعد كافية: يُعاد الفحص كاملًا عند الطلب التالي
+                    signerCache = null
+                    onSignerMismatch?.invoke()
+                }
+            } catch (_: Throwable) {
+            } finally {
+                archiveRunning.set(false)
+            }
+        }, "hamish-verify").apply { isDaemon = true }.start()
     }
 
     /** الفحص الثاني: شهادة ملف الـ APK على القرص مباشرة (sourceDir)، لا سجل التثبيت في الذاكرة. */

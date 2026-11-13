@@ -3,6 +3,8 @@ package com.hamishnotes.app
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -18,6 +20,9 @@ internal object Cloud {
 
     private var sp: SharedPreferences? = null
 
+    /** تجديد واحد للجلسة في كل مرة: طلبان معًا برمز التحديث نفسه قد يُبطل أحدهما الآخر فيُسجَّل الخروج. */
+    private val refreshLock = Mutex()
+
     /** يُستدعى عندما يرفض الخادم تجديد الجلسة (أُبطلت أو حُذف الحساب)، ليُحدَّث الحساب ويُبلَّغ المستخدم. */
     var onSessionExpired: (() -> Unit)? = null
 
@@ -30,10 +35,15 @@ internal object Cloud {
         sp = context.getSharedPreferences("cloud", Context.MODE_PRIVATE)
     }
 
-    /** يبدّل رمز Google (ID token) بجلسة Supabase. */
-    suspend fun signInWithGoogle(idToken: String): Result<String> = runCatching {
+    /**
+     * يبدّل رمز Google (ID token) بجلسة Supabase.
+     * rawNonce: القيمة الأصلية التي أُرسلت بصمتها (SHA-256) إلى Google، فيتحقق Supabase أن الرمز صُنع لهذا الدخول بعينه.
+     */
+    suspend fun signInWithGoogle(idToken: String, rawNonce: String?): Result<String> = runCatching {
         check(configured)
-        val r = post("/auth/v1/token?grant_type=id_token", JSONObject().put("provider", "google").put("id_token", idToken), bearer = null)
+        val req = JSONObject().put("provider", "google").put("id_token", idToken)
+        if (rawNonce != null) req.put("nonce", rawNonce)
+        val r = post("/auth/v1/token?grant_type=id_token", req, bearer = null)
         save(r)
         r.getJSONObject("user").getString("id")
     }
@@ -55,8 +65,19 @@ internal object Cloud {
     /** رمز دخول صالح، يُجدَّد تلقائيًا من رمز التحديث. */
     private suspend fun accessToken(): String? {
         val p = sp ?: return null
-        val access = p.getString("access", null)
-        if (access != null && System.currentTimeMillis() < p.getLong("access_until", 0)) return access
+        fun current(): String? {
+            val access = p.getString("access", null)
+            return if (access != null && System.currentTimeMillis() < p.getLong("access_until", 0)) access else null
+        }
+        current()?.let { return it }
+        return refreshLock.withLock {
+            // ربما جدّدها طلب آخر بينما كنا ننتظر
+            current()?.let { return@withLock it }
+            refreshSession(p)
+        }
+    }
+
+    private suspend fun refreshSession(p: SharedPreferences): String? {
         val refresh = p.getString("refresh", null) ?: return null
         return try {
             val r = post("/auth/v1/token?grant_type=refresh_token", JSONObject().put("refresh_token", refresh), bearer = null)

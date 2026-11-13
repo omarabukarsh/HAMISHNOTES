@@ -18,7 +18,7 @@ function b64url(data: Uint8Array | string): string {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function pemToDer(pem: string): Uint8Array {
+function pemToDer(pem: string): Uint8Array<ArrayBuffer> {
   const body = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   return Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
 }
@@ -119,5 +119,11 @@ export async function acknowledge(pkg: string, productId: string, purchaseToken:
     `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${pkg}/purchases/subscriptions/${productId}/tokens/${encodeURIComponent(purchaseToken)}:acknowledge`,
     { method: "POST", body: "{}" },
   );
-  if (!res.ok && res.status !== 400) throw new Error(`acknowledge: ${res.status}`);
+  if (res.ok) return;
+  // 400 قد يعني «مؤكَّد من قبل»، أو خطأ حقيقي: نسأل Google عن الحالة بدل افتراض النجاح
+  if (res.status === 400) {
+    const sub = await getSubscription(pkg, purchaseToken);
+    if (sub?.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED") return;
+  }
+  throw new Error(`acknowledge: ${res.status} ${await res.text().catch(() => "")}`);
 }

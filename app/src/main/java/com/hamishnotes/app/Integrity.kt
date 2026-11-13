@@ -43,6 +43,8 @@ internal object Integrity {
             provider(context).request(
                 StandardIntegrityManager.StandardIntegrityTokenRequest.builder().setRequestHash(requestHash).build()
             ).await()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
             // قد ينتهي المزوّد بعد مدة: نجهّز واحدًا جديدًا مرة واحدة
             provider = null

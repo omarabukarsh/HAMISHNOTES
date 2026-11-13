@@ -47,8 +47,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
 import java.lang.ref.WeakReference
@@ -149,6 +152,11 @@ object Premium {
             }
         }
         if (BuildConfig.TEST_PREMIUM) testActive = p.getBoolean("test_active", false)
+        if (!BuildConfig.TEST_PREMIUM) {
+            // فحص ملف الـ APK في الخلفية من الآن؛ وإن كشف توقيعًا غريبًا يُعاد التقييم على الخيط الرئيسي
+            Lic.onSignerMismatch = { AppController.scope.launch { evaluate() } }
+            Lic.warmUp(c)
+        }
         evaluate()
         if (!BuildConfig.TEST_PREMIUM && Cloud.configured) {
             PlayBilling.init(c)
@@ -161,7 +169,8 @@ object Premium {
             // إن كُسر فحص التوقيع في موضعه المعتاد، تُسحب القسيمة هنا بهدوء دون رسالة تدل على موضع الفحص.
             AppController.scope.launch {
                 delay(Random.nextLong(90_000, 240_000))
-                if (grant != null && !Lic.signerOk(c, fresh = true)) {
+                // fresh=true يحلّل ملف الـ APK: خارج الخيط الرئيسي
+                if (grant != null && !withContext(Dispatchers.Default) { Lic.signerOk(c, fresh = true) }) {
                     sp?.edit()?.remove("grant")?.apply()
                     evaluate()
                 }
@@ -255,7 +264,9 @@ object Premium {
 
     /** هل يمكن إضافة n مستندات؟ وإلا تظهر نافذة الحد. */
     fun canAdd(n: Int = 1): Boolean {
-        if (active || AppController.library.size + n <= FREE_DOCS) return true
+        // نفس فحص بقية الخصائص (require): الحق من القسيمة الموقّعة، لا من الراية في الذاكرة وحدها
+        if (AppController.library.size + n <= FREE_DOCS) return true
+        if (active && (BuildConfig.TEST_PREMIUM || confirm())) return true
         limitOpen = true
         return false
     }
@@ -344,6 +355,8 @@ object Premium {
         // تعذّر الحصول على رمز (لا إنترنت، أو خدمات Play غير متاحة): لا نعاقب، ونحاول لاحقًا
         val integrity = try {
             Integrity.token(c, hash)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             return Outcome.FAILED
         }
@@ -371,6 +384,8 @@ object Premium {
             }
         } catch (e: IOException) {
             Outcome.OFFLINE
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             Outcome.FAILED
         }

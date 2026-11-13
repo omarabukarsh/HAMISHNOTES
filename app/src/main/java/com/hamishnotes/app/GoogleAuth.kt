@@ -34,23 +34,34 @@ object GoogleAuth {
     suspend fun signIn(activity: Activity): Result<Pair<String, String?>> {
         if (!configured) return Result.failure(NotConfigured())
         return try {
+            // nonce: Google تضع بصمته في الرمز، و Supabase يتحقق منها بالقيمة الأصلية، فلا يُعاد استخدام رمز قديم مسرّب
+            val rawNonce = newNonce()
             val option = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
                 .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                .setNonce(Lic.sha256(rawNonce))
                 .build()
             val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
             val cred = CredentialManager.create(activity).getCredential(activity, request).credential
             if (cred is CustomCredential && cred.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val g = GoogleIdTokenCredential.createFrom(cred.data)
                 // فشل الربط بالخادم لا يمنع الدخول: يُعاد عند الاشتراك
-                if (Cloud.configured) Cloud.signInWithGoogle(g.idToken)
+                if (Cloud.configured) Cloud.signInWithGoogle(g.idToken, rawNonce)
                 Result.success(g.id to g.displayName)
             } else {
                 Result.failure(IllegalStateException("unsupported credential"))
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
             Result.failure(e)
         }
+    }
+
+    private fun newNonce(): String {
+        val b = ByteArray(32)
+        java.security.SecureRandom().nextBytes(b)
+        return b.joinToString("") { "%02x".format(it) }
     }
 
     suspend fun signOut(activity: Activity?) {

@@ -35,9 +35,13 @@ fun LockDialogs() {
 @Composable
 private fun SetPinDialog(id: String) {
     val c = AppController
+    // تغيير رمز موجود يحتاج الرمز الحالي، وإلا يغيّره أي شخص يمسك الجهاز ثم يفتح كل المستندات المقفلة
+    val needsOld = remember { c.hasPin() }
+    var old by remember { mutableStateOf("") }
+    var wrongOld by remember { mutableStateOf(false) }
     var p1 by remember { mutableStateOf("") }
     var p2 by remember { mutableStateOf("") }
-    val ok = p1.length in 4..8 && p1 == p2
+    val ok = p1.length in 4..8 && p1 == p2 && (!needsOld || old.length >= 4)
     AlertDialog(
         onDismissRequest = { c.setPinFor = null },
         title = { Text(L("رمز القفل", "Lock PIN")) },
@@ -48,12 +52,23 @@ private fun SetPinDialog(id: String) {
                         "Choose a 4–8 digit PIN. It’s used for all locked documents; fingerprint works too."),
                     fontSize = 13.sp
                 )
+                if (needsOld) {
+                    PinField(old, L("الرمز الحالي", "Current PIN")) {
+                        old = it
+                        wrongOld = false
+                    }
+                    if (wrongOld) Text(L("الرمز الحالي غير صحيح", "Current PIN is wrong"), color = Palette.Danger, fontSize = 13.sp)
+                }
                 PinField(p1, L("الرمز", "PIN")) { p1 = it }
                 PinField(p2, L("أعد كتابة الرمز", "Repeat PIN")) { p2 = it }
             }
         },
         confirmButton = {
             TextButton(enabled = ok, onClick = {
+                if (needsOld && !c.checkPin(old)) {
+                    wrongOld = true
+                    return@TextButton
+                }
                 c.setPin(p1)
                 c.setPinFor = null
                 if (id.isNotEmpty()) c.toggleLock(id) else c.say(MsgKind.DONE, L("تم تغيير الرمز", "PIN changed"))
@@ -92,7 +107,7 @@ private fun UnlockDialog(id: String) {
     }
     LaunchedEffect(id) { if (canBio) bio() }
     AlertDialog(
-        onDismissRequest = { c.unlockRequest = null },
+        onDismissRequest = { c.cancelUnlock() },
         title = { Text(L("مستند مقفل", "Locked document")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -112,7 +127,7 @@ private fun UnlockDialog(id: String) {
         dismissButton = {
             androidx.compose.foundation.layout.Row {
                 if (canBio) TextButton(onClick = { bio() }) { Text(L("البصمة", "Fingerprint")) }
-                TextButton(onClick = { c.unlockRequest = null }) { Text(L("إلغاء", "Cancel")) }
+                TextButton(onClick = { c.cancelUnlock() }) { Text(L("إلغاء", "Cancel")) }
             }
         }
     )

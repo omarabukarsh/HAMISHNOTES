@@ -28,6 +28,8 @@ import java.util.UUID
  */
 object AppController {
     lateinit var repo: LibraryRepository
+    @Volatile
+    private var lastWriteErrorAt = -60_000L
         private set
     private lateinit var prefs: SharedPreferences
     lateinit var appContext: Context
@@ -503,6 +505,22 @@ object AppController {
 
     /** مستند ينتظر إدخال الرمز أو البصمة قبل فتحه. */
     var unlockRequest by mutableStateOf<String?>(null)
+        private set
+
+    /** إن كان طلب التحقق لإزالة القفل (من قائمة المستند) لا لفتح المستند. */
+    private var unlockToRemove: String? = null
+
+    /** يطلب الرمز أو البصمة؛ removeLock=true لإزالة القفل بعد التحقق بدل فتح المستند. */
+    private fun requestUnlock(id: String, removeLock: Boolean) {
+        unlockToRemove = if (removeLock) id else null
+        unlockRequest = id
+    }
+
+    /** أُغلقت نافذة التحقق دون نجاح. */
+    fun cancelUnlock() {
+        unlockRequest = null
+        unlockToRemove = null
+    }
 
     /** طلب تعيين رمز جديد (ثم قفل هذا المستند). */
     var setPinFor by mutableStateOf<String?>(null)
@@ -522,6 +540,11 @@ object AppController {
 
     fun toggleLock(id: String) {
         val e = library.firstOrNull { it.id == id } ?: return
+        // إزالة القفل تحتاج الرمز أو البصمة، ما لم يكن فُتح في هذه الجلسة
+        if (e.locked && id !in unlocked) {
+            requestUnlock(id, removeLock = true)
+            return
+        }
         // القفل من مزايا Premium، أما فك القفل فمتاح دائمًا. فحص مستقل إضافي داخل الخاصية
         if (!e.locked && (!Premium.require(PremiumFeature.LOCK) || !Premium.confirm())) return
         if (!e.locked && !hasPin()) {
@@ -537,9 +560,10 @@ object AppController {
     /** بعد التحقق: يُفتح المستند المطلوب. */
     fun unlockGranted() {
         val id = unlockRequest ?: return
-        unlockRequest = null
+        val remove = unlockToRemove == id
+        cancelUnlock()
         if (id !in unlocked) unlocked.add(id)
-        openDocument(id)
+        if (remove) toggleLock(id) else openDocument(id)
     }
 
     /** فتح آخر مستند (من أداة الشاشة الرئيسية). */
@@ -721,6 +745,16 @@ object AppController {
         val app = context.applicationContext
         appContext = app
         repo = LibraryRepository(app)
+        // فشل الحفظ (امتلاء الذاكرة مثلًا) يُبلَّغ مرة كل نصف دقيقة على الأكثر، بدل ضياع العمل بصمت
+        repo.onWriteError = {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastWriteErrorAt > 30_000) {
+                lastWriteErrorAt = now
+                scope.launch {
+                    say(MsgKind.ERROR, L("تعذّر حفظ تعديلاتك. تحقق من المساحة المتاحة في الجهاز", "Couldn’t save your changes. Check free storage on your device"))
+                }
+            }
+        }
         AudioNotes.init(app)
         PenPrefs.init(app)
         PenInput.init(app)
@@ -838,7 +872,7 @@ object AppController {
     fun openDocument(id: String) {
         val e0 = library.firstOrNull { it.id == id }
         if (e0 != null && e0.locked && id !in unlocked) {
-            unlockRequest = id
+            requestUnlock(id, removeLock = false)
             return
         }
         if (tabs.any { it.id == id }) {

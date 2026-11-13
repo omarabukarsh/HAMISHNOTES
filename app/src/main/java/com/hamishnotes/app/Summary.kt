@@ -108,7 +108,14 @@ object Summary {
      * @param tidy true = ترتيب: تنظيف، دمج المقاطع التي تكمل بعضها، وجمع المكرر كنص مهم.
      *             false = كما التُقط: كل تمييز كما هو (مع العناوين والجداول).
      */
-    fun build(marksInOrder: List<TextMark>, tidy: Boolean): List<SBlock> {
+    fun build(marksInOrder: List<TextMark>, tidy: Boolean): List<SBlock> = buildWithLegacy(marksInOrder, tidy).first
+
+    /**
+     * يعيد أيضًا المفاتيح القديمة لفقرات الوضع «مرتّب»: كانت النسخ السابقة تعطيها نصها المطبَّع مفتاحًا
+     * (خطأ: متغير محلي غطّى المفتاح الثابت)، فتعديلات المستخدم المحفوظة بها تُترجَم إلى المفاتيح الثابتة في view.
+     */
+    private fun buildWithLegacy(marksInOrder: List<TextMark>, tidy: Boolean): Pair<List<SBlock>, Map<String, String>> {
+        val legacy = HashMap<String, String>()
         val out = ArrayList<SBlock>()
         val seen = HashMap<String, Int>() // نص مطبَّع ← موضع الفقرة في out
         val mode = if (tidy) "t" else "r"
@@ -131,9 +138,9 @@ object Summary {
                         }
                         val c = TextTidy.clean(p.text)
                         if (c.isEmpty()) continue
-                        val key = norm(c)
+                        val textKey = norm(c)
                         // نفس النص ظُلّل في تمييز آخر: لا نكرره، بل نجعله مهمًا
-                        val dup = seen[key]
+                        val dup = seen[textKey]
                         if (dup != null) {
                             val old = out[dup] as SPara
                             out[dup] = old.copy(emphasis = (old.emphasis + c).distinct(), marks = old.marks + m)
@@ -149,17 +156,36 @@ object Summary {
                             )
                         } else {
                             out.add(SPara(c, emphasisOf(m, c), listOf(m), key))
+                            legacy.putIfAbsent(textKey, key)
                         }
-                        seen[key] = out.lastIndex
+                        seen[textKey] = out.lastIndex
                     }
                 }
             }
         }
-        if (!tidy) return out
+        if (!tidy) return out to legacy
         // تنظيف نهائي للفقرات: جمل واضحة تبدأ بحرف كبير وتنتهي بنقطة
         return out.map { b ->
             if (b is SPara) b.copy(text = TextTidy.sentences(b.text).joinToString(" ")) else b
-        }
+        } to legacy
+    }
+
+    /**
+     * للحفظ: يترجم المفاتيح القديمة في التعديلات المحفوظة قبل أي تعديل جديد عليها،
+     * فتعمل «استعادة التلقائي» والنقل على تعديلات النسخ السابقة أيضًا.
+     */
+    fun migrateLegacyKeys(marksInOrder: List<TextMark>, edits: SummaryEdits): SummaryEdits =
+        if (edits.isEmpty()) edits else migrate(edits, buildWithLegacy(marksInOrder, tidy = true).second)
+
+    /** يترجم مفاتيح التعديلات القديمة (نص الفقرة) إلى المفاتيح الثابتة الحالية. */
+    private fun migrate(e: SummaryEdits, legacy: Map<String, String>): SummaryEdits {
+        if (legacy.isEmpty()) return e
+        fun k(x: String) = legacy[x] ?: x
+        return e.copy(
+            order = e.order.map { k(it) }.distinct(),
+            kinds = e.kinds.entries.associate { (key, v) -> k(key) to v },
+            tables = e.tables.map { g -> g.copy(keys = g.keys.map { k(it) }) }
+        )
     }
 
     private fun withKey(b: SBlock, k: String): SBlock = when (b) {
@@ -177,8 +203,11 @@ object Summary {
     /** الملخص كما يُعرض: البناء التلقائي ثم تعديلات المستخدم. */
     fun view(marksInOrder: List<TextMark>, tidy: Boolean, edits: SummaryEdits): List<SBlock> {
         // المفاتيح تُعطى في build وتتضمن الوضع («مرتّب» أو «كما التُقط»)، فتعديلات كل وضع مستقلة
-        var list: List<SBlock> = build(marksInOrder, tidy)
+        val (built, legacy) = buildWithLegacy(marksInOrder, tidy)
+        var list: List<SBlock> = built
         if (edits.isEmpty()) return list
+        @Suppress("NAME_SHADOWING")
+        val edits = migrate(edits, legacy)
 
         // 1) عنوان / نص عادي
         list = list.map { b ->

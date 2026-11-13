@@ -159,9 +159,42 @@ object MarkMerge {
         return Result(list, message)
     }
 
-    /** كل التمييزات مرتبة حسب الصفحة ثم موضعها في الصفحة. */
+    /**
+     * كل التمييزات بترتيب القراءة: الصفحة، ثم السطر (أول سطر في كل تمييز)، ثم داخل السطر من بدايته:
+     * من اليسار في الإنجليزية ومن اليمين في العربية. التمييزات على سطر واحد تُجمع بتداخلها الرأسي،
+     * لا بتساوي أعلى نقطة فيها (كلمات القراءة الضوئية في سطر واحد تختلف قليلًا في ارتفاعها).
+     */
     fun readingOrder(marks: Collection<List<TextMark>>): List<TextMark> =
-        marks.flatten().sortedWith(
-            compareBy<TextMark>({ it.page }, { m -> m.rects.minOfOrNull { it.t } ?: 0f }, { m -> m.rects.minOfOrNull { it.l } ?: 0f })
-        )
+        marks.flatten().groupBy { it.page }.toSortedMap().values.flatMap { orderOnPage(it) }
+
+    private fun orderOnPage(list: List<TextMark>): List<TextMark> {
+        class M(val m: TextMark, val t: Float, val b: Float, val l: Float, val r: Float)
+        val ms = list.map { m ->
+            // السطر الأول من التمييز: المستطيل الأعلى
+            val top = m.rects.minByOrNull { it.t }
+            if (top == null) M(m, 0f, 0f, 0f, 0f) else M(m, top.t, top.b, top.l, top.r)
+        }.sortedWith(compareBy<M>({ (it.t + it.b) / 2f }, { it.l }))
+        val rows = ArrayList<MutableList<M>>()
+        for (x in ms) {
+            val row = rows.lastOrNull()
+            if (row != null) {
+                val first = row[0]
+                val ov = minOf(x.b, first.b) - maxOf(x.t, first.t)
+                val minH = minOf(x.b - x.t, first.b - first.t).coerceAtLeast(1e-6f)
+                if (ov >= 0.5f * minH) {
+                    row.add(x)
+                    continue
+                }
+            }
+            rows.add(mutableListOf(x))
+        }
+        return rows.flatMap { row ->
+            if (row.size == 1) return@flatMap listOf(row[0].m)
+            val text = row.joinToString(" ") { it.m.text }
+            val arabic = text.count { it in '\u0600'..'\u06FF' }
+            val latin = text.count { it in 'A'..'Z' || it in 'a'..'z' }
+            if (arabic > latin) row.sortedByDescending { it.r }.map { it.m }
+            else row.sortedBy { it.l }.map { it.m }
+        }
+    }
 }

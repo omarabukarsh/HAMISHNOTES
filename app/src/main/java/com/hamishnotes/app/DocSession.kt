@@ -1358,8 +1358,10 @@ class DocSession(entry: DocEntry) {
     // ---------- تحرير الملخص ----------
 
     private fun changeEdits(f: (SummaryEdits) -> SummaryEdits) {
-        val next = f(summaryEdits)
-        if (next == summaryEdits) return
+        // تعديلات من نسخة سابقة قد تحمل مفاتيح قديمة: تُترجم أولًا فيعمل التغيير عليها
+        val cur = Summary.migrateLegacyKeys(allMarks(), summaryEdits)
+        val next = f(cur)
+        if (next == cur) return
         beginEdit()
         summaryEdits = next
         endEdit()

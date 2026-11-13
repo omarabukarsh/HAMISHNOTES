@@ -21,6 +21,8 @@ Summary: your files and notes stay on your device and we never see them. Our ser
 
 • Google ML Kit: text reading, translation and handwriting-to-text run on your device; your files' content is not sent. Language packs are downloaded from Google once, and the library sends technical diagnostics that do not identify you.
 
+• Extra fonts: when you pick a font that is not bundled with the app, its file is downloaded once from the open Google Fonts library through GitHub or jsDelivr. Nothing from your files or account is sent with it; the provider sees only your IP address and the font file name, as with any download.
+
 • Permissions: microphone only for lecture recording (stays on your device); fingerprint is verified by Android and never reaches us; internet for your account, subscription and language packs.
 
 • Deletion: delete your account in Settings → Account → Delete my account, or request it by email. We delete your account, subscription data and integrity records, and cancel your Google Play renewal. Uninstalling the app deletes your files from your device.
@@ -57,6 +59,8 @@ Full version: site/privacy/index.html
 • الخدمات: Supabase (الخادم، في فرانكفورت، ألمانيا)، وGoogle (تسجيل الدخول والدفع وPlay Integrity) وفق سياسة خصوصية Google: https://policies.google.com/privacy
 
 • Google ML Kit: قراءة النص والترجمة وتحويل الكتابة إلى نص تعمل على جهازك، ولا يُرسل محتوى ملفاتك. تنزّل حزم اللغات من Google مرة واحدة، وترسل المكتبة بيانات تشخيصية تقنية لا تحدد هويتك.
+
+• الخطوط الإضافية: عند اختيار خط غير المرفقة مع التطبيق يُنزَّل ملفه مرة واحدة من مكتبة Google Fonts المفتوحة عبر GitHub أو jsDelivr. لا يُرسل معه أي شيء من ملفاتك أو حسابك؛ يرى المزوّد عنوان IP واسم ملف الخط فقط، كأي تنزيل.
 
 • الأذونات: الميكروفون فقط لتسجيل المحاضرة (يبقى على جهازك)، والبصمة يتحقق منها نظام Android ولا نحصل عليها، والإنترنت للحساب والاشتراك وحزم اللغات.
 

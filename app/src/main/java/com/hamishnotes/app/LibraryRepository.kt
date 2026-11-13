@@ -104,17 +104,40 @@ class LibraryRepository(context: Context) {
      * كتابة لا تترك ملفًا نصف مكتوب: نكتب نسخة مؤقتة ونثبّتها على القرص (fsync) ثم نستبدل بها الأصل.
      * إن فشل الاستبدال (نادر) نُبقي الأصل حتى تنجح نسخة كاملة فوقه، ولا نحذفه أولًا.
      */
-    private fun atomicWrite(target: File, text: String) {
+    private fun atomicWrite(target: File, text: String, keepBackup: Boolean = false) {
+        commit(prepare(target, text), target, keepBackup)
+    }
+
+    /** يكتب النسخة المؤقتة كاملة ويثبّتها على القرص؛ لا يمس الملف الأصلي. */
+    private fun prepare(target: File, text: String): File {
         val tmp = File(target.parentFile, target.name + ".tmp")
         FileOutputStream(tmp).use { out ->
             out.write(text.toByteArray(Charsets.UTF_8))
             out.fd.sync()
+        }
+        return tmp
+    }
+
+    /**
+     * يستبدل الأصل بالنسخة المؤقتة. keepBackup: الأصل السابق يصير «<الاسم>.bak» (إعادة تسمية، بلا نسخ)،
+     * فإن تلف الملف الجديد أو انقطع الاستبدال في منتصفه يبقى آخر حفظ سليم يُقرأ منه.
+     */
+    private fun commit(tmp: File, target: File, keepBackup: Boolean) {
+        if (keepBackup && target.exists()) {
+            val bak = File(target.parentFile, target.name + ".bak")
+            if (!target.renameTo(bak)) runCatching { target.copyTo(bak, overwrite = true) }
         }
         if (!tmp.renameTo(target)) {
             tmp.copyTo(target, overwrite = true)
             tmp.delete()
         }
     }
+
+    /**
+     * ينفّذ عملية ملفات على خيط الكتابة نفسه، بعد كل حفظ منتظر قبلها:
+     * فالنسخ يرى آخر تعديل، والحذف لا يعقبه حفظ متأخر يعيد إنشاء ملف يتيم.
+     */
+    suspend fun <T> serialized(block: () -> T): T = withContext(writer) { block() }
 
     private fun queryName(uri: Uri): String? =
         try {
@@ -403,6 +426,7 @@ class LibraryRepository(context: Context) {
     fun delete(entry: DocEntry) {
         file(entry).delete()
         File(annDir, "${entry.id}.json").delete()
+        annDir.listFiles()?.forEach { if (it.name.startsWith("${entry.id}.json.")) it.delete() }
         File(thumbDir, "${entry.id}.jpg").delete()
         File(imgRoot, entry.id).deleteRecursively()
         File(ocrRoot, entry.id).deleteRecursively()
@@ -459,17 +483,42 @@ class LibraryRepository(context: Context) {
 
     // ---------- الكتابة اليدوية والصور المضافة ----------
 
-    fun loadDocData(id: String): DocData {
+    /** مستندات ملف بياناتها الحالي تالف: الحفظ التالي لا يجعل التالف نسخةً احتياطية فوق السليمة. */
+    private val damaged = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun loadDocData(id: String): DocData = loadDocDataOrNull(id) ?: DocData(emptyMap(), emptyMap())
+
+    /**
+     * بيانات المستند، أو null إن وُجدت ولم تُقرأ (تالفة هي ونسختها السابقة): من يعدّل ثم يحفظ
+     * (البطاقات من خارج المستند) يجب ألا يكتب فوقها. مستند بلا بيانات بعد يعيد بيانات فارغة.
+     */
+    fun loadDocDataOrNull(id: String): DocData? {
         val f = File(annDir, "$id.json")
-        if (!f.exists()) return DocData(emptyMap(), emptyMap())
-        return try {
-            parseDocData(f.readText())
-        } catch (e: Throwable) {
+        val bak = File(annDir, "$id.json.bak")
+        if (!f.exists() && !bak.exists()) return DocData(emptyMap(), emptyMap())
+        if (f.exists()) {
             try {
-                f.copyTo(File(annDir, "$id.json.bad"), overwrite = true)
-            } catch (x: Throwable) {
+                return parseDocData(f.readText())
+            } catch (e: Throwable) {
+                // نسخة من التالف (لا يُكتب فوق نسخة تالفة أقدم)، لمحاولة استرجاعه يدويًا
+                runCatching { f.copyTo(File(annDir, "$id.json.bad"), overwrite = false) }
+                damaged.add(id)
             }
-            DocData(emptyMap(), emptyMap())
+        }
+        // الملف تالف، أو انقطع الحفظ بين إعادة التسميتين: آخر حفظ سليم قبله
+        return try {
+            if (bak.exists()) parseDocData(bak.readText()) else null
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /** يحذف ملفات الصور التي لم تعد أي صورة في المستند تشير إليها (حُذفت من صفحاتها منذ أكثر من يوم). */
+    fun cleanImages(docId: String, referenced: Set<String>) {
+        val dir = File(imgRoot, docId)
+        val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name !in referenced && f.lastModified() < cutoff) f.delete()
         }
     }
 
@@ -693,9 +742,10 @@ class LibraryRepository(context: Context) {
                     list.forEach { s ->
                         val flat = JSONArray()
                         s.pts.forEach {
-                            flat.put(it.x.toDouble())
-                            flat.put(it.y.toDouble())
-                            flat.put(it.p.toDouble())
+                            // Float كما هو: يُكتب بأقصر صيغة («0.1» لا «0.10000000149011612») دون أي فقد في الدقة
+                            flat.put(it.x as Any)
+                            flat.put(it.y as Any)
+                            flat.put(it.p as Any)
                         }
                         arr.put(
                             JSONObject()
@@ -802,7 +852,7 @@ class LibraryRepository(context: Context) {
                                         .put("ink", JSONArray().apply {
                                             n.ink.forEach { s ->
                                                 val flat = JSONArray()
-                                                s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+                                                s.pts.forEach { flat.put(it.x as Any); flat.put(it.y as Any); flat.put(it.p as Any) }
                                                 put(
                                                     JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble())
                                                         .put("k", s.tool.name).put("t", s.t)
@@ -821,7 +871,8 @@ class LibraryRepository(context: Context) {
     suspend fun saveDocData(id: String, data: DocData) {
         withContext(writer) {
             try {
-                atomicWrite(File(annDir, "$id.json"), docDataJson(data))
+                atomicWrite(File(annDir, "$id.json"), docDataJson(data), keepBackup = id !in damaged)
+                damaged.remove(id)
             } catch (e: Throwable) {
                 reportWriteError(e)
             }
@@ -887,7 +938,7 @@ class LibraryRepository(context: Context) {
     private fun inkArray(list: List<Ink>): JSONArray = JSONArray().apply {
         list.forEach { s ->
             val flat = JSONArray()
-            s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+            s.pts.forEach { flat.put(it.x as Any); flat.put(it.y as Any); flat.put(it.p as Any) }
             put(
                 JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble()).put("k", s.tool.name).put("t", s.t)
                     .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) }; if (s.word.isNotEmpty()) { put("wd", s.word); put("wi", s.wid) } }
@@ -1022,22 +1073,46 @@ class LibraryRepository(context: Context) {
 
     // ---------- بنية الصفحات (إضافة صفحات وملفات) ----------
 
+    private fun pagesJson(pages: List<PageRef>): String {
+        val arr = JSONArray()
+        pages.forEach {
+            arr.put(
+                JSONObject()
+                    .put("s", it.src)
+                    .put("i", it.index)
+                    .put("r", it.ratio.toDouble())
+            )
+        }
+        return JSONObject().put("version", 1).put("pages", arr).toString()
+    }
+
     suspend fun savePages(id: String, pages: List<PageRef>) {
         withContext(writer) {
             try {
-                val arr = JSONArray()
-                pages.forEach {
-                    arr.put(
-                        JSONObject()
-                            .put("s", it.src)
-                            .put("i", it.index)
-                            .put("r", it.ratio.toDouble())
-                    )
-                }
-                atomicWrite(
-                    File(pagesDir, "$id.json"),
-                    JSONObject().put("version", 1).put("pages", arr).toString()
-                )
+                atomicWrite(File(pagesDir, "$id.json"), pagesJson(pages))
+            } catch (e: Throwable) {
+                reportWriteError(e)
+            }
+        }
+    }
+
+    /**
+     * تغيّر ترتيب الصفحات: بنية الصفحات والكتابة التي عليها تُحفظان معًا. الملفان يُكتبان كاملين أولًا
+     * ثم يُستبدلان تباعًا في لحظة واحدة، فلا يبقى على القرص ترتيب جديد مع كتابة بالأرقام القديمة
+     * إن أُغلق التطبيق أثناء التحويل الطويل إلى JSON.
+     */
+    suspend fun savePagesAndData(id: String, pages: List<PageRef>, data: DocData) {
+        withContext(writer) {
+            try {
+                val pagesFile = File(pagesDir, "$id.json")
+                val dataFile = File(annDir, "$id.json")
+                val pagesTmp = prepare(pagesFile, pagesJson(pages))
+                val dataTmp = prepare(dataFile, docDataJson(data))
+                commit(pagesTmp, pagesFile, keepBackup = false)
+                // النسخة الاحتياطية للكتابة تخص الترتيب القديم، فلا تُبقى
+                commit(dataTmp, dataFile, keepBackup = false)
+                File(annDir, "$id.json.bak").delete()
+                damaged.remove(id)
             } catch (e: Throwable) {
                 reportWriteError(e)
             }

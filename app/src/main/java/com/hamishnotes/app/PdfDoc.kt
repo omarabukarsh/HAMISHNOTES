@@ -252,7 +252,10 @@ class PdfDoc private constructor(private val id: String) {
                                 failed.add(k)
                             }
                         }
-                    val valid = saved.filter { it.src !in failed }
+                    // ملف صفحات مضافة لم يُفتح (حُذف أو تلف): صفحاته تبقى في مكانها فارغة بيضاء.
+                    // لو حُذفت من القائمة لانزاحت كتابة كل الصفحات التي بعدها إلى صفحات غير صفحاتها.
+                    val blank = Templates.src("plain", 0xFFFFFFFF.toInt())
+                    val valid = saved.map { if (it.src in failed) PageRef(blank, 0, it.ratio) else it }
                     doc.replacePages(if (valid.isEmpty()) mainPages else valid)
                 }
                 return doc

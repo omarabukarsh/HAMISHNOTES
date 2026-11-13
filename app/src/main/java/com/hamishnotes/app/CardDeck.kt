@@ -111,10 +111,13 @@ object CardDeck {
         val c = AppController
         val open = c.tabs.firstOrNull { it.id == docId && it.status is SessionStatus.Ready }
         if (open != null) return
-        withContext(Dispatchers.IO) {
-            val d = c.repo.loadDocData(docId)
-            c.repo.saveDocData(docId, f(d))
+        // على خيط الكتابة (بعد أي حفظ منتظر). بيانات لم تُقرأ (تالفة) لا يُكتب فوقها أبدًا
+        val d = c.repo.serialized { c.repo.loadDocDataOrNull(docId) }
+        if (d == null) {
+            c.say(MsgKind.ERROR, L("تعذّر تعديل البطاقة: افتح المستند أولًا", "Couldn’t change the card: open the document first"))
+            return
         }
+        c.repo.saveDocData(docId, f(d))
     }
 
     private fun DocData.with(cards: List<Card> = this.cards, starred: Set<String> = this.starred) =

@@ -28,9 +28,9 @@ import java.util.UUID
  */
 object AppController {
     lateinit var repo: LibraryRepository
+        private set
     @Volatile
     private var lastWriteErrorAt = -60_000L
-        private set
     private lateinit var prefs: SharedPreferences
     lateinit var appContext: Context
         private set
@@ -171,7 +171,8 @@ object AppController {
         val snap = stats.toMap()
         scope.launch {
             repo.saveStats(snap)
-            StudyWidget.refresh(appContext)
+            // الأداة تقرأ الإحصاءات وفهرس المكتبة من القرص: خارج خيط الواجهة
+            withContext(Dispatchers.IO) { StudyWidget.refresh(appContext) }
         }
     }
     var librarySort by mutableStateOf(SortMode.LAST_OPENED)
@@ -321,7 +322,7 @@ object AppController {
 
     fun pausePomodoro() {
         if (pomoPhase == 0 || pomoPaused) return
-        pomoLeftMs = (pomoEndsAt - System.currentTimeMillis()).coerceAtLeast(0L)
+        pomoLeftMs = (pomoEndsAt - monotonicMs()).coerceAtLeast(0L)
         pomoPaused = true
         pomoJob?.cancel()
         pomoJob = null
@@ -333,14 +334,17 @@ object AppController {
         runPomodoro()
     }
 
+    /** ساعة لا تتأثر بتغيير وقت الجهاز أو منطقته الزمنية (للمؤقتات وعدّاد القراءة). */
+    private fun monotonicMs(): Long = android.os.SystemClock.elapsedRealtime()
+
     /** يشغّل العدّ التنازلي من الوقت المتبقي الحالي. */
     private fun runPomodoro() {
-        pomoEndsAt = System.currentTimeMillis() + pomoLeftMs
+        pomoEndsAt = monotonicMs() + pomoLeftMs
         pomoJob?.cancel()
         pomoJob = scope.launch {
             while (isActive && pomoPhase != 0 && !pomoPaused) {
                 delay(1000)
-                val now = System.currentTimeMillis()
+                val now = monotonicMs()
                 // أثناء جلسة الدراسة يُحسب وقت القراءة حتى بدون لمس الشاشة
                 if (pomoPhase == 1) noteInteraction()
                 pomoLeftMs = (pomoEndsAt - now).coerceAtLeast(0L)
@@ -510,9 +514,13 @@ object AppController {
     /** إن كان طلب التحقق لإزالة القفل (من قائمة المستند) لا لفتح المستند. */
     private var unlockToRemove: String? = null
 
+    /** ما يُنفَّذ بعد نجاح التحقق بدل الفتح العادي (الانتقال إلى صفحة رابط أو نتيجة بحث). */
+    private var afterUnlock: (() -> Unit)? = null
+
     /** يطلب الرمز أو البصمة؛ removeLock=true لإزالة القفل بعد التحقق بدل فتح المستند. */
-    private fun requestUnlock(id: String, removeLock: Boolean) {
+    private fun requestUnlock(id: String, removeLock: Boolean, then: (() -> Unit)? = null) {
         unlockToRemove = if (removeLock) id else null
+        afterUnlock = then
         unlockRequest = id
     }
 
@@ -520,7 +528,10 @@ object AppController {
     fun cancelUnlock() {
         unlockRequest = null
         unlockToRemove = null
+        afterUnlock = null
     }
+
+    private fun needsUnlock(id: String): Boolean = library.any { it.id == id && it.locked } && id !in unlocked
 
     /** طلب تعيين رمز جديد (ثم قفل هذا المستند). */
     var setPinFor by mutableStateOf<String?>(null)
@@ -561,9 +572,10 @@ object AppController {
     fun unlockGranted() {
         val id = unlockRequest ?: return
         val remove = unlockToRemove == id
+        val then = afterUnlock
         cancelUnlock()
         if (id !in unlocked) unlocked.add(id)
-        if (remove) toggleLock(id) else openDocument(id)
+        if (remove) toggleLock(id) else if (then != null) then() else openDocument(id)
     }
 
     /** فتح آخر مستند (من أداة الشاشة الرئيسية). */
@@ -1041,6 +1053,8 @@ object AppController {
 
     /** يفتح مستندًا على صفحة محددة. */
     fun openPage(id: String, page: Int) {
+        // مستند مقفل: بعد إدخال الرمز يُفتح على الصفحة المطلوبة نفسها
+        if (needsUnlock(id)) return requestUnlock(id, removeLock = false) { openPage(id, page) }
         openDocument(id)
         val s = tabs.firstOrNull { it.id == id } ?: return
         if (s.status is SessionStatus.Ready) {
@@ -1051,6 +1065,7 @@ object AppController {
     }
 
     fun openAt(id: String, page: Int, query: String) {
+        if (needsUnlock(id)) return requestUnlock(id, removeLock = false) { openAt(id, page, query) }
         openDocument(id)
         val s = tabs.firstOrNull { it.id == id } ?: return
         s.pendingQuery = query
@@ -1063,8 +1078,14 @@ object AppController {
     /** يجمع ملخصات كل مستندات المادة في ملف PDF واحد، قسم لكل مستند. */
     fun exportFolderSummary(context: Context, folder: String, uri: Uri) {
         if (exporting != null) return
-        val docs = library.filter { it.folder == folder }
-        if (docs.isEmpty()) return
+        // المستند المقفل لا يخرج ملخصه حتى يُفتح قفله (كما في البحث والبطاقات)
+        val all = library.filter { it.folder == folder }
+        val docs = all.filter { !it.locked || it.id in unlocked }
+        val skipped = all.size - docs.size
+        if (docs.isEmpty()) {
+            if (skipped > 0) say(MsgKind.ERROR, L("افتح قفل مستندات المادة أولًا", "Unlock the subject’s documents first"))
+            return
+        }
         // الملخص يُقرأ من الملفات المحفوظة: ما لم يُحفظ بعد من المستندات المفتوحة يُكتب أولًا
         tabs.forEach { it.flushPersist() }
         exporting = L("جارٍ حفظ ملخص المادة…", "Saving subject summary…")
@@ -1072,7 +1093,8 @@ object AppController {
             try {
                 val pages = withContext(Dispatchers.IO) {
                     val sections = docs.mapNotNull { e ->
-                        val data = repo.loadDocData(e.id)
+                        // على خيط الكتابة: بعد اكتمال أي حفظ منتظر لهذا المستند
+                        val data = repo.serialized { repo.loadDocDataOrNull(e.id) } ?: return@mapNotNull null
                         val marks = data.marks.values.flatten().filter { it.inSummary }.sortedWith(
                             compareBy<TextMark>({ it.page }, { m -> m.rects.minOfOrNull { it.t } ?: 0f }, { m -> m.rects.minOfOrNull { it.l } ?: 0f })
                         )
@@ -1082,7 +1104,9 @@ object AppController {
                     if (sections.isEmpty()) 0
                     else Exporter.exportSummarySections(context.applicationContext, L("ملخص مادة: $folder", "Subject summary: $folder"), sections, uri)
                 }
-                say(MsgKind.ERROR, if (pages == 0) L("لا توجد ملخصات في مستندات هذه المادة", "No summaries in this subject’s documents") else L("تم حفظ ملخص المادة ($pages صفحة)", "Subject summary saved ($pages pages)"))
+                if (pages == 0) say(MsgKind.ERROR, L("لا توجد ملخصات في مستندات هذه المادة", "No summaries in this subject’s documents"))
+                else say(MsgKind.DONE, L("تم حفظ ملخص المادة ($pages صفحة)", "Subject summary saved ($pages pages)"))
+                if (skipped > 0) say(MsgKind.ERROR, L("تُخطي $skipped مستند مقفل", "Skipped $skipped locked document(s)"))
             } catch (t: Throwable) {
                 say(MsgKind.ERROR, L("تعذر حفظ ملخص المادة", "Could not save the subject summary"))
             } finally {
@@ -1102,7 +1126,7 @@ object AppController {
     private const val TICK_MS = 15_000L
 
     fun noteInteraction() {
-        lastInteractionAt = System.currentTimeMillis()
+        lastInteractionAt = monotonicMs()
     }
 
     /** يُستدعى من MainActivity عند ظهور التطبيق واختفائه. يحسب الوقت للمستند المفتوح فقط. */
@@ -1112,11 +1136,11 @@ object AppController {
         if (!visible) return
         noteInteraction()
         clockJob = scope.launch {
-            var last = System.currentTimeMillis()
+            var last = monotonicMs()
             var ticks = 0
             while (isActive) {
                 delay(TICK_MS)
-                val now = System.currentTimeMillis()
+                val now = monotonicMs()
                 val dt = (now - last).coerceIn(0L, TICK_MS * 2)
                 last = now
                 val id = activeId ?: continue
@@ -1275,6 +1299,8 @@ object AppController {
                     }
                 }, uri, { i -> exporting = L("جارٍ تجهيز PDF: صفحة ${i + 1} من $total", "Preparing PDF: page ${i + 1} of $total") }, data, imgs, extras)
                 true
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
             } catch (t: Throwable) {
                 // احتياط: صفحات كصور (نسخة نهائية فقط)
                 Exporter.exportAnnotated(context.applicationContext, snap, uri) { i ->
@@ -1546,7 +1572,7 @@ object AppController {
     fun importDocuments(uris: List<Uri>) {
         if (uris.isEmpty()) return
         // الخطة المجانية: نستورد ما يتسع له الحد ونعرض نافذة الحد للباقي
-        val allowed = if (Premium.active) uris.size else minOf(uris.size, Premium.freeSlots())
+        val allowed = if (Premium.entitled()) uris.size else minOf(uris.size, Premium.freeSlots())
         if (allowed < uris.size) Premium.limitOpen = true
         if (allowed == 0) return
         val uris = uris.take(allowed)
@@ -1678,7 +1704,9 @@ object AppController {
         tabs.firstOrNull { it.id == entry.id }?.flushPersist()
         scope.launch {
             try {
-                val copy = withContext(Dispatchers.IO) { repo.duplicate(entry, L(" (نسخة)", " (copy)")) }
+                // على خيط الكتابة: بعد حفظ آخر تعديل، فتشمله النسخة
+                val suffix = L(" (نسخة)", " (copy)")
+                val copy = repo.serialized { repo.duplicate(entry, suffix) }
                 library.add(0, copy)
                 saveLibrary()
                 say(MsgKind.DONE, L("تم إنشاء نسخة من المستند", "Document duplicated"))
@@ -1688,12 +1716,23 @@ object AppController {
         }
     }
 
-    fun delete(entry: DocEntry) {
+    /**
+     * يحذف المستند. deleteAudio: تسجيلات المحاضرات المربوطة به تُحذف معه؛
+     * false = تُنقل إلى مجلد الموسيقى في الجهاز (أو تبقى في مساحة التطبيق إن تعذّر النقل).
+     */
+    fun delete(entry: DocEntry, deleteAudio: Boolean = true) {
         tabs.firstOrNull { it.id == entry.id }?.cancelPendingPersist()
+        if (AudioNotes.recordingDoc == entry.id) AudioNotes.stop()
         closeTab(entry.id)
         library.removeAll { it.id == entry.id }
         saveLibrary()
-        scope.launch { withContext(Dispatchers.IO) { repo.delete(entry) } }
+        appContext.getSharedPreferences("mynotes_outline", Context.MODE_PRIVATE).edit().remove(entry.id).apply()
+        scope.launch {
+            // على خيط الكتابة: بعد أي حفظ منتظر، فلا يُعاد إنشاء ملف كتابة يتيم بعد الحذف
+            repo.serialized { repo.delete(entry) }
+            val kept = withContext(Dispatchers.IO) { AudioNotes.removeFor(entry.id, entry.name, keep = !deleteAudio) }
+            if (kept > 0) say(MsgKind.DONE, L("نُقلت $kept تسجيلات إلى مجلد الموسيقى في جهازك", "Moved $kept recording(s) to your device’s Music folder"))
+        }
         say(MsgKind.DONE, L("تم حذف المستند", "Document deleted"))
     }
 }

@@ -166,6 +166,9 @@ object FontStore {
         }
     }
 
+    /** رقم الإيداع (commit) المثبّت من github.com/google/fonts الذي تطابقه مسارات fonts/catalog.json. */
+    private const val FONTS_REF = "3e5667764ccfea32ce0c3d58a3a4756de890adc1"
+
     /** ينزّل الخط إن لم يكن موجودًا. true = جاهز. */
     suspend fun ensure(name: String, retryFailed: Boolean = true): Boolean {
         if (isReady(name)) return true
@@ -176,9 +179,12 @@ object FontStore {
         val ok = downloads.withPermit {
             withContext(Dispatchers.IO) {
                 val enc = e.path.split('/').joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+                // نسخة مثبّتة من مستودع Google Fonts (FONTS_REF): محتواها لا يتغير، فلا ينكسر التنزيل إن نُقل خط
+                // أو أُعيدت تسميته لاحقًا، ولا يصل ملف غير الذي فُهرس. الفرع الحي احتياط أخير للخطوط الأحدث من النسخة.
                 val urls = listOf(
-                    "https://raw.githubusercontent.com/google/fonts/main/$enc",
-                    "https://cdn.jsdelivr.net/gh/google/fonts@main/$enc"
+                    "https://raw.githubusercontent.com/google/fonts/$FONTS_REF/$enc",
+                    "https://cdn.jsdelivr.net/gh/google/fonts@$FONTS_REF/$enc",
+                    "https://raw.githubusercontent.com/google/fonts/main/$enc"
                 )
                 val dest = fileOf(e)
                 val tmp = File(dest.path + ".part")

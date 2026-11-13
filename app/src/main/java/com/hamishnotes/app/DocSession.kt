@@ -450,6 +450,17 @@ class DocSession(entry: DocEntry) {
         saveOutline(list)
     }
 
+    /**
+     * بعد إضافة صفحات أو حذفها أو ترتيبها: عناوين الفهرس الذي عدّله المستخدم تتبع صفحاتها.
+     * newPage يعيد الرقم الجديد للصفحة القديمة، أو null إن حُذفت (فيُحذف عنوانها).
+     */
+    private fun remapOutline(newPage: (Int) -> Int?) {
+        outlineEntries()
+        val cur = outlineCustom ?: return
+        val next = cur.mapNotNull { e -> newPage(e.page)?.let { if (it == e.page) e else OutlineEntry(e.title, e.level, it) } }
+        if (next != cur) saveOutline(next)
+    }
+
     fun resetOutline() {
         outlineCustom = null
         outlinePrefs.edit().remove(id).apply()
@@ -460,13 +471,19 @@ class DocSession(entry: DocEntry) {
         pdf?.pages?.indexOfFirst { it.src == "main" && it.index == mainIndex } ?: -1
     private var snapshot: EditSnapshot? = null
     private var disposed = false
+    /** ملف الكتابة موجود لكنه تالف هو ونسخته السابقة (يُبلَّغ المستخدم عند الفتح). */
+    @Volatile private var dataUnreadable = false
 
     suspend fun load(file: File, repo: LibraryRepository) {
         try {
             val loaded = withContext(Dispatchers.IO) {
                 if (!file.exists()) throw FileNotFoundException()
                 val doc = PdfDoc.open(id, file, repo.partsDir(id), repo.loadPages(id))
-                Triple(doc, repo.loadDocData(id), repo.loadOcrAll(id))
+                val data = repo.loadDocDataOrNull(id)
+                // بيانات مقروءة: ملفات الصور التي حُذفت صورها من الصفحات منذ مدة لا حاجة لبقائها
+                if (data != null) runCatching { repo.cleanImages(id, data.images.values.flatten().map { it.file }.toSet()) }
+                dataUnreadable = data == null
+                Triple(doc, data ?: DocData(emptyMap(), emptyMap()), repo.loadOcrAll(id))
             }
             if (disposed) {
                 loaded.first.close()
@@ -498,6 +515,12 @@ class DocSession(entry: DocEntry) {
             bookmarks = loaded.second.bookmarks
             ocr.putAll(loaded.third)
             status = SessionStatus.Ready
+            if (dataUnreadable) {
+                AppController.say(
+                    MsgKind.ERROR,
+                    L("تعذّرت قراءة الكتابة المحفوظة على هذا المستند. حُفظت نسخة من ملفها التالف داخل التطبيق", "The saved writing on this document couldn’t be read. A copy of the damaged file was kept inside the app")
+                )
+            }
         } catch (e: FileNotFoundException) {
             status = SessionStatus.Failed(L("الملف غير موجود، ربما حُذف أو نُقل.", "File not found; it may have been deleted or moved."))
         } catch (e: SecurityException) {
@@ -902,6 +925,8 @@ class DocSession(entry: DocEntry) {
         val old = doc.pages
         if (order.isEmpty() || order.any { it !in old.indices }) return
         stopOcr()
+        // فهرس الملف الأصلي (غير المعدّل) يتبع صفحاته تلقائيًا؛ المعدّل يُنقل هنا قبل تغيير الصفحات
+        remapOutline { oi -> order.indexOf(oi).takeIf { it >= 0 } }
         doc.replacePages(order.map { old[it] })
         val seen = HashSet<Int>()
         val nAnn = HashMap<Int, List<Ink>>()
@@ -947,6 +972,7 @@ class DocSession(entry: DocEntry) {
         stopOcr()
         val old = doc.pages
         val at = (after + 1).coerceIn(0, old.size)
+        remapOutline { k -> if (k >= at) k + n else k }
         doc.replacePages(old.subList(0, at) + refs + old.subList(at, old.size))
 
         fun shift(k: Int): Int = if (k >= at) k + n else k
@@ -1021,8 +1047,7 @@ class DocSession(entry: DocEntry) {
         baseWords.clear()
         AppController.onPagesChanged(id, pagesSnap.size)
         AppController.scope.launch {
-            AppController.repo.savePages(id, pagesSnap)
-            AppController.repo.saveDocData(id, data)
+            AppController.repo.savePagesAndData(id, pagesSnap, data)
             withContext(Dispatchers.IO) { AppController.repo.rewriteOcr(id, ocrSnap) }
             if (!disposed) startOcr()
         }
@@ -1054,6 +1079,8 @@ class DocSession(entry: DocEntry) {
         val existing = ocr[page]
         if (existing != null && isFresh(existing, strokes)) return existing
         val lang = PenPrefs.hwLang
+        // الصفحة التي بدأت قراءتها: إن أُضيفت صفحات أو رُتّبت أثناء القراءة تغيّر رقمها، فلا تُحفظ النتيجة برقم قديم
+        val refAtStart = doc.pages.getOrNull(page)
 
         val found: OcrPage? = try {
             withContext(Dispatchers.Default) {
@@ -1137,6 +1164,7 @@ class DocSession(entry: DocEntry) {
             val offset = (others.maxOfOrNull { it.line } ?: -1) + 1
             OcrPage(others + converted.map { it.copy(line = it.line + offset) }, found?.version ?: ver)
         }
+        if (disposed || pdf?.pages?.getOrNull(page) !== refAtStart) return null
         if (result != null) {
             ocr[page] = result
             withContext(Dispatchers.IO) { AppController.repo.saveOcrPage(id, page, result) }
@@ -1206,6 +1234,8 @@ class DocSession(entry: DocEntry) {
 
     fun stopOcr() {
         ocrJob?.cancel()
+        // قراءة «بعد الكتابة» أيضًا: نتيجتها مربوطة بأرقام الصفحات قبل التغيير
+        inkReadJob?.cancel()
         ocrRunning = false
     }
 
@@ -1660,7 +1690,8 @@ class DocSession(entry: DocEntry) {
 
     private fun saveNow() {
         val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
-        AppController.scope.launch { AppController.repo.saveDocData(id, data) }
+        // UNDISPATCHED: طلب الحفظ يدخل طابور خيط الكتابة الآن، قبل أي نسخ أو حذف يطلبه المستدعي بعده
+        AppController.scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { AppController.repo.saveDocData(id, data) }
     }
 
     fun dispose() {

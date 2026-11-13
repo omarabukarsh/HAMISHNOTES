@@ -1,8 +1,11 @@
 package com.hamishnotes.app
 
 import android.content.Context
+import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -72,5 +75,50 @@ class LibraryIndexTest {
         repo.saveIndex(listOf(entry("a", "First")))
         assertTrue(reported > 0)
         index.deleteRecursively()
+    }
+
+    private val stroke = Ink(listOf(Pt(0.1f, 0.2f, 0.33333334f), Pt(1.0E-4f, 0.70710677f, 1f)), Color.Black, 0.004f, Tool.BALLPOINT, 5L)
+
+    private fun data(n: Int) = DocData(mapOf(0 to List(n) { stroke }), emptyMap())
+
+    private fun annotations(id: String) = File(ctx.filesDir, "annotations/$id.json")
+
+    /** النقاط تُكتب بأقصر صيغة وتُقرأ كما هي تمامًا. */
+    @Test
+    fun strokePointsRoundTripExactlyAndCompactly(): Unit = runBlocking {
+        val repo = LibraryRepository(ctx)
+        repo.saveDocData("d-float", data(1))
+        val text = annotations("d-float").readText()
+        assertTrue(text, text.contains("[0.1,0.2,0.33333334,1.0E-4,0.70710677,1]"))
+        assertFalse(text.contains("0.10000000149"))
+        val back = repo.loadDocData("d-float").ink[0]!![0].pts
+        assertEquals(stroke.pts.map { Triple(it.x, it.y, it.p) }, back.map { Triple(it.x, it.y, it.p) })
+    }
+
+    /** ملف كتابة تالف: يُقرأ آخر حفظ سليم قبله، والحفظ التالي لا يضع التالف مكان النسخة السليمة. */
+    @Test
+    fun corruptAnnotationsFallBackToThePreviousSave(): Unit = runBlocking {
+        val repo = LibraryRepository(ctx)
+        repo.saveDocData("d-bak", data(1))
+        repo.saveDocData("d-bak", data(2))
+        annotations("d-bak").writeText("{ broken")
+
+        val again = LibraryRepository(ctx)
+        assertEquals(1, again.loadDocDataOrNull("d-bak")!!.ink[0]!!.size)
+        again.saveDocData("d-bak", data(3))
+        assertEquals(3, again.loadDocData("d-bak").ink[0]!!.size)
+        // النسخة الاحتياطية ما زالت الحفظ السليم الأول، لا الملف التالف
+        annotations("d-bak").writeText("{ broken again")
+        assertEquals(1, LibraryRepository(ctx).loadDocDataOrNull("d-bak")!!.ink[0]!!.size)
+    }
+
+    /** تالف بلا نسخة سابقة: null (لا بيانات فارغة يُكتب بها فوق الملف)، ومستند بلا ملف: بيانات فارغة. */
+    @Test
+    fun unreadableAnnotationsAreReportedNotReplacedByEmptyData(): Unit = runBlocking {
+        val repo = LibraryRepository(ctx)
+        annotations("d-bad").apply { parentFile!!.mkdirs() }.writeText("{ broken")
+        assertNull(repo.loadDocDataOrNull("d-bad"))
+        assertTrue(File(ctx.filesDir, "annotations/d-bad.json.bad").exists())
+        assertTrue(repo.loadDocDataOrNull("d-none")!!.ink.isEmpty())
     }
 }

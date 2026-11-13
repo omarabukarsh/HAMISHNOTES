@@ -300,13 +300,20 @@ fun LibraryScreen() {
     }
     if (deleteMany) {
         val list = c.library.filter { it.id in selected }
+        val audioCount = remember(list.map { it.id }) { list.sumOf { AudioNotes.count(it.id) } }
+        var deleteAudio by remember { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { deleteMany = false },
             title = { Text(L("حذف ${list.size} مستندات؟", "Delete ${list.size} documents?")) },
-            text = { Text(L("ستُحذف المستندات المحددة وكل الكتابة عليها نهائيًا، ولا يمكن التراجع.", "The selected documents and everything written on them will be deleted permanently. This cannot be undone.")) },
+            text = {
+                Column {
+                    Text(L("ستُحذف المستندات المحددة وكل الكتابة عليها نهائيًا، ولا يمكن التراجع.", "The selected documents and everything written on them will be deleted permanently. This cannot be undone."))
+                    DeleteAudioChoice(audioCount, deleteAudio) { deleteAudio = it }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    list.forEach { c.delete(it) }
+                    list.forEach { c.delete(it, deleteAudio) }
                     deleteMany = false
                     selected.clear()
                     selecting = false
@@ -323,13 +330,20 @@ fun LibraryScreen() {
 
     val dt = deleteTarget
     if (dt != null) {
+        val audioCount = remember(dt.id) { AudioNotes.count(dt.id) }
+        var deleteAudio by remember(dt.id) { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(L("حذف المستند؟", "Delete document?")) },
-            text = { Text(L("سيتم حذف «${dt.name}» وكل الكتابة عليه نهائيًا، ولا يمكن التراجع.", "“${dt.name}” and everything written on it will be deleted permanently. This cannot be undone.")) },
+            text = {
+                Column {
+                    Text(L("سيتم حذف «${dt.name}» وكل الكتابة عليه نهائيًا، ولا يمكن التراجع.", "“${dt.name}” and everything written on it will be deleted permanently. This cannot be undone."))
+                    DeleteAudioChoice(audioCount, deleteAudio) { deleteAudio = it }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    c.delete(dt)
+                    c.delete(dt, deleteAudio)
                     deleteTarget = null
                 }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             },
@@ -1414,5 +1428,27 @@ private fun formatRelative(ts: Long): String {
         d == 1 -> L("أمس", "yesterday")
         d < 7 -> L("قبل $d أيام", "$d days ago")
         else -> SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(ts))
+    }
+}
+
+/**
+ * خيار يظهر في نافذة حذف المستند إن كانت له تسجيلات محاضرات: تُحذف معه، أو تُحفظ في مجلد الموسيقى في الجهاز.
+ */
+@Composable
+private fun DeleteAudioChoice(count: Int, checked: Boolean, onChange: (Boolean) -> Unit) {
+    if (count <= 0) return
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(8.dp)).clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = onChange)
+        Column(Modifier.weight(1f)) {
+            Text(L("حذف التسجيلات الصوتية أيضًا ($count)", "Also delete the audio recordings ($count)"), fontSize = 14.sp)
+            Text(
+                if (checked) L("ستُحذف التسجيلات مع المستند", "The recordings will be deleted with the document")
+                else L("ستُحفظ التسجيلات في مجلد الموسيقى في جهازك (especial notes)", "The recordings will be saved to your device’s Music folder (especial notes)"),
+                fontSize = 12.sp, color = Palette.TextSecondary
+            )
+        }
     }
 }

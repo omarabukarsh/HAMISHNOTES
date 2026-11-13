@@ -266,10 +266,13 @@ object Premium {
     fun canAdd(n: Int = 1): Boolean {
         // نفس فحص بقية الخصائص (require): الحق من القسيمة الموقّعة، لا من الراية في الذاكرة وحدها
         if (AppController.library.size + n <= FREE_DOCS) return true
-        if (active && (BuildConfig.TEST_PREMIUM || confirm())) return true
+        if (entitled()) return true
         limitOpen = true
         return false
     }
+
+    /** Premium فعّال الآن بعد إعادة التحقق من القسيمة (في نسخة التجربة: الوضع التجريبي). */
+    fun entitled(): Boolean = active && (BuildConfig.TEST_PREMIUM || confirm())
 
     // ---------- الشراء والتحقق (نسخة المتجر) ----------
 

@@ -58,20 +58,103 @@ object AudioNotes {
     private fun dir(docId: String) = File(File(ctx.filesDir, "audio"), docId).also { it.mkdirs() }
     private fun fileOf(r: Rec) = File(dir(r.docId), r.id + ".m4a")
 
+    /** مجلد تسجيلات المستند دون إنشائه (للفحص والحذف). */
+    private fun dirOrNull(docId: String): File? = File(File(ctx.filesDir, "audio"), docId).takeIf { it.isDirectory }
+
     fun list(docId: String): List<Rec> {
         if (!recs.containsKey(docId)) {
-            val f = File(dir(docId), "index.json")
-            recs[docId] = try {
-                val a = JSONArray(f.readText())
-                (0 until a.length()).map { i ->
-                    val o = a.getJSONObject(i)
-                    Rec(o.getString("id"), docId, o.getLong("s"), o.getLong("d"))
+            val d = dirOrNull(docId)
+            val f = if (d != null) File(d, "index.json") else null
+            val loaded = try {
+                if (f == null || !f.exists()) emptyList() else {
+                    val a = JSONArray(f.readText())
+                    (0 until a.length()).map { i ->
+                        val o = a.getJSONObject(i)
+                        Rec(o.getString("id"), docId, o.getLong("s"), o.getLong("d"))
+                    }
                 }
             } catch (t: Throwable) {
                 emptyList()
             }
+            // تسجيل بلا مدة: بدأ ولم يُوقَف (أُغلق التطبيق أثناءه). نقرأ مدته من الملف إن كان سليمًا، وإلا يُحذف
+            val open = loaded.filter { it.durationMs <= 0L && !(recordingDoc == docId && it.id == recId) }
+            if (open.isEmpty()) recs[docId] = loaded
+            else {
+                val fixed = loaded.mapNotNull { r ->
+                    if (r !in open) r
+                    else {
+                        val dur = durationOf(fileOf(r))
+                        if (dur > 1500) Rec(r.id, docId, r.start, dur) else { fileOf(r).delete(); null }
+                    }
+                }
+                save(docId, fixed)
+            }
         }
         return recs[docId] ?: emptyList()
+    }
+
+    private fun durationOf(f: File): Long {
+        if (!f.exists() || f.length() == 0L) return 0L
+        val mmr = android.media.MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(f.absolutePath)
+            mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } catch (t: Throwable) {
+            0L
+        } finally {
+            runCatching { mmr.release() }
+        }
+    }
+
+    /** هل للمستند تسجيلات محفوظة؟ (لسؤال المستخدم عنها عند حذف المستند) */
+    fun count(docId: String): Int = if (dirOrNull(docId) == null) 0 else list(docId).size
+
+    /**
+     * عند حذف المستند: keep=false تُحذف تسجيلاته؛ keep=true تُنقل إلى مجلد الموسيقى في الجهاز
+     * (Music/especial notes) فتبقى في متناول المستخدم. يعيد عدد ما نُقل. خارج الخيط الرئيسي.
+     */
+    fun removeFor(docId: String, docName: String, keep: Boolean): Int {
+        val d = dirOrNull(docId) ?: return 0
+        val all = list(docId)
+        var moved = 0
+        var left = 0
+        if (keep) {
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH-mm", java.util.Locale.US)
+            val base = docName.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(60).ifBlank { "recording" }
+            for (r in all) {
+                val f = fileOf(r)
+                if (!f.exists()) continue
+                if (exportToMusic(f, base + " " + fmt.format(java.util.Date(r.start)) + ".m4a")) moved++ else left++
+            }
+        }
+        recs.remove(docId)
+        // ما تعذّر نقله يبقى في مكانه بدل أن يضيع
+        if (left == 0) d.deleteRecursively()
+        return moved
+    }
+
+    private fun exportToMusic(src: File, name: String): Boolean {
+        // قبل Android 10 تحتاج الكتابة في مجلد الموسيقى إذن تخزين لا يطلبه التطبيق: يبقى الملف في مكانه
+        if (Build.VERSION.SDK_INT < 29) return false
+        val resolver = ctx.contentResolver
+        var uri: android.net.Uri? = null
+        return try {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
+                put(android.provider.MediaStore.Audio.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_MUSIC + "/especial notes")
+                put(android.provider.MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+            uri = resolver.insert(
+                android.provider.MediaStore.Audio.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY), values
+            ) ?: return false
+            (resolver.openOutputStream(uri) ?: throw java.io.IOException("output")).use { out -> src.inputStream().use { it.copyTo(out) } }
+            resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
+            true
+        } catch (t: Throwable) {
+            uri?.let { u -> runCatching { resolver.delete(u, null, null) } }
+            false
+        }
     }
 
     private fun save(docId: String, l: List<Rec>) {
@@ -105,6 +188,10 @@ object AudioNotes {
             recStart = System.currentTimeMillis()
             recordingDoc = docId
             recElapsed = 0L
+            // يُسجَّل في الفهرس من الآن (بلا مدة): إن أُغلق التطبيق قبل الإيقاف يُستعاد التسجيل عند الفتح التالي
+            save(docId, list(docId) + Rec(recId, docId, recStart, 0L))
+            // خدمة أمامية: يبقى الميكروفون يعمل والشاشة مطفأة أو التطبيق في الخلفية، مع زر إيقاف في الإشعار
+            RecordingService.start(ctx)
             tickJob = AppController.scope.launch {
                 while (isActive) {
                     recElapsed = System.currentTimeMillis() - recStart
@@ -136,8 +223,14 @@ object AudioNotes {
         }
         recorder = null
         recordingDoc = null
-        if (dur > 1500) save(docId, list(docId) + Rec(recId, docId, recStart, dur))
-        else File(dir(docId), "$recId.m4a").delete()
+        tickJob = null
+        val others = list(docId).filter { it.id != recId }
+        if (dur > 1500) save(docId, others + Rec(recId, docId, recStart, dur))
+        else {
+            File(dir(docId), "$recId.m4a").delete()
+            save(docId, others)
+        }
+        RecordingService.stop(ctx)
     }
 
     fun delete(r: Rec) {

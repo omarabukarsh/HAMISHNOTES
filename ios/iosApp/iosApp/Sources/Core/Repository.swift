@@ -31,16 +31,57 @@ final class Repository {
 
     private var libraryURL: URL { root.appendingPathComponent("library.json") }
 
+    /// true إن أُصلحت المكتبة عند قراءتها (من النسخة الاحتياطية أو بإرجاع مستندات غابت عن الفهرس)،
+    /// فيحفظها التطبيق فورًا ويخبر المستخدم.
+    private(set) var libraryRepaired = false
+
     func loadLibrary() -> [DocEntry] {
-        guard let d = try? Data(contentsOf: libraryURL) else { return [] }
+        libraryRepaired = false
+        var list: [DocEntry] = []
         // كل مستند يُقرأ وحده: مدخل تالف لا يُضيع المكتبة كلها
-        guard let items = try? dec.decode([Lossy<DocEntry>].self, from: d) else {
+        if let d = try? Data(contentsOf: libraryURL), let items = try? dec.decode([Lossy<DocEntry>].self, from: d) {
+            list = items.compactMap { $0.value }
+            if list.count != items.count { keepUnreadable(libraryURL) }
+        } else {
             keepUnreadable(libraryURL)
-            return []
+            // الفهرس تالف أو مفقود: نسخته السابقة تحفظ أسماء المستندات ومواده
+            if let d = try? Data(contentsOf: backupURL(libraryURL)),
+               let items = try? dec.decode([Lossy<DocEntry>].self, from: d) {
+                list = items.compactMap { $0.value }
+                libraryRepaired = true
+            }
         }
-        let list = items.compactMap { $0.value }
-        if list.count != items.count { keepUnreadable(libraryURL) }
-        return list.filter { fm.fileExists(atPath: pdfURL($0.id).path) || $0.isMap }
+        list = list.filter { fm.fileExists(atPath: pdfURL($0.id).path) || $0.isMap }
+        // مستندات على الجهاز ليست في الفهرس (فهرس تالف، أو مدخل لم يُقرأ): تعود إلى المكتبة بدل أن تختفي
+        let found = missingDocs(known: Set(list.map { $0.id }))
+        if !found.isEmpty {
+            list += found
+            libraryRepaired = true
+        }
+        return list
+    }
+
+    /// مجلدات مستندات لا يذكرها الفهرس: يُصنع لكل منها مدخل من ملفاته.
+    private func missingDocs(known: Set<String>) -> [DocEntry] {
+        let docsDir = root.appendingPathComponent("docs", isDirectory: true)
+        var out: [DocEntry] = []
+        for id in (try? fm.contentsOfDirectory(atPath: docsDir.path)) ?? [] where !known.contains(id) {
+            guard fm.fileExists(atPath: pdfURL(id).path) else { continue }
+            let data = loadData(id)
+            let isMap = data.map != nil && data.pages.isEmpty
+            let pdf = isMap ? nil : PDFDocument(url: pdfURL(id))
+            if !isMap && pdf == nil { continue }
+            let created = (try? fm.attributesOfItem(atPath: dir(id).path)[.creationDate] as? Date) ?? Date()
+            let title = data.map?.title ?? (pdf?.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String) ?? ""
+            let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? L("مستند مستعاد", "Recovered document") : title
+            out.append(DocEntry(
+                id: id, name: name, sizeBytes: fileSize(id), pageCount: pdf?.pageCount ?? 0,
+                addedAt: Int64(created.timeIntervalSince1970 * 1000),
+                isNote: data.pages.first?.src.hasPrefix("blank:") ?? false, isMap: isMap
+            ))
+        }
+        return out
     }
 
     /// ملف تعذرت قراءته: تبقى منه نسخة بجانبه قبل أن يُكتب فوقه، فلا تضيع البيانات بصمت.
@@ -50,33 +91,59 @@ final class Repository {
         try? fm.copyItem(at: url, to: copy)
     }
 
+    /// النسخة السابقة من الملف: data.json ← data.bak.json
+    private func backupURL(_ url: URL) -> URL {
+        url.deletingPathExtension().appendingPathExtension("bak.json")
+    }
+
+    /// يكتب الملف ويُبقي نسخته السابقة بجانبه (backupURL)، فإن تلف الملف بعد ذلك يُقرأ السابق بدل أن تضيع البيانات.
+    private func writeKeepingBackup(_ d: Data, to url: URL) {
+        let tmp = url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".tmp")
+        do {
+            try d.write(to: tmp)
+            if fm.fileExists(atPath: url.path) {
+                _ = try fm.replaceItemAt(url, withItemAt: tmp, backupItemName: backupURL(url).lastPathComponent,
+                                         options: .withoutDeletingBackupItem)
+            } else {
+                try fm.moveItem(at: tmp, to: url)
+            }
+        } catch {
+            // تعذّر الاستبدال مع النسخة الاحتياطية: كتابة عادية آمنة (atomic) أفضل من لا شيء
+            try? fm.removeItem(at: tmp)
+            try? d.write(to: url, options: .atomic)
+        }
+    }
+
     func saveLibrary(_ list: [DocEntry]) {
-        if let d = try? enc.encode(list) { try? d.write(to: libraryURL, options: .atomic) }
+        if let d = try? enc.encode(list) { writeKeepingBackup(d, to: libraryURL) }
     }
 
     func loadJSON<T: Decodable>(_ name: String, _ type: T.Type) -> T? {
         let url = root.appendingPathComponent(name)
-        guard let d = try? Data(contentsOf: url) else { return nil }
-        if let v = try? dec.decode(T.self, from: d) { return v }
-        keepUnreadable(url)
-        return nil
+        if let d = try? Data(contentsOf: url) {
+            if let v = try? dec.decode(T.self, from: d) { return v }
+            keepUnreadable(url)
+        }
+        guard let b = try? Data(contentsOf: backupURL(url)) else { return nil }
+        return try? dec.decode(T.self, from: b)
     }
 
     /// قائمة تُقرأ عنصرًا عنصرًا: العنصر التالف يُتخطى وحده.
     func loadList<T: Decodable>(_ name: String, _ type: T.Type) -> [T] {
         let url = root.appendingPathComponent(name)
-        guard let d = try? Data(contentsOf: url) else { return [] }
-        guard let items = try? dec.decode([Lossy<T>].self, from: d) else {
-            keepUnreadable(url)
-            return []
+        if let d = try? Data(contentsOf: url), let items = try? dec.decode([Lossy<T>].self, from: d) {
+            let list = items.compactMap { $0.value }
+            if list.count != items.count { keepUnreadable(url) }
+            return list
         }
-        let list = items.compactMap { $0.value }
-        if list.count != items.count { keepUnreadable(url) }
-        return list
+        keepUnreadable(url)
+        guard let b = try? Data(contentsOf: backupURL(url)),
+              let items = try? dec.decode([Lossy<T>].self, from: b) else { return [] }
+        return items.compactMap { $0.value }
     }
 
     func saveJSON<T: Encodable>(_ name: String, _ value: T) {
-        if let d = try? enc.encode(value) { try? d.write(to: root.appendingPathComponent(name), options: .atomic) }
+        if let d = try? enc.encode(value) { writeKeepingBackup(d, to: root.appendingPathComponent(name)) }
     }
 
     // ---------- المستند ----------
@@ -90,23 +157,39 @@ final class Repository {
     }
     var stickersDir: URL { root.appendingPathComponent("stickers", isDirectory: true) }
 
-    func loadData(_ id: String) -> DocData {
-        let url = dir(id).appendingPathComponent("data.json")
-        guard let d = try? Data(contentsOf: url) else { return DocData() }
-        if let v = try? dec.decode(DocData.self, from: d) { return v }
-        keepUnreadable(url)
-        return DocData()
+    /// كيف قُرئت بيانات المستند.
+    enum DataState {
+        /// لا ملف بيانات ولا نسخة احتياطية (مستند جديد).
+        case fresh
+        case ok
+        /// الملف تالف أو مفقود، فقُرئت نسخته السابقة.
+        case fromBackup
+        /// الملف موجود ولا يُقرأ، ولا نسخة احتياطية صالحة.
+        case unreadable
     }
+
+    private func dataURL(_ id: String) -> URL { dir(id).appendingPathComponent("data.json") }
+
+    func loadDataChecked(_ id: String) -> (DocData, DataState) {
+        let url = dataURL(id)
+        let exists = fm.fileExists(atPath: url.path)
+        if let d = try? Data(contentsOf: url) {
+            if let v = try? dec.decode(DocData.self, from: d) { return (v, .ok) }
+            keepUnreadable(url)
+        }
+        if let b = try? Data(contentsOf: backupURL(url)), let v = try? dec.decode(DocData.self, from: b) {
+            return (v, .fromBackup)
+        }
+        return (DocData(), exists ? .unreadable : .fresh)
+    }
+
+    func loadData(_ id: String) -> DocData { loadDataChecked(id).0 }
 
     /// يعدّل بيانات مستند غير مفتوح في تبويب. لا يكتب شيئًا إن وُجد الملف وتعذرت قراءته.
     @discardableResult
     func updateData(_ id: String, _ f: (inout DocData) -> Void) -> Bool {
-        let url = dir(id).appendingPathComponent("data.json")
-        var data = DocData()
-        if let d = try? Data(contentsOf: url) {
-            guard let v = try? dec.decode(DocData.self, from: d) else { return false }
-            data = v
-        }
+        var (data, state) = loadDataChecked(id)
+        if state == .unreadable { return false }
         f(&data)
         saveData(id, data)
         return true
@@ -114,7 +197,15 @@ final class Repository {
 
     func saveData(_ id: String, _ data: DocData) {
         try? fm.createDirectory(at: dir(id), withIntermediateDirectories: true)
-        if let d = try? enc.encode(data) { try? d.write(to: dir(id).appendingPathComponent("data.json"), options: .atomic) }
+        if let d = try? enc.encode(data) { writeKeepingBackup(d, to: dataURL(id)) }
+    }
+
+    /// بيانات المستند لا تُقرأ: حبر صفحاته مربوط بمعرّفات صفحات ضاعت، فيُنقل جانبًا (ink-unreadable-…)
+    /// بدل أن يُعدّ لاحقًا حبر صفحات محذوفة ويُمسح.
+    func setAsideInk(_ id: String) {
+        let folder = dir(id).appendingPathComponent("ink", isDirectory: true)
+        guard fm.fileExists(atPath: folder.path) else { return }
+        try? fm.moveItem(at: folder, to: dir(id).appendingPathComponent("ink-unreadable-\(nowMs())", isDirectory: true))
     }
 
     func loadInk(_ id: String, page: String) -> PKDrawing {
@@ -322,7 +413,11 @@ final class Repository {
     /// ملفات حبر لصفحات لم تعد في المستند (حُذفت في جلسة سابقة).
     func removeOrphanInk(_ id: String, keep: Set<String>) {
         let folder = dir(id).appendingPathComponent("ink", isDirectory: true)
-        for f in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where !keep.contains(f) {
+        let files = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
+        // لا ملف حبر يطابق أي صفحة حالية: الأرجح أن معرّفات الصفحات هي التي تغيّرت (بيانات ضاعت)،
+        // لا أن كل صفحات الحبر حُذفت، فلا يُمسح شيء
+        guard files.contains(where: { keep.contains($0) }) else { return }
+        for f in files where !keep.contains(f) {
             try? fm.removeItem(at: folder.appendingPathComponent(f))
         }
     }

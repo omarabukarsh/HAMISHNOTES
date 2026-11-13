@@ -284,6 +284,13 @@ final class AppController: ObservableObject {
 
         library = repo.loadLibrary()
         libraryLoaded = true
+        if repo.libraryRepaired {
+            // الفهرس كان تالفًا أو ناقصًا وأُصلح: يُحفظ الآن كي لا يتكرر الإصلاح في كل تشغيل
+            saveLibrary()
+            DispatchQueue.main.async {
+                self.say(.error, L("كان فهرس المكتبة تالفًا، فاستُعيدت مستنداتك من الجهاز", "The library index was damaged, so your documents were recovered from the device"))
+            }
+        }
         // المستندات التي كانت مفتوحة
         if resumeLast, let open = p.stringArray(forKey: "open_tabs") {
             for id in open where library.contains(where: { $0.id == id && !$0.locked }) { openDocument(id, activate: false) }

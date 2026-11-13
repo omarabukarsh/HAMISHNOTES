@@ -137,7 +137,26 @@ final class DocSession: ObservableObject, Identifiable {
         id = entry.id
         title = entry.name
         isMap = entry.isMap
-        data = repo.loadData(entry.id)
+        let (loaded, state) = repo.loadDataChecked(entry.id)
+        data = loaded
+        switch state {
+        case .fromBackup:
+            // الملف تالف: قُرئت نسخته السابقة، وتُكتب من جديد فورًا
+            dataDirty = true
+            DispatchQueue.main.async {
+                AppController.shared.say(.error, L("كان ملف بيانات «\(entry.name)» تالفًا، فاستُعيدت آخر نسخة سليمة منه",
+                                                   "“\(entry.name)” had a damaged data file, so its last good copy was restored"))
+            }
+        case .unreadable:
+            // لا نسخة سليمة: حبر الصفحات يُنقل جانبًا قبل أن تُصنع معرّفات صفحات جديدة، فلا يُمسح لاحقًا
+            repo.setAsideInk(entry.id)
+            DispatchQueue.main.async {
+                AppController.shared.say(.error, L("تعذّرت قراءة بيانات «\(entry.name)». حُفظت نسخة منها على الجهاز ولم يُحذف شيء",
+                                                   "Couldn’t read the data of “\(entry.name)”. A copy was kept on the device and nothing was deleted"))
+            }
+        case .ok, .fresh:
+            break
+        }
         if entry.isMap {
             if data.map == nil { data.map = MindMapData(title: entry.name) }
             return

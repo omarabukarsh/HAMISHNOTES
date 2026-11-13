@@ -16,18 +16,18 @@ targets:
     platform: iOS
     sources:
       - path: iosApp
-      # موارد تطبيق أندرويد نفسها: الخطوط وشعار التطبيق ونصوص الرخص
-      - path: ../../app/src/main/res/font
+      # الموارد: الخطوط وشعار التطبيق ونصوص الرخص
+      - path: Resources/font
         type: folder
         buildPhase: resources
-      - path: ../../app/src/main/res/drawable-nodpi
+      - path: Resources/drawable-nodpi
         type: folder
         buildPhase: resources
-      - path: ../../app/src/main/assets/licenses
+      - path: Resources/licenses
         type: folder
         buildPhase: resources
       # مكتبة الخطوط: الفهرس والخطوط المثبتة (الباقي يُنزَّل عند الطلب)
-      - path: ../../app/src/main/assets/fonts
+      - path: Resources/fonts
         type: folder
         buildPhase: resources
     scheme:
@@ -76,13 +76,13 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
 
-  # اختبارات آلية (نفس اختبارات أندرويد المرجعية على antibiotics.pdf)، تعمل على محاكي iPad
+  # اختبارات آلية (الحالات المرجعية على antibiotics.pdf)، تعمل على محاكي iPad
   HamishTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - path: HamishTests
-      - path: ../../app/src/sharedTest/assets/antibiotics_words.tsv
+      - path: TestAssets/antibiotics_words.tsv
         buildPhase: resources
     dependencies:
       - target: Hamish

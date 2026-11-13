@@ -1,4 +1,4 @@
-.gradle/
+
 build/
 /local.properties
 .idea/
@@ -12,6 +12,5 @@ supabase/.temp/
 supabase/.branches/
 # مفاتيح المتجر لا تدخل المستودع أبدًا
 *.jks
-!keystore/mynotes.jks
 *.keystore
 signing.properties

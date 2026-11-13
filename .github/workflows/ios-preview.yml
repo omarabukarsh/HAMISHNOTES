@@ -49,7 +49,7 @@ jobs:
           BID=com.omarabukarsh.hamish
           DATA=$(xcrun simctl get_app_container "$UDID" $BID data)
           mkdir -p "$DATA/Documents"
-          cp app/src/sharedTest/assets/antibiotics.pdf "$DATA/Documents/demo.pdf"
+          cp ios/iosApp/TestAssets/antibiotics.pdf "$DATA/Documents/demo.pdf"
           shot() {
             # $1 = اسم الصورة، $2 = الشاشة، والباقي وسائط إضافية
             local name=$1; local screen=$2; shift 2

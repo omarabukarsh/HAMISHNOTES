@@ -1,10 +1,9 @@
 name: iPad tests
-# يشغّل الاختبارات الآلية لنسخة iPad على محاكي (نفس الاختبارات المرجعية في أندرويد)
+# يشغّل الاختبارات الآلية لنسخة iPad على محاكي (الحالات المرجعية على antibiotics.pdf)
 on:
   push:
     paths:
       - 'ios/**'
-      - 'app/src/sharedTest/assets/**'
       - '.github/workflows/ios-tests.yml'
   workflow_dispatch:
 

@@ -498,6 +498,7 @@ private fun BlockView(
 ) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val first = b.marks.firstOrNull()
     val edits = s.summaryEdits
     val userTable = b.key.startsWith("g:")
@@ -582,9 +583,36 @@ private fun BlockView(
             }
             MenuRow(L("حذف التمييز", "Delete highlight"), R.drawable.ph_trash, Palette.Danger) {
                 menu = false
-                b.marks.forEach { s.deleteMark(it.id) }
+                // فقرة جُمعت من عدة تمييزات (أجزاء متتالية أو النص نفسه في صفحات أخرى): تأكيد يذكر عددها وصفحاتها
+                if (b.marks.distinctBy { it.id }.size > 1) confirmDelete = true
+                else s.deleteMarks(b.marks.map { it.id })
             }
         }
+    }
+    if (confirmDelete) {
+        val marks = b.marks.distinctBy { it.id }
+        val pages = marks.map { it.page + 1 }.distinct().sorted()
+        val where = if (pages.size == 1) L("في الصفحة ${pages[0]}", "on page ${pages[0]}")
+        else L("في الصفحات ${pages.joinToString("، ")}", "on pages ${pages.joinToString(", ")}")
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(L("حذف ${marks.size} تمييزات؟", "Delete ${marks.size} highlights?")) },
+            text = {
+                Text(
+                    L(
+                        "هذا الجزء من الملخص مجموع من ${marks.size} تمييزات $where. ستُحذف كلها من صفحاتها، ويمكن استعادتها بضغطة «تراجع» واحدة.",
+                        "This part of the summary combines ${marks.size} highlights $where. All of them will be removed from their pages; one Undo brings them back."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    s.deleteMarks(marks.map { it.id })
+                }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(L("إلغاء", "Cancel")) } }
+        )
     }
 }
 

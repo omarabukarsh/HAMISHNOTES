@@ -1348,6 +1348,15 @@ class DocSession(entry: DocEntry) {
         endEdit()
     }
 
+    /** يحذف عدة تمييزات (ولو في صفحات مختلفة) كخطوة تراجع واحدة: ضغطة «تراجع» واحدة تعيدها كلها. */
+    fun deleteMarks(ids: Collection<String>) {
+        val gone = ids.toSet()
+        if (gone.isEmpty()) return
+        beginEdit()
+        marks = marks.mapValues { (_, list) -> if (list.any { it.id in gone }) list.filter { it.id !in gone } else list }
+        endEdit()
+    }
+
     fun deleteMark(markId: String) {
         val page = marks.entries.firstOrNull { e -> e.value.any { it.id == markId } }?.key ?: return
         beginEdit()

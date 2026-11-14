@@ -291,7 +291,7 @@ struct HandwritingSheet: View {
             return
         }
         let f = session.fitText(page: page, strokes: alive, lines: lines, font: "", snap: false)
-        let color = alive.first.map { $0.ink.color.argb } ?? 0xFF1A2230
+        let color = alive.first.map { $0.color } ?? 0xFF1A2230
         let box = TextBox(id: UUID().uuidString, page: pid, x: f.x, y: f.y, w: f.w, text: lines.joined(separator: "\n"), color: color, size: f.size)
         if removeInk { session.inkToTextBox(pageId: pid, strokes: alive, box: box) } else { session.upsertBox(box) }
     }

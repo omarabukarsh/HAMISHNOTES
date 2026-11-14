@@ -1,9 +1,7 @@
 import UIKit
-import PencilKit
 
 // الحبر بصيغة أندرويد (مخطط version 3): كل خط نقاط x,y,ضغط نسبية لعرض الصفحة، مع نوع القلم وخصائصه.
-// هذا الملف يحوّل PKDrawing إلى تلك النقاط وبالعكس، لتُفتح «النسخة القابلة للتعديل» في التطبيقين.
-// الشكل قريب لا مطابق بالبكسل (محرك الرسم مختلف)، والسماكة الظاهرة محفوظة.
+// محرك الحبر في الآيباد بالنموذج نفسه (بنقاط الصفحة)، فالتحويل ضرب أو قسمة على عرض الصفحة فقط.
 
 /// خط واحد كما يحفظه أندرويد.
 struct AStroke: Equatable {
@@ -147,178 +145,40 @@ enum AJSON {
 }
 
 enum InkCodec {
-    /// المسافة بين النقاط المأخوذة من منحنى PencilKit (بنقاط الصفحة).
-    static let step: CGFloat = 1.2
-    /// أقصى مسافة بين نقاط التحكم عند بناء خط PencilKit (فيمر المنحنى قريبًا من النقاط).
-    static let gap: CGFloat = 2
+    // ============================================================ من الآيباد إلى أندرويد
 
-    // ============================================================ من PencilKit إلى أندرويد
-
-    /// خطوط الصفحة بصيغة أندرويد. W = عرض الصفحة بالنقاط. الملء والحروف المجمَّلة تُربط بخطوطها.
-    static func encode(_ d: PKDrawing, width W: CGFloat, fills: [ShapeFill] = [], converted: [ConvertedLine] = []) -> [AStroke] {
+    /// خطوط الصفحة بصيغة أندرويد. W = عرض الصفحة بالنقاط. converted: أسطر الحروف المحوّلة في الصفحة
+    /// (لربط حروف الملفات القديمة بكلماتها).
+    static func encode(_ d: InkDrawing, width W: CGFloat, converted: [ConvertedLine] = []) -> [AStroke] {
         guard W > 0 else { return [] }
-        var groups: [Double: [PKStroke]] = [:]
-        for s in d.strokes where s.randomSeed == glyphSeed {
-            groups[s.path.creationDate.timeIntervalSinceReferenceDate, default: []].append(s)
+        return d.strokes.compactMap { s -> AStroke? in
+            guard !s.pts.isEmpty else { return nil }
+            var a = AStroke(s, width: W)
+            if s.fill && s.word.isEmpty, let l = converted.first(where: { InkKey.ms($0.key) == s.t }) { attachWord(&a, l, W) }
+            return a
         }
-        var out: [AStroke] = []
-        var doneGlyph = Set<Double>()
-        var doneFill = Set<String>()
-        for s in d.strokes {
-            let key = s.path.creationDate.timeIntervalSinceReferenceDate
-            for f in fills where f.key == key && f.pts.count > 2 && doneFill.insert(f.id).inserted {
-                out.append(fillStroke(f, W))
-            }
-            if s.randomSeed == glyphSeed {
-                guard doneGlyph.insert(key).inserted, let group = groups[key] else { continue }
-                let made = glyphs(group, W, converted.first { $0.key == key })
-                out += made.isEmpty ? group.flatMap { plain($0, W) } : made
-                continue
-            }
-            out += plain(s, W)
-        }
-        return out
     }
 
-    static func ms(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1000).rounded()) }
-
-    /// ملء شكل مغلق: خط بلا سماكة يحمل المضلع (إطاره خط آخر يُرسم فوقه).
-    private static func fillStroke(_ f: ShapeFill, _ W: CGFloat) -> AStroke {
-        var a = AStroke()
-        a.k = "BALLPOINT"
-        a.color = f.color | 0xFF000000
-        a.w = 0
-        a.t = ms(Date(timeIntervalSinceReferenceDate: f.key))
-        a.sh = true
-        a.sf = true
-        a.sfa = Double(f.alpha)
-        for p in f.pts { a.pts += [Double(p.x / W), Double(p.y / W), 1] }
-        if let first = f.pts.first { a.pts += [Double(first.x / W), Double(first.y / W), 1] }
-        return a
-    }
-
-    private static func scale(_ t: CGAffineTransform) -> CGFloat { sqrt(abs(t.a * t.d - t.b * t.c)) }
-
-    private static func median(_ v: [CGFloat]) -> CGFloat { v.isEmpty ? 0 : v.sorted()[v.count / 2] }
-
-    /// خط عادي: نقاط على المنحنى نفسه؛ الممسوح جزئيًا تُكتب أجزاؤه الظاهرة فقط.
-    private static func plain(_ s: PKStroke, _ W: CGFloat) -> [AStroke] {
-        let k = max(0.0001, scale(s.transform))
-        let isShape = s.randomSeed == shapeSeed
-        var runs: [[PKStrokePoint]] = []
-        if s.mask != nil {
-            for r in s.maskedPathRanges { runs.append(Array(s.path.interpolatedPoints(in: r, by: .distance(step / k)))) }
-        } else if isShape || s.path.count < 3 {
-            runs = [Array(s.path)]
-        } else {
-            var pts = Array(s.path.interpolatedPoints(by: .distance(step / k)))
-            if let last = s.path.last, let e = pts.last,
-               hypot(last.location.x - e.location.x, last.location.y - e.location.y) > 0.2 { pts.append(last) }
-            runs = [pts]
+    /// حرف من ملف قديم بلا كلمته: أقرب كلمة من سطره، وخط القاعدة والحجم منه.
+    private static func attachWord(_ a: inout AStroke, _ l: ConvertedLine, _ W: CGFloat) {
+        guard let bb = a.bounds, !l.words.isEmpty else { return }
+        let idx = wordIndex((bb.l + bb.r) / 2, (bb.t + bb.b) / 2, l.words)
+        guard idx >= 0 else { return }
+        let w = l.words[idx]
+        a.wd = w.text
+        a.wi = a.t &* 1024 &+ Int64(idx)
+        if a.lf < 0, bb.b - bb.t > 0 {
+            let h = bb.b - bb.t
+            let firstLine = l.words.map { $0.line }.min() ?? 0
+            let top0 = l.words.filter { $0.line == firstLine }.map { Double($0.t) }.min() ?? 0
+            let base = Double(l.baseline / W) + (Double(w.t) - top0)
+            a.lf = max(0, (base - bb.t) / h)
+            a.ef = Double(l.size / W) / h
         }
-        let type = s.ink.inkType
-        var out: [AStroke] = []
-        for run in runs where !run.isEmpty {
-            let sizes = run.map { ($0.size.width > 0 ? $0.size.width : $0.size.height) * k }
-            let mid = median(sizes), top = sizes.max() ?? mid
-            var a = AStroke()
-            a.t = ms(s.path.creationDate)
-            a.color = s.ink.color.argb
-            a.sh = isShape
-            var press: (CGFloat) -> Double = { _ in 1 }
-            switch type {
-            case .marker:
-                a.k = "HIGHLIGHTER"
-                a.color |= 0xFF000000
-                a.w = Double(mid / W)
-            case .pencil, .crayon:
-                a.k = "PENCIL"
-                a.w = Double(mid / 0.85 / W)
-            case .fountainPen, .pen:
-                a.k = "FOUNTAIN"
-                if isShape { a.w = Double(mid / W) } else {
-                    // أندرويد يرسم العرض × (0.4 + الضغط): يُحسب الضغط من سماكة كل نقطة
-                    let base = max(0.01, top / 1.4)
-                    a.w = Double(base / W)
-                    press = { Double(max(0, min(1, $0 / base - 0.4))) }
-                }
-            case .watercolor:
-                a.k = "BRUSH"
-                if isShape { a.w = Double(mid / W) } else {
-                    let base = max(0.01, top / 1.65)
-                    a.w = Double(base / W)
-                    press = { Double(max(0, min(1, ($0 / base - 0.15) / 1.5))) }
-                }
-            default:
-                a.k = "BALLPOINT"
-                a.w = Double(mid / W)
-            }
-            a.pts.reserveCapacity(run.count * 3)
-            for (i, p) in run.enumerated() {
-                let l = p.location.applying(s.transform)
-                a.pts += [Double(l.x / W), Double(l.y / W), press(sizes[i])]
-            }
-            out.append(a)
-        }
-        return out
-    }
-
-    /// الحروف المجمَّلة (حدود وخطوط ملء في PencilKit) كحروف مملوءة بحدودها، كل كلمة خط واحد يحمل نصها.
-    private static func glyphs(_ group: [PKStroke], _ W: CGFloat, _ line: ConvertedLine?) -> [AStroke] {
-        var contours: [[CGPoint]] = []
-        var outline: CGFloat = 0
-        var sample: PKStroke?
-        for st in group where st.path.count >= 4 {
-            var pts = st.path.map { $0.location.applying(st.transform) }
-            guard let a = pts.first, let b = pts.last, hypot(a.x - b.x, a.y - b.y) < 0.05 else { continue }
-            pts.removeLast()
-            guard pts.count >= 3 else { continue }
-            contours.append(pts)
-            if sample == nil {
-                sample = st
-                outline = (st.path.first?.size.width ?? 0) * scale(st.transform)
-            }
-        }
-        guard !contours.isEmpty, let first = sample else { return [] }
-        let words = line?.words ?? []
-        var byWord: [Int: [[CGPoint]]] = [:]
-        for c in contours {
-            let cx = Double(c.map { $0.x }.reduce(0, +) / CGFloat(c.count) / W)
-            let cy = Double(c.map { $0.y }.reduce(0, +) / CGFloat(c.count) / W)
-            byWord[wordIndex(cx, cy, words), default: []].append(c)
-        }
-        let t = ms(first.path.creationDate)
-        let firstLine = words.map { $0.line }.min() ?? 0
-        let top0 = words.filter { $0.line == firstLine }.map { Double($0.t) }.min() ?? 0
-        var out: [AStroke] = []
-        for idx in byWord.keys.sorted() {
-            var a = AStroke()
-            a.k = "BALLPOINT"
-            a.fl = true
-            a.t = t
-            a.color = first.ink.color.argb | 0xFF000000
-            a.w = Double(outline / W)
-            for c in byWord[idx] ?? [] {
-                for (i, p) in c.enumerated() { a.pts += [Double(p.x / W), Double(p.y / W), i == 0 ? -1 : 1] }
-            }
-            if idx >= 0, let l = line {
-                let w = words[idx]
-                a.wd = w.text
-                a.wi = t &* 1024 &+ Int64(idx)
-                if let bb = a.bounds, bb.b - bb.t > 0 {
-                    let h = bb.b - bb.t
-                    let base = Double(l.baseline / W) + (Double(w.t) - top0)
-                    a.lf = max(0, (base - bb.t) / h)
-                    a.ef = Double(l.size / W) / h
-                }
-            }
-            out.append(a)
-        }
-        return out
     }
 
     /// الكلمة التي يقع فيها مركز الحد، أو أقربها؛ -1 إن لم توجد كلمات.
-    private static func wordIndex(_ x: Double, _ y: Double, _ words: [OcrWord]) -> Int {
+    static func wordIndex(_ x: Double, _ y: Double, _ words: [OcrWord]) -> Int {
         guard !words.isEmpty else { return -1 }
         var best = 0
         var bestD = Double.greatestFiniteMagnitude
@@ -331,161 +191,38 @@ enum InkCodec {
         return best
     }
 
-    // ============================================================ من أندرويد إلى PencilKit
+    // ============================================================ من أندرويد إلى الآيباد
 
     struct Decoded {
-        var drawing = PKDrawing()
-        var fills: [ShapeFill] = []
+        var drawing = InkDrawing()
         var converted: [ConvertedLine] = []
     }
 
-    /// يبني حبر الصفحة من خطوط أندرويد. page = معرّف الصفحة (للملء والنص المحوَّل).
+    /// يبني حبر الصفحة من خطوط أندرويد. page = معرّف الصفحة (للنص المحوَّل).
     static func decode(_ list: [AStroke], width W: CGFloat, page: String = "") -> Decoded {
         var out = Decoded()
         guard W > 0 else { return out }
-        func date(_ i: Int) -> Date {
-            list[i].t > 0 ? Date(timeIntervalSince1970: Double(list[i].t) / 1000) : Date(timeIntervalSinceReferenceDate: Double(i + 1))
-        }
-        // الحروف المحوّلة: أسطر، لكل سطر وقت إنشاء واحد لا يشاركه خط آخر (هو مفتاح السطر)
-        var used = Set<Double>()
-        for i in list.indices where !(list[i].fl && !list[i].wd.isEmpty) { used.insert(date(i).timeIntervalSinceReferenceDate) }
-        var lineDate: [Int: Date] = [:]
+        var strokes = list.map { InkStroke(android: $0, width: W) }
+        // الحروف المحوّلة: أسطر، لكل سطر وقت واحد لا يشاركه خط آخر (هو مفتاح السطر)
+        var used = Set<Int64>()
+        for (i, a) in list.enumerated() where !(a.fl && !a.wd.isEmpty) { used.insert(strokes[i].t) }
         for ln in lines(list) {
-            var d = date(ln.items.min { list[$0].t < list[$1].t } ?? ln.items[0])
-            while used.contains(d.timeIntervalSinceReferenceDate) { d = d.addingTimeInterval(0.001) }
-            used.insert(d.timeIntervalSinceReferenceDate)
-            for i in ln.items { lineDate[i] = d }
+            var t = ln.items.map { strokes[$0].t }.min() ?? InkKey.now()
+            while used.contains(t) { t += 1 }
+            used.insert(t)
+            for i in ln.items { strokes[i].t = t }
             let bases = ln.items.compactMap { list[$0].line?.base }.sorted()
             let ems = ln.items.compactMap { list[$0].line?.em }.sorted()
             let bottom = ln.words.map { Double($0.b) }.max() ?? 0
             let height = (ln.words.map { Double($0.b - $0.t) }.max() ?? 0.02)
             out.converted.append(ConvertedLine(
-                id: UUID().uuidString, page: page, key: d.timeIntervalSinceReferenceDate, words: ln.words,
+                id: UUID().uuidString, page: page, key: InkKey.key(t), words: ln.words,
                 baseline: CGFloat(bases.isEmpty ? bottom : bases[bases.count / 2]) * W,
                 size: CGFloat(ems.isEmpty ? height : ems[ems.count / 2]) * W,
                 minX: (ln.words.map { $0.l }.min() ?? 0) * W, maxX: (ln.words.map { $0.r }.max() ?? 0) * W,
                 rtl: ln.rtl, font: "", alts: nil))
         }
-        var strokes: [PKStroke] = []
-        for (i, a) in list.enumerated() where a.count > 0 {
-            let color = UIColor(argb: a.color | (a.color <= 0xFFFFFF ? 0xFF000000 : 0))
-            if a.fl {
-                strokes += filled(a, W, color, lineDate[i] ?? date(i))
-                continue
-            }
-            let d = date(i)
-            let pts = (0..<a.count).map { CGPoint(x: CGFloat(a.x($0)) * W, y: CGFloat(a.y($0)) * W) }
-            if a.sf && pts.count >= 3 {
-                var poly = pts
-                if let f = poly.first, let l = poly.last, f == l { poly.removeLast() }
-                out.fills.append(ShapeFill(id: UUID().uuidString, page: page, pts: poly, color: a.color | 0xFF000000,
-                                           alpha: CGFloat(a.sfa), key: d.timeIntervalSinceReferenceDate))
-                // خط الملء وحده (بلا سماكة) لا يُرسم: إطاره خط آخر
-                if CGFloat(a.w) * W < 0.05 { continue }
-            }
-            let width = max(0.2, CGFloat(a.w) * W * (a.k == "PENCIL" ? 0.85 : 1))
-            if a.sh || a.ls != 0 {
-                let style = LineStyle(rawValue: a.ls) ?? .solid
-                let paths = style == .solid ? [pts] : StrokeKit.split(pts, style: style, width: width)
-                let ink = a.k == "HIGHLIGHTER" ? PKInk(.marker, color: color.withAlphaComponent(0.6)) : PKInk(.monoline, color: color)
-                strokes += StrokeKit.strokes(paths.map { dense($0) }, ink: ink, width: width, seed: shapeSeed, date: d)
-                continue
-            }
-            strokes.append(pen(a, W, color, d))
-        }
-        out.drawing = PKDrawing(strokes: strokes)
-        return out
-    }
-
-    /// نقاط كثيفة على الخط المستقيم بين كل نقطتين.
-    static func dense(_ pts: [CGPoint]) -> [CGPoint] {
-        guard pts.count > 1 else { return pts }
-        var out: [CGPoint] = [pts[0]]
-        for i in 1..<pts.count {
-            let a = pts[i - 1], b = pts[i]
-            let n = max(1, Int((hypot(b.x - a.x, b.y - a.y) / gap).rounded(.up)))
-            for j in 1...n {
-                let f = CGFloat(j) / CGFloat(n)
-                out.append(CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f))
-            }
-        }
-        return out
-    }
-
-    /// خط قلم: سماكة كل نقطة كما يرسمها أندرويد لذلك القلم.
-    private static func pen(_ a: AStroke, _ W: CGFloat, _ color: UIColor, _ date: Date) -> PKStroke {
-        let base = CGFloat(a.w) * W
-        func size(_ p: CGFloat) -> CGFloat {
-            switch a.k {
-            case "BALLPOINT", "HIGHLIGHTER": return base
-            case "PENCIL": return base * 0.85
-            case "BRUSH": return base * (0.15 + 1.5 * p)
-            default: return base * (0.4 + p)
-            }
-        }
-        let ink: PKInk
-        switch a.k {
-        case "BALLPOINT": ink = PKInk(.monoline, color: color)
-        case "PENCIL": ink = PKInk(.pencil, color: color)
-        case "BRUSH": ink = PKInk(.watercolor, color: color)
-        case "HIGHLIGHTER": ink = PKInk(.marker, color: color.withAlphaComponent(0.6))
-        default: ink = PKInk(.fountainPen, color: color)
-        }
-        var cp: [PKStrokePoint] = []
-        func add(_ l: CGPoint, _ p: CGFloat) {
-            let s = max(0.2, size(max(0, min(1, p))))
-            cp.append(PKStrokePoint(location: l, timeOffset: TimeInterval(cp.count) * 0.005, size: CGSize(width: s, height: s),
-                                    opacity: 1, force: max(0, min(1, p)), azimuth: 0, altitude: .pi / 2))
-        }
-        var prev = CGPoint(x: CGFloat(a.x(0)) * W, y: CGFloat(a.y(0)) * W)
-        var prevP = CGFloat(a.p(0))
-        add(prev, prevP)
-        for i in 1..<max(1, a.count) {
-            let l = CGPoint(x: CGFloat(a.x(i)) * W, y: CGFloat(a.y(i)) * W)
-            let p = CGFloat(a.p(i))
-            let n = max(1, Int((hypot(l.x - prev.x, l.y - prev.y) / gap).rounded(.up)))
-            for j in 1...n {
-                let f = CGFloat(j) / CGFloat(n)
-                add(CGPoint(x: prev.x + (l.x - prev.x) * f, y: prev.y + (l.y - prev.y) * f), prevP + (p - prevP) * f)
-            }
-            prev = l
-            prevP = p
-        }
-        if cp.count == 1 { add(CGPoint(x: prev.x + 0.05, y: prev.y), prevP) }
-        return PKStroke(ink: ink, path: PKStrokePath(controlPoints: cp, creationDate: date))
-    }
-
-    /// حدود الحرف المملوء (ضغط سالب = بداية حد جديد).
-    static func contours(_ a: AStroke, _ W: CGFloat) -> [[CGPoint]] {
-        var out: [[CGPoint]] = []
-        var cur: [CGPoint] = []
-        for i in 0..<a.count {
-            if a.p(i) < 0 && !cur.isEmpty { out.append(cur); cur = [] }
-            cur.append(CGPoint(x: CGFloat(a.x(i)) * W, y: CGFloat(a.y(i)) * W))
-        }
-        if !cur.isEmpty { out.append(cur) }
-        return out.filter { $0.count >= 3 }
-    }
-
-    /// حرف مملوء كحبر PencilKit: حدوده وخطوط متقاربة تملأ داخله (كما يصنعها GlyphInk).
-    private static func filled(_ a: AStroke, _ W: CGFloat, _ color: UIColor, _ date: Date) -> [PKStroke] {
-        let polys = contours(a, W)
-        guard !polys.isEmpty else { return [] }
-        let all = polys.flatMap { $0 }
-        let h = (all.map { $0.y }.max() ?? 0) - (all.map { $0.y }.min() ?? 0)
-        let size = a.line.map { CGFloat($0.em) * W } ?? h
-        let wOut = max(0.35, max(CGFloat(a.w) * W, size * 0.04))
-        let wIn = max(0.6, size * 0.065)
-        var paths: [[CGPoint]] = []
-        for (y, x0, x1) in GlyphInk.scanlines(polys, step: wIn * 0.8) {
-            let inset = min(wIn / 2, (x1 - x0) / 2)
-            let l = x0 + inset, r = x1 - inset
-            paths.append(r > l ? [CGPoint(x: l, y: y), CGPoint(x: r, y: y)]
-                               : [CGPoint(x: (x0 + x1) / 2, y: y), CGPoint(x: (x0 + x1) / 2 + 0.01, y: y)])
-        }
-        let ink = PKInk(.monoline, color: color)
-        var out = StrokeKit.strokes(paths, ink: ink, width: wIn, seed: glyphSeed, date: date)
-        out += StrokeKit.strokes(polys.map { $0 + [$0[0]] }, ink: ink, width: wOut, seed: glyphSeed, date: date)
+        out.drawing = InkDrawing(strokes: strokes.filter { !$0.pts.isEmpty })
         return out
     }
 
@@ -541,5 +278,49 @@ enum InkCodec {
                             words: ordered.map { OcrWord(text: $0.text, l: CGFloat($0.l), t: CGFloat($0.t), r: CGFloat($0.r), b: CGFloat($0.b), line: 0) },
                             rtl: rtl)
         }
+    }
+}
+
+extension AStroke {
+    /// خط الآيباد (بنقاط الصفحة) بصيغة أندرويد (نسبي لعرض الصفحة).
+    init(_ s: InkStroke, width W: CGFloat) {
+        self.init()
+        let k = 1 / max(0.0001, Double(W))
+        color = s.color
+        w = Double(s.width) * k
+        self.k = s.tool.inkName
+        t = s.t
+        ls = s.style.rawValue
+        sh = s.shape
+        fl = s.fill
+        lf = Double(s.lineF)
+        ef = Double(s.emF)
+        sf = s.shapeFill
+        sfa = Double(s.fillAlpha)
+        wd = s.word
+        wi = s.wid
+        pts.reserveCapacity(s.pts.count * 3)
+        for p in s.pts { pts += [Double(p.x) * k, Double(p.y) * k, Double(p.p)] }
+    }
+}
+
+extension InkStroke {
+    /// خط أندرويد (نسبي لعرض الصفحة) بنقاط صفحة عرضها W.
+    init(android a: AStroke, width W: CGFloat) {
+        let pts = (0..<a.count).map { InkPt(CGFloat(a.x($0)) * W, CGFloat(a.y($0)) * W, CGFloat(a.p($0))) }
+        self.init(pts: pts)
+        color = a.color | (a.color <= 0xFFFFFF ? 0xFF000000 : 0)
+        width = max(0, CGFloat(a.w) * W)
+        tool = Tool(inkName: a.k)
+        t = a.t
+        style = LineStyle(rawValue: a.ls) ?? .solid
+        shape = a.sh
+        fill = a.fl
+        lineF = CGFloat(a.lf)
+        emF = CGFloat(a.ef)
+        shapeFill = a.sf
+        fillAlpha = CGFloat(a.sfa)
+        word = a.wd
+        wid = a.wi
     }
 }

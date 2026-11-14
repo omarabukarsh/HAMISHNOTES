@@ -1,12 +1,9 @@
 import SwiftUI
-import PencilKit
 
 // التحديد الحر (نفس التحديد في أندرويد): حر أو مستطيل، يختار الكتابة والهايلايتر والأشكال
 // والصور والنصوص والملاحظات حسب الإعدادات. يُسحب المحدد لنقله، ومقبض الزاوية يكبّره ويصغّره،
 // وشريط أسفل الشاشة: تغيير الخط، إلى نص، ملصق، نسخ، الألوان، الصوت، حذف.
-
-/// علامة الخطوط التي رسمتها أداة الأشكال (للتمييز بينها وبين الكتابة في التحديد).
-let shapeSeed: UInt32 = 0x5A5E
+// نقرة بالقلم على خط أو شكل (والتحديد مفعّل) تحدده وحده.
 
 struct LassoSel: Equatable {
     var pageId: String
@@ -18,37 +15,50 @@ struct LassoSel: Equatable {
 }
 
 extension DocSession {
+    /// هل يدخل هذا الخط في التحديد حسب الإعدادات.
+    func lassoable(_ st: InkStroke) -> Bool {
+        let app = AppController.shared
+        if st.shape || st.shapeFill { return app.lassoShapes }
+        if st.tool == .highlighter { return app.lassoHighlight }
+        return app.lassoInk
+    }
+
+    /// خطوط السطر المحوّل أو الشكل الواحد تُحدَّد معًا (كلها بالوقت نفسه).
+    private func withSiblings(_ picked: [Int], _ d: InkDrawing) -> [Int] {
+        let keys = Set(picked.compactMap { i -> Int64? in
+            let s = d.strokes[i]
+            return (s.fill || s.shape || s.shapeFill) && s.t != 0 ? s.t : nil
+        })
+        guard !keys.isEmpty else { return picked }
+        var set = Set(picked)
+        for (i, s) in d.strokes.enumerated() where (s.fill || s.shape || s.shapeFill) && keys.contains(s.t) && lassoable(s) { set.insert(i) }
+        return set.sorted()
+    }
+
     /// يختار ما داخل المضلع (بنقاط الصفحة).
     func lassoSelect(pageId: String, poly: [CGPoint]) {
         guard poly.count >= 3 else { lassoSel = nil; return }
-        func inside(_ p: CGPoint) -> Bool {
-            var c = false
-            var j = poly.count - 1
-            for i in poly.indices {
-                let a = poly[i], b = poly[j]
-                if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { c.toggle() }
-                j = i
-            }
-            return c
-        }
+        func inside(_ p: CGPoint) -> Bool { InkErase.inside(p, polygon: poly) }
         let app = AppController.shared
         let d = drawing(for: pageId)
         var picked: [Int] = []
-        for (i, st) in d.strokes.enumerated() {
-            let isShape = st.randomSeed == shapeSeed
-            let isHl = st.ink.inkType == .marker
-            let ok = isShape ? app.lassoShapes : (isHl ? app.lassoHighlight : app.lassoInk)
-            guard ok else { continue }
-            let pts = st.path.interpolatedPoints(by: .distance(4)).map { $0.location.applying(st.transform) }
-            guard !pts.isEmpty else { continue }
-            if Double(pts.filter(inside).count) >= Double(pts.count) * 0.6 { picked.append(i) }
-        }
+        for (i, st) in d.strokes.enumerated() where lassoable(st) && InkErase.lassoed(st, polygon: poly) { picked.append(i) }
+        picked = withSiblings(picked, d)
         let imgs = !app.lassoImages ? [] : data.images.filter { $0.page == pageId && inside(CGPoint(x: $0.x + $0.w / 2, y: $0.y + $0.w / max(0.01, $0.aspect) / 2)) }.map { $0.id }
         let boxes = !app.lassoTexts ? [] : data.boxes.filter { $0.page == pageId && inside(CGPoint(x: $0.x + $0.w / 2, y: $0.y + boxHeight($0) / 2)) }.map { $0.id }
         let notes = !app.lassoStickies ? [] : data.notes.filter { $0.page == pageId && inside(CGPoint(x: $0.x + $0.w / 2, y: $0.y + $0.h / 2)) }.map { $0.id }
         let sel = LassoSel(pageId: pageId, strokes: picked, images: imgs, boxes: boxes, notes: notes)
         lassoSel = sel.isEmpty ? nil : sel
         if sel.isEmpty { AppController.shared.say(.error, L("لم يُحدَّد شيء", "Nothing selected")) }
+    }
+
+    /// نقرة على خط أو شكل (بنقاط الصفحة): يُحدَّد وحده. false = لا شيء تحت النقرة.
+    @discardableResult
+    func lassoTap(pageId: String, at p: CGPoint, tolerance: CGFloat) -> Bool {
+        let d = drawing(for: pageId)
+        guard let i = InkErase.topmost(d.strokes, at: p, tolerance: tolerance, where: lassoable) else { return false }
+        lassoSel = LassoSel(pageId: pageId, strokes: withSiblings([i], d))
+        return true
     }
 
     func boxHeight(_ b: TextBox) -> CGFloat {
@@ -68,20 +78,20 @@ extension DocSession {
     }
 
     /// يطبّق تغييرًا على الخطوط المحددة وعلى العناصر، خطوةً واحدة في التراجع.
-    private func lassoChange(strokes f: (PKStroke) -> PKStroke?, items g: ((inout DocData, LassoSel) -> Void)? = nil, newSel: ((LassoSel, [Int]) -> LassoSel?)? = nil) {
+    private func lassoChange(strokes f: (InkStroke) -> InkStroke?, items g: ((inout DocData, LassoSel) -> Void)? = nil, newSel: ((LassoSel, [Int]) -> LassoSel?)? = nil) {
         guard let sel = lassoSel else { return }
         let old = drawing(for: sel.pageId)
-        var next: [PKStroke] = []
+        var next: [InkStroke] = []
         var kept: [Int] = []
+        let chosen = Set(sel.strokes)
         for (i, st) in old.strokes.enumerated() {
-            if sel.strokes.contains(i) {
+            if chosen.contains(i) {
                 if let t = f(st) { kept.append(next.count); next.append(t) }
             } else {
                 next.append(st)
             }
         }
-        var nd = old
-        nd.strokes = next
+        let nd = InkDrawing(strokes: next)
         var step: EditStep = .ink(page: sel.pageId, before: old, after: nd)
         drawings[sel.pageId] = nd
         dirtyInk.insert(sel.pageId)
@@ -100,24 +110,21 @@ extension DocSession {
         lassoSel = newSel?(ns, kept) ?? (ns.isEmpty ? nil : ns)
     }
 
-    /// تحريك بمقدار (dx, dy) وتكبير بنسبة k حول نقطة.
-    /// مفاتيح الخطوط المحددة (لملء الأشكال المرتبط بها).
-    func lassoKeys() -> Set<Double> {
+    /// أوقات الخطوط المحددة (للنص المحوَّل المرتبط بها).
+    func lassoKeys() -> Set<Int64> {
         guard let sel = lassoSel else { return [] }
         let d = drawing(for: sel.pageId)
-        return Set(sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0].path.creationDate.timeIntervalSinceReferenceDate })
+        return Set(sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0].t })
     }
 
+    /// تحريك بمقدار (dx, dy) وتكبير بنسبة k حول نقطة.
     func lassoTransform(dx: CGFloat, dy: CGFloat, k: CGFloat = 1, pivot: CGPoint = .zero) {
         let keys = lassoKeys()
         let t = CGAffineTransform(translationX: -pivot.x, y: -pivot.y)
             .concatenating(CGAffineTransform(scaleX: k, y: k))
             .concatenating(CGAffineTransform(translationX: pivot.x + dx, y: pivot.y + dy))
-        lassoChange(strokes: { st in
-            var s = st
-            s.transform = st.transform.concatenating(t)
-            return s
-        }, items: { d, sel in
+        let pw = max(1, pageSize(index(of: lassoSel?.pageId ?? "") ?? 0).width)
+        lassoChange(strokes: { $0.transformed(t) }, items: { d, sel in
             for i in d.images.indices where sel.images.contains(d.images[i].id) {
                 let p = CGPoint(x: d.images[i].x, y: d.images[i].y).applying(t)
                 d.images[i].x = p.x; d.images[i].y = p.y; d.images[i].w *= k
@@ -132,39 +139,49 @@ extension DocSession {
                 // التكبير يشمل الملاحظة وما كُتب عليها بالقلم (كالصور والنصوص)
                 if k != 1 {
                     d.notes[i].w *= k; d.notes[i].h *= k
-                    if let raw = d.notes[i].ink, let dr = try? PKDrawing(data: raw) {
+                    if let raw = d.notes[i].ink, let dr = InkDrawing.load(raw) {
                         d.notes[i].ink = dr.transformed(using: CGAffineTransform(scaleX: k, y: k)).dataRepresentation()
                     }
                 }
             }
-            for i in d.fills.indices where d.fills[i].page == sel.pageId && keys.contains(d.fills[i].key) {
-                d.fills[i].pts = d.fills[i].pts.map { $0.applying(t) }
+            // كلمات الكتابة المجمَّلة تتحرك مع حروفها (فتبقى تُلتقط وتُبحث في مكانها)
+            for i in d.converted.indices where d.converted[i].page == sel.pageId && keys.contains(InkKey.ms(d.converted[i].key)) {
+                var c = d.converted[i]
+                c.words = c.words.map { w in
+                    var x = w
+                    let a = CGPoint(x: w.l * pw, y: w.t * pw).applying(t), b = CGPoint(x: w.r * pw, y: w.b * pw).applying(t)
+                    x.l = a.x / pw; x.t = a.y / pw; x.r = b.x / pw; x.b = b.y / pw
+                    return x
+                }
+                c.baseline = CGPoint(x: 0, y: c.baseline).applying(t).y
+                c.size *= k
+                c.minX = CGPoint(x: c.minX, y: 0).applying(t).x
+                c.maxX = CGPoint(x: c.maxX, y: 0).applying(t).x
+                d.converted[i] = c
             }
         })
+        wordCache.removeValue(forKey: lassoSel?.pageId ?? "")
     }
 
     func lassoRecolor(_ argb: UInt32) {
-        let col = UIColor(argb: argb)
-        let keys = lassoKeys()
         lassoChange(strokes: { st in
-            let a: CGFloat = st.ink.inkType == .marker ? 0.6 : 1
             var s = st
-            s.ink = PKInk(st.ink.inkType, color: col.withAlphaComponent(a))
+            s.color = argb | 0xFF000000
             return s
         }, items: { d, sel in
             for i in d.boxes.indices where sel.boxes.contains(d.boxes[i].id) { d.boxes[i].color = argb }
-            for i in d.fills.indices where d.fills[i].page == sel.pageId && keys.contains(d.fills[i].key) { d.fills[i].color = argb }
         })
     }
 
     func lassoDelete() {
         let keys = lassoKeys()
         lassoChange(strokes: { _ in nil }, items: { d, sel in
-            d.fills.removeAll { $0.page == sel.pageId && keys.contains($0.key) }
+            d.converted.removeAll { $0.page == sel.pageId && keys.contains(InkKey.ms($0.key)) }
             d.images.removeAll { sel.images.contains($0.id) }
             d.boxes.removeAll { sel.boxes.contains($0.id) }
             d.notes.removeAll { sel.notes.contains($0.id) }
         }, newSel: { _, _ in nil })
+        wordCache.removeValue(forKey: lassoSel?.pageId ?? "")
         lassoSel = nil
     }
 
@@ -176,31 +193,31 @@ extension DocSession {
         let old = drawing(for: sel.pageId)
         var nd = old
         var copies: [Int] = []
-        // النسخة تأخذ مفتاحًا (وقت إنشاء) خاصًا بها: فلا تشارك الأصل ملأه ولا نصه المجمَّل
-        let keys = lassoKeys()
-        let taken = Set(old.strokes.map { $0.path.creationDate.timeIntervalSinceReferenceDate })
-        var dt = 0.001
-        while keys.contains(where: { taken.contains($0 + dt) }) { dt += 0.001 }
+        // كل مجموعة (سطر محوَّل، شكل) تأخذ وقتًا خاصًا بها: فلا تشارك النسخة الأصل نصه المجمَّل
+        var newT: [Int64: Int64] = [:]
+        var taken = Set(old.strokes.map { $0.t })
+        func fresh(_ t: Int64) -> Int64 {
+            if let n = newT[t] { return n }
+            var x = max(t, InkKey.now())
+            while taken.contains(x) { x += 1 }
+            taken.insert(x)
+            newT[t] = x
+            return x
+        }
         for i in sel.strokes where old.strokes.indices.contains(i) {
-            var s = old.strokes[i]
-            s.path = PKStrokePath(controlPoints: Array(s.path), creationDate: s.path.creationDate.addingTimeInterval(dt))
-            s.transform = s.transform.concatenating(shift)
+            var s = old.strokes[i].transformed(shift)
+            s.t = fresh(s.t)
+            if s.wid != 0 { s.wid = s.t &* 1024 &+ (s.wid & 1023) }
             copies.append(nd.strokes.count)
             nd.strokes.append(s)
         }
         let before = data
         let pw = max(1, pageSize(index(of: sel.pageId) ?? 0).width)
-        for f in data.fills where f.page == sel.pageId && keys.contains(f.key) {
-            var c = f
-            c.id = UUID().uuidString
-            c.key = f.key + dt
-            c.pts = f.pts.map { CGPoint(x: $0.x + off, y: $0.y + off) }
-            data.fills.append(c)
-        }
-        for line in data.converted where line.page == sel.pageId && keys.contains(line.key) {
+        for line in data.converted where line.page == sel.pageId {
+            guard let nt = newT[InkKey.ms(line.key)] else { continue }
             var c = line
             c.id = UUID().uuidString
-            c.key = line.key + dt
+            c.key = InkKey.key(nt)
             c.words = line.words.map { w in var x = w; x.l += off / pw; x.r += off / pw; x.t += off / pw; x.b += off / pw; return x }
             c.baseline += off; c.minX += off; c.maxX += off
             data.converted.append(c)
@@ -230,11 +247,11 @@ extension DocSession {
     }
 
     /// الخطوط المحددة كرسم مستقل.
-    func lassoDrawing() -> PKDrawing? {
+    func lassoDrawing() -> InkDrawing? {
         guard let sel = lassoSel else { return nil }
         let d = drawing(for: sel.pageId)
         let strokes = sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0] }
-        return strokes.isEmpty ? nil : PKDrawing(strokes: strokes)
+        return strokes.isEmpty ? nil : InkDrawing(strokes: strokes)
     }
 
     /// صورة المحدد (للملصقات).
@@ -247,8 +264,7 @@ extension DocSession {
     /// وقت كتابة أول خط محدد.
     func lassoFirstTime() -> Int64? {
         guard let d = lassoDrawing() else { return nil }
-        guard let first = d.strokes.map({ $0.path.creationDate }).min() else { return nil }
-        return Int64(first.timeIntervalSince1970 * 1000)
+        return d.strokes.map { $0.t }.filter { $0 > 0 }.min()
     }
 }
 
@@ -381,7 +397,11 @@ final class LassoView: UIView {
                 poly = path
             }
             poly = poly.map { CGPoint(x: $0.x / k, y: $0.y / k) }
-            if hypot(livePt.x - startPt.x, livePt.y - startPt.y) < 8 { s.lassoSel = nil; return }
+            // نقرة (لا إحاطة): تحدد الخط أو الشكل تحتها وحده
+            if hypot(livePt.x - startPt.x, livePt.y - startPt.y) < 8 {
+                if !s.lassoTap(pageId: pageId, at: CGPoint(x: startPt.x / k, y: startPt.y / k), tolerance: 8 / max(0.01, k)) { s.lassoSel = nil }
+                return
+            }
             s.lassoSelect(pageId: pageId, poly: poly)
         case 1:
             let dx = (livePt.x - startPt.x) / k, dy = (livePt.y - startPt.y) / k

@@ -1,6 +1,5 @@
 import XCTest
 import PDFKit
-import PencilKit
 @testable import Hamish
 
 /// الصيغة الموحدة للنسخة القابلة للتعديل (v2) بين أندرويد والآيباد: مرفقات PDF قياسية،
@@ -88,32 +87,11 @@ final class EditableFormatTests: XCTestCase {
             XCTAssertEqual(bb.r, ab.r, accuracy: 0.01, k)
             XCTAssertEqual(bb.t, ab.t, accuracy: 0.01, k)
             XCTAssertEqual(bb.b, ab.b, accuracy: 0.01, k)
-            // السماكة الظاهرة عند أقصى ضغط
-            func shown(_ s: AStroke) -> Double {
-                let p = (0..<s.count).map { s.p($0) }.max() ?? 1
-                switch s.k {
-                case "FOUNTAIN": return s.w * (0.4 + p)
-                case "BRUSH": return s.w * (0.15 + 1.5 * p)
-                case "PENCIL": return s.w * 0.85
-                default: return s.w
-                }
-            }
-            XCTAssertEqual(shown(b), shown(a), accuracy: shown(a) * 0.3, k)
+            // المحرك بنموذج أندرويد نفسه: السماكة والضغط كما هما
+            XCTAssertEqual(b.w, a.w, accuracy: 1e-6, k)
+            XCTAssertEqual(b.count, a.count, k)
+            for i in 0..<a.count { XCTAssertEqual(b.p(i), a.p(i), accuracy: 1e-6, k) }
         }
-    }
-
-    func testPencilKitStrokeBecomesPoints() {
-        let cp = (0..<30).map { i in
-            PKStrokePoint(location: CGPoint(x: 100 + CGFloat(i) * 5, y: 200), timeOffset: 0, size: CGSize(width: 3, height: 3),
-                          opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
-        }
-        let s = PKStroke(ink: PKInk(.monoline, color: .black), path: PKStrokePath(controlPoints: cp, creationDate: Date()))
-        let out = InkCodec.encode(PKDrawing(strokes: [s]), width: W)
-        XCTAssertEqual(out.count, 1)
-        XCTAssertEqual(out[0].k, "BALLPOINT")
-        XCTAssertEqual(out[0].w, 3.0 / 600, accuracy: 0.001)
-        XCTAssertGreaterThan(out[0].count, 20)
-        XCTAssertEqual(out[0].y(0), 200.0 / 600, accuracy: 0.01)
     }
 
     func testFilledShapeKeepsItsFillBothWays() {
@@ -122,24 +100,24 @@ final class EditableFormatTests: XCTestCase {
         box.sf = true
         box.sfa = 0.3
         let dec = InkCodec.decode([box], width: W, page: "p")
-        XCTAssertEqual(dec.fills.count, 1)
-        XCTAssertEqual(dec.fills[0].pts.count, 4)
-        XCTAssertEqual(dec.fills[0].alpha, 0.3, accuracy: 0.001)
-        XCTAssertFalse(dec.drawing.strokes.isEmpty)
-        XCTAssertTrue(dec.drawing.strokes.allSatisfy { $0.randomSeed == shapeSeed })
-        // مفتاح الملء هو وقت خط الإطار (فيُمسح ويتحرك معه)
-        XCTAssertEqual(dec.drawing.strokes[0].path.creationDate.timeIntervalSinceReferenceDate, dec.fills[0].key)
-        let back = InkCodec.encode(dec.drawing, width: W, fills: dec.fills)
-        XCTAssertEqual(back.filter { $0.sf }.count, 1)
-        XCTAssertEqual(back.first { $0.sf }?.sfa ?? 0, 0.3, accuracy: 0.001)
-        XCTAssertTrue(back.contains { !$0.sf && $0.sh })
+        // الشكل وملؤه خط واحد (يُمسح ويُحدَّد ويتحرك معًا)
+        XCTAssertEqual(dec.drawing.strokes.count, 1)
+        let s = dec.drawing.strokes[0]
+        XCTAssertTrue(s.shape && s.shapeFill && s.isClosed)
+        XCTAssertEqual(s.fillAlpha, 0.3, accuracy: 0.001)
+        let back = InkCodec.encode(dec.drawing, width: W)
+        XCTAssertEqual(back.count, 1)
+        XCTAssertTrue(back[0].sf && back[0].sh)
+        XCTAssertEqual(back[0].sfa, 0.3, accuracy: 0.001)
     }
 
-    func testDashedLineIsDrawnAsDashes() {
+    func testDashedLineKeepsItsStyle() {
         var line = stroke("BALLPOINT", [(0.1, 0.5, 1), (0.9, 0.5, 1)])
         line.ls = 1
         let d = InkCodec.decode([line], width: W).drawing
-        XCTAssertGreaterThan(d.strokes.count, 3)
+        XCTAssertEqual(d.strokes.count, 1)
+        XCTAssertEqual(d.strokes[0].style, .dashed)
+        XCTAssertEqual(InkCodec.encode(d, width: W).first?.ls, 1)
     }
 
     /// حرف مملوء بحدّه (مستطيل) يحمل كلمته.
@@ -171,10 +149,10 @@ final class EditableFormatTests: XCTestCase {
         XCTAssertEqual(dec.converted[0].words[0].l, 0.10, accuracy: 0.001)
         XCTAssertEqual(dec.converted[0].words[0].r, 0.20, accuracy: 0.001)
         XCTAssertNotEqual(dec.converted[0].key, dec.converted[1].key)
-        // حبر كل سطر بمفتاحه، وكله حبر مجمَّل
-        XCTAssertTrue(dec.drawing.strokes.allSatisfy { $0.randomSeed == glyphSeed })
-        let keys = Set(dec.drawing.strokes.map { $0.path.creationDate.timeIntervalSinceReferenceDate })
-        XCTAssertEqual(keys, Set(dec.converted.map { $0.key }))
+        // حبر كل سطر بمفتاحه، وكله حروف مملوءة
+        XCTAssertTrue(dec.drawing.strokes.allSatisfy { $0.fill })
+        let keys = Set(dec.drawing.strokes.map { $0.t })
+        XCTAssertEqual(keys, Set(dec.converted.map { InkKey.ms($0.key) }))
         // والعودة إلى أندرويد: حروف مملوءة تحمل كلماتها
         let back = InkCodec.encode(dec.drawing, width: W, converted: dec.converted)
         XCTAssertTrue(back.allSatisfy { $0.fl })
@@ -226,7 +204,7 @@ final class EditableFormatTests: XCTestCase {
         let pages = [PageInfo(id: "A"), PageInfo(id: "B")]
         let imp = try XCTUnwrap(AndroidSchema.importJSON(Data(androidJSON.utf8), pages: pages, widths: [600, 500]))
         let raw = AJSON.parse(Data(androidJSON.utf8))
-        let ex = AndroidSchema.export(imp.data, widths: [600, 500], ink: { imp.ink[$0] ?? PKDrawing() }, raw: raw) { _ in Data([7]) }
+        let ex = AndroidSchema.export(imp.data, widths: [600, 500], ink: { imp.ink[$0] ?? InkDrawing() }, raw: raw) { _ in Data([7]) }
         let root = try XCTUnwrap(AJSON.parse(ex.json))
         XCTAssertEqual(AJSON.int(root["version"]), 3)
         let inkPages = try XCTUnwrap(root["pages"] as? [String: Any])
@@ -276,7 +254,7 @@ final class EditableFormatTests: XCTestCase {
         let data = try JSONDecoder().decode(DocData.self, from: Data(contentsOf: dir.appendingPathComponent("data.json")))
         XCTAssertEqual(data.pages.count, 2)
         XCTAssertEqual(data.marks.first?.page, data.pages[1].id)
-        let ink = try PKDrawing(data: Data(contentsOf: dir.appendingPathComponent("ink/" + data.pages[1].id)))
+        let ink = try XCTUnwrap(InkDrawing.load(Data(contentsOf: dir.appendingPathComponent("ink/" + data.pages[1].id))))
         XCTAssertEqual(ink.strokes.count, 1)
         XCTAssertEqual(try Data(contentsOf: dir.appendingPathComponent("media/pic.png")), Data([9, 9]))
         XCTAssertNotNil(try? Data(contentsOf: dir.appendingPathComponent(EditablePDF.androidRaw)))
@@ -312,7 +290,7 @@ final class EditableFormatTests: XCTestCase {
         XCTAssertEqual(data.pages[0].src, "blank:lined:0")
         XCTAssertEqual(data.outline.first?.title, "Intro")
         XCTAssertEqual(data.marks.first?.page, "P2")
-        let ink = try PKDrawing(data: Data(contentsOf: dir.appendingPathComponent("ink/P2")))
+        let ink = try XCTUnwrap(InkDrawing.load(Data(contentsOf: dir.appendingPathComponent("ink/P2"))))
         XCTAssertEqual(ink.strokes.count, 1)
     }
 

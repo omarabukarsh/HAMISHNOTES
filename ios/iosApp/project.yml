@@ -1,5 +1,5 @@
 # مشروع Xcode لنسخة iPad (يولَّد بأداة XcodeGen: xcodegen generate)
-# التطبيق كله مكتوب بـ Swift (SwiftUI + PDFKit + PencilKit) في iosApp/Sources.
+# التطبيق كله مكتوب بـ Swift (SwiftUI + PDFKit، ومحرك حبر خاص) في iosApp/Sources.
 name: Hamish
 options:
   bundleIdPrefix: com.omarabukarsh

@@ -1,5 +1,4 @@
 import UIKit
-import PencilKit
 import Vision
 import PDFKit
 
@@ -9,15 +8,15 @@ import PDFKit
 enum HandwritingWords {
     /// الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال.
     /// الخطوط التي تُقرأ كنص: لا الهايلايتر ولا الأشكال، ولا بقايا المسح الفارغة.
-    static func eligible(_ s: PKStroke) -> Bool {
-        guard s.ink.inkType != .marker, s.randomSeed != shapeSeed, s.randomSeed != glyphSeed, s.path.count >= 2 else { return false }
+    static func eligible(_ s: InkStroke) -> Bool {
+        guard s.tool != .highlighter, !s.shape, !s.fill, !s.shapeFill, s.pts.count >= 2 else { return false }
         let b = s.renderBounds
         return !b.isNull && !b.isInfinite && !b.isEmpty && b.width.isFinite && b.height.isFinite
     }
 
     /// مفتاح يتغيّر مع الكتابة ولغة خط اليد.
     /// (بعد مسح كل الكتابة تكون الحدود «فارغة» بقيم لا نهائية: تحويلها إلى عدد صحيح كان يُغلق التطبيق)
-    static func key(_ d: PKDrawing, lang: Int) -> String {
+    static func key(_ d: InkDrawing, lang: Int) -> String {
         let ok = d.strokes.filter(eligible)
         let b = ok.reduce(CGRect.null) { $0.union($1.renderBounds) }
         guard !b.isNull, b.minX.isFinite, b.minY.isFinite else { return "0|\(lang)" }
@@ -25,7 +24,7 @@ enum HandwritingWords {
     }
 
     /// كلمات خط اليد: بمحرك ML Kit من حركة القلم إن كان جاهزًا، وإلا بقراءة الصورة (Vision).
-    static func readAsync(_ d: PKDrawing, pageW: CGFloat, lang: Int) async -> [OcrWord] {
+    static func readAsync(_ d: InkDrawing, pageW: CGFloat, lang: Int) async -> [OcrWord] {
         let ok = d.strokes.filter(eligible)
         guard !ok.isEmpty else { return [] }
         if let w = await InkReader.words(ok, pageW: pageW, lang: lang) { return w }
@@ -33,14 +32,14 @@ enum HandwritingWords {
     }
 
     /// كلمات خط اليد بإحداثيات نسبية لعرض الصفحة (مثل كلمات النص).
-    static func read(_ d: PKDrawing, pageW: CGFloat, lang: Int) -> [OcrWord] {
-        let ok = d.strokes.filter(eligible).map { s -> PKStroke in
+    static func read(_ d: InkDrawing, pageW: CGFloat, lang: Int) -> [OcrWord] {
+        let ok = d.strokes.filter(eligible).map { s -> InkStroke in
             var c = s
-            c.ink = PKInk(s.ink.inkType, color: .black)
+            c.color = 0xFF000000
             return c
         }
         guard !ok.isEmpty else { return [] }
-        let dd = PKDrawing(strokes: ok)
+        let dd = InkDrawing(strokes: ok)
         let r = dd.bounds.insetBy(dx: -16, dy: -16)
         guard r.width > 4, r.height > 4 else { return [] }
         let scale: CGFloat = max(1, min(3, 2000 / max(r.width, r.height)))

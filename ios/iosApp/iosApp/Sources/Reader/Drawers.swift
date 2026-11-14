@@ -1,6 +1,5 @@
 import SwiftUI
 import PDFKit
-import PencilKit
 import PhotosUI
 import Photos
 
@@ -462,7 +461,7 @@ struct PageMenuDrawer: View {
     private func clear(_ p: Int, ink: Bool, hl: Bool, tx: Bool, im: Bool) {
         let s = session
         guard let pid = s.pageId(p) else { return }
-        if ink { s.setInk(pid, PKDrawing()) }
+        if ink { s.setInk(pid, InkDrawing()) }
         s.edit { d in
             if hl { d.marks.removeAll { $0.page == pid } }
             if tx { d.boxes.removeAll { $0.page == pid }; d.notes.removeAll { $0.page == pid } }

@@ -1,6 +1,5 @@
 import SwiftUI
 import PDFKit
-import PencilKit
 
 // نافذة الكتابة المكبّرة (نفس ZoomWriter.kt في أندرويد): تعرض منطقة صغيرة من الصفحة مكبّرة أسفل الشاشة.
 // ما تكتبه فيها يظهر صغيرًا ومرتبًا في مكانه على الصفحة. النقر على الصفحة ينقل المنطقة،
@@ -61,7 +60,7 @@ struct ZoomPanel: View {
     }
 }
 
-/// المنطقة المكبّرة: صورة الصفحة وتحتها كانفاس PencilKit يحمل حبر الصفحة مكبّرًا.
+/// المنطقة المكبّرة: صورة الصفحة وفوقها طبقة كتابة تحمل حبر الصفحة مكبّرًا.
 private struct ZoomCanvasRep: UIViewRepresentable {
     let session: DocSession
     let box: ZoomBox
@@ -80,14 +79,13 @@ private struct ZoomCanvasRep: UIViewRepresentable {
     }
 }
 
-final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
+final class ZoomCanvasView: UIView {
     weak var session: DocSession?
     private let imageView = UIImageView()
     private let baseline = UIView()
     private let canvas = InkCanvas()
     private var box: ZoomBox?
     private var shownVersion = -1
-    private var applying = false
     private var pageImage: (Int, UIImage)?
 
     override init(frame: CGRect) {
@@ -100,14 +98,9 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
         baseline.backgroundColor = UIColor(Palette.gold).withAlphaComponent(0.35)
         baseline.isUserInteractionEnabled = false
         addSubview(baseline)
-        canvas.backgroundColor = .clear
-        canvas.isOpaque = false
-        canvas.overrideUserInterfaceStyle = .light
-        canvas.delegate = self
-        canvas.isScrollEnabled = false
-        canvas.contentInsetAdjustmentBehavior = .never
-        canvas.minimumZoomScale = 1
-        canvas.maximumZoomScale = 1
+        canvas.onBegin = { AppController.shared.noteInteraction() }
+        canvas.onStroke = { [weak self] st in self?.added(st) }
+        canvas.onErase = { [weak self] d in self?.erased(d) }
         addSubview(canvas)
     }
 
@@ -117,13 +110,6 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
     private var zoom: CGFloat {
         guard let b = box, b.w > 0 else { return 1 }
         return bounds.width / b.w
-    }
-
-    /// من نقاط الصفحة إلى النافذة.
-    private var toView: CGAffineTransform {
-        guard let b = box else { return .identity }
-        let z = zoom
-        return CGAffineTransform(a: z, b: 0, c: 0, d: z, tx: -b.x * z, ty: -b.y * z)
     }
 
     override func layoutSubviews() {
@@ -161,9 +147,9 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
     func applyTool() {
         let c = AppController.shared
         canvas.fingerWrites = c.fingerWrites
-        canvas.drawingPolicy = c.fingerWrites ? .anyInput : .pencilOnly
-        canvas.isUserInteractionEnabled = c.tool != .laser
-        if let t = PageOverlayView.pkTool(scale: zoom) { canvas.tool = t }
+        canvas.writingEnabled = c.tool != .laser
+        canvas.config = PageOverlayView.inkConfig(k: zoom)
+        if let s = session, let b = box { canvas.pageW = s.pageSize(b.page).width }
     }
 
     /// صورة الصفحة بدقة عالية، ثم يُعرض منها الجزء المكبّر.
@@ -194,61 +180,35 @@ final class ZoomCanvasView: UIView, PKCanvasViewDelegate {
 
     private func reloadInk() {
         guard let s = session, let b = box, let pid = s.pageId(b.page), bounds.width > 0 else { return }
-        applying = true
-        canvas.drawing = s.drawing(for: pid).transformed(using: toView)
-        applying = false
+        canvas.k = zoom
+        canvas.origin = CGPoint(x: b.x, y: b.y)
+        canvas.setDrawing(s.drawing(for: pid))
         applyTool()
     }
 
-    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        guard !applying, let s = session, let b = box, let pid = s.pageId(b.page) else { return }
-        AppController.shared.noteInteraction()
+    /// خط جديد كُتب في النافذة: يُحفظ في الصفحة كما لو كُتب عليها.
+    private func added(_ st: InkStroke) {
+        guard let s = session, let b = box, let pid = s.pageId(b.page) else { return }
         let c = AppController.shared
-        let before = s.drawing(for: pid)
-        // خط جديد: تثبيت الخط وحساسية الضغط وحدة الطرف وخط الهايلايتر المستقيم، كما على الصفحة
-        if canvas.drawing.strokes.count == before.strokes.count + 1, let last = canvas.drawing.strokes.last,
-           c.tool.isPen || c.tool == .highlighter,
-           let ns = PenProcessing.apply(last, tool: c.tool, pageW: s.pageSize(b.page).width * zoom,
-                                        stabilize: c.tool == .highlighter ? c.hlStabilize : c.penStabilize,
-                                        pressure: c.penPressure, sharpness: c.penSharpness, straight: c.hlStraight) {
-            var cd = canvas.drawing
-            cd.strokes[cd.strokes.count - 1] = ns
-            applying = true
-            canvas.drawing = cd
-            applying = false
-        }
-        var d = canvas.drawing.transformed(using: toView.inverted())
-        // فلتر الممحاة: ما يحميه المستخدم لا يُمسح
-        if c.tool == .eraser, let kept = PenProcessing.protect(old: before, new: d, canErase: c.canErase) {
-            d = kept
-            applying = true
-            canvas.drawing = d.transformed(using: toView)
-            applying = false
-            if inkSig(kept) == inkSig(before) { return }
-        }
         // تمييز بالتقاط النص: يُستبدل الخط بتمييز على الكلمات تحته
-        if c.tool == .highlighter && c.highlightSnap && Premium.shared.active,
-           let last = d.strokes.last, last.ink.inkType == .marker,
-           d.strokes.count == s.drawing(for: pid).strokes.count + 1 {
+        if st.tool == .highlighter && c.highlightSnap && Premium.shared.active {
             let W = s.pageSize(b.page).width
-            var pts: [RelPt] = []
-            for p in last.path.interpolatedPoints(by: .distance(1)) {
-                let q = p.location.applying(last.transform)
-                pts.append(RelPt(x: q.x / W, y: q.y / W))
-            }
+            let pts = InkErase.samples(st, step: 1).map { RelPt(x: $0.x / W, y: $0.y / W) }
             let band = Sizes.width(.highlighter, c.sizeFor(.highlighter)) / 600
-            if s.snapHighlight(b.page, pts: pts, color: c.colorFor(.highlighter), band: band) {
-                d.strokes.removeLast()
-                applying = true
-                canvas.drawing = d.transformed(using: toView)
-                applying = false
-                return
-            }
+            if s.snapHighlight(b.page, pts: pts, color: c.colorFor(.highlighter), band: band) { return }
         }
         shownVersion = s.inkVersion + 1
+        canvas.append([st])
+        s.addStrokes(pid, [st])
+        s.scheduleHandRead(pid)
+    }
+
+    private func erased(_ d: InkDrawing) {
+        guard let s = session, let b = box, let pid = s.pageId(b.page) else { return }
+        shownVersion = s.inkVersion + 1
         s.setInk(pid, d)
-        // مسح إطار شكل مملوء يحذف ملأه، وما كُتب هنا يُقرأ للبحث والتقاط النص
-        if c.tool == .eraser { s.pruneFills(pid) }
+        // مسح حروف سطر محوَّل كله يحذف نصه، وما بقي يُقرأ للبحث والتقاط النص
+        s.pruneFills(pid)
         s.scheduleHandRead(pid)
     }
 }

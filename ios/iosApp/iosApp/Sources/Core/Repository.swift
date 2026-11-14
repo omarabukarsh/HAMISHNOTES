@@ -1,13 +1,12 @@
 import Foundation
 import PDFKit
-import PencilKit
 import UIKit
 
 /// تخزين المكتبة على الجهاز:
 ///   Documents/Hamish/library.json           فهرس المستندات
 ///   Documents/Hamish/docs/<id>/doc.pdf      المستند
 ///   Documents/Hamish/docs/<id>/data.json    التمييز والنصوص والصور والعلامات
-///   Documents/Hamish/docs/<id>/ink/<page>   حبر كل صفحة (PencilKit)
+///   Documents/Hamish/docs/<id>/ink/<page>   حبر كل صفحة (محرك الحبر الخاص)
 ///   Documents/Hamish/docs/<id>/media/       الصور والتسجيلات
 final class Repository {
     static let shared = Repository()
@@ -208,13 +207,25 @@ final class Repository {
         try? fm.moveItem(at: folder, to: dir(id).appendingPathComponent("ink-unreadable-\(nowMs())", isDirectory: true))
     }
 
-    func loadInk(_ id: String, page: String) -> PKDrawing {
+    /// حبر صفحة (الصيغة الجديدة، أو صيغة PencilKit القديمة تُحوَّل عند القراءة).
+    func loadInk(_ id: String, page: String) -> InkDrawing {
+        guard Repository.safeName(page) else { return InkDrawing() }
         let u = dir(id).appendingPathComponent("ink/\(page)")
-        guard let d = try? Data(contentsOf: u), let dr = try? PKDrawing(data: d) else { return PKDrawing() }
-        return dr
+        guard let d = try? Data(contentsOf: u) else { return InkDrawing() }
+        if let dr = InkDrawing.load(d) { return dr }
+        // لا يُقرأ: نسخة جانبًا قبل أن يُكتب فوقه
+        try? fm.copyItem(at: u, to: u.deletingLastPathComponent().appendingPathComponent("\(page).unreadable-\(nowMs())"))
+        return InkDrawing()
     }
 
-    func saveInk(_ id: String, page: String, _ drawing: PKDrawing) {
+    /// اسم ملف آمن من معرّف (صفحة أو صورة): بلا مسارات ولا أسماء خاصة، فلا يُكتب ملف خارج مجلده.
+    static func safeName(_ s: String) -> Bool {
+        !s.isEmpty && s.count <= 200 && s != "." && s != ".." && !s.hasPrefix(".") &&
+            !s.contains("/") && !s.contains("\\") && !s.contains(":") && !s.unicodeScalars.contains { $0.value < 0x20 }
+    }
+
+    func saveInk(_ id: String, page: String, _ drawing: InkDrawing) {
+        guard Repository.safeName(page) else { return }
         let folder = dir(id).appendingPathComponent("ink", isDirectory: true)
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
         let u = folder.appendingPathComponent(page)
@@ -417,7 +428,7 @@ final class Repository {
         // لا ملف حبر يطابق أي صفحة حالية: الأرجح أن معرّفات الصفحات هي التي تغيّرت (بيانات ضاعت)،
         // لا أن كل صفحات الحبر حُذفت، فلا يُمسح شيء
         guard files.contains(where: { keep.contains($0) }) else { return }
-        for f in files where !keep.contains(f) {
+        for f in files where !keep.contains(f) && !f.contains(".unreadable-") {
             try? fm.removeItem(at: folder.appendingPathComponent(f))
         }
     }

@@ -1,13 +1,9 @@
 import UIKit
 import CoreText
-import PencilKit
 
-// تجميل الكتابة إلى حبر قلم (نفس GlyphInk.kt وInkFill.kt في أندرويد 1.0.271): شكل كل حرف يؤخذ من الخط نفسه،
-// ويُرسم حبرًا بخطوط PencilKit (حدود الحرف وخطوط متقاربة تملأ داخله)، فيُمسح بالممحاة ويُحدَّد ويُلوَّن
-// مثل أي كتابة، و«الجزء الملموس» يقطع الحروف.
-
-/// علامة خطوط الحبر المجمَّل (لا تُقرأ كخط يد ولا تتحول مرة أخرى).
-let glyphSeed: UInt32 = 0x61F7
+// تجميل الكتابة إلى حبر قلم (نفس GlyphInk.kt وInkFill.kt في أندرويد): شكل كل حرف يؤخذ من الخط نفسه،
+// ويُحفظ حرفًا مملوءًا بحدوده (خط fill)، فيبقى ناعمًا بأي تكبير، ويُمسح بالممحاة ويُحدَّد ويُلوَّن
+// مثل أي كتابة، و«الجزء الملموس» يقص الحرف.
 
 enum GlyphInk {
     struct Layout {
@@ -101,63 +97,33 @@ enum GlyphInk {
         }
     }
 
-    /// قطع أفقية تملأ داخل الحروف (قاعدة الالتفاف غير الصفرية كما يرسمها الخط).
-    static func scanlines(_ polys: [[CGPoint]], step: CGFloat) -> [(CGFloat, CGFloat, CGFloat)] {
-        let all = polys.flatMap { $0 }
-        guard let minY = all.map({ $0.y }).min(), let maxY = all.map({ $0.y }).max(), step > 0 else { return [] }
-        var out: [(CGFloat, CGFloat, CGFloat)] = []
-        var y = minY + step / 2
-        while y < maxY {
-            var xs: [(CGFloat, Int)] = []
-            for poly in polys {
-                for i in poly.indices {
-                    let a = poly[i], b = poly[(i + 1) % poly.count]
-                    if (a.y <= y && b.y > y) || (b.y <= y && a.y > y) {
-                        let x = a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x)
-                        xs.append((x, b.y > a.y ? 1 : -1))
-                    }
-                }
-            }
-            xs.sort { $0.0 < $1.0 }
-            var wind = 0
-            var start: CGFloat = 0
-            for (x, d) in xs {
-                let was = wind
-                wind += d
-                if was == 0 && wind != 0 { start = x }
-                else if was != 0 && wind == 0 && x - start > 0.05 { out.append((y, start, x)) }
-            }
-            y += step
-        }
-        return out
-    }
-
-    private static func stroke(_ pts: [CGPoint], width: CGFloat, color: UIColor, date: Date) -> PKStroke {
-        let sp = pts.enumerated().map { i, p in
-            PKStrokePoint(location: p, timeOffset: TimeInterval(i) * 0.001, size: CGSize(width: width, height: width),
-                          opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
-        }
-        return PKStroke(ink: PKInk(.monoline, color: color), path: PKStrokePath(controlPoints: sp, creationDate: date),
-                        transform: .identity, mask: nil, randomSeed: glyphSeed)
-    }
-
-    /// سطر نص بخط وحجم على شكل حبر: الحدود والملء. كل الخطوط بوقت إنشاء واحد (مفتاح السطر).
-    static func strokes(_ lay: Layout, origin: CGPoint, size: CGFloat, color: UIColor, bold: Bool, date: Date) -> [PKStroke] {
+    /// سطر نص بخط وحجم على شكل حروف مملوءة. كل حرف (أو حروف متصلة) خط مستقل يحمل كلمته،
+    /// وكل خطوط السطر بوقت واحد t (مفتاح السطر). origin = بداية السطر على خط القاعدة.
+    static func strokes(_ text: String, _ lay: Layout, origin: CGPoint, size: CGFloat, color: UInt32, bold: Bool, t: Int64) -> [InkStroke] {
         let polys = contours(lay, origin: origin)
         guard !polys.isEmpty else { return [] }
-        let wOut = max(0.35, size * (bold ? 0.075 : 0.04))
-        let wIn = max(0.6, size * 0.065)
-        var out: [PKStroke] = []
-        // داخل الحروف: قطع أفقية متقاربة
-        for (y, x0, x1) in scanlines(polys, step: wIn * 0.8) {
-            let inset = min(wIn / 2, (x1 - x0) / 2)
-            let a = x0 + inset, b = x1 - inset
-            out.append(stroke(b > a ? [CGPoint(x: a, y: y), CGPoint(x: b, y: y)] : [CGPoint(x: (x0 + x1) / 2, y: y), CGPoint(x: (x0 + x1) / 2 + 0.01, y: y)],
-                              width: wIn, color: color, date: date))
-        }
-        // الحدود: ناعمة بسماكة الحبر
-        for p in polys {
-            out.append(stroke(p + [p[0]], width: wOut, color: color, date: date))
+        let ws = words(text, lay, origin: origin)
+        var out: [InkStroke] = []
+        for g in InkFill.group(polys) {
+            let cs = g.map { polys[$0] }
+            var s = InkStroke(pts: InkFill.encode(cs), color: color | 0xFF000000, width: bold ? size * 0.035 : 0, tool: .ballpoint, t: t)
+            s.fill = true
+            let (lf, ef) = InkFill.fractions(s.pts, base: origin.y, em: size)
+            s.lineF = lf
+            s.emF = ef
+            let bb = s.pointBounds
+            if !bb.isNull, !ws.isEmpty {
+                let cx = bb.midX
+                var best = 0
+                var bd = CGFloat.greatestFiniteMagnitude
+                for (i, w) in ws.enumerated() {
+                    let d = max(0, max(w.1.minX - cx, cx - w.1.maxX))
+                    if d < bd { bd = d; best = i }
+                }
+                s.word = ws[best].0
+                s.wid = t &* 1024 &+ Int64(best)
+            }
+            out.append(s)
         }
         return out
     }

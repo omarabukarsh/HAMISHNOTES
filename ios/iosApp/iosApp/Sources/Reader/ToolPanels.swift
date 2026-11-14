@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 
 // لوحات إعدادات الأدوات (نفس ToolPanels.kt وToolSettingsPanel في أندرويد): تنسدل تحت زر الأداة
 // عند الضغط عليه مرة ثانية. لكل أداة: اللون، الحجم، وخياراتها الخاصة.

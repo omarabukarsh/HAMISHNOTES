@@ -1,17 +1,15 @@
 import XCTest
-import PencilKit
 @testable import Hamish
 
 /// اختبارات للأعطال التي أصلحناها بعد تجربة نسخة الآيباد.
 final class FixesTests: XCTestCase {
     /// مسح كل الكتابة كان يُغلق التطبيق (حدود لا نهائية تتحول إلى عدد صحيح).
     func testHandwritingKeyOfEmptyDrawingDoesNotCrash() {
-        XCTAssertEqual(HandwritingWords.key(PKDrawing(), lang: 0), "0|0")
+        XCTAssertEqual(HandwritingWords.key(InkDrawing(), lang: 0), "0|0")
     }
 
     func testEraserLeftoversAreNotRead() {
-        let p = PKStrokePoint(location: CGPoint(x: 10, y: 10), timeOffset: 0, size: CGSize(width: 2, height: 2), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
-        let one = PKStroke(ink: PKInk(.pen, color: .black), path: PKStrokePath(controlPoints: [p], creationDate: Date()))
+        let one = InkStroke(pts: [InkPt(10, 10)], width: 2, tool: .fountain)
         XCTAssertFalse(HandwritingWords.eligible(one))
     }
 
@@ -20,7 +18,7 @@ final class FixesTests: XCTestCase {
         v.kind = kind
         v.arrowEnd = end
         v.arrowStart = start
-        v.ink = (PKInk(.monoline, color: .black), 3)
+        v.ink = (0xFF000000, 3)
         return v
     }
 
@@ -45,12 +43,12 @@ final class FixesTests: XCTestCase {
         XCTAssertEqual(paths[0].last!.y, 100, accuracy: 1)
     }
 
-    /// تجميل الكتابة إلى حبر: حروف الخط تتحول إلى خطوط PencilKit ملوّنة بعلامة الحبر المجمَّل.
+    /// تجميل الكتابة إلى حبر: كل حرف خط مملوء بحدوده، يحمل كلمته، وكلها بوقت السطر.
     func testBeautifyIntoInkMakesGlyphStrokes() {
         let lay = GlyphInk.layout("Cell", font: .systemFont(ofSize: 24))
-        let strokes = GlyphInk.strokes(lay, origin: CGPoint(x: 20, y: 60), size: 24, color: .blue, bold: false, date: Date())
-        XCTAssertGreaterThan(strokes.count, 20)
-        XCTAssertTrue(strokes.allSatisfy { $0.randomSeed == glyphSeed })
+        let strokes = GlyphInk.strokes("Cell", lay, origin: CGPoint(x: 20, y: 60), size: 24, color: 0xFF1565C0, bold: false, t: 42)
+        XCTAssertEqual(strokes.count, 4)
+        XCTAssertTrue(strokes.allSatisfy { $0.fill && $0.t == 42 && $0.word == "Cell" && $0.lineF >= 0 })
         XCTAssertFalse(strokes.contains(where: HandwritingWords.eligible))
         let words = GlyphInk.words("Cell", lay, origin: CGPoint(x: 20, y: 60))
         XCTAssertEqual(words.first?.0, "Cell")
@@ -59,7 +57,7 @@ final class FixesTests: XCTestCase {
     /// الكتابة العربية المتصلة تُملأ أيضًا.
     func testArabicGlyphInk() {
         let lay = GlyphInk.layout("الخلية", font: .systemFont(ofSize: 24))
-        XCTAssertGreaterThan(GlyphInk.strokes(lay, origin: CGPoint(x: 20, y: 60), size: 24, color: .black, bold: true, date: Date()).count, 20)
+        XCTAssertGreaterThan(GlyphInk.strokes("الخلية", lay, origin: CGPoint(x: 20, y: 60), size: 24, color: 0xFF000000, bold: true, t: 1).count, 0)
     }
 
     /// نسبة الرسم = نسبة ظهور الصفحة على الشاشة (فلا يُكبَّر المرسوم)، بحد أعلى للذاكرة.

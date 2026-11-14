@@ -1,6 +1,5 @@
 import UIKit
 import PDFKit
-import PencilKit
 
 // بيانات المستند بمخطط أندرويد (version 3) من وإلى DocData: الصفحات بأرقامها، والمواضع نسبية لعرض الصفحة.
 // ما لا يفهمه الآيباد من ملف أندرويد (البطاقات، المميَّز بنجمة…) يبقى في نسخته الخام ويُعاد كما هو.
@@ -23,7 +22,7 @@ enum AndroidSchema {
 
     /// widths = عرض كل صفحة بالنقاط؛ ink = حبر الصفحة بمعرّفها؛ raw = ملف أندرويد الخام إن كان المستند مستوردًا منه؛
     /// image = محتوى صورة أو ملصق (PNG/JPEG).
-    static func export(_ data: DocData, widths: [CGFloat], ink: (String) -> PKDrawing,
+    static func export(_ data: DocData, widths: [CGFloat], ink: (String) -> InkDrawing,
                        raw: [String: Any]? = nil, image: (ImageItem) -> Data?) -> Exported {
         var index: [String: Int] = [:]
         for (i, p) in data.pages.enumerated() where i < widths.count { index[p.id] = i }
@@ -31,8 +30,10 @@ enum AndroidSchema {
 
         var pages: [String: Any] = [:]
         for (pid, i) in index {
-            let list = InkCodec.encode(ink(pid), width: w(i), fills: data.fills.filter { $0.page == pid },
-                                       converted: data.converted.filter { $0.page == pid })
+            var dr = ink(pid)
+            // ملء أشكال قديم لم يُنقل بعد إلى الحبر
+            dr.strokes += data.fills.filter { $0.page == pid }.compactMap(DocSession.fillStroke)
+            let list = InkCodec.encode(dr, width: w(i), converted: data.converted.filter { $0.page == pid })
             if !list.isEmpty { pages[String(i)] = list.map { $0.json } }
         }
 
@@ -68,7 +69,7 @@ enum AndroidSchema {
             if b.italic { o["i"] = true }
             if b.underline { o["u"] = true }
             if b.align != 0 { o["al"] = b.align }
-            if let d = b.ink, let dr = try? PKDrawing(data: d), !dr.strokes.isEmpty {
+            if let d = b.ink, let dr = InkDrawing.load(d), !dr.strokes.isEmpty {
                 o["ink"] = InkCodec.encode(dr, width: w(i)).map { $0.json }
             }
             texts.append(o)
@@ -79,7 +80,7 @@ enum AndroidSchema {
             guard let i = index[n.page] else { continue }
             var inkArr: [[String: Any]] = []
             // حبر الملاحظة نسبي لعرضها
-            if let d = n.ink, let dr = try? PKDrawing(data: d), !dr.strokes.isEmpty {
+            if let d = n.ink, let dr = InkDrawing.load(d), !dr.strokes.isEmpty {
                 inkArr = InkCodec.encode(dr, width: max(1, n.w)).map { $0.json }
             }
             notes.append(["id": n.id, "page": i, "x": Double(n.x / w(i)), "y": Double(n.y / w(i)), "w": Double(n.w / w(i)),
@@ -141,7 +142,7 @@ enum AndroidSchema {
     struct Imported {
         var data: DocData
         /// حبر كل صفحة بمعرّفها.
-        var ink: [String: PKDrawing]
+        var ink: [String: InkDrawing]
     }
 
     /// يبني بيانات الآيباد من ملف أندرويد. pages = معرّفات الصفحات (بعددها)، widths = عرض كل صفحة بالنقاط.
@@ -149,7 +150,7 @@ enum AndroidSchema {
         guard let root = AJSON.parse(json), pages.count == widths.count else { return nil }
         var data = DocData()
         data.pages = pages
-        var ink: [String: PKDrawing] = [:]
+        var ink: [String: InkDrawing] = [:]
         func page(_ v: Any?) -> Int? {
             guard let i = AJSON.int(v).map({ Int($0) }), i >= 0, i < pages.count else { return nil }
             return i
@@ -161,7 +162,6 @@ enum AndroidSchema {
             guard let i = Int(key), i >= 0, i < pages.count else { continue }
             let dec = InkCodec.decode(strokes(v), width: w(i), page: pages[i].id)
             if !dec.drawing.strokes.isEmpty { ink[pages[i].id] = dec.drawing }
-            data.fills += dec.fills
             data.converted += dec.converted
         }
 

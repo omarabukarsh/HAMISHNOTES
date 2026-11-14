@@ -38,9 +38,13 @@ final class TextPrefs: ObservableObject {
     /// حجم النص بنقاط صفحة عرضها pageW.
     func size(pageW: CGFloat) -> CGFloat { CGFloat(sizePt) * pageW / 595 }
 
-    func apply(to b: TextBox, pageW: CGFloat) -> TextBox {
+    /// حجم النص لصفحة بمقاسها كاملًا: يُقاس بالضلع الأقصر، فلا يصير النص ضخمًا على الشرائح العريضة
+    /// (شريحة 960×540 تأخذ حجم صفحة A4 لا ضعفه).
+    func size(page: CGSize) -> CGFloat { CGFloat(sizePt) * min(page.width, page.height * 0.75) / 595 }
+
+    func apply(to b: TextBox, page: CGSize) -> TextBox {
         var x = b
-        x.font = font; x.size = size(pageW: pageW); x.bold = bold; x.italic = italic; x.underline = underline; x.align = align
+        x.font = font; x.size = size(page: page); x.bold = bold; x.italic = italic; x.underline = underline; x.align = align
         x.color = colorNow()
         return x
     }
@@ -188,14 +192,16 @@ extension DocSession {
         guard let idx = index(of: pageId) else { return }
         let size = pageSize(idx)
         let tp = TextPrefs.shared
-        // كما في أندرويد: بالنقر عرض افتراضي 42% من الصفحة، والمربع العربي يمتد يسار نقطة النقر
-        var w = min(max(width ?? size.width * 0.42, size.width * 0.06), size.width)
+        // بالنقر: مربع بعرض نحو ثلث الصفحة (يكبر النص فيه سطرًا سطرًا)، والمربع العربي يمتد يسار نقطة النقر.
+        // المقاس من الضلع الأقصر: الشرائح العريضة لا تعطي مربعًا ضخمًا
+        let ref = min(size.width, size.height * 0.75)
+        var w = min(max(width ?? ref * 0.45, size.width * 0.06), size.width)
         var x = p.x
         if width == nil && !I18n.english { x = p.x - w }
         x = min(max(0, x), max(0, size.width - w * 0.3))
         w = min(w, size.width - x)
         var b = TextBox(id: UUID().uuidString, page: pageId, x: x, y: max(0, p.y), w: max(20, w), text: "")
-        b = tp.apply(to: b, pageW: size.width)
+        b = tp.apply(to: b, page: size)
         b.y = max(0, p.y - b.size * 0.7)
         edit { d in d.boxes.append(b) }
         beginInlineEdit(b.id)
@@ -212,7 +218,7 @@ extension DocSession {
     /// يطبّق إعدادات أداة النص على مربع.
     func applyTextPrefs(to id: String) {
         guard let b = data.boxes.first(where: { $0.id == id }), let idx = index(of: b.page) else { return }
-        let nb = TextPrefs.shared.apply(to: b, pageW: pageSize(idx).width)
+        let nb = TextPrefs.shared.apply(to: b, page: pageSize(idx))
         edit { d in if let i = d.boxes.firstIndex(where: { $0.id == id }) { var x = nb; x.text = d.boxes[i].text; d.boxes[i] = x } }
     }
 }

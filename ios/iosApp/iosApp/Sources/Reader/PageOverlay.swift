@@ -1,14 +1,7 @@
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import PDFKit
-import PencilKit
 import SwiftUI
-
-/// كانفاس PencilKit لا يقبل لمس الإصبع إلا إن سُمح للإصبع بالكتابة،
-/// فتمر لمسات الإصبع إلى عارض PDF للتمرير والتكبير.
-final class InkCanvas: PKCanvasView {
-    var fingerWrites = false
-}
 
 /// طبقة شفافة تحمل عناصر (نصوص، ملاحظات، إطار صورة): لا تأخذ اللمسة لنفسها أبدًا،
 /// فتصل لمسة القلم أو الإصبع إلى طبقة الكتابة تحتها إلا إذا وقعت على عنصر.
@@ -91,7 +84,7 @@ final class HoldTracker: UIGestureRecognizer {
 
 /// طبقة فوق كل صفحة: التمييز، الصور، الكتابة بالقلم، النصوص، الملاحظات اللاصقة، الليزر، والأشكال.
 /// كل الإحداثيات المحفوظة بنقاط الصفحة (الأصل أعلى اليسار)؛ k = نسبة عرض الطبقة إلى عرض الصفحة.
-final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
+final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
     let pageId: String
     weak var session: DocSession?
     weak var pdfView: PDFView?
@@ -125,8 +118,6 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     /// مضلع ملء الشكل المرتب الأخير (ارسم وأبقِ مع الملء)، بإحداثيات الكانفاس.
     private var pendingFill: [CGPoint]?
     private var lastTouchType: UITouch.TouchType = .direct
-    private var applying = false
-    private var lastStrokeCount = 0
     private var k: CGFloat = 1
     /// كل ما فوق الصفحة داخل هذه الحاوية: حجمها بنقاط الشاشة الفعلية (حجم الصفحة × نسبة العرض)،
     /// وتُصغَّر بعكس تكبير عارض PDF، فيُرسم الحبر والنص والتمييز بدقة الشاشة (كما في أندرويد)
@@ -155,17 +146,11 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         imagesLayer.isUserInteractionEnabled = false
         content.addSubview(imagesLayer)
 
-        canvas.backgroundColor = .clear
-        canvas.isOpaque = false
-        // الورقة بيضاء في كل الثيمات: الحبر بألوانه كما اختيرت (PencilKit يعكس الداكن في المظهر الداكن)
-        canvas.overrideUserInterfaceStyle = .light
-        canvas.delegate = self
-        canvas.isScrollEnabled = false
-        canvas.contentInsetAdjustmentBehavior = .never
-        canvas.showsVerticalScrollIndicator = false
-        canvas.showsHorizontalScrollIndicator = false
-        canvas.minimumZoomScale = 1
-        canvas.maximumZoomScale = 1
+        canvas.pageW = size.width
+        canvas.onBegin = { [weak self] in self?.inkBegan() }
+        canvas.onEnd = { [weak self] in self?.inkEnded() }
+        canvas.onStroke = { [weak self] st in self?.newStroke(st) }
+        canvas.onErase = { [weak self] d in self?.erased(d) }
         hold.cancelsTouchesInView = false
         hold.delaysTouchesBegan = false
         hold.delaysTouchesEnded = false
@@ -195,7 +180,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         lasso.pageId = pageId
         content.addSubview(lasso)
         shapes.isHidden = true
-        shapes.onShape = { [weak self] strokes, fill in self?.commitShape(strokes, fill: fill) }
+        shapes.onShape = { [weak self] strokes in self?.commitShape(strokes) }
         content.addSubview(shapes)
 
         // أداة النص: سحب القلم يرسم مربع الكتابة بالعرض المطلوب
@@ -425,7 +410,6 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         canvas.fingerWrites = finger
         hold.fingerWrites = finger
         if c.tool != .eraser { eraserCursor.path = nil }
-        canvas.drawingPolicy = finger ? .anyInput : .pencilOnly
         laser.fingerWrites = finger
         shapes.fingerWrites = finger
         let laserOn = c.tool == .laser && !c.lassoActive
@@ -437,6 +421,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         laser.mode = c.laserMode
         shapes.isHidden = !shapeOn
         canvas.isUserInteractionEnabled = !laserOn && !shapeOn && !tapTools
+        canvas.writingEnabled = canvas.isUserInteractionEnabled && !c.lassoActive
         textDrag.isEnabled = c.textActive
         textDrag.allowedTouchTypes = finger ? [NSNumber(value: UITouch.TouchType.pencil.rawValue), NSNumber(value: UITouch.TouchType.direct.rawValue)]
                                             : [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
@@ -450,7 +435,7 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             lasso.refresh()
             return
         }
-        if let tool = PageOverlayView.pkTool(scale: k) { canvas.tool = tool }
+        canvas.config = PageOverlayView.inkConfig(k: k)
         if shapeOn {
             shapes.ink = shapeInk()
             shapes.kind = c.shapeKind
@@ -463,176 +448,45 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
-    /// أداة PencilKit للأداة المختارة، بعرض مضروب في scale (نسبة الشاشة إلى نقاط الصفحة).
-    static func pkTool(scale k: CGFloat) -> PKTool? {
+    /// إعدادات الكتابة للأداة المختارة. k = نسبة نقاط الطبقة إلى نقاط الصفحة (لحجم الممحاة على الشاشة).
+    static func inkConfig(k: CGFloat) -> InkToolConfig {
         let c = AppController.shared
-        let t = c.tool
-        let col = UIColor(argb: c.colorFor(t))
-        let w = Sizes.width(t, c.sizeFor(t)) * k
-        switch t {
-        case .ballpoint: return PKInkingTool(.monoline, color: col, width: w)
-        case .fountain: return PKInkingTool(.fountainPen, color: col, width: w * 1.4)
-        case .pencil: return PKInkingTool(.pencil, color: col, width: w * 1.6)
-        case .brush: return PKInkingTool(.watercolor, color: col, width: w * 3)
-        case .highlighter: return PKInkingTool(.marker, color: col.withAlphaComponent(0.6), width: w)
-        case .eraser: return c.eraserMode == .stroke ? PKEraserTool(.vector) : PKEraserTool(.bitmap, width: w)
-        case .laser: return nil
-        }
+        var cfg = InkToolConfig()
+        cfg.tool = c.tool
+        cfg.color = c.colorFor(c.tool) | 0xFF000000
+        cfg.width = Sizes.width(c.tool, c.sizeFor(c.tool))
+        cfg.style = c.tool.isPen ? c.penStyle : .solid
+        cfg.eraserMode = c.eraserMode
+        // «الخط كاملًا»: دائرة صغيرة ثابتة على الشاشة؛ «الجزء الملموس»: بحجم الممحاة المختار
+        cfg.eraserRadius = c.eraserMode == .stroke ? 9 / max(0.01, k) : max(1, Sizes.width(.eraser, c.sizeFor(.eraser)) / 2)
+        cfg.pressure = c.penPressure
+        cfg.sharpness = c.penSharpness
+        cfg.stabilize = c.tool == .highlighter ? c.hlStabilize : c.penStabilize
+        cfg.straight = c.hlStraight
+        cfg.canErase = { c.canErase($0) }
+        return cfg
     }
 
-    private func shapeInk() -> (PKInk, CGFloat) {
+    private func shapeInk() -> (UInt32, CGFloat) {
         let c = AppController.shared
-        return (PKInk(.monoline, color: UIColor(argb: c.shapeColor)), Sizes.width(.ballpoint, c.shapeSize) * k)
+        return (c.shapeColor | 0xFF000000, Sizes.width(.ballpoint, c.shapeSize) * k)
     }
 
     // ======================================================== الحبر
 
-    func setDrawing(_ d: PKDrawing) {
-        applying = true
-        canvas.drawing = k == 1 ? d : d.transformed(using: CGAffineTransform(scaleX: k, y: k))
-        applying = false
-        lastStrokeCount = canvas.drawing.strokes.count
+    func setDrawing(_ d: InkDrawing) {
+        canvas.k = k
+        canvas.setDrawing(d)
     }
 
-    /// الحبر بإحداثيات الصفحة.
-    private var pageDrawing: PKDrawing {
-        k == 1 ? canvas.drawing : canvas.drawing.transformed(using: CGAffineTransform(scaleX: 1 / k, y: 1 / k))
-    }
-
-    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        guard !applying, let s = session else { return }
-        let app = AppController.shared
-        let baseCount = lastStrokeCount
-        app.noteInteraction()
-        // فلتر الممحاة: ما يحميه المستخدم لا يُمسح
-        if app.tool == .eraser {
-            let old = s.drawing(for: pageId)
-            if let kept = PenProcessing.protect(old: old, new: pageDrawing, canErase: app.canErase) {
-                setDrawing(kept)
-                if inkSig(kept) == inkSig(old) { return }
-            }
-        }
-        // خط جديد: تثبيت الخط، حساسية الضغط، حدة الطرف، وخط الهايلايتر المستقيم
-        if canvas.drawing.strokes.count == lastStrokeCount + 1, let last = canvas.drawing.strokes.last,
-           (app.tool.isPen || app.tool == .highlighter), !app.shapeActive, last.randomSeed != shapeSeed,
-           let ns = PenProcessing.apply(last, tool: app.tool, pageW: pageSize.width * k,
-                                        stabilize: app.tool == .highlighter ? app.hlStabilize : app.penStabilize,
-                                        pressure: app.penPressure, sharpness: app.penSharpness, straight: app.hlStraight) {
-            var d = canvas.drawing
-            d.strokes[d.strokes.count - 1] = ns
-            applying = true
-            canvas.drawing = d
-            applying = false
-        }
-        let strokes = canvas.drawing.strokes
-        // خط هايلايتر جديد: يُلتقط النص تحته
-        if strokes.count == lastStrokeCount + 1, let last = strokes.last, last.ink.inkType == .marker,
-           AppController.shared.tool == .highlighter, !AppController.shared.shapeActive {
-            lastStrokeCount = strokes.count
-            if handleHighlight(last) { return }
-        }
-        let added = strokes.count == lastStrokeCount + 1
-        var converted = false
-        if added, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = strokes.last {
-            converted = restyle(last)
-            // شخبطة أو خط فوق كلمة متحوّلة = حذفها، و∧ = مكان إضافة: الخط لا يُحفظ
-            if !converted, let pl = pageDrawing.strokes.last, AutoFont.shared.gesture(s, pageId: pageId, stroke: pl) {
-                var d = canvas.drawing
-                d.strokes.removeLast()
-                applying = true
-                canvas.drawing = d
-                applying = false
-                lastStrokeCount = d.strokes.count
-                hold.consume()
-                return
-            }
-        }
-        // الكتابة بالقلم على ملاحظة لاصقة تصير جزءًا منها (تتحرك معها)
-        if added, !converted, app.tool.isPen, let last = canvas.drawing.strokes.last, last.randomSeed != shapeSeed {
-            let b = last.renderBounds
-            let pb = CGRect(x: b.minX / k, y: b.minY / k, width: b.width / k, height: b.height / k)
-            if let n = s.data.notes.last(where: { $0.page == pageId && !$0.collapsed && CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h).insetBy(dx: -2, dy: -2).contains(pb) }) {
-                var d = canvas.drawing
-                d.strokes.removeLast()
-                applying = true
-                canvas.drawing = d
-                applying = false
-                lastStrokeCount = d.strokes.count
-                var st = last
-                st.transform = last.transform.concatenating(CGAffineTransform(scaleX: 1 / k, y: 1 / k)).concatenating(CGAffineTransform(translationX: -n.x, y: -n.y))
-                var ink = (n.ink.flatMap { try? PKDrawing(data: $0) }) ?? PKDrawing()
-                ink.strokes.append(st)
-                var m = n
-                m.ink = ink.dataRepresentation()
-                s.upsertNote(m)
-                return
-            }
-        }
-        // الهايلايتر تحت الكتابة (كما في أندرويد): خطوطه تُنقل تحت خطوط القلم
-        if canvas.drawing.strokes.count == baseCount + 1, let last = canvas.drawing.strokes.last, last.ink.inkType == .marker,
-           canvas.drawing.strokes.dropLast().contains(where: { $0.ink.inkType != .marker }) {
-            var d = canvas.drawing
-            let all = d.strokes
-            let firstInk = all.firstIndex { $0.ink.inkType != .marker } ?? all.count - 1
-            d.strokes.removeLast()
-            d.strokes.insert(last, at: firstInk)
-            applying = true
-            canvas.drawing = d
-            applying = false
-        }
-        lastStrokeCount = canvas.drawing.strokes.count
-        let pd = pageDrawing
-        if let poly = pendingFill, converted, let key = pd.strokes.last?.path.creationDate.timeIntervalSinceReferenceDate {
-            // «ارسم وأبقِ» مع الملء: الشكل المغلق يُملأ بلون القلم
-            let f = ShapeFill(id: UUID().uuidString, page: pageId, pts: poly.map { CGPoint(x: $0.x / k, y: $0.y / k) },
-                              color: app.colorFor(app.tool), alpha: CGFloat(app.shapeFillAlpha), key: key)
-            s.addShape(pageId, pd, fill: f)
-            reloadMarks()
-        } else {
-            s.inkChanged(pageId, pd)
-        }
-        pendingFill = nil
-        if app.tool == .eraser, s.pruneFills(pageId) { reloadMarks() }
-        if added, !converted, AppController.shared.tool.isPen, !AppController.shared.shapeActive, let last = pd.strokes.last {
-            AutoFont.shared.onStroke(s, pageId: pageId, stroke: last)
-        }
-    }
-
-    /// «ارسم وأبقِ» (شكل مرتب) ونمط خط القلم (متقطع/منقّط) للخط الجديد. true = صار شكلًا.
-    private func restyle(_ last: PKStroke) -> Bool {
-        let c = AppController.shared
-        let pts = last.path.interpolatedPoints(by: .distance(2)).map { $0.location.applying(last.transform) }
-        let w = last.path.first?.size.width ?? Sizes.width(c.tool, c.sizeFor(c.tool)) * k
-        var paths: [[CGPoint]]? = nil
-        var shape = false
-        if c.drawAndHold && hold.heldNow, let r = ShapeRecognizer.recognize(pts, pageW: pageSize.width * k) {
-            paths = r
-            shape = true
-        }
-        hold.consume()
-        holdPreview.path = nil
-        holdFill.path = nil
-        if shape, c.shapeFill, let r = paths { pendingFill = PageOverlayView.closedPolygon(r) }
-        if c.penStyle != .solid {
-            let base = paths ?? [pts]
-            paths = base.flatMap { StrokeKit.split($0, style: c.penStyle, width: w) }
-        }
-        guard let ps = paths else { return false }
-        var d = canvas.drawing
-        d.strokes.removeLast()
-        d.strokes.append(contentsOf: StrokeKit.strokes(ps, ink: last.ink, width: w, seed: shape ? shapeSeed : last.randomSeed, date: last.path.creationDate))
-        applying = true
-        canvas.drawing = d
-        applying = false
-        return shape
-    }
-
-    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+    private func inkBegan() {
+        AppController.shared.noteInteraction()
         AutoFont.shared.penDown()
         // لمس الصفحة للكتابة يغلق لوحة خيارات الصفحة
         if session?.pageMenuOpen == true { session?.pageMenuOpen = false }
     }
-    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+
+    private func inkEnded() {
         AutoFont.shared.penUp()
         holdPreview.path = nil
         holdFill.path = nil
@@ -644,22 +498,70 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
-    private func commitShape(_ strokes: [PKStroke], fill: [CGPoint]?) {
+    /// انتهى مسح: الحبر الجديد خطوة تراجع واحدة، ونص الحروف الممسوحة كلها يُحذف.
+    private func erased(_ d: InkDrawing) {
         guard let s = session else { return }
-        var d = canvas.drawing
-        d.strokes.append(contentsOf: strokes)
-        applying = true
-        canvas.drawing = d
-        applying = false
-        lastStrokeCount = d.strokes.count
-        var f: ShapeFill? = nil
-        if let poly = fill, let first = strokes.first {
-            let c = AppController.shared
-            f = ShapeFill(id: UUID().uuidString, page: pageId, pts: poly.map { CGPoint(x: $0.x / k, y: $0.y / k) },
-                          color: c.shapeColor, alpha: CGFloat(c.shapeFillAlpha), key: first.path.creationDate.timeIntervalSinceReferenceDate)
+        s.inkChanged(pageId, d)
+        if s.pruneFills(pageId) { reloadMarks() }
+    }
+
+    /// خط جديد اكتمل (بنقاط الصفحة).
+    private func newStroke(_ st: InkStroke) {
+        guard let s = session else { return }
+        let app = AppController.shared
+        // هايلايتر بالتقاط النص: يصير تمييزًا على الكلمات تحته
+        if st.tool == .highlighter, !app.shapeActive, handleHighlight(st) { return }
+        var add = [st]
+        var shape = false
+        if st.tool.isPen, !app.shapeActive, let made = restyle(st) {
+            add = made
+            shape = true
         }
-        s.addShape(pageId, pageDrawing, fill: f)
-        reloadMarks()
+        hold.consume()
+        holdPreview.path = nil
+        holdFill.path = nil
+        if !shape && st.tool.isPen {
+            // شخبطة أو خط فوق كلمة متحوّلة = حذفها، و∧ = مكان إضافة: الخط لا يُحفظ
+            if AutoFont.shared.gesture(s, pageId: pageId, stroke: st) { return }
+            // الكتابة بالقلم على ملاحظة لاصقة تصير جزءًا منها (تتحرك معها)
+            let b = st.renderBounds
+            if let n = s.data.notes.last(where: { $0.page == pageId && !$0.collapsed && CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h).insetBy(dx: -2, dy: -2).contains(b) }) {
+                var ink = n.ink.flatMap { InkDrawing.load($0) } ?? InkDrawing()
+                ink.strokes.append(st.transformed(CGAffineTransform(translationX: -n.x, y: -n.y)))
+                var m = n
+                m.ink = ink.dataRepresentation()
+                s.upsertNote(m)
+                return
+            }
+        }
+        canvas.append(add)
+        s.inkChanged(pageId, canvas.drawing)
+        if !shape && st.tool.isPen { AutoFont.shared.onStroke(s, pageId: pageId, stroke: st) }
+    }
+
+    /// «ارسم وأبقِ»: القلم ثبت لحظة قبل رفعه والخط يشبه شكلًا، فيصير شكلًا مرتبًا (ويُملأ إن كان الملء مفعّلًا).
+    private func restyle(_ st: InkStroke) -> [InkStroke]? {
+        let c = AppController.shared
+        guard c.drawAndHold, hold.heldNow, st.pts.count > 3,
+              let r = ShapeRecognizer.recognize(st.pts.map { $0.cg }, pageW: pageSize.width) else { return nil }
+        let fillPoly = c.shapeFill ? PageOverlayView.closedPolygon(r) : nil
+        return r.map { path in
+            var s = InkStroke(points: path, color: st.color, width: st.width, tool: st.tool, t: st.t, style: st.style, shape: true)
+            // الشكل المغلق: آخر نقطة هي الأولى تمامًا (زاوية حادة، وملء إن كان مفعّلًا)
+            if fillPoly != nil, s.pts.count > 3, let a = s.pts.first {
+                s.pts[s.pts.count - 1] = a
+                s.shapeFill = true
+                s.fillAlpha = CGFloat(c.shapeFillAlpha)
+            }
+            return s
+        }
+    }
+
+    private func commitShape(_ strokes: [InkStroke]) {
+        guard let s = session, !strokes.isEmpty else { return }
+        let page = strokes.map { $0.transformed(CGAffineTransform(scaleX: 1 / k, y: 1 / k)) }
+        canvas.append(page)
+        s.inkChanged(pageId, canvas.drawing)
     }
 
     // ======================================================== التمييز والتقاط النص
@@ -679,24 +581,14 @@ final class PageOverlayView: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     /// خط هايلايتر جديد: مع «التقاط النص» يُستبدل بتمييز على الكلمات تحته ويُضاف نصه إلى الملخص
     /// (نفس snapHighlight في أندرويد). دونه يبقى رسمًا حرًا ولا يدخل الملخص.
-    private func handleHighlight(_ stroke: PKStroke) -> Bool {
+    private func handleHighlight(_ stroke: InkStroke) -> Bool {
         guard let s = session, let index = s.index(of: pageId) else { return false }
         let c = AppController.shared
         guard c.highlightSnap && Premium.shared.active else { return false }
-        let W = pageSize.width * k
-        var pts: [RelPt] = []
-        for p in stroke.path.interpolatedPoints(by: .distance(3)) {
-            let q = p.location.applying(stroke.transform)
-            pts.append(RelPt(x: q.x / W, y: q.y / W))
-        }
+        let W = max(1, pageSize.width)
+        let pts = InkErase.samples(stroke, step: 3).map { RelPt(x: $0.x / W, y: $0.y / W) }
         let band = Sizes.width(.highlighter, c.sizeFor(.highlighter)) / 600
         if s.snapHighlight(index, pts: pts, color: c.colorFor(.highlighter), band: band) {
-            var d = canvas.drawing
-            d.strokes.removeLast()
-            applying = true
-            canvas.drawing = d
-            applying = false
-            lastStrokeCount = d.strokes.count
             reloadMarks()
             return true
         }
@@ -1118,6 +1010,8 @@ final class MarksView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false
+        // التمييز يُمزج مع الصفحة بـ«الضرب» (كما في أندرويد): يلوّن الورق ويبقى النص تحته أسود واضحًا
+        host.compositingFilter = "multiplyBlendMode"
         layer.insertSublayer(host, at: 0)
     }
 
@@ -1147,11 +1041,13 @@ final class MarksView: UIView {
             l.backgroundColor = color.cgColor
             host.addSublayer(l)
         }
+        // لون شفاف فوق الصفحة: حتى إن لم يُطبَّق المزج يبقى النص ظاهرًا (والنتيجة على الورق الأبيض هي لون أندرويد نفسه)
+        func tint(_ argb: UInt32, strong: Bool) -> UIColor { UIColor(argb: argb | 0xFF000000).withAlphaComponent(strong ? 0.9 : 0.55) }
         for m in marks {
-            let c = markColor(m.color, strong: m.level >= 2)
+            let c = tint(m.color, strong: m.level >= 2)
             for r in m.rects { add(r, c) }
             if m.level < 2 {
-                let sc = markColor(m.color, strong: true)
+                let sc = tint(m.color, strong: true)
                 for r in m.strongRects { add(r, sc) }
             }
             // خط ذهبي تحت المهم (المظلَّل مرتين)
@@ -1170,20 +1066,62 @@ final class MarksView: UIView {
 // ======================================================== الليزر
 
 final class LaserView: UIView {
-    var color: UIColor = .red
-    var width: CGFloat = 6
+    var color: UIColor = .red { didSet { if color != oldValue { styleLayers() } } }
+    var width: CGFloat = 6 { didSet { if width != oldValue { styleLayers() } } }
     var mode: LaserMode = .dot
     var fingerWrites = false
     private var trail: [(CGPoint, CFTimeInterval)] = []
     private var dot: CGPoint?
     private var link: CADisplayLink?
+    /// الأثر: توهج عريض خافت، ثم خط بلون الليزر، ثم قلب أبيض رفيع (كشعاع ضوء). كلها على المعالج الرسومي.
+    private let glow = CAShapeLayer()
+    private let beam = CAShapeLayer()
+    private let core = CAShapeLayer()
+    private let head = CAShapeLayer()
+    private let headCore = CAShapeLayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
+        for l in [glow, beam, core, head, headCore] {
+            l.fillColor = UIColor.clear.cgColor
+            l.lineCap = .round
+            l.lineJoin = .round
+            l.actions = ["path": NSNull(), "opacity": NSNull(), "position": NSNull(), "bounds": NSNull()]
+            layer.addSublayer(l)
+        }
+        styleLayers()
         // القلم يحوم فوق الشاشة دون لمسها: الليزر يتبعه (آيباد يدعم التحويم)
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(onHover(_:))))
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let sc = window?.screen.scale ?? UIScreen.main.scale
+        for l in [glow, beam, core, head, headCore] { l.frame = bounds; l.contentsScale = sc }
+    }
+
+    private func styleLayers() {
+        let c = color.cgColor
+        glow.strokeColor = color.withAlphaComponent(0.25).cgColor
+        glow.lineWidth = width * 2.2
+        glow.shadowColor = c
+        glow.shadowOpacity = 0.9
+        glow.shadowRadius = width * 1.2
+        glow.shadowOffset = .zero
+        beam.strokeColor = color.withAlphaComponent(0.9).cgColor
+        beam.lineWidth = width
+        core.strokeColor = UIColor.white.withAlphaComponent(0.85).cgColor
+        core.lineWidth = max(1, width * 0.32)
+        head.fillColor = c
+        head.shadowColor = c
+        head.shadowOpacity = 1
+        head.shadowRadius = width * 1.6
+        head.shadowOffset = .zero
+        headCore.fillColor = UIColor.white.withAlphaComponent(0.9).cgColor
     }
 
     @objc private func onHover(_ g: UIHoverGestureRecognizer) {
@@ -1193,11 +1131,9 @@ final class LaserView: UIView {
             startLink()
         default:
             dot = nil
-            setNeedsDisplay()
+            render()
         }
     }
-
-    required init?(coder: NSCoder) { fatalError() }
 
     private func accept(_ t: UITouch) -> Bool { fingerWrites || t.type == .pencil }
 
@@ -1208,22 +1144,26 @@ final class LaserView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let t = touches.first, accept(t) else { return }
-        add(t.location(in: self))
+        add(t.preciseLocation(in: self))
         startLink()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let t = touches.first, accept(t) else { return }
-        for c in event?.coalescedTouches(for: t) ?? [t] { add(c.location(in: self)) }
+        for c in event?.coalescedTouches(for: t) ?? [t] { add(c.preciseLocation(in: self), render: false) }
+        render()
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil; render() }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil; render() }
 
-    private func add(_ p: CGPoint) {
+    private func add(_ p: CGPoint, render now: Bool = true) {
         dot = p
-        trail.append((p, CACurrentMediaTime()))
-        setNeedsDisplay()
+        // نقاط متقاربة جدًا لا تضيف شيئًا (وتثقل المسار)
+        if let last = trail.last?.0, hypot(p.x - last.x, p.y - last.y) < 0.8 { trail[trail.count - 1].1 = CACurrentMediaTime() } else {
+            trail.append((p, CACurrentMediaTime()))
+        }
+        if now { render() }
     }
 
     private func startLink() {
@@ -1237,32 +1177,45 @@ final class LaserView: UIView {
         let now = CACurrentMediaTime()
         let life: CFTimeInterval = mode == .line ? 1.5 : 0.35
         trail.removeAll { now - $0.1 > life }
-        setNeedsDisplay()
+        render()
         if trail.isEmpty && dot == nil { link?.invalidate(); link = nil }
     }
 
-    override func draw(_ rect: CGRect) {
-        guard let c = UIGraphicsGetCurrentContext() else { return }
-        let now = CACurrentMediaTime()
-        let life: CFTimeInterval = mode == .line ? 1.5 : 0.35
-        c.setLineCap(.round)
-        c.setLineJoin(.round)
-        if trail.count > 1 {
-            for i in 1..<trail.count {
-                let a = 1 - CGFloat((now - trail[i].1) / life)
-                c.setStrokeColor(color.withAlphaComponent(max(0, a) * 0.85).cgColor)
-                c.setLineWidth(width * (mode == .line ? 1 : 0.7))
-                c.move(to: trail[i - 1].0)
-                c.addLine(to: trail[i].0)
-                c.strokePath()
+    /// مسار ناعم عبر نقاط الأثر.
+    private func smooth(_ pts: [CGPoint]) -> CGPath? {
+        guard let f = pts.first, pts.count > 1 else { return nil }
+        let p = CGMutablePath()
+        p.move(to: f)
+        if pts.count > 2 {
+            for i in 1..<(pts.count - 1) {
+                p.addQuadCurve(to: CGPoint(x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2), control: pts[i])
             }
         }
+        p.addLine(to: pts[pts.count - 1])
+        return p
+    }
+
+    private func render() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let path = smooth(trail.map { $0.0 })
+        // الأثر يخفت كله كلما قصر (لا قطع بشفافيات مختلفة تظهر حبيبات عند التقائها)
+        let life: CFTimeInterval = mode == .line ? 1.5 : 0.35
+        let age = trail.first.map { CACurrentMediaTime() - $0.1 } ?? life
+        let fade = Float(max(0.35, 1 - age / life * 0.5))
+        for l in [glow, beam, core] {
+            l.path = path
+            l.opacity = fade
+        }
         if let d = dot {
-            c.setShadow(offset: .zero, blur: width * 2.5, color: color.cgColor)
-            c.setFillColor(color.cgColor)
-            c.fillEllipse(in: CGRect(x: d.x - width, y: d.y - width, width: width * 2, height: width * 2))
-            c.setFillColor(UIColor.white.withAlphaComponent(0.85).cgColor)
-            c.fillEllipse(in: CGRect(x: d.x - width * 0.4, y: d.y - width * 0.4, width: width * 0.8, height: width * 0.8))
+            let r = width * 0.95
+            head.path = CGPath(ellipseIn: CGRect(x: d.x - r, y: d.y - r, width: r * 2, height: r * 2), transform: nil)
+            let rc = width * 0.42
+            headCore.path = CGPath(ellipseIn: CGRect(x: d.x - rc, y: d.y - rc, width: rc * 2, height: rc * 2), transform: nil)
+        } else {
+            head.path = nil
+            headCore.path = nil
         }
     }
 }
@@ -1271,7 +1224,8 @@ final class LaserView: UIView {
 
 final class ShapeCaptureView: UIView {
     var kind: ShapeKind = .line
-    var ink: (PKInk, CGFloat) = (PKInk(.monoline, color: .black), 2)
+    /// لون الشكل وسماكته (بنقاط هذه الطبقة).
+    var ink: (UInt32, CGFloat) = (0xFF000000, 2)
     var fingerWrites = false
     var style: LineStyle = .solid
     var rounded = true
@@ -1279,9 +1233,10 @@ final class ShapeCaptureView: UIView {
     var arrowEnd: ArrowHead = .none
     var fill = false
     var fillAlpha: CGFloat = 0.2
-    /// الخطوط، ومضلع الملء (للأشكال المغلقة إن كان الملء مفعّلًا).
-    var onShape: (([PKStroke], [CGPoint]?) -> Void)?
+    /// خطوط الشكل (بنقاط هذه الطبقة): الجسم (مملوء إن كان مغلقًا والملء مفعّلًا) ورؤوس الأسهم.
+    var onShape: (([InkStroke]) -> Void)?
     private let fillPreview = CAShapeLayer()
+    private let headPreview = CAShapeLayer()
     private var start: CGPoint?
     private var end: CGPoint?
     private let preview = CAShapeLayer()
@@ -1291,9 +1246,11 @@ final class ShapeCaptureView: UIView {
         backgroundColor = .clear
         preview.fillColor = UIColor.clear.cgColor
         preview.lineCap = .round
-        preview.lineJoin = .round
+        preview.lineJoin = .miter
+        headPreview.lineJoin = .miter
         layer.addSublayer(fillPreview)
         layer.addSublayer(preview)
+        layer.addSublayer(headPreview)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -1309,8 +1266,6 @@ final class ShapeCaptureView: UIView {
         guard let t = touches.first, accept(t) else { return }
         start = t.location(in: self)
         end = start
-        preview.strokeColor = ink.0.color.cgColor
-        preview.lineWidth = ink.1
         update()
     }
 
@@ -1321,14 +1276,16 @@ final class ShapeCaptureView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        defer { start = nil; end = nil; preview.path = nil; fillPreview.path = nil }
+        defer { clear() }
         guard let a = start, let b = end, hypot(b.x - a.x, b.y - a.y) > 6 else { return }
-        let strokes = StrokeKit.strokes(styledPaths(a, b), ink: ink.0, width: ink.1)
-        onShape?(strokes, fillPolygon(a, b))
+        onShape?(shapeStrokes(a, b))
     }
 
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        start = nil; end = nil; preview.path = nil; fillPreview.path = nil
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { clear() }
+
+    private func clear() {
+        start = nil; end = nil
+        preview.path = nil; fillPreview.path = nil; headPreview.path = nil
     }
 
     /// مضلع الملء للأشكال المغلقة.
@@ -1337,21 +1294,66 @@ final class ShapeCaptureView: UIView {
         return Shapes.paths(kind, a, b, rounded: rounded).first
     }
 
+    /// الشكل خطوطًا: الجسم بنمطه، ورؤوس الأسهم (المغلق مثلث مملوء بلون الخط). كلها بوقت واحد.
+    func shapeStrokes(_ a: CGPoint, _ b: CGPoint) -> [InkStroke] {
+        let parts = styledParts(a, b)
+        let t = InkKey.now()
+        var out: [InkStroke] = []
+        if var body = parts.body.first, body.count > 1 {
+            let closed = ![.line, .elbow, .curve].contains(kind)
+            if closed, let f = body.first { body[body.count - 1] = f }
+            var s = InkStroke(points: body, color: ink.0, width: ink.1, tool: .ballpoint, t: t, style: style, shape: true)
+            if closed && fill {
+                s.shapeFill = true
+                s.fillAlpha = fillAlpha
+            }
+            out.append(s)
+        }
+        for h in parts.heads where h.count > 1 {
+            var s = InkStroke(points: h, color: ink.0, width: ink.1, tool: .ballpoint, t: t, shape: true)
+            if h.count > 3, h.first == h.last {
+                s.shapeFill = true
+                s.fillAlpha = 1
+            }
+            out.append(s)
+        }
+        return out
+    }
+
     private func update() {
         guard let a = start, let b = end else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let parts = styledParts(a, b)
+        let col = InkRender.cg(ink.0)
+        preview.strokeColor = col
+        preview.lineWidth = ink.1
+        let d = InkRender.dash(style, width: ink.1)
+        preview.lineDashPattern = d.isEmpty ? nil : d.map { NSNumber(value: Double($0)) }
         let p = UIBezierPath()
-        for pts in styledPaths(a, b) {
+        for pts in parts.body {
             guard let f = pts.first else { continue }
             p.move(to: f)
             for q in pts.dropFirst() { p.addLine(to: q) }
         }
         preview.path = p.cgPath
+        let hp = UIBezierPath()
+        for h in parts.heads {
+            guard let f = h.first else { continue }
+            hp.move(to: f)
+            for q in h.dropFirst() { hp.addLine(to: q) }
+        }
+        headPreview.strokeColor = col
+        headPreview.fillColor = arrowEnd == .closed || arrowStart == .closed ? col : UIColor.clear.cgColor
+        headPreview.lineWidth = ink.1
+        headPreview.path = hp.cgPath
         if let poly = fillPolygon(a, b), let f = poly.first {
             let fp = UIBezierPath()
             fp.move(to: f)
             for q in poly.dropFirst() { fp.addLine(to: q) }
             fp.close()
-            fillPreview.fillColor = ink.0.color.withAlphaComponent(fillAlpha).cgColor
+            fillPreview.fillColor = InkRender.cg(ink.0, alpha: fillAlpha)
             fillPreview.path = fp.cgPath
         } else {
             fillPreview.path = nil
@@ -1360,8 +1362,8 @@ final class ShapeCaptureView: UIView {
 }
 
 extension ShapeCaptureView {
-    /// الشكل بنمطه: الزوايا المستديرة، ورؤوس الأسهم للخطوط، والتقطيع.
-    func styledPaths(_ a: CGPoint, _ b: CGPoint) -> [[CGPoint]] {
+    /// الشكل بنمطه: الزوايا المستديرة، ورؤوس الأسهم للخطوط (النمط المتقطع يُرسم من خصائص الخط).
+    func styledParts(_ a: CGPoint, _ b: CGPoint) -> (body: [[CGPoint]], heads: [[CGPoint]]) {
         var paths = Shapes.paths(kind, a, b, rounded: rounded)
         var heads: [[CGPoint]] = []
         if [.line, .elbow, .curve].contains(kind), var main = paths.first, main.count > 1 {
@@ -1369,23 +1371,21 @@ extension ShapeCaptureView {
             // السهم المنحني سهمٌ كما في أيقونته: رأس في نهايته حتى لو لم يُختر رأس
             let endHead: ArrowHead = kind == .curve && arrowEnd == .none ? .open : arrowEnd
             let rev = Array(main.reversed())
-            if let h = StrokeKit.arrow(endHead, tip: main.last!, from: StrokeKit.pointBack(main, len), width: ink.1) {
-                heads.append(h)
-                if endHead == .closed { heads += StrokeKit.fillTriangle(h, width: ink.1) }
-            }
-            if let h = StrokeKit.arrow(arrowStart, tip: main.first!, from: StrokeKit.pointBack(rev, len), width: ink.1) {
-                heads.append(h)
-                if arrowStart == .closed { heads += StrokeKit.fillTriangle(h, width: ink.1) }
-            }
+            if let last = main.last, let h = StrokeKit.arrow(endHead, tip: last, from: StrokeKit.pointBack(main, len), width: ink.1) { heads.append(h) }
+            if let first = main.first, let h = StrokeKit.arrow(arrowStart, tip: first, from: StrokeKit.pointBack(rev, len), width: ink.1) { heads.append(h) }
             // الخط يتوقف عند قاعدة الرأس المغلق فيبقى طرفه حادًا
             let cut = len * cos(StrokeKit.spread)
             if endHead == .closed { main = StrokeKit.trimEnd(main, cut) }
             if arrowStart == .closed { main = Array(StrokeKit.trimEnd(main.reversed(), cut).reversed()) }
             paths[0] = main
         }
-        var body = paths
-        if style != .solid, let main = body.first { body = StrokeKit.split(main, style: style, width: ink.1) + body.dropFirst() }
-        return body + heads.map { Shapes.dense($0, closed: false) }
+        return (paths, heads)
+    }
+
+    /// كل خطوط الشكل كنقاط (الجسم ثم الرؤوس).
+    func styledPaths(_ a: CGPoint, _ b: CGPoint) -> [[CGPoint]] {
+        let p = styledParts(a, b)
+        return p.body + p.heads
     }
 }
 
@@ -1771,7 +1771,7 @@ final class StickyNoteView: UIView {
                 addSubview(l)
             }
             // كتابة القلم على الملاحظة (بنقاط الملاحظة)
-            if let raw = note.ink, let d = try? PKDrawing(data: raw), !d.strokes.isEmpty {
+            if let raw = note.ink, let d = InkDrawing.load(raw), !d.strokes.isEmpty {
                 let iv = UIImageView(frame: bounds)
                 let scaled = d.transformed(using: CGAffineTransform(scaleX: k, y: k))
                 iv.image = scaled.lightImage(from: bounds, scale: UIScreen.main.scale * 2)

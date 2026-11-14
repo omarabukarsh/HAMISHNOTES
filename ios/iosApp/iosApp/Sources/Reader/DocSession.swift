@@ -1,11 +1,10 @@
 import SwiftUI
 import PDFKit
-import PencilKit
 import Vision
 
 /// خطوة قابلة للتراجع.
 enum EditStep {
-    case ink(page: String, before: PKDrawing, after: PKDrawing)
+    case ink(page: String, before: InkDrawing, after: InkDrawing)
     case data(before: DocData, after: DocData)
     /// تعديل الحبر والبيانات معًا (التحديد الحر) خطوةً واحدة.
     indirect case both(EditStep, EditStep)
@@ -115,7 +114,7 @@ final class DocSession: ObservableObject, Identifiable {
     @Published private(set) var undoStack: [EditStep] = []
     @Published private(set) var redoStack: [EditStep] = []
 
-    var drawings: [String: PKDrawing] = [:]
+    var drawings: [String: InkDrawing] = [:]
     var dirtyInk: Set<String> = []
     var dataDirty = false
     private var pdfDirty = false
@@ -127,7 +126,7 @@ final class DocSession: ObservableObject, Identifiable {
     var zoomHook: ((CGFloat) -> Void)?
     var fitHook: (() -> Void)?
     var reloadHook: (() -> Void)?
-    var applyInkHook: ((String, PKDrawing) -> Void)?
+    var applyInkHook: ((String, InkDrawing) -> Void)?
     /// وسط الجزء الظاهر من الصفحة على الشاشة (بنقاط الصفحة).
     var visibleCenterHook: ((Int) -> CGPoint?)?
     /// تمرير مستمر إلى موضع من المستند (0…1) من شريط الصفحات.
@@ -229,17 +228,38 @@ final class DocSession: ObservableObject, Identifiable {
 
     // ======================================================== الحبر
 
-    func drawing(for pageId: String) -> PKDrawing {
+    func drawing(for pageId: String) -> InkDrawing {
         if let d = drawings[pageId] { return d }
-        let d = repo.loadInk(id, page: pageId)
+        var d = repo.loadInk(id, page: pageId)
+        // ملء الأشكال في الملفات القديمة كان منفصلًا عن خطوطها: يصير جزءًا من الحبر (يُمسح ويُحدَّد معه)
+        let old = data.fills.filter { $0.page == pageId }
+        if !old.isEmpty {
+            d.strokes += old.compactMap(DocSession.fillStroke)
+            dirtyInk.insert(pageId)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.data.fills.removeAll { $0.page == pageId }
+                self.dataDirty = true
+                self.scheduleSave()
+            }
+        }
         drawings[pageId] = d
         return d
     }
 
+    /// ملء شكل من ملف قديم كخط شكل مملوء بلا إطار (إطاره خط آخر بالوقت نفسه).
+    static func fillStroke(_ f: ShapeFill) -> InkStroke? {
+        guard f.pts.count > 2, let first = f.pts.first else { return nil }
+        var s = InkStroke(points: f.pts + [first], color: f.color | 0xFF000000, width: 0, tool: .ballpoint, t: InkKey.ms(f.key))
+        s.shapeFill = true
+        s.fillAlpha = f.alpha
+        return s
+    }
+
     /// الكانفاس غيّر الحبر: يُسجَّل للتراجع ويُحفظ لاحقًا.
-    func inkChanged(_ pageId: String, _ new: PKDrawing) {
+    func inkChanged(_ pageId: String, _ new: InkDrawing) {
         let old = drawing(for: pageId)
-        if inkSig(old) == inkSig(new) { return }
+        if old == new { return }
         drawings[pageId] = new
         dirtyInk.insert(pageId)
         push(.ink(page: pageId, before: old, after: new))
@@ -248,7 +268,7 @@ final class DocSession: ObservableObject, Identifiable {
     }
 
     /// يضع حبرًا جديدًا على الصفحة (من الأشكال أو اللصق) ويحدّث الكانفاس.
-    func setInk(_ pageId: String, _ new: PKDrawing, record: Bool = true) {
+    func setInk(_ pageId: String, _ new: InkDrawing, record: Bool = true) {
         let old = drawing(for: pageId)
         drawings[pageId] = new
         dirtyInk.insert(pageId)
@@ -258,7 +278,7 @@ final class DocSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
-    func addStrokes(_ pageId: String, _ strokes: [PKStroke]) {
+    func addStrokes(_ pageId: String, _ strokes: [InkStroke]) {
         var d = drawing(for: pageId)
         d.strokes.append(contentsOf: strokes)
         setInk(pageId, d)
@@ -317,29 +337,13 @@ final class DocSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
-    /// يضيف شكلًا (خطوطه وملأه إن وُجد) خطوةً واحدة في التراجع.
-    func addShape(_ pageId: String, _ new: PKDrawing, fill: ShapeFill?) {
-        guard let f = fill else { inkChanged(pageId, new); return }
-        let old = drawing(for: pageId)
-        let before = data
-        data.fills.append(f)
-        drawings[pageId] = new
-        dirtyInk.insert(pageId)
-        dataDirty = true
-        push(.both(.ink(page: pageId, before: old, after: new), .data(before: before, after: data)))
-        scheduleSave()
-    }
-
-    /// يحذف ملء الأشكال التي مُسح إطارها، ونصوص الكتابة المجمَّلة التي مُسح حبرها،
-    /// ويضمه إلى خطوة المسح نفسها في التراجع. true = تغيّر شيء.
+    /// يحذف نصوص الكتابة المجمَّلة التي مُسحت حروفها كلها، ويضمه إلى خطوة المسح نفسها في التراجع. true = تغيّر شيء.
     @discardableResult
     func pruneFills(_ pageId: String) -> Bool {
-        let keys = Set(drawing(for: pageId).strokes.map { $0.path.creationDate.timeIntervalSinceReferenceDate })
-        guard data.fills.contains(where: { $0.page == pageId && !keys.contains($0.key) })
-            || data.converted.contains(where: { $0.page == pageId && !keys.contains($0.key) }) else { return false }
+        let keys = Set(drawing(for: pageId).strokes.map { $0.t })
+        guard data.converted.contains(where: { $0.page == pageId && !keys.contains(InkKey.ms($0.key)) }) else { return false }
         let before = data
-        data.fills.removeAll { $0.page == pageId && !keys.contains($0.key) }
-        data.converted.removeAll { $0.page == pageId && !keys.contains($0.key) }
+        data.converted.removeAll { $0.page == pageId && !keys.contains(InkKey.ms($0.key)) }
         wordCache.removeValue(forKey: pageId)
         dataDirty = true
         if let last = undoStack.popLast() {
@@ -361,11 +365,11 @@ final class DocSession: ObservableObject, Identifiable {
         data.notes.removeAll { $0.page == pid }
         data.images.removeAll { $0.page == pid }
         data.fills.removeAll { $0.page == pid }
-        drawings[pid] = PKDrawing()
+        drawings[pid] = InkDrawing()
         dirtyInk.insert(pid)
-        applyInkHook?(pid, PKDrawing())
+        applyInkHook?(pid, InkDrawing())
         inkVersion += 1
-        push(.both(.ink(page: pid, before: oldInk, after: PKDrawing()), .data(before: before, after: data)))
+        push(.both(.ink(page: pid, before: oldInk, after: InkDrawing()), .data(before: before, after: data)))
         dataDirty = true
         scheduleSave()
     }
@@ -686,10 +690,13 @@ final class DocSession: ObservableObject, Identifiable {
         if item.file.hasPrefix("sticker:") {
             let key = String(item.file.dropFirst(8))
             if key.hasPrefix("mine:") {
-                return UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(String(key.dropFirst(5))).path)
+                let name = String(key.dropFirst(5))
+                guard Repository.safeName(name) else { return nil }
+                return UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(name).path)
             }
             return UIImage(named: "st_" + key) ?? badgeImage(key) ?? emojiImage(key)
         }
+        guard Repository.safeName(item.file) else { return nil }
         return UIImage(contentsOfFile: repo.mediaDir(docId).appendingPathComponent(item.file).path)
     }
 
@@ -984,7 +991,7 @@ final class DocSession: ObservableObject, Identifiable {
         saveWork?.cancel()
         commitInlineText()
         if currentOrder.isEmpty { currentOrder = data.pages }
-        let inks = dirtyInk.map { ($0, drawings[$0] ?? PKDrawing()) }
+        let inks = dirtyInk.map { ($0, drawings[$0] ?? InkDrawing()) }
         let inkChanged = !inks.isEmpty
         dirtyInk.removeAll()
         let writeData = dataDirty || pdfDirty || inkChanged
@@ -1209,20 +1216,17 @@ final class FindCollector: NSObject, PDFDocumentDelegate {
     }
 }
 
-/// بصمة سريعة للحبر (بلا تحويله إلى بيانات): تتغير عند إضافة خط أو مسحه أو نقله أو تلوينه.
-func inkSig(_ d: PKDrawing) -> Int {
+/// بصمة سريعة للحبر: تتغير عند إضافة خط أو مسحه أو نقله أو تلوينه.
+func inkSig(_ d: InkDrawing) -> Int {
     var h = Hasher()
     h.combine(d.strokes.count)
     for st in d.strokes {
-        h.combine(st.path.creationDate.timeIntervalSinceReferenceDate)
-        h.combine(st.path.count)
-        h.combine(st.transform.tx); h.combine(st.transform.ty); h.combine(st.transform.a); h.combine(st.transform.d)
-        h.combine(st.transform.b); h.combine(st.transform.c)
-        for v in st.ink.color.cgColor.components ?? [] { h.combine(v) }
-        h.combine(st.ink.inkType.rawValue)
-        if let f = st.path.first { h.combine(f.location.x); h.combine(f.location.y); h.combine(f.size.width) }
-        if let l = st.path.last { h.combine(l.location.x); h.combine(l.location.y) }
-        h.combine(st.mask == nil)
+        h.combine(st.t)
+        h.combine(st.pts.count)
+        h.combine(st.color)
+        h.combine(st.width)
+        if let f = st.pts.first { h.combine(f.x); h.combine(f.y) }
+        if let l = st.pts.last { h.combine(l.x); h.combine(l.y) }
     }
     return h.finalize()
 }

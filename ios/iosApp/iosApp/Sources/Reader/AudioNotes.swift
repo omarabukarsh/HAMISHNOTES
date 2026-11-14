@@ -1,9 +1,8 @@
 import SwiftUI
 import AVFoundation
 import Vision
-import PencilKit
 
-/// تسجيل المحاضرة: كل ما يُكتب أثناء التسجيل مربوط بلحظته (وقت إنشاء الخط في PencilKit).
+/// تسجيل المحاضرة: كل ما يُكتب أثناء التسجيل مربوط بلحظته (وقت كتابة الخط).
 final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = AudioNotes()
 
@@ -156,7 +155,7 @@ final class AudioNotes: NSObject, ObservableObject, AVAudioPlayerDelegate {
     /// يبدأ التشغيل من لحظة كتابة أحدث خط في الصفحة الحالية.
     func playFromInk(_ s: DocSession) {
         guard let pid = s.pageId(s.currentPage), let last = s.drawing(for: pid).strokes.last else { return }
-        let t = Int64(last.path.creationDate.timeIntervalSince1970 * 1000)
+        let t = last.t
         if let rec = s.data.recordings.first(where: { t >= $0.start && t <= $0.start + $0.durationMs }) {
             play(s, rec, at: TimeInterval(t - rec.start) / 1000 - 2)
         } else {
@@ -250,7 +249,7 @@ struct HandwritingSheet: View {
     @State private var text = ""
     @State private var busy = true
     @State private var removeInk = true
-    @State private var source: [PKStroke] = []
+    @State private var source: [InkStroke] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -299,7 +298,7 @@ struct HandwritingSheet: View {
 
     private func recognize() {
         guard let pid = session.pageId(session.currentPage) else { busy = false; return }
-        let d = lassoOnly ? (session.lassoDrawing() ?? PKDrawing()) : session.drawing(for: pid)
+        let d = lassoOnly ? (session.lassoDrawing() ?? InkDrawing()) : session.drawing(for: pid)
         guard !d.strokes.isEmpty else { busy = false; return }
         source = d.strokes.filter(HandwritingWords.eligible)
         Task { @MainActor in

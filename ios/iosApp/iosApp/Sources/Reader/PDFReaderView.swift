@@ -1,6 +1,5 @@
 import SwiftUI
 import PDFKit
-import PencilKit
 import Combine
 
 /// عارض PDF من النظام (تمرير وتكبير وحدّة بأي تكبير)، وفوق كل صفحة طبقة الكتابة الخاصة بها.

@@ -116,6 +116,13 @@ private struct ReaderContent: View {
                 if s.selectedNote != nil { NoteBar(session: s) }
                 AutoFontChip(session: s)
             }
+            // أداة أخرى: شريط العنصر المحدد (نص، ملاحظة، صورة) يُغلق، فلا تتراكم الأشرطة فوق بعضها
+            .onChange(of: "\(app.tool)|\(app.lassoActive)|\(app.shapeActive)|\(app.stickyActive)") { _, _ in
+                if s.selectedBox != nil { s.selectedBox = nil }
+                if s.selectedNote != nil { s.selectedNote = nil }
+                if s.selectedImage != nil { s.selectedImage = nil }
+                if !app.lassoActive && s.lassoSel != nil { s.lassoSel = nil }
+            }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
             .padding(.bottom, s.zoomBox != nil ? 230 : 0)
             if let rec = audio.playing, rec.0 == s.id {

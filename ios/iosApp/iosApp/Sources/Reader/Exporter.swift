@@ -1,6 +1,5 @@
 import UIKit
 import PDFKit
-import PencilKit
 import SwiftUI
 import CryptoKit
 
@@ -48,7 +47,7 @@ enum Exporter {
     }
 
     /// نسخة قابلة للتعديل بالصيغة الموحدة (v2) مع تطبيق أندرويد: تظهر الكتابة في أي تطبيق، وداخل الملف مرفقات قياسية:
-    /// الأصل النظيف، والبيانات بمخطط أندرويد (الحبر نقاط)، والصور، ومعها حبر PencilKit وبيانات الآيباد
+    /// الأصل النظيف، والبيانات بمخطط أندرويد (الحبر نقاط)، والصور، ومعها حبر الآيباد وبياناته
     /// ليعود الملف هنا بلا فقد. nil = تعذّر (تُصنع نسخة نهائية).
     static func editablePDF(_ docId: String, name: String, progress: ((Int, Int) -> Void)? = nil) -> URL? {
         guard let url = annotatedPDF(docId, name: name, suffix: "", progress: progress) else { return nil }
@@ -63,6 +62,7 @@ enum Exporter {
         let media = repo.mediaDir(docId)
         let ex = AndroidSchema.export(data, widths: widths, ink: { repo.loadInk(docId, page: $0) }, raw: raw) { item in
             if item.file.hasPrefix("sticker:") { return image(docId, item)?.pngData() }
+            guard Repository.safeName(item.file) else { return nil }
             return try? Data(contentsOf: media.appendingPathComponent(item.file))
         }
         var files: [(name: String, data: Data)] = [
@@ -86,15 +86,15 @@ enum Exporter {
     /// يرسم ما فوق الصفحة (الملء، التمييز، الصور، الملاحظات، النصوص، الحبر) بإحداثيات الصفحة.
     /// ink: حبر الصفحة إن كان في اليد (وإلا يُقرأ من الملف). inkScale: دقة صورة الحبر.
     static func drawOverlay(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String,
-                            ink: PKDrawing? = nil, inkScale: CGFloat = 3) {
-        // الحبر يُرسم بألوانه الأصلية دائمًا: PencilKit يعكس الألوان الداكنة في المظهر الداكن
+                            ink: InkDrawing? = nil, inkScale: CGFloat = 3) {
+        // الحبر يُرسم بألوانه الأصلية دائمًا (لا يتأثر بالمظهر الداكن)
         UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
             drawOverlayItems(c, size: size, pid: pid, data: data, docId: docId, ink: ink, inkScale: inkScale)
         }
     }
 
     private static func drawOverlayItems(_ c: CGContext, size: CGSize, pid: String, data: DocData, docId: String,
-                                         ink given: PKDrawing?, inkScale: CGFloat) {
+                                         ink given: InkDrawing?, inkScale: CGFloat) {
         for f in data.fills where f.page == pid && f.pts.count > 2 {
             c.saveGState()
             c.setFillColor(UIColor(argb: f.color).withAlphaComponent(f.alpha).cgColor)
@@ -122,8 +122,12 @@ enum Exporter {
                     .font: Fonts.ui(max(6, n.w * 0.075)), .foregroundColor: UIColor(argb: 0xFF1F2933)
                 ])
             }
-            if !n.collapsed, let d = n.ink, let ink = try? PKDrawing(data: d), !ink.strokes.isEmpty {
-                ink.lightImage(from: CGRect(x: 0, y: 0, width: n.w, height: n.h), scale: 3).draw(in: r)
+            if !n.collapsed, let d = n.ink, let ink = InkDrawing.load(d), !ink.strokes.isEmpty {
+                c.saveGState()
+                c.clip(to: r)
+                c.translateBy(x: n.x, y: n.y)
+                ink.draw(in: c)
+                c.restoreGState()
             }
         }
         for b in data.boxes where b.page == pid {
@@ -142,8 +146,11 @@ enum Exporter {
             (b.text as NSString).draw(in: CGRect(x: b.x, y: b.y, width: b.w, height: size.height - b.y), withAttributes: attrs)
         }
         let ink = given ?? Repository.shared.loadInk(docId, page: pid)
+        // الحبر متجهات (حاد بأي تكبير)، والهايلايتر وملء الأشكال تحته ممزوجان مع الصفحة
         if !ink.strokes.isEmpty {
-            ink.lightImage(from: CGRect(origin: .zero, size: size), scale: inkScale).draw(in: CGRect(origin: .zero, size: size))
+            c.saveGState()
+            ink.draw(in: c)
+            c.restoreGState()
         }
     }
 
@@ -301,7 +308,7 @@ enum EditablePDF {
     static let dataName = "hamish-data.json"
     static let metaName = "hamish-meta.json"
     static let imgPrefix = "hamish-img-"
-    /// مرفقات الآيباد: بياناته وحبر PencilKit، وبصمة hamish-data.json كما كتبها (إن تغيّرت فقد عُدّل الملف في أندرويد).
+    /// مرفقات الآيباد: بياناته وحبره، وبصمة hamish-data.json كما كتبها (إن تغيّرت فقد عُدّل الملف في أندرويد).
     static let iosData = "hamish-ios-data.json"
     static let iosMeta = "hamish-ios-meta.json"
     static let iosInk = "hamish-ios-ink-"
@@ -336,11 +343,16 @@ enum EditablePDF {
             dataFile = ios
             for (k, v) in files where k.hasPrefix(iosInk) {
                 let name = String(k.dropFirst(iosInk.count))
-                if PdfAttachments.isSafe(name) { inkFiles[name] = v }
+                if PdfAttachments.isSafe(name) && Repository.safeName(name) { inkFiles[name] = v }
+            }
+            // معرّفات الصفحات وأسماء الصور تصير أسماء ملفات: ما ليس آمنًا منها يُرفض (ملف معدّل)
+            if let d = try? JSONDecoder().decode(DocData.self, from: ios),
+               !d.pages.allSatisfy({ Repository.safeName($0.id) }) || !d.images.allSatisfy({ $0.file.hasPrefix("sticker:") ? !$0.file.contains("/") : Repository.safeName($0.file) }) {
+                return false
             }
         } else {
             let old = ios.flatMap { try? JSONDecoder().decode(DocData.self, from: $0) }
-            let keep = old != nil && old!.pages.count == doc.pageCount
+            let keep = old != nil && old!.pages.count == doc.pageCount && old!.pages.allSatisfy { Repository.safeName($0.id) }
             let pages = keep ? old!.pages : (0..<doc.pageCount).map { _ in PageInfo(id: UUID().uuidString) }
             let widths = (0..<doc.pageCount).map { AndroidSchema.pageSize(doc, $0).width }
             guard let imp = AndroidSchema.importJSON(dj, pages: pages, widths: widths) else { return false }
@@ -358,7 +370,7 @@ enum EditablePDF {
         } catch { return false }
         try? fm.createDirectory(at: inkDir, withIntermediateDirectories: true)
         try? fm.createDirectory(at: mediaDir, withIntermediateDirectories: true)
-        for (name, d) in inkFiles { try? d.write(to: inkDir.appendingPathComponent(name)) }
+        for (name, d) in inkFiles where Repository.safeName(name) { try? d.write(to: inkDir.appendingPathComponent(name)) }
         for (k, v) in files where k.hasPrefix(imgPrefix) {
             try? v.write(to: mediaDir.appendingPathComponent(AndroidSchema.safeName(String(k.dropFirst(imgPrefix.count)))))
         }

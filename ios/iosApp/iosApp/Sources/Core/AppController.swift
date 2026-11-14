@@ -1,6 +1,5 @@
 import SwiftUI
 import PDFKit
-import PencilKit
 import UserNotifications
 import LocalAuthentication
 import Combine
@@ -731,10 +730,10 @@ final class AppController: ObservableObject {
     }
 
     /// هل تمسح الممحاة هذا الخط؟ (فلتر الممحاة)
-    func canErase(_ s: PKStroke) -> Bool {
-        if s.randomSeed == shapeSeed { return eraseShapes }
-        switch s.ink.inkType {
-        case .marker: return eraseHighlighter
+    func canErase(_ s: InkStroke) -> Bool {
+        if s.shape || s.shapeFill { return eraseShapes }
+        switch s.tool {
+        case .highlighter: return eraseHighlighter
         case .pencil: return erasePencil
         default: return erasePen
         }

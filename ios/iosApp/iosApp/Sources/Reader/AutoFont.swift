@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 import Vision
 
 // «Aa تلقائي» و«تغيير الخط» (نفس AutoFont.kt وChangeFont.kt في أندرويد):
@@ -9,10 +8,10 @@ import Vision
 
 enum HwLang: Int { case arabic = 0, english = 1 }
 
-/// يقرأ خط اليد من خطوط PencilKit (بنقاط الصفحة) بأداة Vision على الجهاز.
+/// يقرأ خط اليد من خطوط الحبر (بنقاط الصفحة) بأداة Vision على الجهاز.
 enum HandwritingReader {
     /// الأسطر المقروءة من الأعلى للأسفل.
-    static func read(_ strokes: [PKStroke], lang: HwLang?) async -> [String] {
+    static func read(_ strokes: [InkStroke], lang: HwLang?) async -> [String] {
         guard !strokes.isEmpty else { return [] }
         // محرك ML Kit (من حركة القلم) أولًا، كما في أندرويد؛ وVision حتى تجهز حزمة اللغة
         let code: Int = lang.map { $0 == .arabic ? 0 : 1 } ?? AppController.shared.hwLang
@@ -23,10 +22,11 @@ enum HandwritingReader {
     }
 
     /// قراءة صورة الكتابة بأداة Vision (احتياطية).
-    static func visionRead(_ strokes: [PKStroke], lang: HwLang?) async -> [String] {
-        let d = PKDrawing(strokes: strokes.map { s in
+    static func visionRead(_ strokes: [InkStroke], lang: HwLang?) async -> [String] {
+        let d = InkDrawing(strokes: strokes.map { s in
             var c = s
-            c.ink = PKInk(s.ink.inkType == .marker ? .monoline : s.ink.inkType, color: .black)
+            c.color = 0xFF000000
+            if c.tool == .highlighter { c.tool = .ballpoint }
             return c
         })
         let r = d.bounds.insetBy(dx: -24, dy: -24)
@@ -120,11 +120,11 @@ extension AutoFont {
 
     /// خط القلم فوق نص متحوّل: شخبطة أو خط فوق كلمة = حذفها، و∧ بين كلمتين = مكان لإضافة.
     /// true = الخط إشارة نُفذت (لا يُحفظ كحبر).
-    func gesture(_ s: DocSession, pageId pid: String, stroke: PKStroke) -> Bool {
-        guard stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed else { return false }
+    func gesture(_ s: DocSession, pageId pid: String, stroke: InkStroke) -> Bool {
+        guard stroke.tool != .highlighter, !stroke.shape, !stroke.fill else { return false }
         let boxes = s.data.boxes.filter { $0.page == pid && $0.ink != nil && $0.linkDoc == nil }
         guard !boxes.isEmpty else { return false }
-        let p = stroke.path.interpolatedPoints(by: .distance(1.5)).map { $0.location.applying(stroke.transform) }
+        let p = InkErase.samples(stroke, step: 1.5)
         guard p.count >= 3 else { return false }
         let xs = p.map { $0.x }, ys = p.map { $0.y }
         let l = xs.min()!, r = xs.max()!, t = ys.min()!, b = ys.max()!
@@ -179,7 +179,7 @@ extension AutoFont {
 }
 
 extension DocSession {
-    func fitText(page: Int, strokes: [PKStroke], lines: [String], font: String, snap: Bool) -> TextFit {
+    func fitText(page: Int, strokes: [InkStroke], lines: [String], font: String, snap: Bool) -> TextFit {
         let bb = strokes.reduce(CGRect.null) { $0.union($1.renderBounds) }
         let pw = pageSize(page).width
         let n = CGFloat(max(1, lines.count))
@@ -208,13 +208,13 @@ extension DocSession {
     }
 
     /// يستبدل خطوطًا بمربع نص (والخطوط تُحفظ معه)، خطوةً واحدة في التراجع.
-    func inkToTextBox(pageId: String, strokes: [PKStroke], box: TextBox) {
+    func inkToTextBox(pageId: String, strokes: [InkStroke], box: TextBox) {
         let old = drawing(for: pageId)
         var nd = old
         nd.strokes = old.strokes.filter { s in !strokes.contains { sameStroke($0, s) } }
         let before = data
         var b = box
-        if b.ink == nil { b.ink = PKDrawing(strokes: strokes).dataRepresentation() }
+        if b.ink == nil { b.ink = InkDrawing(strokes: strokes).dataRepresentation() }
         data.boxes.append(b)
         drawings[pageId] = nd
         dirtyInk.insert(pageId)
@@ -227,7 +227,7 @@ extension DocSession {
 
     /// يعيد مربع نص متحول إلى الكتابة اليدوية الأصلية.
     func textBoxToInk(_ id: String) {
-        guard let b = data.boxes.first(where: { $0.id == id }), let raw = b.ink, let ink = try? PKDrawing(data: raw) else { return }
+        guard let b = data.boxes.first(where: { $0.id == id }), let raw = b.ink, let ink = InkDrawing.load(raw) else { return }
         let old = drawing(for: b.page)
         var nd = old
         nd.strokes.append(contentsOf: ink.strokes)
@@ -243,7 +243,7 @@ extension DocSession {
     }
 
     /// يحوّل خطوطًا إلى حبر بشكل الخط (حدود الحروف وملؤها)، خطوةً واحدة في التراجع. يعيد مفتاح الحبر.
-    func inkConvert(pageId: String, page: Int, strokes: [PKStroke], lines: [String], font: String, color: UInt32) -> Double? {
+    func inkConvert(pageId: String, page: Int, strokes: [InkStroke], lines: [String], font: String, color: UInt32) -> Double? {
         let af = AutoFont.shared
         let pw = pageSize(page).width
         let bb = strokes.reduce(CGRect.null) { $0.union($1.renderBounds) }
@@ -269,9 +269,8 @@ extension DocSession {
             }
         }
         let spacing = CGFloat(af.unify ? af.unifySpacing : 1.25)
-        let date = Date()
-        let ink = UIColor(argb: color)
-        var made: [PKStroke] = []
+        let t = InkKey.unused(in: drawing(for: pageId).strokes)
+        var made: [InkStroke] = []
         var words: [OcrWord] = []
         var alts: [[String]] = []
         var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = 0
@@ -279,7 +278,7 @@ extension DocSession {
             let lay = GlyphInk.layout(line, font: uf)
             let y = baseline + CGFloat(i) * size * spacing
             let x = rtl ? rightX - lay.width : leftX
-            made += GlyphInk.strokes(lay, origin: CGPoint(x: x, y: y), size: size, color: ink, bold: af.dynamicBold, date: date)
+            made += GlyphInk.strokes(line, lay, origin: CGPoint(x: x, y: y), size: size, color: color, bold: af.dynamicBold, t: t)
             let la = ReadAlts.wordAlts(line)
             for (j, (w, r)) in GlyphInk.words(line, lay, origin: CGPoint(x: x, y: y)).enumerated() {
                 words.append(OcrWord(text: w, l: r.minX / pw, t: r.minY / pw, r: r.maxX / pw, b: r.maxY / pw, line: i))
@@ -292,7 +291,7 @@ extension DocSession {
         var nd = old
         nd.strokes = old.strokes.filter { s in !strokes.contains { sameStroke($0, s) } } + made
         let before = data
-        let key = date.timeIntervalSinceReferenceDate
+        let key = InkKey.key(t)
         data.converted.append(ConvertedLine(id: UUID().uuidString, page: pageId, key: key, words: words, baseline: baseline,
                                             size: size, minX: minX, maxX: maxX, rtl: rtl, font: font,
                                             alts: alts.contains { !$0.isEmpty } ? alts : nil))
@@ -328,15 +327,16 @@ extension DocSession {
         guard c.words.indices.contains(p.word), let page = index(of: c.page) else { return }
         let pw = pageSize(page).width
         let old = drawing(for: c.page)
-        guard let sample = old.strokes.first(where: { $0.path.creationDate.timeIntervalSinceReferenceDate == c.key }) else { return }
+        let oldT = InkKey.ms(c.key)
+        guard let sample = old.strokes.first(where: { $0.t == oldT }) else { return }
         let uf = FontStore.shared.uiFont(c.font, size: c.size) ?? Fonts.ui(c.size)
         var ws = c.words
         ws[p.word].text = newWord
         var oldAlts = c.alts ?? []
         while oldAlts.count < ws.count { oldAlts.append([]) }
         oldAlts[p.word] = [p.text] + oldAlts[p.word].filter { $0 != newWord }
-        let date = Date()
-        var made: [PKStroke] = []
+        let t = InkKey.unused(in: old.strokes)
+        var made: [InkStroke] = []
         var words: [OcrWord] = []
         var alts: [[String]] = []
         var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = 0
@@ -348,7 +348,7 @@ extension DocSession {
             let left = (idx.map { c.words[$0].l }.min() ?? 0) * pw
             let right = (idx.map { c.words[$0].r }.max() ?? 0) * pw
             let origin = CGPoint(x: c.rtl ? right - lay.width : left, y: top + lay.ascent)
-            made += GlyphInk.strokes(lay, origin: origin, size: c.size, color: sample.ink.color, bold: AutoFont.shared.dynamicBold, date: date)
+            made += GlyphInk.strokes(text, lay, origin: origin, size: c.size, color: sample.color, bold: AutoFont.shared.dynamicBold, t: t)
             for (j, (w, r)) in GlyphInk.words(text, lay, origin: origin).enumerated() {
                 words.append(OcrWord(text: w, l: r.minX / pw, t: r.minY / pw, r: r.maxX / pw, b: r.maxY / pw, line: li))
                 alts.append(j < idx.count ? oldAlts[idx[j]] : [])
@@ -357,10 +357,10 @@ extension DocSession {
         }
         guard !made.isEmpty else { return }
         var nd = old
-        nd.strokes = old.strokes.filter { $0.path.creationDate.timeIntervalSinceReferenceDate != c.key } + made
+        nd.strokes = old.strokes.filter { $0.t != oldT } + made
         let before = data
         var nc = c
-        nc.key = date.timeIntervalSinceReferenceDate
+        nc.key = InkKey.key(t)
         nc.words = words
         nc.alts = alts
         nc.minX = minX
@@ -377,10 +377,11 @@ extension DocSession {
     }
 
     /// يعيد الكتابة اليدوية الأصلية مكان الحبر المجمَّل.
-    func inkUnconvert(pageId: String, key: Double, original: [PKStroke]) {
+    func inkUnconvert(pageId: String, key: Double, original: [InkStroke]) {
         let old = drawing(for: pageId)
         var nd = old
-        nd.strokes = old.strokes.filter { $0.path.creationDate.timeIntervalSinceReferenceDate != key } + original
+        let kt = InkKey.ms(key)
+        nd.strokes = old.strokes.filter { $0.t != kt } + original
         let before = data
         data.converted.removeAll { $0.key == key }
         drawings[pageId] = nd
@@ -394,16 +395,15 @@ extension DocSession {
     }
 
     /// الخطوط التي ما زالت على الصفحة من قائمة.
-    func aliveStrokes(_ pageId: String, _ list: [PKStroke]) -> [PKStroke] {
+    func aliveStrokes(_ pageId: String, _ list: [InkStroke]) -> [InkStroke] {
         let present = drawing(for: pageId).strokes
         return list.filter { s in present.contains { sameStroke($0, s) } }
     }
 }
 
-/// مقارنة خطين (PKStroke ليس Equatable): وقت الإنشاء وعدد النقاط والحدود.
-func sameStroke(_ a: PKStroke, _ b: PKStroke) -> Bool {
-    a.path.creationDate == b.path.creationDate && a.path.count == b.path.count &&
-        abs(a.renderBounds.minX - b.renderBounds.minX) < 0.5 && abs(a.renderBounds.minY - b.renderBounds.minY) < 0.5
+/// الخط نفسه (ولو تغيّر لونه): وقت الكتابة وعدد النقاط وأول نقطة.
+func sameStroke(_ a: InkStroke, _ b: InkStroke) -> Bool {
+    a.t == b.t && a.pts.count == b.pts.count && a.pts.first == b.pts.first
 }
 
 final class AutoFont: ObservableObject {
@@ -433,7 +433,7 @@ final class AutoFont: ObservableObject {
     @Published var snap = 0 { didSet { prefs.set(snap, forKey: "af_snapk") } }
     static let sizeMin = 8, sizeMax = 60
     /// آخر تحويل إلى حبر (للرجوع إلى خط اليد): المستند، الصفحة، مفتاح الحبر، الخطوط الأصلية.
-    @Published private(set) var lastInk: (String, String, Double, [PKStroke])? = nil
+    @Published private(set) var lastInk: (String, String, Double, [InkStroke])? = nil
 
     @Published private(set) var pendingCount = 0
     @Published private(set) var preview: (Int, String)? = nil
@@ -446,7 +446,7 @@ final class AutoFont: ObservableObject {
 
     private weak var session: DocSession?
     private var pageId = ""
-    private var pending: [PKStroke] = []
+    private var pending: [InkStroke] = []
     private var timer: DispatchWorkItem?
     private var penIsDown = false
     private var cancelledId = -1
@@ -481,9 +481,9 @@ final class AutoFont: ObservableObject {
     }
 
     /// خط قلم جديد حُفظ على الصفحة (بنقاط الصفحة).
-    func onStroke(_ s: DocSession, pageId pid: String, stroke: PKStroke) {
+    func onStroke(_ s: DocSession, pageId pid: String, stroke: InkStroke) {
         let ins = insertTarget.flatMap { $0.docId == s.id && $0.pageId == pid ? $0 : nil }
-        guard ins != nil || (on && Premium.shared.active), stroke.ink.inkType != .marker, stroke.randomSeed != shapeSeed, stroke.randomSeed != glyphSeed else { return }
+        guard ins != nil || (on && Premium.shared.active), stroke.tool != .highlighter, !stroke.shape, !stroke.fill else { return }
         if !pending.isEmpty && (s !== session || pid != pageId || startsNewLine(stroke, page: s.index(of: pid) ?? 0, s)) { flush() }
         session = s
         pageId = pid
@@ -504,7 +504,7 @@ final class AutoFont: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(ms), execute: w)
     }
 
-    private func startsNewLine(_ st: PKStroke, page: Int, _ s: DocSession) -> Bool {
+    private func startsNewLine(_ st: InkStroke, page: Int, _ s: DocSession) -> Bool {
         let pb = pending.reduce(CGRect.null) { $0.union($1.renderBounds) }
         let ib = st.renderBounds
         let gap = max(s.pageSize(page).width * 0.012, pb.height * 0.3)
@@ -539,7 +539,7 @@ final class AutoFont: ObservableObject {
     }
 
     @MainActor
-    private func convert(_ s: DocSession, _ pid: String, _ batch: [PKStroke]) async {
+    private func convert(_ s: DocSession, _ pid: String, _ batch: [InkStroke]) async {
         await FontStore.shared.ensure(font)
         let lines = await HandwritingReader.read(batch, lang: lang)
         let text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -554,7 +554,7 @@ final class AutoFont: ObservableObject {
         let alive = s.aliveStrokes(pid, batch)
         guard !alive.isEmpty, let page = s.index(of: pid) else { return }
         let bb = alive.reduce(CGRect.null) { $0.union($1.renderBounds) }
-        let color = alive.first.map { $0.ink.color.argb } ?? 0xFF1A2230
+        let color = alive.first.map { $0.color } ?? 0xFF1A2230
         let lineTexts = text.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
 
         // 1) إضافة بعلامة ∧: تُدرج الكلمة في مكانها داخل النص
@@ -566,7 +566,7 @@ final class AutoFont: ObservableObject {
             let head = String(chars[0..<o]).trimmingCharacters(in: .whitespaces)
             let tail = String(chars[o...]).trimmingCharacters(in: .whitespaces)
             tb.text = [head, lineTexts.joined(separator: " "), tail].filter { !$0.isEmpty }.joined(separator: " ")
-            var ink = (tb.ink.flatMap { try? PKDrawing(data: $0) }) ?? PKDrawing()
+            var ink = tb.ink.flatMap { InkDrawing.load($0) } ?? InkDrawing()
             ink.strokes.append(contentsOf: alive)
             tb.ink = ink.dataRepresentation()
             s.edit { d in d.boxes.removeAll { $0.id == tb.id } }
@@ -589,7 +589,7 @@ final class AutoFont: ObservableObject {
                 let nw = min(max(right - left, min(prev.w, pw)), pw)
                 var merged = prev
                 merged.text = prev.text.trimmingCharacters(in: .whitespaces) + " " + lineTexts.joined(separator: " ")
-                var ink = (prev.ink.flatMap { try? PKDrawing(data: $0) }) ?? PKDrawing()
+                var ink = prev.ink.flatMap { InkDrawing.load($0) } ?? InkDrawing()
                 ink.strokes.append(contentsOf: alive)
                 merged.ink = ink.dataRepresentation()
                 merged.x = min(max(0, rtl ? right - nw : prev.x), max(0, pw - nw))
@@ -932,7 +932,7 @@ struct ChangeFontSheet: View {
     @State private var error: String? = nil
     @State private var font = FontStore.shared.recent.first ?? "Patrick Hand"
     @State private var library = false
-    @State private var strokes: [PKStroke] = []
+    @State private var strokes: [InkStroke] = []
     @State private var pageId = ""
 
     var body: some View {
@@ -952,7 +952,7 @@ struct ChangeFontSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
                     Text(text.isEmpty ? "…" : text)
                         .font(store.font(font, size: 24) ?? Fonts.sans(24))
-                        .foregroundColor(strokes.first.map { Color($0.ink.color) } ?? Palette.navy)
+                        .foregroundColor(strokes.first.map { Color(hex: $0.color) } ?? Palette.navy)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                         .background(RoundedRectangle(cornerRadius: 12).fill(Palette.ivory))
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
@@ -982,7 +982,7 @@ struct ChangeFontSheet: View {
     private func load() async {
         guard let sel = session.lassoSel else { busy = false; error = L("لم يُحدَّد شيء", "Nothing selected"); return }
         let d = session.drawing(for: sel.pageId)
-        strokes = sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0] }.filter { $0.randomSeed != shapeSeed && $0.ink.inkType != .marker }
+        strokes = sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0] }.filter { !$0.shape && !$0.fill && $0.tool != .highlighter }
         pageId = sel.pageId
         let lines = await HandwritingReader.read(strokes, lang: nil)
         busy = false
@@ -996,7 +996,7 @@ struct ChangeFontSheet: View {
         let lines = t.components(separatedBy: "\n").filter { !$0.isEmpty }
         let f = session.fitText(page: page, strokes: strokes, lines: lines.isEmpty ? [t] : lines, font: font, snap: AutoFont.shared.snapToLine)
         let box = TextBox(id: UUID().uuidString, page: pageId, x: f.x, y: f.y, w: f.w, text: t,
-                          color: strokes.first?.ink.color.argb ?? 0xFF1A2230, size: f.size, font: font)
+                          color: strokes.first?.color ?? 0xFF1A2230, size: f.size, font: font)
         FontStore.shared.markUsed(font)
         session.lassoSel = nil
         session.inkToTextBox(pageId: pageId, strokes: strokes, box: box)

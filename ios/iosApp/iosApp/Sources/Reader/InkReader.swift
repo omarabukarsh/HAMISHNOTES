@@ -1,5 +1,5 @@
 import Foundation
-import PencilKit
+import CoreGraphics
 #if canImport(MLKitDigitalInkRecognition)
 import MLKitDigitalInkRecognition
 import MLKitCommon
@@ -33,10 +33,10 @@ enum InkReader {
 
     // ---------------------------------------------------------------- تقسيم الكتابة
 
-    struct Line { var strokes: [PKStroke]; var box: CGRect }
+    struct Line { var strokes: [InkStroke]; var box: CGRect }
 
     /// يقسم الخطوط إلى أسطر (من الأعلى للأسفل)، وكل سطر بترتيب الكتابة.
-    static func lines(_ strokes: [PKStroke]) -> [Line] {
+    static func lines(_ strokes: [InkStroke]) -> [Line] {
         var out: [Line] = []
         for s in strokes.filter(HandwritingWords.eligible).sorted(by: { $0.renderBounds.midY < $1.renderBounds.midY }) {
             let b = s.renderBounds
@@ -51,7 +51,7 @@ enum InkReader {
             }
         }
         return out.map { l in
-            Line(strokes: l.strokes.sorted { $0.path.creationDate < $1.path.creationDate }, box: l.box)
+            Line(strokes: l.strokes.sorted { $0.t < $1.t }, box: l.box)
         }.sorted { $0.box.minY < $1.box.minY }
     }
 
@@ -75,7 +75,7 @@ enum InkReader {
     // ---------------------------------------------------------------- القراءة
 
     /// أسطر النص، أو nil إن لم يكن المحرك جاهزًا (فيُستعمل Vision).
-    static func readLines(_ strokes: [PKStroke], lang: Int) async -> [String]? {
+    static func readLines(_ strokes: [InkStroke], lang: Int) async -> [String]? {
         let ls = lines(strokes)
         guard !ls.isEmpty else { return [] }
         var out: [String] = []
@@ -87,7 +87,7 @@ enum InkReader {
     }
 
     /// كلمات خط اليد بإحداثيات نسبية لعرض الصفحة، أو nil إن لم يكن المحرك جاهزًا.
-    static func words(_ strokes: [PKStroke], pageW: CGFloat, lang: Int) async -> [OcrWord]? {
+    static func words(_ strokes: [InkStroke], pageW: CGFloat, lang: Int) async -> [OcrWord]? {
         var out: [OcrWord] = []
         for (li, l) in lines(strokes).enumerated() {
             guard let text = await read(l, lang: lang) else { return nil }
@@ -154,11 +154,11 @@ enum InkReader {
     private static func read(_ l: Line, lang: Int) async -> String? {
         let tag = lang == 0 ? "ar" : (lang == 1 ? "en-US" : (isRTL(l) ? "ar" : "en-US"))
         guard ensure(tag), let r = recognizer(tag) else { return nil }
-        let strokes: [Stroke] = l.strokes.map { s in
-            let base = s.path.creationDate.timeIntervalSince1970
-            let pts = s.path.interpolatedPoints(by: .distance(2)).map { p -> StrokePoint in
-                let q = p.location.applying(s.transform)
-                return StrokePoint(x: Float(q.x), y: Float(q.y), t: Int((base + p.timeOffset) * 1000))
+        // ترتيب الخطوط ووقت كل نقطة كما كُتبت (المحرك يستفيد من ترتيب الكتابة)
+        let strokes: [Stroke] = l.strokes.enumerated().map { si, s in
+            let base = s.t > 0 ? Int(s.t) : si * 1000
+            let pts = InkErase.samples(s, step: 2).enumerated().map { i, q in
+                StrokePoint(x: Float(q.x), y: Float(q.y), t: base + i * 8)
             }
             return Stroke(points: pts)
         }.filter { $0.points.count >= 2 }

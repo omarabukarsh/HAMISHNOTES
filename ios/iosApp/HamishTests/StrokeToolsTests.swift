@@ -1,5 +1,4 @@
 import XCTest
-import PencilKit
 @testable import Hamish
 
 // التعرف على الأشكال («ارسم وأبقِ») وأنماط الخط والتحديد الحر وتقسيم خط اليد إلى أسطر.
@@ -55,8 +54,8 @@ final class StrokeToolsTests: XCTestCase {
         XCTAssertEqual(StrokeKit.arrow(.closed, tip: .zero, from: CGPoint(x: -10, y: 0), width: 2)?.count, 4)
     }
 
-    private func stroke(_ pts: [CGPoint], at date: Date) -> PKStroke {
-        StrokeKit.strokes([pts], ink: PKInk(.monoline, color: .black), width: 2, seed: 1, date: date)[0]
+    private func stroke(_ pts: [CGPoint], at date: Date) -> InkStroke {
+        InkStroke(pts: pts.map { InkPt($0) }, color: 0xFF000000, width: 2, tool: .ballpoint, t: Int64(date.timeIntervalSince1970 * 1000))
     }
 
     func testHandwritingIsSplitIntoLinesAndWords() {

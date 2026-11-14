@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// نسخة iPad من «هامش»: مكتوبة كلها بـ Swift (SwiftUI + PDFKit + PencilKit)،
+/// نسخة iPad من «هامش»: مكتوبة كلها بـ Swift (SwiftUI + PDFKit، ومحرك حبر خاص)،
 /// بنفس تصميم تطبيق أندرويد وميزاته.
 @main
 struct HamishApp: App {
@@ -37,6 +37,8 @@ struct HamishApp: App {
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // الممحاة «الجزء الملموس» تقص الحروف المملوءة بعمليات المسارات
+        InkCut.install()
         AppController.shared.initialize()
         _ = Premium.shared
         // تشغيل تجريبي (لقطات المحاكي): -hamishDemo /path/file.pdf -hamishScreen <name>

@@ -1,6 +1,5 @@
 import XCTest
 import PDFKit
-import PencilKit
 @testable import Hamish
 
 /// اختبارات مطابقة أندرويد 1.0.271: النسخة القابلة للتعديل، بصمة الحبر، تحديد الكلمات، والقراءات الأخرى.
@@ -46,24 +45,20 @@ final class ParityTests: XCTestCase {
         XCTAssertNil(EditablePDF.extract(url))
     }
 
-    private func stroke(_ pts: [CGPoint], color: UIColor = .black) -> PKStroke {
-        let sp = pts.enumerated().map { i, p in
-            PKStrokePoint(location: p, timeOffset: Double(i) * 0.01, size: CGSize(width: 2, height: 2), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
-        }
-        return PKStroke(ink: PKInk(.pen, color: color), path: PKStrokePath(controlPoints: sp, creationDate: Date(timeIntervalSinceReferenceDate: 1000)))
+    private func stroke(_ pts: [CGPoint], color: UInt32 = 0xFF000000) -> InkStroke {
+        InkStroke(pts: pts.map { InkPt($0) }, color: color, width: 2, tool: .fountain, t: 1000)
     }
 
     /// بصمة الحبر تتغير بالإضافة والنقل والتلوين، وتثبت إن لم يتغير شيء.
     func testInkSignature() {
         let a = stroke([CGPoint(x: 10, y: 10), CGPoint(x: 60, y: 40)])
-        let d = PKDrawing(strokes: [a])
-        XCTAssertEqual(inkSig(d), inkSig(PKDrawing(strokes: [a])))
-        XCTAssertNotEqual(inkSig(d), inkSig(PKDrawing()))
-        XCTAssertNotEqual(inkSig(d), inkSig(PKDrawing(strokes: [a, a])))
-        var moved = a
-        moved.transform = CGAffineTransform(translationX: 5, y: 0)
-        XCTAssertNotEqual(inkSig(d), inkSig(PKDrawing(strokes: [moved])))
-        XCTAssertNotEqual(inkSig(d), inkSig(PKDrawing(strokes: [stroke([CGPoint(x: 10, y: 10), CGPoint(x: 60, y: 40)], color: .red)])))
+        let d = InkDrawing(strokes: [a])
+        XCTAssertEqual(inkSig(d), inkSig(InkDrawing(strokes: [a])))
+        XCTAssertNotEqual(inkSig(d), inkSig(InkDrawing()))
+        XCTAssertNotEqual(inkSig(d), inkSig(InkDrawing(strokes: [a, a])))
+        let moved = a.transformed(CGAffineTransform(translationX: 5, y: 0))
+        XCTAssertNotEqual(inkSig(d), inkSig(InkDrawing(strokes: [moved])))
+        XCTAssertNotEqual(inkSig(d), inkSig(InkDrawing(strokes: [stroke([CGPoint(x: 10, y: 10), CGPoint(x: 60, y: 40)], color: 0xFFC62828)])))
     }
 
     /// الكلمات المحددة: نصها بأسطره، ومستطيل لكل سطر.

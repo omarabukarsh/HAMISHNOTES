@@ -1,6 +1,5 @@
 import UIKit
 import PDFKit
-import PencilKit
 
 /// وضع العرض التجريبي (لقطات المحاكي في CI فقط):
 ///   -hamishDemo /path/file.pdf   يستورد الملف ويملؤه بأمثلة (كتابة، تظليل، ملاحظة، نص، ملصق، مواد، بطاقات، خريطة)
@@ -99,13 +98,9 @@ enum Demo {
             ])
         }
         // كتابة بالقلم: دائرة حول عنوان وسهم وتوقيع
-        var strokes: [PKStroke] = []
-        let ink = PKInk(.pen, color: UIColor(argb: 0xFF1565C0))
-        func stroke(_ pts: [CGPoint], _ w: CGFloat = 2.4, _ inkx: PKInk? = nil) -> PKStroke {
-            let sp = pts.enumerated().map { i, p in
-                PKStrokePoint(location: p, timeOffset: Double(i) * 0.01, size: CGSize(width: w, height: w), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
-            }
-            return PKStroke(ink: inkx ?? ink, path: PKStrokePath(controlPoints: sp, creationDate: Date()))
+        var strokes: [InkStroke] = []
+        func stroke(_ pts: [CGPoint], _ w: CGFloat = 2.4, _ color: UInt32 = 0xFF1565C0) -> InkStroke {
+            InkStroke(pts: pts.map { InkPt($0, 0.6) }, color: color, width: w, tool: .fountain, t: InkKey.now() + Int64(strokes.count))
         }
         let cx = size.width * 0.5, cy = size.height * 0.08
         strokes.append(stroke((0...60).map { k in
@@ -113,16 +108,15 @@ enum Demo {
             return CGPoint(x: cx + cos(t) * size.width * 0.36, y: cy + sin(t) * size.height * 0.035)
         }))
         strokes.append(stroke([CGPoint(x: size.width * 0.86, y: size.height * 0.2), CGPoint(x: size.width * 0.93, y: size.height * 0.3), CGPoint(x: size.width * 0.9, y: size.height * 0.45)], 2.4,
-                              PKInk(.pen, color: UIColor(argb: 0xFFC62828))))
+                              0xFFC62828))
         var x = size.width * 0.1
         var pts: [CGPoint] = []
         while x < size.width * 0.5 {
             pts.append(CGPoint(x: x, y: size.height * 0.84 + sin(x / 7) * 6))
             x += 2
         }
-        strokes.append(stroke(pts, 2.2, PKInk(.pen, color: UIColor(argb: 0xFF2E7D32))))
-        var dr = PKDrawing()
-        dr.strokes = strokes
+        strokes.append(stroke(pts, 2.2, 0xFF2E7D32))
+        let dr = InkDrawing(strokes: strokes)
         s.setInk(pid, dr, record: false)
         s.flush()
         c.flush()

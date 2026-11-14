@@ -18,7 +18,7 @@ private let ossItems: [OssItem] = [
     OssItem(name: "Almarai font", owner: "Boutros Fonts", license: "SIL Open Font License 1.1", asset: "ofl-1.1"),
     OssItem(name: "Caveat font", owner: "The Caveat Project Authors", license: "SIL Open Font License 1.1", asset: "ofl-caveat"),
     OssItem(name: "Phosphor Icons", owner: "Phosphor Icons", license: "MIT License", asset: "mit-phosphor"),
-    OssItem(name: "PDFKit, PencilKit, Vision, StoreKit", owner: "Apple Inc.", license: L("أطر نظام iPadOS", "iPadOS system frameworks"), asset: nil)
+    OssItem(name: "PDFKit, Vision, StoreKit", owner: "Apple Inc.", license: L("أطر نظام iPadOS", "iPadOS system frameworks"), asset: nil)
 ]
 
 func privacyText() -> String {

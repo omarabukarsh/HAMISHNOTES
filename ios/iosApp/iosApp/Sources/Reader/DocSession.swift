@@ -1,0 +1,1232 @@
+import SwiftUI
+import PDFKit
+import Vision
+
+/// خطوة قابلة للتراجع.
+enum EditStep {
+    case ink(page: String, before: InkDrawing, after: InkDrawing)
+    case data(before: DocData, after: DocData)
+    /// تعديل الحبر والبيانات معًا (التحديد الحر) خطوةً واحدة.
+    indirect case both(EditStep, EditStep)
+}
+
+/// كلمات محددة في صفحة (بترتيب القراءة).
+struct WordSel: Equatable {
+    var page: Int
+    var words: [OcrWord]
+    var text: String {
+        var out = ""
+        var line: Int? = nil
+        for w in words {
+            if !out.isEmpty { out += w.line == line ? " " : "\n" }
+            out += w.text
+            line = w.line
+        }
+        return out
+    }
+    /// مستطيل لكل سطر (نسبي لعرض الصفحة).
+    var rects: [MarkRect] {
+        var out: [MarkRect] = []
+        var line: Int? = nil
+        for w in words {
+            if w.line == line, var r = out.popLast() {
+                r.l = min(r.l, w.l); r.t = min(r.t, w.t); r.r = max(r.r, w.r); r.b = max(r.b, w.b)
+                out.append(r)
+            } else {
+                out.append(MarkRect(l: w.l, t: w.t, r: w.r, b: w.b))
+            }
+            line = w.line
+        }
+        return out
+    }
+}
+
+/// منطقة نافذة الكتابة المكبّرة على صفحة (بنقاط الصفحة).
+struct ZoomBox: Equatable {
+    var page: Int
+    var x: CGFloat
+    var y: CGFloat
+    var w: CGFloat
+    var h: CGFloat
+}
+
+/// مستند مفتوح في تبويب: الملف، وما كُتب عليه، وحالة الواجهة.
+final class DocSession: ObservableObject, Identifiable {
+    let id: String
+    @Published var title: String
+    let isMap: Bool
+    let repo = Repository.shared
+
+    @Published var pdf: PDFDocument?
+    @Published var failed: String? = nil
+    @Published var data = DocData() { didSet { dataVersion &+= 1 } }
+    /// يزيد مع كل تغيير في بيانات المستند (لتحديث الصور المصغّرة).
+    private(set) var dataVersion = 0
+    @Published var currentPage = 0
+    @Published var pageCount = 0
+    /// يتغير عند أي تعديل في بنية الصفحات (لإعادة رسم الصور المصغّرة).
+    @Published var pagesVersion = 0
+    @Published var inkVersion = 0
+
+    // ---------- الواجهة ----------
+    @Published var drawerOpen = false
+    @Published var summaryOpen = false
+    @Published var pageMenuOpen = false
+    @Published var searchOpen = false
+    @Published var searchQuery = ""
+    @Published var searchHits: [SearchHit] = []
+    @Published var searchIndex = 0
+    @Published var trayMode: String? = nil      // "stickers" أو "photos"
+    @Published var mapOpen = false
+    /// نصوص من الملخصات تُوضع الآن في الخريطة (تفتح الخريطة لاختيار مكانها).
+    @Published var mapPlacing: [String]? = nil
+    @Published var ocrRunning = false
+    @Published var ocrProgress = 0
+    @Published var scalePercent = 100
+    @Published var editingBox: TextBox? = nil
+    /// مربع النص الذي يُكتب فيه الآن على الصفحة، والمربع المحدد (شريطه أسفل الشاشة).
+    @Published var inlineEditId: String? = nil
+    /// عنصر من الدرج ينتظر نقرة على الصفحة ليوضع مكانها (ملصق أو صور).
+    enum PendingPlace { case sticker(String), images([UIImage]) }
+    @Published var pendingPlace: PendingPlace? = nil
+    /// نص محدد في الكتاب (ضغط مطوّل بالإصبع).
+    @Published var textSel: PDFSelection? = nil
+    @Published var selectedBox: String? = nil
+    /// كلمات محددة في صفحة بلا نص رقمي (مقروءة ضوئيًا أو بخط اليد).
+    @Published var wordSel: WordSel? = nil
+    /// طلب نافذة اختيار الخط من الشريط الصغير فوق مربع الكتابة.
+    @Published var fontPickRequest = false
+    /// قراءات أخرى لكلمة محوّلة (نقرة عليها).
+    @Published var altPopup: AltPopup? = nil
+    /// الملاحظة اللاصقة المحددة (شريطها أسفل الشاشة)، واللصق ينتظر نقرة على الصفحة.
+    @Published var selectedNote: String? = nil
+    @Published var pastingNote = false
+    /// نص المربع أثناء الكتابة (يُحفظ عند الانتهاء).
+    var inlineText = ""
+    @Published var editingNote: StickyNote? = nil
+    @Published var selectedImage: String? = nil
+    /// نافذة الكتابة المكبّرة: المنطقة المعروضة من الصفحة (بنقاط الصفحة).
+    @Published var zoomBox: ZoomBox? = nil
+    /// ما حدده التحديد الحر في صفحة.
+    @Published var lassoSel: LassoSel? = nil
+
+    // ---------- التراجع ----------
+    @Published private(set) var undoStack: [EditStep] = []
+    @Published private(set) var redoStack: [EditStep] = []
+
+    var drawings: [String: InkDrawing] = [:]
+    var dirtyInk: Set<String> = []
+    var dataDirty = false
+    private var pdfDirty = false
+    private var pdfSaveWarned = false
+    private var saveWork: DispatchWorkItem?
+
+    /// خطافات يضبطها عارض PDF.
+    var goToHook: ((Int) -> Void)?
+    var zoomHook: ((CGFloat) -> Void)?
+    var fitHook: (() -> Void)?
+    var reloadHook: (() -> Void)?
+    var applyInkHook: ((String, InkDrawing) -> Void)?
+    /// وسط الجزء الظاهر من الصفحة على الشاشة (بنقاط الصفحة).
+    var visibleCenterHook: ((Int) -> CGPoint?)?
+    /// تمرير مستمر إلى موضع من المستند (0…1) من شريط الصفحات.
+    var scrubHook: ((CGFloat) -> Void)?
+
+    init(entry: DocEntry) {
+        id = entry.id
+        title = entry.name
+        isMap = entry.isMap
+        let (loaded, state) = repo.loadDataChecked(entry.id)
+        data = loaded
+        switch state {
+        case .fromBackup:
+            // الملف تالف: قُرئت نسخته السابقة، وتُكتب من جديد فورًا
+            dataDirty = true
+            DispatchQueue.main.async {
+                AppController.shared.say(.error, L("كان ملف بيانات «\(entry.name)» تالفًا، فاستُعيدت آخر نسخة سليمة منه",
+                                                   "“\(entry.name)” had a damaged data file, so its last good copy was restored"))
+            }
+        case .unreadable:
+            // لا نسخة سليمة: حبر الصفحات يُنقل جانبًا قبل أن تُصنع معرّفات صفحات جديدة، فلا يُمسح لاحقًا
+            repo.setAsideInk(entry.id)
+            DispatchQueue.main.async {
+                AppController.shared.say(.error, L("تعذّرت قراءة بيانات «\(entry.name)». حُفظت نسخة منها على الجهاز ولم يُحذف شيء",
+                                                   "Couldn’t read the data of “\(entry.name)”. A copy was kept on the device and nothing was deleted"))
+            }
+        case .ok, .fresh:
+            break
+        }
+        if entry.isMap {
+            if data.map == nil { data.map = MindMapData(title: entry.name) }
+            return
+        }
+        let url = repo.pdfURL(entry.id)
+        if let doc = PDFDocument(url: url) {
+            pdf = doc
+            pageCount = doc.pageCount
+            // ملف قديم أو معدّل: نضمن معرّفًا لكل صفحة
+            if data.pages.count != doc.pageCount {
+                while data.pages.count < doc.pageCount { data.pages.append(PageInfo(id: UUID().uuidString)) }
+                if data.pages.count > doc.pageCount { data.pages.removeLast(data.pages.count - doc.pageCount) }
+                dataDirty = true
+            } else if !data.pages.isEmpty {
+                // حبر صفحات حُذفت في جلسة سابقة (لا يُمَس إن اختلف عدد الصفحات: قد تكون البيانات هي الناقصة)
+                let keep = Set(data.pages.map { $0.id })
+                let docId = entry.id
+                let repo = self.repo
+                Repository.io.async { repo.removeOrphanInk(docId, keep: keep) }
+            }
+            // مربعات نص بقيت فارغة (أُغلق التطبيق أثناء الكتابة فيها) تُزال
+            if data.boxes.contains(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                data.boxes.removeAll { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                dataDirty = true
+            }
+            currentPage = max(0, min(doc.pageCount - 1, entry.lastPage))
+            currentOrder = data.pages
+            loadOcr()
+            // المستند المستورد يُقرأ نصه تلقائيًا في الخلفية (مرة واحدة)
+            if !FileManager.default.fileExists(atPath: ocrURL.path), Premium.shared.active, !doc.isLocked {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.autoRead() }
+            }
+            if doc.isLocked {
+                pdf = nil
+                failed = L("الملف محمي بكلمة مرور ولا يمكن فتحه.", "The file is password-protected and cannot be opened.")
+            }
+        } else if !FileManager.default.fileExists(atPath: url.path) {
+            failed = L("الملف غير موجود؛ ربما حُذف أو نُقل.", "File not found; it may have been deleted or moved.")
+        } else {
+            failed = L("تعذر فتح الملف؛ قد يكون تالفًا.", "Could not open the file; it may be damaged.")
+        }
+    }
+
+    // ======================================================== الصفحات
+
+    func pageId(_ index: Int) -> String? { data.pages.indices.contains(index) ? data.pages[index].id : nil }
+
+    func index(of pageId: String) -> Int? { data.pages.firstIndex { $0.id == pageId } }
+
+    func pageSize(_ index: Int) -> CGSize {
+        guard let p = pdf?.page(at: index) else { return CGSize(width: 595, height: 842) }
+        let b = p.bounds(for: .cropBox)
+        let r = (p.rotation % 180) != 0
+        return r ? CGSize(width: b.height, height: b.width) : b.size
+    }
+
+    func isBlank(_ index: Int) -> Bool { data.pages.indices.contains(index) && data.pages[index].src.hasPrefix("blank:") }
+
+    func goTo(page: Int) {
+        let p = max(0, min(pageCount - 1, page))
+        currentPage = p
+        goToHook?(p)
+    }
+
+    func setCurrent(_ p: Int) {
+        guard p != currentPage else { return }
+        currentPage = p
+        AppController.shared.setLastPage(id, p)
+    }
+
+    // ======================================================== الحبر
+
+    func drawing(for pageId: String) -> InkDrawing {
+        if let d = drawings[pageId] { return d }
+        var d = repo.loadInk(id, page: pageId)
+        // ملء الأشكال في الملفات القديمة كان منفصلًا عن خطوطها: يصير جزءًا من الحبر (يُمسح ويُحدَّد معه)
+        let old = data.fills.filter { $0.page == pageId }
+        if !old.isEmpty {
+            d.strokes += old.compactMap(DocSession.fillStroke)
+            dirtyInk.insert(pageId)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.data.fills.removeAll { $0.page == pageId }
+                self.dataDirty = true
+                self.scheduleSave()
+            }
+        }
+        drawings[pageId] = d
+        return d
+    }
+
+    /// ملء شكل من ملف قديم كخط شكل مملوء بلا إطار (إطاره خط آخر بالوقت نفسه).
+    static func fillStroke(_ f: ShapeFill) -> InkStroke? {
+        guard f.pts.count > 2, let first = f.pts.first else { return nil }
+        var s = InkStroke(points: f.pts + [first], color: f.color | 0xFF000000, width: 0, tool: .ballpoint, t: InkKey.ms(f.key))
+        s.shapeFill = true
+        s.fillAlpha = f.alpha
+        return s
+    }
+
+    /// الكانفاس غيّر الحبر: يُسجَّل للتراجع ويُحفظ لاحقًا.
+    func inkChanged(_ pageId: String, _ new: InkDrawing) {
+        let old = drawing(for: pageId)
+        if old == new { return }
+        drawings[pageId] = new
+        dirtyInk.insert(pageId)
+        push(.ink(page: pageId, before: old, after: new))
+        scheduleSave()
+        scheduleHandRead(pageId)
+    }
+
+    /// يضع حبرًا جديدًا على الصفحة (من الأشكال أو اللصق) ويحدّث الكانفاس.
+    func setInk(_ pageId: String, _ new: InkDrawing, record: Bool = true) {
+        let old = drawing(for: pageId)
+        drawings[pageId] = new
+        dirtyInk.insert(pageId)
+        if record { push(.ink(page: pageId, before: old, after: new)) }
+        applyInkHook?(pageId, new)
+        inkVersion += 1
+        scheduleSave()
+    }
+
+    func addStrokes(_ pageId: String, _ strokes: [InkStroke]) {
+        var d = drawing(for: pageId)
+        d.strokes.append(contentsOf: strokes)
+        setInk(pageId, d)
+    }
+
+    // ======================================================== البيانات
+
+    /// تعديل على البيانات مع تسجيله للتراجع.
+    func edit(_ f: (inout DocData) -> Void) {
+        let before = data
+        f(&data)
+        push(.data(before: before, after: data))
+        dataDirty = true
+        scheduleSave()
+    }
+
+    func push(_ s: EditStep) {
+        undoStack.append(s)
+        if undoStack.count > 200 { undoStack.removeFirst() }
+        redoStack.removeAll()
+    }
+
+    func undo() {
+        lassoSel = nil
+        guard let s = undoStack.popLast() else { return }
+        apply(s, reverse: true)
+        redoStack.append(s)
+    }
+
+    func redo() {
+        lassoSel = nil
+        guard let s = redoStack.popLast() else { return }
+        apply(s, reverse: false)
+        undoStack.append(s)
+    }
+
+    private func apply(_ s: EditStep, reverse: Bool) {
+        switch s {
+        case let .ink(page, before, after):
+            let d = reverse ? before : after
+            drawings[page] = d
+            dirtyInk.insert(page)
+            applyInkHook?(page, d)
+            inkVersion += 1
+        case let .data(before, after):
+            let structure = (reverse ? before : after).pages != data.pages
+            data = reverse ? before : after
+            wordCache.removeAll()
+            dataDirty = true
+            if structure { rebuildPDFOrder() }
+        case let .both(a, b):
+            apply(a, reverse: reverse)
+            apply(b, reverse: reverse)
+            return
+        }
+        scheduleSave()
+    }
+
+    /// يحذف نصوص الكتابة المجمَّلة التي مُسحت حروفها كلها، ويضمه إلى خطوة المسح نفسها في التراجع. true = تغيّر شيء.
+    @discardableResult
+    func pruneFills(_ pageId: String) -> Bool {
+        let keys = Set(drawing(for: pageId).strokes.map { $0.t })
+        guard data.converted.contains(where: { $0.page == pageId && !keys.contains(InkKey.ms($0.key)) }) else { return false }
+        let before = data
+        data.converted.removeAll { $0.page == pageId && !keys.contains(InkKey.ms($0.key)) }
+        wordCache.removeValue(forKey: pageId)
+        dataDirty = true
+        if let last = undoStack.popLast() {
+            push(.both(last, .data(before: before, after: data)))
+        } else {
+            push(.data(before: before, after: data))
+        }
+        scheduleSave()
+        return true
+    }
+
+    /// مسح الصفحة: الكتابة والتمييز والنصوص والملاحظات والصور، خطوةً واحدة قابلة للتراجع.
+    func clearPage(_ page: Int) {
+        guard let pid = pageId(page) else { return }
+        let oldInk = drawing(for: pid)
+        let before = data
+        data.marks.removeAll { $0.page == pid }
+        data.boxes.removeAll { $0.page == pid }
+        data.notes.removeAll { $0.page == pid }
+        data.images.removeAll { $0.page == pid }
+        data.fills.removeAll { $0.page == pid }
+        drawings[pid] = InkDrawing()
+        dirtyInk.insert(pid)
+        applyInkHook?(pid, InkDrawing())
+        inkVersion += 1
+        push(.both(.ink(page: pid, before: oldInk, after: InkDrawing()), .data(before: before, after: data)))
+        dataDirty = true
+        scheduleSave()
+    }
+
+    // ---------- العلامات المرجعية ----------
+
+    func toggleBookmark(_ page: Int) {
+        guard let pid = pageId(page) else { return }
+        edit { d in
+            if let i = d.bookmarks.firstIndex(of: pid) { d.bookmarks.remove(at: i) } else { d.bookmarks.append(pid) }
+        }
+        AppController.shared.say(.done, data.bookmarks.contains(pid) ? L("عُلّمت الصفحة \(page + 1)", "Bookmarked page \(page + 1)")
+                                                                     : L("أُزيلت العلامة", "Bookmark removed"))
+    }
+
+    func isBookmarked(_ page: Int) -> Bool { pageId(page).map { data.bookmarks.contains($0) } ?? false }
+
+    // ---------- التمييز ----------
+
+    func marks(onPage pid: String) -> [TextMark] { data.marks.filter { $0.page == pid } }
+
+    /// تمييزات الملخص بترتيب القراءة: الصفحة، ثم أعلى مستطيل، ثم أقصى اليسار (مثل MarkMerge.readingOrder).
+    func allMarks() -> [TextMark] {
+        data.marks.filter { $0.inSummary && !$0.free }.sorted { a, b in
+            let ia = index(of: a.page) ?? 0, ib = index(of: b.page) ?? 0
+            if ia != ib { return ia < ib }
+            let ta = a.rects.map { $0.t }.min() ?? 0, tb = b.rects.map { $0.t }.min() ?? 0
+            if ta != tb { return ta < tb }
+            return (a.rects.map { $0.l }.min() ?? 0) < (b.rects.map { $0.l }.min() ?? 0)
+        }
+    }
+
+    // ---------- كلمات الصفحة والتقاط النص ----------
+
+    var wordCache: [String: [OcrWord]] = [:]
+    var handWords: [String: [OcrWord]] = [:]
+    private var handKeys: [String: String] = [:]
+    private var handWork: [String: DispatchWorkItem] = [:]
+
+    /// كلمات الصفحة: من طبقة نص PDF، وإلا من القراءة الضوئية المحفوظة.
+    func words(_ index: Int) -> [OcrWord] {
+        guard let pid = pageId(index) else { return [] }
+        if let w = wordCache[pid] { return w }
+        var w: [OcrWord] = []
+        if let p = pdf?.page(at: index) { w = TextLayout.pdfWords(p) }
+        if w.count < 3, let o = ocr[pid] { w = o }
+        // كلمات خط اليد تُضاف دائمًا (تُقرأ في الخلفية بعد الكتابة)
+        if let h = handWords[pid], !h.isEmpty {
+            let off = (w.map { $0.line }.max() ?? -1) + 1
+            w += h.map { var x = $0; x.line += off; return x }
+        } else {
+            scheduleHandRead(pid)
+        }
+        // الكتابة المجمَّلة إلى حبر: كلماتها معروفة (تُلتقط بالهايلايتر وتظهر في البحث والملخصات)
+        for c in data.converted where c.page == pid {
+            let off = (w.map { $0.line }.max() ?? -1) + 1
+            w += c.words.map { var x = $0; x.line += off; return x }
+        }
+        wordCache[pid] = w
+        return w
+    }
+
+    // ---------- خط اليد كنص ----------
+
+    /// يقرأ خط اليد في الصفحة بعد توقف الكتابة لحظة.
+    func scheduleHandRead(_ pid: String, delay: Double = 1.2) {
+        let d = drawing(for: pid)
+        guard d.strokes.contains(where: HandwritingWords.eligible) || handWords[pid] != nil else { return }
+        let lang = AppController.shared.hwLang
+        let k = HandwritingWords.key(d, lang: lang)
+        if handKeys[pid] == k { return }
+        handWork[pid]?.cancel()
+        guard let idx = index(of: pid) else { return }
+        let w = pageSize(idx).width
+        let work = DispatchWorkItem { [weak self] in
+            Task.detached(priority: .utility) { [weak self] in
+                let words = await HandwritingWords.readAsync(d, pageW: w, lang: lang)
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.handWords[pid] = words
+                    self.handKeys[pid] = k
+                    self.wordCache.removeValue(forKey: pid)
+                }
+            }
+        }
+        handWork[pid] = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// خط هايلايتر بالتقاط النص (نفس DocSession.snapHighlight في أندرويد).
+    /// pts بإحداثيات نسبية لعرض الصفحة. true = صار تمييزًا على النص.
+    @discardableResult
+    func snapHighlight(_ index: Int, pts: [RelPt], color: UInt32, band: CGFloat) -> Bool {
+        guard let pid = pageId(index) else { return false }
+        let ws = words(index)
+        let idx = TextLayout.wordsUnder(ws, pts, band: band)
+        guard !idx.isEmpty else { return false }
+        let c = AppController.shared
+        let existing = marks(onPage: pid)
+        guard let res = MarkMerge.add(existing: existing, page: pid, words: ws, idx: idx, color: color, now: nowMs(),
+                                      inSummary: c.highlightToSummary && c.summariesOn) else { return false }
+        edit { d in d.marks = d.marks.filter { $0.page != pid } + res.marks }
+        if let m = res.message { c.message(m) }
+        return true
+    }
+
+    // ---------- تحرير الملخص (نقل DocSession.kt) ----------
+
+    var summaryEdits: SummaryEdits { data.summaryEdits ?? SummaryEdits() }
+
+    func changeEdits(_ f: (SummaryEdits) -> SummaryEdits) {
+        let next = f(summaryEdits)
+        if next == summaryEdits { return }
+        edit { $0.summaryEdits = next }
+    }
+
+    /// kind: "h" عنوان، "p" نص عادي، nil = كما يكتشفه البرنامج.
+    func setBlockKind(_ key: String, _ kind: String?) {
+        changeEdits { e in var x = e; if let k = kind { x.kinds[key] = k } else { x.kinds.removeValue(forKey: key) }; return x }
+    }
+
+    func moveBlock(_ shown: [String], _ key: String, _ delta: Int) {
+        guard let i = shown.firstIndex(of: key) else { return }
+        let j = i + delta
+        guard j >= 0 && j < shown.count else { return }
+        var next = shown
+        next[i] = shown[j]
+        next[j] = key
+        changeEdits { e in var x = e; x.order = next; return x }
+    }
+
+    func makeTable(_ keys: [String], cols: Int) {
+        guard !keys.isEmpty else { return }
+        changeEdits { e in
+            var expanded: [String] = []
+            var absorbed = Set<String>()
+            for k in keys {
+                if k.hasPrefix("g:"), let g = e.tables.first(where: { "g:" + $0.id == k }) {
+                    expanded += g.keys
+                    absorbed.insert(g.id)
+                } else { expanded.append(k) }
+            }
+            var uniq: [String] = []
+            for k in expanded where !uniq.contains(k) { uniq.append(k) }
+            let group = TableGroup(id: UUID().uuidString, keys: uniq, cols: cols)
+            let gKey = "g:" + group.id
+            let memberKeys = Set(keys).union(uniq)
+            let firstPos = e.order.firstIndex { memberKeys.contains($0) }
+            var order = e.order
+            if let fp = firstPos {
+                order = e.order.enumerated().compactMap { i, k in i == fp ? gKey : (memberKeys.contains(k) ? nil : k) }
+            }
+            var x = e
+            x.tables = e.tables.filter { !absorbed.contains($0.id) && !$0.keys.contains(where: { uniq.contains($0) }) } + [group]
+            x.order = order
+            return x
+        }
+    }
+
+    func saveTable(_ blockKey: String, rows: [[String]], header: Bool) {
+        changeEdits { e in
+            var x = e
+            if blockKey.hasPrefix("g:") {
+                x.tables = e.tables.map { g in var y = g; if "g:" + g.id == blockKey { y.rows = rows; y.header = header }; return y }
+            } else {
+                let g = TableGroup(id: UUID().uuidString, keys: [blockKey], rows: rows, header: header)
+                x.tables.append(g)
+                x.order = e.order.map { $0 == blockKey ? "g:" + g.id : $0 }
+            }
+            return x
+        }
+    }
+
+    func addToTable(_ tableKey: String, keys: [String], newRows: [[String]]) {
+        changeEdits { e0 in
+            var absorbed = Set<String>()
+            var add: [String] = []
+            for k in keys where k != tableKey {
+                if k.hasPrefix("g:"), let g = e0.tables.first(where: { "g:" + $0.id == k }) {
+                    absorbed.insert(g.id)
+                    add += g.keys
+                } else { add.append(k) }
+            }
+            if add.isEmpty { return e0 }
+            var e = e0
+            e.tables = e0.tables.filter { !absorbed.contains($0.id) }
+            let order = e.order.filter { !add.contains($0) && !absorbed.contains(String($0.dropFirst(2))) }
+            if tableKey.hasPrefix("g:") {
+                e.tables = e.tables.map { g in
+                    var y = g
+                    if "g:" + g.id == tableKey {
+                        var ks = g.keys
+                        for k in add where !ks.contains(k) { ks.append(k) }
+                        y.keys = ks
+                        if let r = g.rows { y.rows = r + newRows }
+                    }
+                    return y
+                }
+                e.order = order
+            } else {
+                let g = TableGroup(id: UUID().uuidString, keys: [tableKey] + add)
+                e.tables.append(g)
+                e.order = order.map { $0 == tableKey ? "g:" + g.id : $0 }
+            }
+            return e
+        }
+    }
+
+    func removeTable(_ groupKey: String) {
+        changeEdits { e in var x = e; x.tables = e.tables.filter { "g:" + $0.id != groupKey }; return x }
+    }
+
+    func resetBlock(_ key: String) {
+        changeEdits { e in
+            var x = e
+            x.kinds.removeValue(forKey: key)
+            x.order = e.order.filter { $0 != key }
+            x.tables = e.tables.filter { "g:" + $0.id != key }.map { g in var y = g; y.keys = g.keys.filter { $0 != key }; return y }.filter { !$0.keys.isEmpty }
+            return x
+        }
+    }
+
+    func updateMarkText(_ id: String, _ text: String) { updateMark(id) { $0.text = text } }
+
+    func addMark(_ m: TextMark) { edit { $0.marks.append(m) } }
+
+    func updateMark(_ id: String, _ f: (inout TextMark) -> Void) {
+        edit { d in if let i = d.marks.firstIndex(where: { $0.id == id }) { f(&d.marks[i]) } }
+    }
+
+    func deleteMark(_ id: String) { edit { $0.marks.removeAll { $0.id == id } } }
+
+    // ---------- النصوص والصور والملاحظات ----------
+
+    func upsertBox(_ b: TextBox) {
+        edit { d in
+            if let i = d.boxes.firstIndex(where: { $0.id == b.id }) { d.boxes[i] = b } else { d.boxes.append(b) }
+        }
+    }
+
+    func deleteBox(_ id: String) { edit { $0.boxes.removeAll { $0.id == id } } }
+
+    func upsertImage(_ im: ImageItem) {
+        edit { d in
+            if let i = d.images.firstIndex(where: { $0.id == im.id }) { d.images[i] = im } else { d.images.append(im) }
+        }
+    }
+
+    func deleteImage(_ id: String) { edit { $0.images.removeAll { $0.id == id } } }
+
+    func upsertNote(_ n: StickyNote) {
+        edit { d in
+            if let i = d.notes.firstIndex(where: { $0.id == n.id }) { d.notes[i] = n } else { d.notes.append(n) }
+        }
+    }
+
+    func deleteNote(_ id: String) { edit { $0.notes.removeAll { $0.id == id } } }
+
+    /// يضيف صورة إلى الصفحة الحالية في وسطها.
+    /// وسط الجزء الظاهر من الصفحة (كما في أندرويد): هناك تُضاف الصور والملصقات إن لم تُسحب إلى مكان.
+    func visibleCenter(_ page: Int) -> CGPoint {
+        let size = pageSize(page)
+        return visibleCenterHook?(page) ?? CGPoint(x: size.width / 2, y: size.height / 2)
+    }
+
+    /// يضيف صورة: at = وسطها بنقاط الصفحة (مكان الإفلات أو وسط الجزء الظاهر)؛ index يزيح الصور المختارة معًا.
+    func insertImage(_ img: UIImage, page: Int? = nil, at point: CGPoint? = nil, index: Int = 0, width: CGFloat = 0.45, select: Bool = true) {
+        let p = page ?? currentPage
+        guard let pid = pageId(p), let jpg = img.jpegData(compressionQuality: 0.88) else {
+            AppController.shared.say(.error, L("تعذر إضافة الصورة", "Could not add the image"))
+            return
+        }
+        let name = "img-\(UUID().uuidString).jpg"
+        try? jpg.write(to: repo.mediaDir(id).appendingPathComponent(name))
+        let aspect = img.size.width / max(1, img.size.height)
+        let item = placed(file: name, page: p, pid: pid, width: width, aspect: aspect, at: point, index: index)
+        upsertImage(item)
+        if select {
+            selectedImage = item.id
+            AppController.shared.say(.tip, L("أُضيفت الصورة. اسحبها لتحريكها، واسحب نقطة الزاوية لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
+        }
+    }
+
+    func insertSticker(_ key: String, page: Int? = nil, at point: CGPoint? = nil) {
+        let p = page ?? currentPage
+        guard let pid = pageId(p) else { return }
+        var aspect: CGFloat = 1
+        var width: CGFloat = 0.16
+        if key.hasPrefix("mine:"), let img = UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(String(key.dropFirst(5))).path) {
+            aspect = img.size.width / max(1, img.size.height)
+            if aspect > 1.5 { width = 0.26 }
+        } else if let img = badgeImage(key) {
+            aspect = img.size.width / max(1, img.size.height)
+            width = aspect > 1.5 ? 0.26 : 0.16
+        }
+        let item = placed(file: "sticker:" + key, page: p, pid: pid, width: width, aspect: aspect, at: point, index: 0)
+        upsertImage(item)
+        selectedImage = item.id
+        AppController.shared.say(.done, L("أُضيف الملصق. اسحبه لتحريكه، ومن زاويته لتغيير حجمه", "Sticker added. Drag to move, drag its corner to resize"))
+    }
+
+    /// موضع عنصر جديد على الصفحة، داخل حدودها.
+    private func placed(file: String, page p: Int, pid: String, width: CGFloat, aspect: CGFloat, at point: CGPoint?, index: Int) -> ImageItem {
+        let size = pageSize(p)
+        let w = size.width * width
+        let h = w / max(0.01, aspect)
+        let c = point ?? visibleCenter(p)
+        let shift = CGFloat(index % 8) * 0.035 * size.width
+        let x = min(max(0, c.x - w / 2 + shift), max(0, size.width - w))
+        let y = min(max(0, c.y - h / 2 + shift), max(0, size.height - h))
+        return ImageItem(id: UUID().uuidString, file: file, page: pid, x: x, y: y, w: w, aspect: aspect)
+    }
+
+    func image(for item: ImageItem) -> UIImage? { DocSession.image(docId: id, item: item) }
+
+    static func image(docId: String, item: ImageItem) -> UIImage? {
+        let repo = Repository.shared
+        if item.file.hasPrefix("sticker:") {
+            let key = String(item.file.dropFirst(8))
+            if key.hasPrefix("mine:") {
+                let name = String(key.dropFirst(5))
+                guard Repository.safeName(name) else { return nil }
+                return UIImage(contentsOfFile: repo.stickersDir.appendingPathComponent(name).path)
+            }
+            return UIImage(named: "st_" + key) ?? badgeImage(key) ?? emojiImage(key)
+        }
+        guard Repository.safeName(item.file) else { return nil }
+        return UIImage(contentsOfFile: repo.mediaDir(docId).appendingPathComponent(item.file).path)
+    }
+
+    private static func emojiImage(_ s: String) -> UIImage {
+        let size = CGSize(width: 160, height: 160)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            (s as NSString).draw(in: CGRect(x: 0, y: 10, width: 160, height: 150),
+                                 withAttributes: [.font: UIFont.systemFont(ofSize: 120)])
+        }
+    }
+
+    // ======================================================== بنية الصفحات
+
+    /// يضيف صفحة فارغة بقالب بعد الصفحة after.
+    func addBlankPage(after: Int, kind: String, color: UInt32, size: CGSize? = nil) {
+        guard let doc = pdf else { return }
+        let s = size ?? pageSize(max(0, min(pageCount - 1, after)))
+        guard let page = Templates.makePage(kind: kind, bg: color, size: s) else { return }
+        let at = max(0, min(doc.pageCount, after + 1))
+        edit { d in
+            let old = d.pages
+            d.pages.insert(PageInfo(id: UUID().uuidString, src: Templates.src(kind, color)), at: at)
+            self.remapOutline(&d, from: old)
+        }
+        doc.insert(page, at: at)
+        structureChanged()
+        goTo(page: at)
+        AppController.shared.say(.done, L("أُضيفت صفحة جديدة (الآن \(pageCount) صفحة)", "New page added (\(pageCount) pages now)"))
+    }
+
+    /// يضيف صفحات ملف PDF آخر بعد الصفحة after.
+    func addPdfPages(from url: URL, after: Int) {
+        guard let doc = pdf else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let other = PDFDocument(url: url), other.pageCount > 0 else {
+            AppController.shared.say(.error, L("تعذر إضافة الملف. تأكد أنه PDF صالح.", "Could not add the file. Make sure it is a valid PDF."))
+            return
+        }
+        var at = max(0, min(doc.pageCount, after + 1))
+        let start = at
+        var infos: [PageInfo] = []
+        for i in 0..<other.pageCount {
+            guard let p = other.page(at: i)?.copy() as? PDFPage else { continue }
+            doc.insert(p, at: at)
+            infos.append(PageInfo(id: UUID().uuidString))
+            at += 1
+        }
+        edit { d in
+            let old = d.pages
+            d.pages.insert(contentsOf: infos, at: start)
+            self.remapOutline(&d, from: old)
+        }
+        structureChanged()
+        goTo(page: start)
+        AppController.shared.say(.done, L("أُضيفت \(infos.count) صفحة من الملف (الآن \(pageCount) صفحة)", "Added \(infos.count) pages from the file (\(pageCount) pages now)"))
+    }
+
+    func deletePage(_ index: Int) {
+        guard let doc = pdf, doc.pageCount > 1, data.pages.indices.contains(index) else {
+            AppController.shared.say(.done, L("لا يمكن حذف الصفحة الوحيدة", "You can’t delete the only page"))
+            return
+        }
+        let gone = data.pages[index].id
+        if let p = doc.page(at: index) { trash[gone] = p }
+        // ما كُتب على الصفحة يُحذف معها (ويعود معها بالتراجع)، فلا يبقى في الملف بلا صفحة
+        edit { d in
+            let old = d.pages
+            d.pages.remove(at: index)
+            self.remapOutline(&d, from: old)
+            d.marks.removeAll { $0.page == gone }
+            d.boxes.removeAll { $0.page == gone }
+            d.images.removeAll { $0.page == gone }
+            d.notes.removeAll { $0.page == gone }
+            d.fills.removeAll { $0.page == gone }
+            d.converted.removeAll { $0.page == gone }
+            d.bookmarks.removeAll { $0 == gone }
+        }
+        doc.removePage(at: index)
+        structureChanged()
+    }
+
+    func duplicatePage(_ index: Int) {
+        guard let doc = pdf, let p = doc.page(at: index)?.copy() as? PDFPage, let old = pageId(index) else { return }
+        let nid = UUID().uuidString
+        let src = data.pages[index].src
+        doc.insert(p, at: index + 1)
+        setInk(nid, drawing(for: old), record: false)
+        edit { d in
+            let pagesBefore = d.pages
+            d.pages.insert(PageInfo(id: nid, src: src), at: index + 1)
+            self.remapOutline(&d, from: pagesBefore)
+            d.boxes += d.boxes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
+            d.images += d.images.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
+            d.notes += d.notes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
+        }
+        structureChanged()
+    }
+
+    func movePage(_ from: Int, to: Int) {
+        guard let doc = pdf, data.pages.indices.contains(from), to >= 0, to < data.pages.count, from != to,
+              let page = doc.page(at: from) else { return }
+        edit { d in
+            let old = d.pages
+            let p = d.pages.remove(at: from)
+            d.pages.insert(p, at: to)
+            self.remapOutline(&d, from: old)
+        }
+        doc.removePage(at: from)
+        doc.insert(page, at: to)
+        structureChanged()
+        // كما في أندرويد: «نُقلت الصفحة إلى …» مع زر تراجع
+        AppController.shared.message(L("نُقلت الصفحة إلى \(to + 1)", "Page moved to \(to + 1)"), action: L("↶ تراجع", "↶ Undo")) { [weak self] in
+            self?.movePageQuiet(to, to: from)
+        }
+    }
+
+    private func movePageQuiet(_ from: Int, to: Int) {
+        guard let doc = pdf, data.pages.indices.contains(from), to >= 0, to < data.pages.count, from != to,
+              let page = doc.page(at: from) else { return }
+        edit { d in
+            let old = d.pages
+            let p = d.pages.remove(at: from)
+            d.pages.insert(p, at: to)
+            self.remapOutline(&d, from: old)
+        }
+        doc.removePage(at: from)
+        doc.insert(page, at: to)
+        structureChanged()
+    }
+
+    /// يبدّل قالب صفحة فارغة، ويُحفظ في الملف (وبالتراجع يعود القالب السابق).
+    func changeTemplate(_ index: Int, kind: String, color: UInt32) {
+        guard let doc = pdf, data.pages.indices.contains(index),
+              let page = Templates.makePage(kind: kind, bg: color, size: pageSize(index)) else { return }
+        doc.removePage(at: index)
+        doc.insert(page, at: index)
+        edit { d in d.pages[index].src = Templates.src(kind, color) }
+        structureChanged()
+    }
+
+    /// عناوين الفهرس تتبع صفحاتها عند إضافة صفحة أو حذفها أو نقلها (كانت تبقى على رقم الصفحة القديم).
+    private func remapOutline(_ d: inout DocData, from old: [PageInfo]) {
+        guard !d.outline.isEmpty, !d.pages.isEmpty else { return }
+        var now: [String: Int] = [:]
+        for (i, p) in d.pages.enumerated() { now[p.id] = i }
+        for k in d.outline.indices {
+            let p = d.outline[k].page
+            guard old.indices.contains(p) else { continue }
+            // صفحة العنوان حُذفت: يبقى العنوان على أقرب صفحة في مكانها
+            d.outline[k].page = now[old[p].id] ?? min(p, d.pages.count - 1)
+        }
+    }
+
+    /// يدوّر الصفحة ربع دورة مع كل ما عليها (حبر، تمييز، تعبئة، نصوص، صور، ملاحظات، نص مقروء).
+    /// النصوص والصور والملاحظات تبقى قائمة وتنتقل إلى مكانها الجديد. سجل التراجع يُفرَّغ: خطواته
+    /// تحمل الصفحة بوضعها القديم.
+    func rotatePage(_ index: Int) {
+        guard let p = pdf?.page(at: index), let pid = pageId(index) else { return }
+        finishInlineEdit()
+        lassoSel = nil
+        let old = pageSize(index)
+        let W = max(1, old.width), H = max(1, old.height)      // المقاس الجديد: H × W
+        p.rotation = (p.rotation + 90) % 360
+        // ربع دورة مع عقارب الساعة: (x, y) ← (H − y, x)
+        let t = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: H, ty: 0)
+        func rel(_ l: CGFloat, _ tp: CGFloat, _ r: CGFloat, _ b: CGFloat) -> CGRect {
+            CGRect(x: l * W, y: tp * W, width: (r - l) * W, height: (b - tp) * W).applying(t)
+        }
+        func mark(_ m: MarkRect) -> MarkRect {
+            let q = rel(m.l, m.t, m.r, m.b)
+            return MarkRect(l: q.minX / H, t: q.minY / H, r: q.maxX / H, b: q.maxY / H)
+        }
+        func word(_ w: OcrWord) -> OcrWord {
+            let q = rel(w.l, w.t, w.r, w.b)
+            return OcrWord(text: w.text, l: q.minX / H, t: q.minY / H, r: q.maxX / H, b: q.maxY / H, line: w.line)
+        }
+        /// عنصر يبقى قائمًا: مركزه ينتقل مع الصفحة ويبقى داخلها.
+        func moved(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGPoint {
+            let c = CGPoint(x: x + w / 2, y: y + h / 2).applying(t)
+            return CGPoint(x: min(max(0, c.x - w / 2), max(0, H - w)), y: min(max(0, c.y - h / 2), max(0, W - h)))
+        }
+        let ink = drawing(for: pid)
+        if !ink.strokes.isEmpty {
+            let nd = ink.transformed(using: t)
+            drawings[pid] = nd
+            dirtyInk.insert(pid)
+            applyInkHook?(pid, nd)
+            inkVersion += 1
+        }
+        var d = data
+        for i in d.marks.indices where d.marks[i].page == pid {
+            d.marks[i].rects = d.marks[i].rects.map(mark)
+            d.marks[i].strongRects = d.marks[i].strongRects.map(mark)
+        }
+        for i in d.fills.indices where d.fills[i].page == pid { d.fills[i].pts = d.fills[i].pts.map { $0.applying(t) } }
+        for i in d.converted.indices where d.converted[i].page == pid {
+            d.converted[i].words = d.converted[i].words.map(word)
+            // السطر لم يعد أفقيًا: لا يُكمَل عليه ولا تُبدَّل كلماته، ويبقى نصه للبحث
+            d.converted[i].alts = nil
+            d.converted[i].baseline = -1_000_000
+        }
+        for i in d.boxes.indices where d.boxes[i].page == pid {
+            let q = moved(d.boxes[i].x, d.boxes[i].y, d.boxes[i].w, boxHeight(d.boxes[i]))
+            d.boxes[i].x = q.x; d.boxes[i].y = q.y
+        }
+        for i in d.images.indices where d.images[i].page == pid {
+            let q = moved(d.images[i].x, d.images[i].y, d.images[i].w, d.images[i].w / max(0.01, d.images[i].aspect))
+            d.images[i].x = q.x; d.images[i].y = q.y
+        }
+        for i in d.notes.indices where d.notes[i].page == pid {
+            let q = moved(d.notes[i].x, d.notes[i].y, d.notes[i].w, d.notes[i].h)
+            d.notes[i].x = q.x; d.notes[i].y = q.y
+        }
+        data = d
+        dataDirty = true
+        if let ws = ocr[pid] {
+            ocr[pid] = ws.map(word)
+            saveOcr()
+        }
+        handWords.removeValue(forKey: pid)
+        handKeys.removeValue(forKey: pid)
+        wordCache.removeValue(forKey: pid)
+        undoStack = []
+        redoStack = []
+        structureChanged()
+        scheduleHandRead(pid)
+    }
+
+    /// بعد تراجع عن تغيير في الصفحات: نعيد ترتيب صفحات PDF حسب البيانات.
+    private func rebuildPDFOrder() {
+        guard let doc = pdf else { return }
+        // صفحات الملف الآن حسب معرّفاتها، ومعها الصفحات المحذوفة (لاسترجاعها بالتراجع)
+        var pagesById: [String: PDFPage] = trash
+        for (i, info) in currentOrder.enumerated() { if let p = doc.page(at: i) { pagesById[info.id] = p } }
+        // ما خرج من الترتيب (تراجع عن إضافة، أو إعادة حذف) يبقى محفوظًا ليعود بمحتواه لا صفحة بيضاء
+        let keep = Set(data.pages.map { $0.id })
+        for (pid, p) in pagesById where !keep.contains(pid) && trash[pid] == nil {
+            trash[pid] = (p.copy() as? PDFPage) ?? p
+        }
+        var shownSrc: [String: String] = [:]
+        for info in currentOrder { shownSrc[info.id] = info.src }
+        let n = PDFDocument()
+        for info in data.pages {
+            if let p = pagesById[info.id], let was = shownSrc[info.id], was != info.src, info.src.hasPrefix("blank:") {
+                // القالب تغيّر (تراجع أو إعادة): تُرسم الصفحة بقالبها المحفوظ وبمقاسها نفسه
+                let b = p.bounds(for: .cropBox)
+                let size = (p.rotation % 180) != 0 ? CGSize(width: b.height, height: b.width) : b.size
+                let (kind, bg) = Templates.parse(info.src)
+                n.insert(Templates.makePage(kind: kind, bg: bg, size: size) ?? (p.copy() as? PDFPage ?? p), at: n.pageCount)
+            } else if let p = pagesById[info.id] {
+                n.insert(p.copy() as? PDFPage ?? p, at: n.pageCount)
+            } else {
+                let (kind, bg) = Templates.parse(info.src)
+                if let p = Templates.makePage(kind: info.src.hasPrefix("blank:") ? kind : "plain", bg: bg, size: CGSize(width: 595, height: 842)) {
+                    n.insert(p, at: n.pageCount)
+                }
+            }
+        }
+        pdf = n
+        structureChanged()
+    }
+
+    /// الصفحات المحذوفة في هذه الجلسة.
+    private var trash: [String: PDFPage] = [:]
+
+    /// ترتيب صفحات الملف المفتوح الآن (يتبع البيانات بعد كل تعديل).
+    private var currentOrder: [PageInfo] = []
+
+    private func structureChanged() {
+        pageCount = pdf?.pageCount ?? 0
+        currentOrder = data.pages
+        pdfDirty = true
+        pagesVersion += 1
+        currentPage = max(0, min(pageCount - 1, currentPage))
+        reloadHook?()
+        AppController.shared.onPagesChanged(id, count: pageCount)
+        scheduleSave()
+    }
+
+    // ======================================================== الحفظ
+
+    func scheduleSave() {
+        saveWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.flush(wait: false) }
+        saveWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: w)
+    }
+
+    /// يحفظ ما تغيّر. الكتابة على القرص في طابور خلفي؛ wait = ننتظرها (قبل التصدير والإغلاق والنسخ).
+    func flush(wait: Bool = true) {
+        saveWork?.cancel()
+        commitInlineText()
+        if currentOrder.isEmpty { currentOrder = data.pages }
+        let inks = dirtyInk.map { ($0, drawings[$0] ?? InkDrawing()) }
+        let inkChanged = !inks.isEmpty
+        dirtyInk.removeAll()
+        let writeData = dataDirty || pdfDirty || inkChanged
+        dataDirty = false
+        let snapshot = data
+        let docId = id
+        let repo = self.repo
+        let job = {
+            for (pid, d) in inks { repo.saveInk(docId, page: pid, d) }
+            if writeData { repo.saveData(docId, snapshot) }
+            if inkChanged { repo.invalidateThumb(docId) }
+        }
+        if wait { Repository.io.sync(execute: job) } else { Repository.io.async(execute: job) }
+        if pdfDirty, let doc = pdf {
+            if repo.savePDF(id, doc) {
+                pdfDirty = false
+                pdfSaveWarned = false
+            } else if !pdfSaveWarned {
+                // يبقى التغيير معلّمًا فيُعاد الحفظ لاحقًا، ويُنبَّه المستخدم مرة واحدة
+                pdfSaveWarned = true
+                AppController.shared.say(.error, L("تعذر حفظ تغييرات الصفحات. تأكد من وجود مساحة كافية على الجهاز", "Couldn’t save the page changes. Make sure the device has enough free space"))
+            }
+            AppController.shared.onPagesChanged(id, count: doc.pageCount)
+        }
+    }
+
+    // ======================================================== البحث
+
+    /// الصفحة المطلوبة من نتيجة بحث المكتبة: أول نتيجة فيها هي التي تُعرض.
+    var searchPreferPage: Int?
+    private var finder: FindCollector?
+    private var findToken = 0
+
+    /// البحث في نص الملف يجري على مراحل دون تجميد الواجهة (الملفات الكبيرة)، ثم تُعرض النتائج.
+    func runSearch() {
+        let q = searchQuery.trimmingCharacters(in: .whitespaces)
+        findToken += 1
+        let token = findToken
+        pdf?.cancelFindString()
+        guard let doc = pdf, !q.isEmpty else { searchHits = []; searchPreferPage = nil; return }
+        var hits: [SearchHit] = []
+        // خط اليد والصفحات المقروءة ضوئيًا
+        let tokens = q.split(separator: " ").map(String.init)
+        for (i, info) in data.pages.enumerated() {
+            let w = pageSize(i).width
+            let words = (handWords[info.id] ?? []) + ((doc.page(at: i)?.string ?? "").count > 20 ? [] : (ocr[info.id] ?? []))
+            for line in Dictionary(grouping: words, by: { $0.line }).values {
+                let sorted = line.sorted { $0.l < $1.l }
+                let text = sorted.map { $0.text }.joined(separator: " ")
+                guard text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil else { continue }
+                let hitWords = sorted.filter { wd in tokens.contains { wd.text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil } }
+                let r = hitWords.reduce(CGRect.null) { $0.union(CGRect(x: $1.l * w, y: $1.t * w, width: ($1.r - $1.l) * w, height: ($1.b - $1.t) * w)) }
+                if !r.isNull { hits.append(SearchHit(page: i, sel: nil, rect: r.insetBy(dx: -2, dy: -2))) }
+            }
+        }
+        let inkHits = hits
+        let collector = FindCollector()
+        collector.onEnd = { [weak self, weak doc] sels in
+            DispatchQueue.main.async {
+                guard let self = self, let doc = doc, self.findToken == token, !self.searchQuery.isEmpty else { return }
+                let textHits: [SearchHit] = sels.compactMap { sel in
+                    guard let p = sel.pages.first else { return nil }
+                    return SearchHit(page: doc.index(for: p), sel: sel, rect: nil)
+                }
+                self.showHits(textHits + inkHits)
+            }
+        }
+        finder = collector
+        doc.delegate = collector
+        doc.beginFindString(q, withOptions: [.caseInsensitive, .diacriticInsensitive])
+    }
+
+    private func showHits(_ found: [SearchHit]) {
+        // ترتيب ثابت: نتائج نص الملف تبقى بترتيبها داخل الصفحة، وبعدها نتائج خط اليد
+        let hits = found.enumerated().sorted { a, b in
+            if a.element.page != b.element.page { return a.element.page < b.element.page }
+            let ya = a.element.rect?.minY ?? 0, yb = b.element.rect?.minY ?? 0
+            if ya != yb { return ya < yb }
+            return a.offset < b.offset
+        }.map { $0.element }
+        searchHits = hits
+        searchIndex = 0
+        let want = searchPreferPage
+        searchPreferPage = nil
+        if let p = want, let i = hits.firstIndex(where: { $0.page == p }) {
+            searchIndex = i
+            goTo(page: p)
+        } else if let p = want {
+            // النتيجة من نص مقروء أو كتابة مجمَّلة لا تُظلَّل هنا: تبقى الصفحة المطلوبة
+            goTo(page: p)
+        } else if let first = hits.first {
+            goTo(page: first.page)
+        }
+    }
+
+    func ocrHits(_ q: String) -> [(Int, String)] {
+        var out: [(Int, String)] = []
+        for (i, info) in data.pages.enumerated() {
+            let ws = ocr[info.id] ?? []
+            let lines = Dictionary(grouping: ws) { $0.line }.values.map { $0.map { $0.text }.joined(separator: " ") }
+            for l in lines where l.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+                out.append((i, l))
+            }
+        }
+        return out
+    }
+
+    // ======================================================== القراءة الضوئية
+
+    @Published var ocr: [String: [OcrWord]] = [:]
+    private var digitalCache: Set<String>? = nil
+
+    /// عدد الصفحات المقروءة (نص رقمي أو قراءة ضوئية) لملاحظة البحث.
+    func readPagesCount() -> Int {
+        if digitalCache == nil, let doc = pdf {
+            var set = Set<String>()
+            for i in 0..<doc.pageCount {
+                if let pid = pageId(i), (doc.page(at: i)?.string ?? "").count > 20 { set.insert(pid) }
+            }
+            digitalCache = set
+        }
+        return (digitalCache ?? []).union(ocr.keys).count
+    }
+
+    private var ocrURL: URL { repo.dir(id).appendingPathComponent("ocr.json") }
+
+    func loadOcr() {
+        if let d = try? Data(contentsOf: ocrURL), let v = try? JSONDecoder().decode([String: [OcrWord]].self, from: d) { ocr = v }
+    }
+
+    private func saveOcr() {
+        if let d = try? JSONEncoder().encode(ocr) { try? d.write(to: ocrURL, options: .atomic) }
+    }
+
+    /// يقرأ نص الصفحات التي ليس فيها نص (صور ممسوحة) بـ Vision.
+    func startOcr() {
+        guard let doc = pdf, !ocrRunning else { return }
+        ocrRunning = true
+        ocrProgress = 0
+        // كل صفحة تُربط بمعرّفها الآن: حذف صفحة أو نقلها أثناء القراءة لا ينسب النص إلى صفحة أخرى
+        let pages: [(Int, String, PDFPage)] = data.pages.enumerated().compactMap { i, info in doc.page(at: i).map { (i, info.id, $0) } }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            for (i, pid, page) in pages {
+                guard let self = self, self.ocrRunning else { break }
+                if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20 { continue }
+                let ws = TextLayout.ocrWords(page)
+                DispatchQueue.main.async {
+                    guard self.index(of: pid) != nil else { return }
+                    self.ocr[pid] = ws
+                    self.wordCache.removeValue(forKey: pid)
+                    self.ocrProgress = i + 1
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.ocrRunning = false
+                self.saveOcr()
+                AppController.shared.say(.done, L("اكتملت قراءة النص", "Text reading finished"))
+            }
+        }
+    }
+
+    func stopOcr() { ocrRunning = false }
+
+    private var autoReading = false
+
+    /// قراءة هادئة في الخلفية لصفحات بلا نص (بعد الاستيراد): بلا شريط تقدم ولا رسائل.
+    private func autoRead() {
+        guard let doc = pdf, !ocrRunning, !autoReading else { return }
+        autoReading = true
+        let done = Set(ocr.keys)
+        let pages: [(String, PDFPage)] = data.pages.enumerated().compactMap { i, info in doc.page(at: i).map { (info.id, $0) } }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            for (pid, page) in pages where !done.contains(pid) {
+                guard let self = self, !self.ocrRunning else { break }
+                if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20 { continue }
+                let ws = TextLayout.ocrWords(page)
+                DispatchQueue.main.async {
+                    guard self.index(of: pid) != nil else { return }
+                    self.ocr[pid] = ws
+                    self.wordCache.removeValue(forKey: pid)
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.autoReading = false
+                self.saveOcr()
+            }
+        }
+    }
+
+    /// يقرأ صفحة واحدة ضوئيًا عند الحاجة (تحديد نص في صفحة ممسوحة).
+    func ocrPage(_ index: Int, then: @escaping () -> Void) {
+        guard let page = pdf?.page(at: index), let pid = pageId(index) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let ws = TextLayout.ocrWords(page)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.ocr[pid] = ws
+                self.wordCache.removeValue(forKey: pid)
+                self.saveOcr()
+                then()
+            }
+        }
+    }
+
+}
+
+/// يجمع نتائج البحث في نص الملف (PDFDocument.beginFindString) ويسلّمها عند انتهائه.
+final class FindCollector: NSObject, PDFDocumentDelegate {
+    private var found: [PDFSelection] = []
+    private let lock = NSLock()
+    var onEnd: (([PDFSelection]) -> Void)?
+
+    func didMatchString(_ instance: PDFSelection) {
+        lock.lock(); found.append(instance); lock.unlock()
+    }
+
+    func documentDidEndDocumentFind(_ notification: Notification) {
+        lock.lock(); let all = found; found = []; lock.unlock()
+        onEnd?(all)
+    }
+}
+
+/// بصمة سريعة للحبر: تتغير عند إضافة خط أو مسحه أو نقله أو تلوينه.
+func inkSig(_ d: InkDrawing) -> Int {
+    var h = Hasher()
+    h.combine(d.strokes.count)
+    for st in d.strokes {
+        h.combine(st.t)
+        h.combine(st.pts.count)
+        h.combine(st.color)
+        h.combine(st.width)
+        if let f = st.pts.first { h.combine(f.x); h.combine(f.y) }
+        if let l = st.pts.last { h.combine(l.x); h.combine(l.y) }
+    }
+    return h.finalize()
+}

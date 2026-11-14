@@ -1,0 +1,611 @@
+import SwiftUI
+import Translation
+
+/// درج «ملخصات»: كل ما ظُلّل في هذا المستند فقط، كمستند واحد متصل على ورق عاجي (مثل أندرويد).
+/// لا تظهر أسماء الصفحات؛ النص الأكبر على الصفحة يظهر عنوانًا، والجداول جداول، والمظلل مرتين بخط عريض.
+struct SummaryDrawer: View {
+    @ObservedObject var session: DocSession
+    @EnvironmentObject var app: AppController
+    @State private var colorFilter: UInt32? = nil
+    @State private var editing: TextMark? = nil
+    @State private var selecting = false
+    @State private var selected: [String] = []
+    @State private var tableTarget: String? = nil
+    @State private var selectForMap = false
+    @State private var tableCols = 2
+    @State private var editingTable: TableEdit? = nil
+    @State private var cardFrom: CardDraft? = nil
+    @State private var exportURL: URL? = nil
+    /// صنع بطاقة من النصوص المختارة: لكل نص دوره (true = عنوان). nil = ليس في هذا الوضع.
+    @State private var cardRoles: [String: Bool]? = nil
+    @State private var cardDraft: CardDraft? = nil
+    /// الجزء الذي تُعرض قائمته الآن.
+    @State private var menuKey: String? = nil
+
+    struct TableEdit: Identifiable { let id = UUID(); let key: String; let rows: [[String]]; let header: Bool }
+    struct CardDraft: Identifiable { let id = UUID(); let front: String; let back: String }
+
+    var body: some View {
+        let s = session
+        let all = s.allMarks()
+        let blocks = Summary.display(all, tidy: app.summaryTidy, edits: s.summaryEdits, filter: colorFilter, byColor: app.summaryByColor) { app.labelOf($0) }
+        var used: [UInt32] = []
+        for m in all where !used.contains(m.color) { used.append(m.color) }
+        let docCards = app.cards.filter { $0.docId == s.id }
+        return VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                PhIcon("ph_summary_fill", Palette.navy, 24)
+                    .overlay(Circle().fill(Palette.gold).frame(width: 7, height: 7).offset(x: 9, y: -9))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(L("ملخصات", "Summaries")).font(Fonts.display(22)).foregroundColor(Palette.navy)
+                    Text(s.title).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary).lineLimit(1)
+                }
+                .padding(.leading, 4)
+                Spacer(minLength: 4)
+                Button { s.mapPlacing = nil; s.mapOpen = true } label: {
+                    HStack(spacing: 5) {
+                        PhIcon("ph_mindmap", Palette.goldDeep, 16)
+                        Text(L("خريطة", "Map")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
+                    }
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(Capsule().fill(LinearGradient(colors: [Color(hex: 0xFFFFF6DD), Palette.goldSoft], startPoint: .leading, endPoint: .trailing)))
+                    .overlay(Capsule().stroke(Palette.gold, lineWidth: 1))
+                }
+                Button { app.openDeck = "doc:" + s.id } label: {
+                    HStack(spacing: 6) {
+                        PhIcon("ph_books", Palette.goldDeep, 16)
+                        Text(L("بطاقات \(docCards.count)", "Cards \(docCards.count)")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .overlay(Capsule().stroke(Palette.gold, lineWidth: 1))
+                }
+                Button { s.summaryOpen = false } label: { PhIcon("ph_close", Palette.textSecondary, 20, L("إغلاق الملخصات", "Close summaries")).frame(width: 40, height: 40) }
+            }
+            .padding(.leading, 16).padding(.trailing, 6).padding(.top, 12)
+            HStack(spacing: 6) {
+                ChoiceChip(label: L("مرتّب", "Tidy"), selected: app.summaryTidy) { app.summaryTidy = true }
+                ChoiceChip(label: L("كما التُقط", "As captured"), selected: !app.summaryTidy) { app.summaryTidy = false }
+                Spacer()
+                Button(L("نسخ الكل", "Copy all")) {
+                    UIPasteboard.general.string = Summary.plainText(s.title, blocks)
+                    app.say(.done, L("تم النسخ", "Copied"))
+                }
+                .font(Fonts.sans(13)).foregroundColor(Palette.navy).disabled(blocks.isEmpty)
+                Button("PDF") { s.flush(); exportURL = Exporter.summaryPDF(docId: s.id, name: s.title) ; if exportURL == nil { app.say(.error, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet")) } }
+                    .font(Fonts.sans(13)).foregroundColor(Palette.navy).disabled(blocks.isEmpty).padding(.horizontal, 8)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            if used.count > 1 || colorFilter != nil {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ChoiceChip(label: L("كل الألوان", "All colors"), selected: colorFilter == nil) { colorFilter = nil }
+                        ForEach(used, id: \.self) { col in
+                            let sel = colorFilter == col
+                            Button { colorFilter = sel ? nil : col } label: {
+                                HStack(spacing: 6) {
+                                    RoundedRectangle(cornerRadius: 6).fill(Color(hex: col)).frame(width: 12, height: 12)
+                                    Text(app.labelOf(col)).font(Fonts.sans(13)).foregroundColor(sel ? .white : Palette.textPrimary).lineLimit(1).fixedSize()
+                                }
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(Capsule().fill(sel ? Palette.navy : Color.white))
+                                .overlay(Capsule().stroke(sel ? Palette.navy : Palette.divider, lineWidth: 1))
+                            }
+                        }
+                        ChoiceChip(label: L("تجميع حسب اللون", "Group by color"), selected: app.summaryByColor) { app.summaryByColor.toggle() }
+                    }
+                    .padding(.horizontal, 12)
+                }
+                .padding(.bottom, 6)
+            }
+            Rectangle().fill(Palette.gold.opacity(0.45)).frame(height: 1)
+            if selecting {
+                if selectForMap {
+                    if let roles = cardRoles { cardRoleBar(roles, blocks) } else { mapSelectBar }
+                } else { tableBar(blocks) }
+            }
+            if blocks.isEmpty {
+                VStack(spacing: 8) {
+                    Text(L("لا توجد ملخصات بعد", "No summaries yet")).font(Fonts.sans(16, .bold)).foregroundColor(Palette.textPrimary)
+                    Text(L("اختر الهايلايتر، واضغط عليه مرة ثانية وفعّل «التقاط النص»، ثم مرّر على أي سطر. ", "Pick the highlighter, tap it again and turn on “Text snap”, then run it over any line. ") +
+                         L("ظلّل نفس النص مرتين ليظهر مهمًا بخط عريض.\nيعمل مع العربية والإنجليزية في ملفات PDF الرقمية.", "Highlight the same text twice to make it important in bold.\nWorks with Arabic and English in digital PDFs."))
+                        .font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).lineSpacing(5)
+                }
+                .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 8)
+                            .fill(Palette.ivory).frame(height: 18).shadow(color: .black.opacity(0.08), radius: 1, y: -1)
+                        ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in
+                            blockRow(b, shown: blocks.map { $0.key })
+                                .padding(.horizontal, 14)
+                                .background(Palette.ivory)
+                        }
+                        UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 8, bottomTrailingRadius: 8, topTrailingRadius: 0)
+                            .fill(Palette.ivory).frame(height: 22)
+                    }
+                    .padding(14)
+                }
+            }
+        }
+        .frame(width: 420 * Fonts.base)
+        .frame(maxHeight: .infinity)
+        .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
+        .sheet(item: $editing) { m in MarkEditSheet(session: s, mark: m) }
+        .sheet(item: $editingTable) { t in TableEditorSheet(rows: t.rows, header: t.header) { rows, header in s.saveTable(t.key, rows: rows, header: header) } }
+        .dialogSheet(item: $cardDraft) { d in
+            CardEditorSheet(card: Card(id: UUID().uuidString, front: d.front, back: d.back, folder: app.entry(s.id)?.folder ?? "", docId: s.id, source: s.title),
+                            folder: app.entry(s.id)?.folder ?? "", confirm: L("حفظ البطاقة", "Save card"),
+                            cancelLabel: L("رجوع إلى التحديد", "Back to selection"), onSaved: { endSelecting() })
+                .environmentObject(app)
+        }
+        .dialogSheet(item: $cardFrom) { d in
+            CardEditorSheet(card: Card(id: UUID().uuidString, front: d.front, back: d.back, folder: app.entry(s.id)?.folder ?? "", docId: s.id, source: s.title),
+                            folder: app.entry(s.id)?.folder ?? "")
+                .environmentObject(app)
+        }
+        .sheet(item: Binding(get: { exportURL.map { IdURL(url: $0) } }, set: { exportURL = $0?.url })) { u in ShareSheet(items: [u.url]) }
+    }
+
+    // ---------- وضع اختيار النصوص لصنع جدول ----------
+
+    private func tableBar(_ blocks: [SBlock]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            let target = tableTarget
+            Text(target != nil && selected.isEmpty ? L("اختر النصوص التي تريد ضمها إلى الجدول", "Choose the texts to add to the table")
+                 : target != nil ? L("اخترت \(selected.count)، وستُضاف كصفوف في آخر الجدول", "\(selected.count) selected; they will be added as rows at the end of the table")
+                 : selected.isEmpty ? L("اختر النصوص بالترتيب الذي تريده في الجدول", "Choose texts in the order you want in the table")
+                 : L("اخترت \(selected.count). النصوص تملأ الصفوف بالترتيب حسب عدد الأعمدة", "\(selected.count) selected. Texts fill the rows in order by column count"))
+                .font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy)
+            if target == nil {
+                HStack(spacing: 6) {
+                    Text(L("الأعمدة:", "Columns:")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                    ForEach(1...4, id: \.self) { n in ChoiceChip(label: "\(n)", selected: tableCols == n) { tableCols = n } }
+                }
+            }
+            HStack {
+                if let t = target {
+                    Button(L("إضافة إلى الجدول", "Add to table")) {
+                        let rows: [[String]] = selected.compactMap { k in blocks.first { $0.key == k } }.flatMap { b -> [[String]] in
+                            switch b {
+                            case .table(let r, _, _, _): return r
+                            case .heading(let t, _, _): return [[t]]
+                            case .para(let t, _, _, _): return [t.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }]
+                            }
+                        }
+                        session.addToTable(t, keys: selected, newRows: rows)
+                        endSelecting()
+                    }
+                    .disabled(selected.isEmpty)
+                } else {
+                    Button(L("إنشاء الجدول", "Create table")) {
+                        session.makeTable(selected, cols: tableCols)
+                        endSelecting()
+                    }
+                    .disabled(selected.isEmpty)
+                }
+                Spacer()
+                Button(L("إلغاء", "Cancel"), action: endSelecting).foregroundColor(Palette.textSecondary)
+            }
+            .font(Fonts.sans(13, .bold))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.navySoft)
+    }
+
+    private func endSelecting() {
+        selecting = false
+        selectForMap = false
+        selected = []
+        tableTarget = nil
+        cardRoles = nil
+    }
+
+    /// شريط صنع البطاقة: «عنوان» أو «محتوى» على كل نص، ثم التالي.
+    private func cardRoleBar(_ roles: [String: Bool], _ blocks: [SBlock]) -> some View {
+        let titles = roles.values.filter { $0 }.count, contents = roles.values.filter { !$0 }.count
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(L("بطاقة · اختر عنوان أو محتوى على كل نص", "Card · tap Title or Content on each text") +
+                 L("  (\(titles) عنوان، \(contents) محتوى)", "  (\(titles) title, \(contents) content)"))
+                .font(Fonts.sans(13, .bold)).foregroundColor(.white)
+            HStack(spacing: 8) {
+                barButton(L("رجوع", "Back"), fill: Color.white.opacity(0.1), weight: 0.6) { cardRoles = nil }
+                barButton(L("التالي", "Next"), fill: Palette.navy, weight: 1) {
+                    // العنوان: النصوص المختارة عنوانًا بترتيبها، والمحتوى نقاط بترتيب الاختيار
+                    let texts: [(String, String)] = selected.compactMap { k in
+                        blocks.first { $0.key == k }.map { (k, Summary.plainText("", [$0]).trimmingCharacters(in: .whitespacesAndNewlines)) }
+                    }.filter { !$0.1.isEmpty }
+                    let front = texts.filter { roles[$0.0] == true }.map { $0.1.replacingOccurrences(of: "\n", with: " ") }.joined(separator: " · ")
+                    let body = texts.filter { roles[$0.0] != true }.map { $0.1 }
+                    let back = body.count == 1 ? body[0] : body.map { "• " + $0 }.joined(separator: "\n")
+                    if Premium.shared.require(.cards) { cardDraft = CardDraft(front: front, back: back) }
+                }
+                barButton(L("إلغاء", "Cancel"), fill: Color.white.opacity(0.1), weight: 0.6) { endSelecting() }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(hex: 0xFF123B37))
+    }
+
+    private func barButton(_ t: String, fill: Color, weight: CGFloat, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(t).font(Fonts.sans(14, .bold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 12).fill(fill))
+        }
+        .frame(maxWidth: weight >= 1 ? .infinity : 110)
+    }
+
+    /// شريط «اختيار عدة نصوص» للخريطة.
+    private var mapSelectBar: some View {
+        let n = selected.count
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(n == 0 ? L("اختر النصوص بالترتيب الذي تريده في الخريطة", "Pick texts in the order you want on the map")
+                 : L("اخترت \(n) · تُوضع كلها في المكان الذي تختاره، بنفس الترتيب", "\(n) selected · they go where you choose, in this order"))
+                .font(Fonts.sans(13, .bold)).foregroundColor(.white)
+            HStack(spacing: 8) {
+                Button {
+                    session.mapPlacing = selected.compactMap { MindMap.nodeKey($0) }
+                    session.mapOpen = true
+                    endSelecting()
+                } label: {
+                    Text("◎ " + L("ضعها في الخريطة", "Place on the map")).font(Fonts.sans(14, .bold)).foregroundColor(Color(hex: 0xFF1A2230).opacity(n > 0 ? 1 : 0.4))
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.gold.opacity(n > 0 ? 1 : 0.5)))
+                }
+                .disabled(n == 0)
+                Button {
+                    // رقم ١ عنوان تلقائيًا، والباقي محتوى
+                    var r: [String: Bool] = [:]
+                    for (i, k) in selected.enumerated() { r[k] = i == 0 }
+                    cardRoles = r
+                } label: {
+                    Text("▤ " + L("أضفها إلى بطاقة", "Add to card")).font(Fonts.sans(14, .bold)).foregroundColor(Color.white.opacity(n > 0 ? 1 : 0.4))
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(CardTeal.opacity(n > 0 ? 1 : 0.5)))
+                }
+                .disabled(n == 0)
+                Button(action: endSelecting) {
+                    Text(L("إلغاء", "Cancel")).font(Fonts.sans(14, .bold)).foregroundColor(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)))
+                }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(hex: 0xFF1A2230))
+    }
+
+    // ---------- جزء من الملخص ----------
+
+    @ViewBuilder
+    private func blockRow(_ b: SBlock, shown: [String]) -> some View {
+        let isSel = selected.contains(b.key)
+        let selIndex = selected.firstIndex(of: b.key)
+        let content = VStack(alignment: .leading, spacing: 2) {
+            if selecting, let i = selIndex {
+                Text("\(i + 1)").font(Fonts.sans(11, .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 1).background(RoundedRectangle(cornerRadius: 8).fill(Palette.goldDeep))
+            }
+            if selecting && b.key == tableTarget {
+                Text(L("الجدول الذي تضم إليه", "Table you are adding to")).font(Fonts.sans(11)).foregroundColor(Palette.goldDeep)
+            }
+            switch b {
+            case .heading(let t, _, _):
+                Text(t).font(Fonts.display(20)).foregroundColor(Palette.navy).lineSpacing(10).padding(.top, 10)
+            case .para(let t, let e, _, _):
+                Text(emphasized(t, e)).font(Fonts.sans(15)).foregroundColor(Palette.textPrimary).lineSpacing(10)
+            case .table(let rows, _, _, let header):
+                TableView(rows: rows, header: header)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 6)
+        let role = cardRoles?[b.key]
+        let inCard = cardRoles != nil
+        let fillC: Color = blockFill(inCard: inCard, role: role, sel: isSel)
+        let strokeC: Color = blockStroke(inCard: inCard, role: role, sel: isSel)
+        let lw: CGFloat = inCard && role != nil ? 2 : 1
+        let styled = content
+            .background(RoundedRectangle(cornerRadius: 8).fill(fillC))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeC, lineWidth: lw))
+            .opacity(inCard && role == nil ? 0.4 : 1)
+            .overlay(alignment: .topTrailing) {
+                if let r = role, inCard { roleChips(b.key, title: r).padding(.top, 4).padding(.trailing, 2) }
+            }
+            .contentShape(Rectangle())
+        if selecting {
+            styled.onTapGesture {
+                if var cr = cardRoles {
+                    // لمسة على نص مختار تبدّل دوره
+                    if let r = cr[b.key] { cr[b.key] = !r; cardRoles = cr }
+                    return
+                }
+                guard b.key != tableTarget else { return }
+                if selectForMap && MindMap.nodeKey(b.key) == nil { return }
+                if isSel { selected.removeAll { $0 == b.key } } else { selected.append(b.key) }
+            }
+        } else {
+            // نقرة: قائمة الأوامر؛ ضغط مطوّل: اختيار نص أو أكثر (للخريطة أو البطاقة) كما في أندرويد
+            styled
+                .onTapGesture { menuKey = b.key }
+                .onLongPressGesture(minimumDuration: 0.4) {
+                    if MindMap.nodeKey(b.key) != nil && !app.summaryTidy {
+                        selecting = true; selectForMap = true; tableTarget = nil; selected = [b.key]
+                    } else {
+                        menuKey = b.key
+                    }
+                }
+                .dropdown(isPresented: Binding(get: { menuKey == b.key }, set: { if !$0 { menuKey = nil } })) {
+                    VStack(alignment: .leading, spacing: 0) { blockMenu(b, shown: shown) }
+                        .buttonStyle(MenuRowStyle())
+                        .labelStyle(.titleAndIcon)
+                        .padding(.vertical, 6)
+                        .frame(width: 270)
+                        .simultaneousGesture(TapGesture().onEnded { DispatchQueue.main.async { menuKey = nil } })
+                }
+        }
+    }
+
+    private func blockFill(inCard: Bool, role: Bool?, sel: Bool) -> Color {
+        if inCard, let r = role { return r ? Palette.navySoft : CardTeal.opacity(0.08) }
+        return selecting && sel ? Palette.goldSoft : Color.clear
+    }
+
+    private func blockStroke(inCard: Bool, role: Bool?, sel: Bool) -> Color {
+        if inCard, let r = role { return r ? Palette.navy : CardTeal }
+        if !selecting { return .clear }
+        return sel ? Palette.gold : Palette.divider
+    }
+
+    private func roleChips(_ key: String, title: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach([(true, L("عنوان", "Title")), (false, L("محتوى", "Content"))], id: \.0) { v, label in
+                let on = v == title
+                Button { if var cr = cardRoles { cr[key] = v; cardRoles = cr } } label: {
+                    Text(label).font(Fonts.sans(12, .bold)).foregroundColor(on ? .white : Palette.textSecondary)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(on ? (v ? Palette.navy : CardTeal) : Color.clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white).shadow(color: .black.opacity(0.12), radius: 2, y: 1))
+    }
+
+    @ViewBuilder
+    private func blockMenu(_ b: SBlock, shown: [String]) -> some View {
+        let s = session
+        let edits = s.summaryEdits
+        let userTable = b.key.hasPrefix("g:")
+        let overridden = userTable || edits.kinds[b.key] != nil || edits.order.contains(b.key)
+        let pos = shown.firstIndex(of: b.key) ?? -1
+        let first = b.marks.first
+        let isTable: Bool = { if case .table = b { return true } else { return false } }()
+        if let mk = MindMap.nodeKey(b.key) {
+            Section(L("الخريطة الذهنية", "Mind map")) {
+                Button { s.mapPlacing = [mk]; s.mapOpen = true } label: { Label { Text(L("ضعه في الخريطة…", "Place on the map…")) } icon: { Image("ph_mindmap") } }
+                Button { selecting = true; selectForMap = true; tableTarget = nil; selected = [b.key] } label: { Label { Text(L("اختيار عدة نصوص…", "Select several texts…")) } icon: { Image("ph_pages") } }
+            }
+        }
+        Section {
+            switch b {
+            case .heading: Button { s.setBlockKind(b.key, "p") } label: { Label { Text(L("نص عادي", "Plain text")) } icon: { Image("ph_text") } }
+            case .para: Button { s.setBlockKind(b.key, "h") } label: { Label { Text(L("اجعله عنوانًا", "Make heading")) } icon: { Image("ph_text") } }
+            case .table:
+                if !userTable { Button { s.setBlockKind(b.key, "p") } label: { Label { Text(L("تحويل إلى نص", "Convert to text")) } icon: { Image("ph_text") } } }
+            }
+            if case let .table(rows, _, _, header) = b {
+                Button { editingTable = TableEdit(key: b.key, rows: rows, header: header) } label: { Label { Text(L("تحرير الجدول", "Edit table")) } icon: { Image("ph_sliders") } }
+                Button { selecting = true; tableTarget = b.key; selected = [] } label: { Label { Text(L("ضم نصوص إلى هذا الجدول", "Add texts to this table")) } icon: { Image("ph_plus") } }
+            }
+            if userTable {
+                Button { s.removeTable(b.key) } label: { Label { Text(L("فك الجدول", "Unmake table")) } icon: { Image("ph_close") } }
+            } else if !isTable {
+                Button { selecting = true; tableTarget = nil; selected = [b.key] } label: { Label { Text(L("ضعه في جدول…", "Put in a table…")) } icon: { Image("ph_pages") } }
+            }
+            if pos > 0 { Button { s.moveBlock(shown, b.key, -1) } label: { Label { Text(L("تحريك لأعلى", "Move up")) } icon: { Image("ph_caret_up") } } }
+            if pos >= 0 && pos < shown.count - 1 { Button { s.moveBlock(shown, b.key, 1) } label: { Label { Text(L("تحريك لأسفل", "Move down")) } icon: { Image("ph_caret_down") } } }
+            if overridden { Button { s.resetBlock(b.key) } label: { Label { Text(L("كما اكتشفه البرنامج", "As detected")) } icon: { Image("ph_recent") } } }
+        }
+        Section {
+            if let f = first {
+                Button { if let i = s.index(of: f.page) { s.goTo(page: i) } } label: { Label { Text(L("انتقال إلى الموضع", "Go to location")) } icon: { Image("ph_search") } }
+                Button { editing = f } label: { Label { Text(L("تعديل النص", "Edit text")) } icon: { Image("ph_note") } }
+            }
+            Button {
+                if Premium.shared.require(.cards) {
+                    let body = Summary.plainText("", [b]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if case let .heading(t, _, _) = b { cardFrom = CardDraft(front: t, back: "") } else { cardFrom = CardDraft(front: "", back: body) }
+                }
+            } label: { Label { Text(L("اجعله بطاقة", "Make it a card")) } icon: { Image("ph_cards") } }
+            Button {
+                UIPasteboard.general.string = Summary.plainText("", [b]).trimmingCharacters(in: .whitespacesAndNewlines)
+                app.say(.done, L("تم النسخ", "Copied"))
+            } label: { Label { Text(L("نسخ", "Copy")) } icon: { Image("ph_copy") } }
+            Button(role: .destructive) { b.marks.forEach { s.deleteMark($0.id) } } label: { Label { Text(L("حذف التمييز", "Delete highlight")) } icon: { Image("ph_trash") } }
+        }
+    }
+
+    /// نص الفقرة مع إبراز الأجزاء المهمة بخط عريض وتظليل ذهبي فاتح.
+    private func emphasized(_ text: String, _ emphasis: [String]) -> AttributedString {
+        var a = AttributedString(text)
+        for r in Summary.emphasisRanges(text, emphasis) {
+            guard let lo = AttributedString.Index(r.lowerBound, within: a), let hi = AttributedString.Index(r.upperBound, within: a) else { continue }
+            a[lo..<hi].font = Fonts.sans(15, .heavy)
+            a[lo..<hi].backgroundColor = Palette.goldSoft
+        }
+        return a
+    }
+}
+
+/// جدول في الملخص.
+struct TableView: View {
+    let rows: [[String]]
+    var header = true
+    var body: some View {
+        let cols = rows.map { $0.count }.max() ?? 1
+        VStack(spacing: 0) {
+            ForEach(0..<rows.count, id: \.self) { ri in
+                HStack(spacing: 0) {
+                    ForEach(0..<cols, id: \.self) { ci in
+                        Text(ci < rows[ri].count ? rows[ri][ci] : "")
+                            .font(Fonts.sans(12, header && ri == 0 ? .bold : .regular))
+                            .foregroundColor(Palette.textPrimary).lineSpacing(5)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(.horizontal, 6).padding(.vertical, 5)
+                            .border(Palette.divider, width: 0.5)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .background(header && ri == 0 ? Palette.navySoft : Color.clear)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.divider, lineWidth: 1))
+        .padding(.vertical, 4)
+    }
+}
+
+/// تحرير جدول: الخلايا، إضافة صف أو عمود، وصف العناوين.
+struct TableEditorSheet: View {
+    @State var rows: [[String]]
+    @State var header: Bool
+    let onSave: ([[String]], Bool) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var cols: Int { max(1, rows.map { $0.count }.max() ?? 1) }
+
+    var body: some View {
+        let cols = self.cols
+        SheetScaffold(title: L("تحرير الجدول", "Edit table")) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("انقر رقم الصف أو اسم العمود لنقله أو حذفه", "Tap a row number or column name to move or delete it"))
+                        .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                    // أسماء الأعمدة
+                    HStack(spacing: 4) {
+                        Color.clear.frame(width: 30, height: 1)
+                        ForEach(0..<cols, id: \.self) { ci in
+                            Menu {
+                                Button(L("إدراج عمود بعده", "Insert column after")) { rows = rows.map { r in var x = pad(r, cols); x.insert("", at: ci + 1); return x } }
+                                if cols > 1 { Button(L("حذف العمود", "Delete column"), role: .destructive) { rows = rows.map { r in var x = pad(r, cols); x.remove(at: ci); return x } } }
+                            } label: {
+                                Text(L("عمود \(ci + 1)", "Column \(ci + 1)")).font(Fonts.sans(11, .bold)).foregroundColor(Palette.navy)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 4)
+                                    .background(RoundedRectangle(cornerRadius: 6).fill(Palette.navySoft.opacity(0.6)))
+                            }
+                        }
+                    }
+                    ForEach(0..<rows.count, id: \.self) { ri in
+                        HStack(spacing: 4) {
+                            Menu {
+                                Button(L("إدراج صف بعده", "Insert row after")) { rows.insert(Array(repeating: "", count: cols), at: ri + 1) }
+                                if ri > 0 { Button(L("تحريك لأعلى", "Move up")) { rows.swapAt(ri, ri - 1) } }
+                                if ri < rows.count - 1 { Button(L("تحريك لأسفل", "Move down")) { rows.swapAt(ri, ri + 1) } }
+                                Button(L("حذف الصف", "Delete row"), role: .destructive) { rows.remove(at: ri) }
+                            } label: {
+                                Text("\(ri + 1)").font(Fonts.sans(12, .bold)).foregroundColor(Palette.navy)
+                                    .frame(width: 30, height: 30).background(Circle().fill(Palette.navySoft.opacity(0.6)))
+                            }
+                            ForEach(0..<cols, id: \.self) { ci in
+                                TextField("", text: Binding(get: { ri < rows.count && ci < rows[ri].count ? rows[ri][ci] : "" }, set: { v in
+                                    guard ri < rows.count else { return }
+                                    while rows[ri].count <= ci { rows[ri].append("") }
+                                    rows[ri][ci] = v
+                                }), axis: .vertical)
+                                .font(Fonts.sans(13, header && ri == 0 ? .bold : .regular))
+                                .padding(6).background(RoundedRectangle(cornerRadius: 6).fill(header && ri == 0 ? Palette.navySoft : Color.white))
+                            }
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        ChoiceChip(label: L("+ صف", "+ Row"), selected: false) { rows.append(Array(repeating: "", count: cols)) }
+                        ChoiceChip(label: L("+ عمود", "+ Column"), selected: false) { rows = rows.map { pad($0, cols) + [""] } }
+                        ChoiceChip(label: L("تبديل الصفوف والأعمدة", "Swap rows and columns"), selected: false) {
+                            let r = rows.map { pad($0, cols) }
+                            rows = (0..<cols).map { c in r.map { $0[c] } }
+                        }
+                    }
+                    Toggle(isOn: $header) { Text(L("الصف الأول عناوين", "First row is a header")).font(Fonts.sans(13)) }.tint(Palette.navy)
+                    HStack {
+                        Spacer()
+                        NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
+                        NavyButton(label: L("حفظ", "Save")) { onSave(rows, header); dismiss() }
+                    }
+                }
+                .padding(.horizontal, 22).padding(.bottom, 20)
+            }
+        }
+        .environment(\.colorScheme, .light)
+    }
+
+    private func pad(_ r: [String], _ n: Int) -> [String] { r.count >= n ? r : r + Array(repeating: "", count: n - r.count) }
+}
+
+struct IdURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+/// الترجمة على الجهاز (iPadOS 17.4 وما بعده).
+struct TranslateModifier: ViewModifier {
+    let text: String
+    @Binding var isPresented: Bool
+    func body(content: Content) -> some View {
+        if #available(iOS 17.4, *) {
+            content.translationPresentation(isPresented: $isPresented, text: text)
+        } else {
+            content.onChange(of: isPresented) { _, v in
+                guard v else { return }
+                isPresented = false
+                let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                if let u = URL(string: "https://translate.google.com/?sl=auto&tl=ar&text=\(q)") { UIApplication.shared.open(u) }
+            }
+        }
+    }
+}
+
+/// تعديل نص التمييز.
+struct MarkEditSheet: View {
+    @ObservedObject var session: DocSession
+    let mark: TextMark
+    @State private var text = ""
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        SheetScaffold(title: L("تعديل النص", "Edit text")) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L("سطر يبدأ بـ # يصبح عنوانًا. خلايا الجدول يفصلها |. سطر فارغ يبدأ فقرة جديدة.", "A line starting with # becomes a heading. Table cells are separated by |. A blank line starts a new paragraph."))
+                    .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                TextEditor(text: $text).font(Fonts.sans(15)).frame(minHeight: 200)
+                    .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Color.white)).roundedBorder(Palette.divider, radius: 12)
+                HStack {
+                    NavyButton(label: L("ترتيب النص", "Tidy text"), filled: false) { text = TextTidy.tidyEditable(text) }
+                    Spacer()
+                    NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
+                    NavyButton(label: L("حفظ", "Save")) { session.updateMark(mark.id) { $0.text = text }; dismiss() }
+                }
+            }
+            .padding(.horizontal, 22).padding(.bottom, 16)
+        }
+        .onAppear { text = mark.text }
+    }
+}
+
+/// صف في قائمة أوامر الملخص.
+struct MenuRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Fonts.sans(15))
+            .foregroundColor(Palette.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(configuration.isPressed ? Palette.navySoft : Color.clear)
+            .contentShape(Rectangle())
+    }
+}

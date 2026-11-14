@@ -1,0 +1,5 @@
+build/
+iosApp/build/
+iosApp/*.xcodeproj/
+xcuserdata/
+*.log

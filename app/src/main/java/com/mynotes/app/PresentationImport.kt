@@ -134,7 +134,7 @@ fun PresentationConvertDialog() {
         } else {
             prefs.edit().remove("ppt_converter").apply()
             choosing = true
-            c.messages.tryEmit(L("تعذر فتح أداة التحويل، اختر أداة أخرى", "Couldn’t open the converter; choose another"))
+            c.say(MsgKind.ERROR, L("تعذر فتح أداة التحويل، اختر أداة أخرى", "Couldn’t open the converter; choose another"))
         }
     }
 

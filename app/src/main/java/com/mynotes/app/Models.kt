@@ -14,6 +14,9 @@ object LineStyle {
 /** أشكال أداة «الأشكال». */
 enum class ShapeKind { LINE, ELBOW, CURVE, RECT, CIRCLE, TRIANGLE, DIAMOND, ELLIPSE }
 
+/** شكل مغلق (له داخل يمكن ملؤه). */
+fun ShapeKind.closed(): Boolean = this != ShapeKind.LINE && this != ShapeKind.ELBOW && this != ShapeKind.CURVE
+
 /** رأس السهم في طرف الخط. */
 enum class ArrowHead { NONE, OPEN, CLOSED }
 
@@ -79,7 +82,25 @@ data class Ink(
     /** نمط الخط (LineStyle). */
     val style: Int = LineStyle.SOLID,
     /** رُسم بأداة الأشكال أو حُوّل إلى شكل. */
-    val shape: Boolean = false
+    val shape: Boolean = false,
+    /**
+     * حرف مملوء من خط (تجميل خط اليد): النقاط حدود شكل الحرف (InkFill)، ويُرسم مملوءاً.
+     * width هنا تعريض إضافي حول الحرف (0 = بلا).
+     */
+    val fill: Boolean = false,
+    /**
+     * للحروف المملوءة: خط قاعدة السطر وحجم الخط كنسبة من ارتفاع حدود هذا الحرف
+     * (فتبقى صحيحة بعد تحريك الحرف أو تكبيره بالتحديد الحر). -1 = غير معروف.
+     */
+    val lineF: Float = -1f,
+    val emF: Float = 0f,
+    /** شكل مغلق بملء خفيف بلونه (يُرسم تحت الكتابة). */
+    val shapeFill: Boolean = false,
+    /** شفافية ملء الشكل (0..1). */
+    val fillAlpha: Float = SHAPE_FILL_ALPHA,
+    /** للحروف المحوّلة: الكلمة التي ينتمي إليها الحرف ورقمها (لقراءة الصفحة والتمييز والبحث). */
+    val word: String = "",
+    val wid: Long = 0L
 )
 
 /** صورة مضافة فوق صفحة. x و y الزاوية العليا اليسرى، w العرض، aspect = العرض ÷ الارتفاع. */
@@ -138,7 +159,19 @@ data class TextBox(
     val sticky: Boolean = false,
     /** رابط إلى مستند (معرّفه) وصفحة فيه؛ null = ليس رابطًا. */
     val linkDoc: String? = null,
-    val linkPage: Int = 0
+    val linkPage: Int = 0,
+    /** اسم الخط من مكتبة الخطوط؛ فارغ = الخط الافتراضي. */
+    val font: String = "",
+    /** الكتابة اليدوية التي حُوّلت إلى هذا النص (لإرجاعها)؛ فارغة لمربعات النص العادية. */
+    val ink: List<Ink> = emptyList(),
+    /** بدائل القراءة لكل كلمة متحولة (للتصحيح بالنقر): الكلمة ← قراءات أخرى لها. */
+    val alts: Map<String, List<String>> = emptyMap(),
+    /** نمط النص: عريض، مائل، تحته خط. */
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    /** المحاذاة: 0 البداية، 1 الوسط، 2 النهاية. */
+    val align: Int = 0
 )
 
 /** عشرة أحجام لكل أداة. للممحاة القيمة هي نصف القطر، وللهايلايتر عرض الشريط. */
@@ -229,7 +262,9 @@ data class DocEntry(
     /** لون غلاف الدفتر في المكتبة (ARGB)؛ 0 = اللون الافتراضي. */
     val coverColor: Int = 0,
     /** ملصق على الغلاف (رمز تعبيري)؛ فارغ = بدون. */
-    val sticker: String = ""
+    val sticker: String = "",
+    /** خريطة ذهنية مستقلة (من «جديد»): تُفتح على الخريطة مباشرة، وكل عقدها نصوص حرة. */
+    val isMap: Boolean = false
 )
 
 fun DocEntry.activityAt(): Long = maxOf(lastOpened, addedAt)

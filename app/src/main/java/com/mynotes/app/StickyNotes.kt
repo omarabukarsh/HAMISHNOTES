@@ -106,7 +106,7 @@ fun NotesLayer(s: DocSession, page: Int, night: Boolean) {
                                 while (y < size.height) { drawLine(lineCol, Offset(0f, y), Offset(size.width, y), 1f); y += step }
                             }
                         }
-                        n.ink.forEach { st -> drawStroke(st, if (night) nightOf(st.color) else st.color, scaleW = size.width) }
+                        drawStack(n.ink, { st -> if (night) nightOf(st.color) else st.color }, scaleW = size.width)
                     }
                     val pad = with(density) { (n.w * W * 0.06f).toDp() }
                     val fs = with(density) { (n.textSize() * W).toSp() }
@@ -155,12 +155,17 @@ fun StickyBar() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // اللون: نقرة تختاره (ثم نقرة على الصفحة)، أو ضغطة مطوّلة وسحب إلى المكان على الصفحة
+                val session = AppController.tabs.firstOrNull { it.id == AppController.activeId }
                 StickyColors.forEach { col ->
                     val sel = PenPrefs.stickyColor == col
+                    val payload = remember(col) { TrayPayload.Sticky(col) }
                     Box(
                         Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (sel) Palette.NavySoft else Color.Transparent)
-                            .clickable { PenPrefs.changeStickyColor(col) },
+                            .clickable { PenPrefs.changeStickyColor(col) }
+                            // اسحب اللون لأسفل نحو الصفحة: تخرج الملاحظة تحت إصبعك
+                            .dragToPage(session, payload, null, axis = DragAxis.Vertical, onStart = { PenPrefs.changeStickyColor(col) }),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(col)).border(1.dp, Palette.Divider, RoundedCornerShape(6.dp)))
@@ -170,7 +175,7 @@ fun StickyBar() {
                 if (AppController.noteClipboard != null) {
                     TBtn(selected = AppController.notePastePending, onClick = {
                         AppController.notePastePending = !AppController.notePastePending
-                        if (AppController.notePastePending) AppController.messages.tryEmit(L("انقر مكان لصق الملاحظة", "Tap where to paste the note"))
+                        if (AppController.notePastePending) AppController.say(MsgKind.TIP, L("انقر مكان لصق الملاحظة", "Tap where to paste the note"))
                     }) { PhIcon(R.drawable.ph_copy, tintFor(AppController.notePastePending), 20.dp, L("لصق", "Paste")) }
                 }
                 Box {
@@ -272,7 +277,7 @@ fun NoteBar(s: DocSession) {
             TBtn(onClick = {
                 c.noteClipboard = n
                 s.deleteNote(id)
-                c.messages.tryEmit(L("قُصّت الملاحظة؛ الصقها من أداة الملاحظات", "Note cut; paste it from the sticky note tool"))
+                c.say(MsgKind.DONE, L("قُصّت الملاحظة؛ الصقها من أداة الملاحظات", "Note cut; paste it from the sticky note tool"))
             }) { PhIcon(R.drawable.ph_scissors, Palette.TextSecondary, 20.dp, L("قص", "Cut")) }
             TBtn(onClick = { s.duplicateNote(id) }) { PhIcon(R.drawable.ph_copy, Palette.TextSecondary, 20.dp, L("تكرار", "Duplicate")) }
             TBtn(onClick = { s.deleteNote(id) }) { PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp, L("حذف", "Delete")) }
@@ -281,7 +286,7 @@ fun NoteBar(s: DocSession) {
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                     DropdownMenuItem(text = { Text(L("نسخ", "Copy")) }, onClick = {
                         more = false; c.noteClipboard = n
-                        c.messages.tryEmit(L("نُسخت الملاحظة", "Note copied"))
+                        c.say(MsgKind.DONE, L("نُسخت الملاحظة", "Note copied"))
                     })
                     DropdownMenuItem(text = { Text(L("مسح الكتابة داخلها", "Clear its writing")) }, onClick = {
                         more = false; s.editNote(id) { it.copy(ink = emptyList()) }

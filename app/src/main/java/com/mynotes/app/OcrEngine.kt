@@ -25,7 +25,9 @@ object OcrEngine {
 
     /** بصمة بسيطة لكتابة المستخدم على الصفحة، لمعرفة هل نتيجة القراءة قديمة. */
     fun versionOf(strokes: List<Ink>): Int =
-        strokes.size * 1_000_003 + strokes.sumOf { it.pts.size }
+        // مع موضع كل خط: تحريك الكتابة بالتحديد الحر يعيد قراءتها في مكانها الجديد
+        strokes.size * 1_000_003 + strokes.sumOf { it.pts.size } +
+            strokes.sumOf { s -> s.pts.firstOrNull()?.let { ((it.x + it.y * 3f) * 4096f).toInt() } ?: 0 } * 7
 
     /** يدمج كتابة المستخدم (بدون الهايلايتر) فوق صورة الصفحة لتُقرأ معها. */
     fun compose(base: Bitmap, strokes: List<Ink>): Bitmap {

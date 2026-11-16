@@ -53,6 +53,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -91,6 +97,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -106,6 +113,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.toArgb
@@ -173,7 +181,16 @@ fun ReaderScreen(session: DocSession) {
             Modifier.fillMaxSize().background(Palette.Desk), Alignment.Center
         ) { CircularProgressIndicator() }
         is SessionStatus.Failed -> FailedView(session, st.message)
-        is SessionStatus.Ready -> ReaderContent(session)
+        is SessionStatus.Ready -> if (session.isMap) {
+            // خريطة مستقلة: الخريطة نفسها هي المستند، وإغلاقها يغلق التبويب
+            Box(Modifier.fillMaxSize().background(Palette.Ivory))
+            MindMapDialog(
+                session,
+                onJump = {},
+                onDismiss = { AppController.closeTab(session.id) },
+                standalone = true
+            )
+        } else ReaderContent(session)
     }
 }
 
@@ -213,14 +230,18 @@ private fun ReaderContent(s: DocSession) {
     val exportDoc: () -> Unit = { docSaver.launch(L("$safeTitle - مع التعليقات.pdf", "$safeTitle - annotated.pdf")) }
     val exportSummary: () -> Unit = {
         if (s.summaryAiMode) {
-            if (AiOrganizer.result(s.id) == null) c.messages.tryEmit(L("رتّب الملخص بالذكاء الاصطناعي أولًا", "Organize the summary with AI first"))
+            if (AiOrganizer.result(s.id) == null) c.say(MsgKind.ERROR, L("رتّب الملخص بالذكاء الاصطناعي أولًا", "Organize the summary with AI first"))
             else summarySaver.launch(L("ملخص ذكاء $safeTitle.pdf", "AI summary $safeTitle.pdf"))
-        } else if (s.allMarks().isEmpty()) c.messages.tryEmit(L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
+        } else if (s.allMarks().isEmpty()) c.say(MsgKind.ERROR, L("لا توجد ملخصات لحفظها بعد", "No summaries to save yet"))
         else summarySaver.launch(L("ملخص $safeTitle.pdf", "Summary $safeTitle.pdf"))
     }
 
     // إيقاف أداة التحديد الحر يلغي التحديد
     LaunchedEffect(c.lassoActive) { if (!c.lassoActive) s.lassoSel = null }
+    // التمرير باليد: يتبع رقم الصفحة الصفحةَ الأكثر ظهوراً بدل آخر صفحة لُمست
+    LaunchedEffect(s) {
+        s.listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) s.activePage = -1 }
+    }
 
     // MyNotes Pro: بعد تظليل جديد يُكمل الذكاء الاصطناعي الملخص المرتّب (وبطاقات المراجعة) تلقائيًا،
     // بعد توقف قصير عن الكتابة حتى لا يبطئ القلم
@@ -298,6 +319,9 @@ private fun ReaderContent(s: DocSession) {
                 }
             }
         }
+        // درج الملصقات والصور الجانبي، وصورة العنصر المسحوب منه
+        if (!c.focusMode) SideTray(s)
+        TrayDragGhost(s)
     }
 
     val req = s.textDialog
@@ -443,14 +467,9 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     var audioDialog by remember { mutableStateOf(false) }
     var splitDialog by remember { mutableStateOf(false) }
     var pdfAfter by remember { mutableStateOf(0) }
-    val cur = s.listState.firstVisibleItemIndex
+    // الصفحة الحالية: آخر صفحة لُمست، وإلا الأكثر ظهوراً (وعليها تعمل الأزرار)
+    val cur by remember(s) { derivedStateOf { s.currentPage() } }
     val pill = RoundedCornerShape(28.dp)
-
-    val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) c.insertImage(s, uri, s.listState.firstVisibleItemIndex)
-    }
     val pdfPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -475,7 +494,10 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     .shadow(5.dp, CircleShape)
                     .background(if (s.summaryOpen) Palette.GoldSoft else Color.White, CircleShape)
                     .clip(CircleShape)
-                    .clickable { s.summaryOpen = !s.summaryOpen; if (s.summaryOpen) s.pageMenuOpen = false },
+                    .clickable {
+                        s.summaryOpen = !s.summaryOpen
+                        if (s.summaryOpen) { s.pageMenuOpen = false; s.trayMode = null }
+                    },
                 contentAlignment = Alignment.Center
             ) { SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold) }
         }
@@ -499,7 +521,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 // التنقل بين الصفحات
                 if (v("nav")) {
                     TBtn(onClick = {
-                        scope.launch { s.listState.animateScrollToItem((cur - 1).coerceAtLeast(0)) }
+                        val t = (cur - 1).coerceAtLeast(0)
+                        scope.launch { s.listState.animateScrollToItem(t); s.activePage = t }
                     }) { ChevronGlyph(Palette.TextPrimary, up = true) }
                     Box(
                         Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
@@ -512,7 +535,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         )
                     }
                     TBtn(onClick = {
-                        scope.launch { s.listState.animateScrollToItem((cur + 1).coerceAtMost(count - 1)) }
+                        val t = (cur + 1).coerceAtMost(count - 1)
+                        scope.launch { s.listState.animateScrollToItem(t); s.activePage = t }
                     }) { ChevronGlyph(Palette.TextPrimary, up = false) }
                 }
                 // علامة مرجعية للصفحة الحالية
@@ -590,13 +614,13 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             } else {
                                 c.lassoActive = true
                                 PenPrefs.shapeActive = false
-                                c.messages.tryEmit(L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
+                                c.say(MsgKind.TIP, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, tintFor(c.lassoActive)) }
                         DropdownMenu(
                             expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
                             shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
-                        ) { LassoMenuContent(onOff = { lassoMenu = false; c.lassoActive = false }) }
+                        ) { LassoMenuContent(s, onOff = { lassoMenu = false; c.lassoActive = false }) }
                     }
                 }
                 // الأشكال
@@ -611,12 +635,20 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         }
                     }) { PhIcon(R.drawable.ph_shapes, tintFor(PenPrefs.shapeActive && !c.lassoActive)) }
                 }
+                // «Aa تلقائي»: الكتابة اليدوية تتحول إلى الخط المختار بعد إنهاء الجملة
+                if (v("autofont")) {
+                    var autoDlg by remember { mutableStateOf(false) }
+                    TBtn(selected = AutoFont.on, locked = false, onClick = { autoDlg = true }) {
+                        Text("Aa", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (AutoFont.on) Palette.GoldDeep else Palette.TextSecondary)
+                    }
+                    if (autoDlg) AutoFontDialog { autoDlg = false }
+                }
                 // التبديل بين الكتابة بالقلم فقط، والكتابة بالقلم والإصبع
                 if (PenInput.showToggle) {
                     TBtn(selected = PenInput.fingerWrites, onClick = {
                         val on = !PenInput.fingerWrites
                         PenInput.chooseFingerWrites(on)
-                        c.messages.tryEmit(
+                        c.say(MsgKind.TIP, 
                             if (on) L("صار الإصبع يكتب · اسحب بإصبعين للتمرير", "Your finger now writes · drag with two fingers to scroll")
                             else L("القلم يكتب، والإصبع للتمرير", "The pen writes; your finger scrolls")
                         )
@@ -629,13 +661,50 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 }
 
                 // صورة / نص / إضافة صفحة / قراءة النص / بحث / حفظ
-                if (listOf("image", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export", "ai").any(v)) ToolbarSep()
+                if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export", "ai").any(v)) ToolbarSep()
                 if (v("image")) {
-                    TBtn(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
-                        ImageGlyph(Palette.TextSecondary)
+                    // معرض صور الجهاز داخل التطبيق (و«من الملفات» داخله)
+                    Box(Modifier.onGloballyPositioned { val r = it.boundsInWindow(); if (s.trayAnchors["photos"] != r) s.trayAnchors["photos"] = r }) {
+                        TBtn(selected = s.trayMode == "photos", onClick = { s.trayMode = if (s.trayMode == "photos") null else "photos" }) {
+                            ImageGlyph(tintFor(s.trayMode == "photos"))
+                        }
                     }
                 }
-                if (v("text")) TBtn(onClick = { s.textDialog = TextDialogReq(null, cur) }) { TextGlyph(Palette.TextSecondary) }
+                if (v("stickers")) {
+                    Box(Modifier.onGloballyPositioned { val r = it.boundsInWindow(); if (s.trayAnchors["stickers"] != r) s.trayAnchors["stickers"] = r }) {
+                        TBtn(selected = s.trayMode == "stickers", onClick = { s.trayMode = if (s.trayMode == "stickers") null else "stickers" }) {
+                            PhIcon(R.drawable.ph_sticker, tintFor(s.trayMode == "stickers"))
+                        }
+                    }
+                }
+                if (v("text")) {
+                    // نقرة تفعّل أداة النص، ونقرة ثانية (أو أثناء الكتابة في مربع) تفتح نافذة مربع النص
+                    var textMenu by remember { mutableStateOf(false) }
+                    Box {
+                        TBtn(selected = PenPrefs.textActive || s.inlineEditId != null, onClick = {
+                            if (PenPrefs.textActive || s.inlineEditId != null) {
+                                textMenu = true
+                            } else {
+                                s.finishInlineEdit()
+                                c.lassoActive = false
+                                PenPrefs.shapeActive = false
+                                PenPrefs.stickyActive = false
+                                PenPrefs.textActive = true
+                                c.say(MsgKind.TIP, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
+                            }
+                        }) { TextGlyph(tintFor(PenPrefs.textActive || s.inlineEditId != null)) }
+                        DropdownMenu(
+                            expanded = textMenu, onDismissRequest = { textMenu = false },
+                            shape = RoundedCornerShape(18.dp), containerColor = SheetBg, shadowElevation = 12.dp
+                        ) {
+                            TextToolWindow(s, onTurnOff = {
+                                textMenu = false
+                                PenPrefs.textActive = false
+                                s.finishInlineEdit()
+                            })
+                        }
+                    }
+                }
                 if (v("sticky")) {
                     // أداة الملاحظات اللاصقة: شريط ألوان، ثم نقرة على الصفحة تضع الملاحظة
                     TBtn(selected = PenPrefs.stickyActive, onClick = {
@@ -644,10 +713,11 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         } else {
                             c.lassoActive = false
                             PenPrefs.shapeActive = false
+                            PenPrefs.textActive = false
                             PenPrefs.stickyActive = true
-                            c.messages.tryEmit(L("اختر لونًا ثم انقر على الصفحة لوضع الملاحظة", "Pick a color, then tap the page to place the note"))
+                            c.say(MsgKind.TIP, L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
                         }
-                    }) { PhIcon(R.drawable.ph_note, tintFor(PenPrefs.stickyActive)) }
+                    }) { PhIcon(R.drawable.ph_sticky_note, tintFor(PenPrefs.stickyActive)) }
                 }
                 if (v("link")) {
                     TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
@@ -745,7 +815,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         s.drawerOpen = false
                         s.summaryOpen = false
                         c.focusMode = true
-                        c.messages.tryEmit(L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
+                        c.say(MsgKind.TIP, L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
                     }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
                 }
                 // الإعدادات: ظاهرة دائمًا
@@ -763,7 +833,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
         PageJumpDialog(
             count = count,
             current = cur,
-            onGo = { p -> scope.launch { s.listState.scrollToItem(p) } },
+            onGo = { p -> scope.launch { s.listState.scrollToItem(p); s.activePage = p } },
             onDismiss = { jump = false }
         )
     }
@@ -962,7 +1032,7 @@ private fun ToolSlot(
             expanded = open && selected,
             onDismissRequest = onDismiss,
             shape = RoundedCornerShape(18.dp),
-            containerColor = Color.White,
+            containerColor = if (tool == Tool.LASER) SheetBg else Color.White,
             shadowElevation = 12.dp
         ) {
             ToolSettingsPanel(onCustomColor)
@@ -975,6 +1045,11 @@ private fun ToolSlot(
 private fun ToolSettingsPanel(onCustomColor: () -> Unit) {
     val c = AppController
     val t = c.tool
+    // الليزر: نافذة بتصميم البطاقات
+    if (t == Tool.LASER) {
+        LaserWindow(onCustomColor)
+        return
+    }
     Column(Modifier.width(264.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PhIcon(toolIcon(t, true), Palette.Navy, 18.dp)
@@ -1263,7 +1338,9 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     session: DocSession,
     index: Int,
     down: PointerInputChange,
-    w: Float
+    w: Float,
+    /** الخطوط بعد تعديلها عند الرفع (تبقى مرسومة حتى تظهر في صورة الصفحة). */
+    onCommitted: (List<Ink>) -> Unit = {}
 ): Boolean {
     if (session.lassoSel?.page != index) return false
     val bb = session.lassoBounds() ?: return false
@@ -1275,6 +1352,11 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     down.consume()
     session.beginEdit()
     var last = down.position
+    // الخطوط لا تُعدَّل أثناء السحب: يُعرض تحريكها فوق الصفحة، وتُعدَّل مرة واحدة عند الرفع
+    var dxT = 0f
+    var dyT = 0f
+    var kT = 1f
+    session.lassoPreview = DocSession.LassoPreview(0f, 0f, 1f, bb[0], bb[1])
     try {
         while (true) {
             val e = awaitPointerEvent()
@@ -1290,15 +1372,25 @@ private suspend fun AwaitPointerEventScope.dragLasso(
                     val k = (d1 / d0).coerceIn(0.8f, 1.25f)
                     val cur = session.lassoBounds()
                     val size = if (cur != null) (cur[2] - cur[0]) else 1f
-                    if (!(k < 1f && size < 0.03f)) session.lassoTransform(0f, 0f, k, bb[0], bb[1])
+                    if (!(k < 1f && size < 0.03f)) {
+                        kT *= k
+                        session.lassoMoveObjects(0f, 0f, k, bb[0], bb[1])
+                        session.lassoPreview = DocSession.LassoPreview(0f, 0f, kT, bb[0], bb[1])
+                    }
                 }
             } else {
-                session.lassoTransform((ch.position.x - last.x) / w, (ch.position.y - last.y) / w)
+                val dx = (ch.position.x - last.x) / w
+                val dy = (ch.position.y - last.y) / w
+                dxT += dx
+                dyT += dy
+                session.lassoMoveObjects(dx, dy)
+                session.lassoPreview = DocSession.LassoPreview(dxT, dyT, 1f, bb[0], bb[1])
             }
             last = ch.position
             ch.consume()
         }
     } finally {
+        onCommitted(session.lassoCommitPreview())
         session.endEdit()
     }
     return true
@@ -1397,7 +1489,34 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+    // درج الأوراق ودرج الملخصات يُغلقان بنقرة إصبع خارجهما (والقلم يبقى يكتب)
+    val areaCoords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    val drawerRects = remember { HashMap<String, androidx.compose.ui.geometry.Rect>() }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().clipToBounds()
+            .onGloballyPositioned { areaCoords[0] = it }
+            .pointerInput(s) {
+                awaitEachGesture {
+                    val d = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (d.type != PointerType.Touch || !s.sideOpen()) return@awaitEachGesture
+                    val inDrawer = (s.drawerOpen && drawerRects["pages"]?.contains(d.position) == true) ||
+                        (s.summaryOpen && drawerRects["summary"]?.contains(d.position) == true)
+                    if (inDrawer) return@awaitEachGesture
+                    var tap = true
+                    while (true) {
+                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                        if (e.changes.count { it.pressed } > 1) tap = false
+                        val ch = e.changes.firstOrNull { it.id == d.id } ?: break
+                        if (!ch.pressed) break
+                        if ((ch.position - d.position).getDistance() > viewConfiguration.touchSlop) tap = false
+                    }
+                    if (tap) {
+                        s.drawerOpen = false
+                        s.summaryOpen = false
+                    }
+                }
+            }
+    ) {
         val vw = constraints.maxWidth.toFloat()
         val vh = constraints.maxHeight.toFloat()
         val pad = with(density) { 12.dp.toPx() }
@@ -1558,7 +1677,13 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             if (s.drawerOpen && wide) PAGES_PANEL_W.dp else 0.dp, tween(240), label = "sidePad"
         )
         Box(
-            Modifier.fillMaxSize().padding(start = sidePad).multiFingerTap(
+            Modifier.fillMaxSize().padding(start = sidePad)
+                // على الهاتف تظلل الصفحة قليلاً والدرج مفتوح (رسم فقط؛ القلم يبقى يكتب)
+                .drawWithContent {
+                    drawContent()
+                    if (!wide && s.sideOpen()) drawRect(Color.Black.copy(alpha = 0.14f))
+                }
+                .multiFingerTap(
                 onTwo = { if (AppController.fingerUndo && s.undoStack.isNotEmpty()) s.undo() },
                 onThree = { if (AppController.fingerUndo && s.redoStack.isNotEmpty()) s.redo() }
             ).zoomAndPan(
@@ -1570,7 +1695,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         ) {
             LazyColumn(
                 state = s.listState,
-                modifier = Modifier.graphicsLayer {
+                modifier = Modifier.onGloballyPositioned { s.pagesViewport = it.boundsInWindow() }.graphicsLayer {
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                     scaleX = pinchK
                     scaleY = pinchK
@@ -1604,7 +1729,9 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         // الدرجان ينزلقان من حافتيهما عند الفتح
         AnimatedVisibility(
             visible = s.drawerOpen,
-            modifier = Modifier.align(Alignment.CenterStart),
+            modifier = Modifier.align(Alignment.CenterStart).onGloballyPositioned { lc ->
+                areaCoords[0]?.let { a -> if (a.isAttached && lc.isAttached) drawerRects["pages"] = a.localBoundingBoxOf(lc, false) }
+            },
             enter = Motion.drawerEnter(fromStart = true),
             exit = Motion.drawerExit(toStart = true)
         ) {
@@ -1612,7 +1739,9 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         }
         AnimatedVisibility(
             visible = s.summaryOpen && UiPrefs.summariesOn,
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier.align(Alignment.CenterEnd).onGloballyPositioned { lc ->
+                areaCoords[0]?.let { a -> if (a.isAttached && lc.isAttached) drawerRects["summary"] = a.localBoundingBoxOf(lc, false) }
+            },
             enter = Motion.drawerEnter(fromStart = false),
             exit = Motion.drawerExit(toStart = false)
         ) {
@@ -1656,8 +1785,9 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             if (s.selection != null) SelectionBar(s)
             if (s.lassoSel != null) LassoBar(s)
             if (s.selectedImageId != null) ImageBar(s)
-            if (s.selectedTextId != null) TextBoxBar(s)
+            if (s.selectedTextId != null && s.inlineEditId == null) TextBoxBar(s)
             if (s.selectedNoteId != null) NoteBar(s)
+            AutoFontChip(s)
         }
     }
 }
@@ -1689,7 +1819,7 @@ private fun SelectionBar(s: DocSession) {
                 if (text.isNotEmpty()) {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-                    AppController.messages.tryEmit(L("تم نسخ النص", "Text copied"))
+                    AppController.say(MsgKind.DONE, L("تم نسخ النص", "Text copied"))
                 }
             }) { Text(L("نسخ", "Copy")) }
             TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
@@ -1739,11 +1869,23 @@ private fun SelectionBar(s: DocSession) {
 private fun LassoBar(s: DocSession) {
     val c = AppController
     var toText by remember { mutableStateOf(false) }
+    var changeFont by remember { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
         Row(
             Modifier.padding(horizontal = 8.dp, vertical = 4.dp).horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // «تغيير الخط» أولاً وبارزاً كي يُرى مباشرة
+            Box(
+                Modifier.padding(end = 4.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Navy)
+                    .clickable { changeFont = true }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text("Aa " + L("تغيير الخط", "Change font"), color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = { toText = true }) { Text(L("إلى نص", "To text")) }
+            TextButton(onClick = { StickerStore.saveFromLasso(s) }) { Text("☺ " + L("ملصق", "Sticker")) }
+            TextButton(onClick = { s.lassoDuplicate() }) { Text(L("نسخ", "Duplicate")) }
             c.penPalette.take(6).forEach { col ->
                 Box(
                     Modifier.size(32.dp).clip(CircleShape).clickable { s.lassoRecolor(col) },
@@ -1752,8 +1894,6 @@ private fun LassoBar(s: DocSession) {
                     Box(Modifier.size(22.dp).clip(CircleShape).background(col).border(1.dp, Palette.Divider, CircleShape))
                 }
             }
-            TextButton(onClick = { s.lassoDuplicate() }) { Text(L("نسخ", "Duplicate")) }
-            TextButton(onClick = { toText = true }) { Text(L("إلى نص", "To text")) }
             // تشغيل التسجيل الصوتي من لحظة كتابة أول خط محدد
             val sel = s.lassoSel
             val firstT = sel?.strokes?.filter { it.t > 0 }?.minOfOrNull { it.t } ?: 0L
@@ -1768,6 +1908,7 @@ private fun LassoBar(s: DocSession) {
         }
     }
     if (toText) InkToTextDialog(s) { toText = false }
+    if (changeFont) ChangeFontDialog(s) { changeFont = false }
 }
 
 @Composable
@@ -1809,6 +1950,7 @@ private fun ReaderTimer(id: String) {
 
 @Composable
 private fun TextBoxBar(s: DocSession) {
+    var fontPick by remember { mutableStateOf(false) }
     val id = s.selectedTextId ?: return
     val tb = s.textBox(id)
     if (tb == null) {
@@ -1832,7 +1974,9 @@ private fun TextBoxBar(s: DocSession) {
             Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = { s.textDialog = TextDialogReq(id, tb.page) }) { Text(L("تعديل", "Edit")) }
+            TextButton(onClick = {
+                if (tb.sticky) s.textDialog = TextDialogReq(id, tb.page, sticky = true) else s.startInlineEdit(id)
+            }) { Text(L("تعديل", "Edit")) }
             TextButton(onClick = {
                 s.beginEdit()
                 s.updateTextBox(id) { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) }
@@ -1849,9 +1993,20 @@ private fun TextBoxBar(s: DocSession) {
                 s.updateTextBox(id) { it.copy(color = AppController.colorFor(pen)) }
                 s.endEdit()
             }) { Text(L("لون القلم", "Pen color")) }
+            TextButton(onClick = { fontPick = true }) { Text("Aa " + L("الخط", "Font"), fontWeight = FontWeight.Bold) }
+            if (tb.ink.isNotEmpty()) {
+                TextButton(onClick = { s.textBoxToInk(id) }) { Text(L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting"), color = Palette.GoldDeep) }
+            }
             TextButton(onClick = { s.deleteTextBox(id) }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
             TextButton(onClick = { s.selectedTextId = null }) { Text(L("تم", "Done")) }
         }
+    }
+    if (fontPick) {
+        FontLibraryDialog(tb.text, tb.font, onPick = { f ->
+            s.beginEdit()
+            s.updateTextBox(id) { it.copy(font = f) }
+            s.endEdit()
+        }, onDismiss = { fontPick = false })
     }
 }
 
@@ -2005,12 +2160,53 @@ private fun PageView(
     /** خطوط رُفع القلم عنها ولم تظهر بعد في صورة الخطوط: تبقى مرسومة هنا حتى تظهر هناك. */
     val pendingInk = remember { ArrayList<Ink>() }
     val strokesNow by rememberUpdatedState(strokes)
+    /**
+     * طبقتا الخطوط: الخلفية (الهايلايتر وملء الأشكال) تحت النص والكتابة، والكتابة فوقهما.
+     * تُعاد القائمة السابقة نفسها إن لم تتغير عناصرها (حتى لا تُعاد رسم صورة طبقة لم تتغير).
+     */
+    /** مستطيل مربع النص الذي يُرسم الآن بالقلم (يسار، أعلى، يمين، أسفل بإحداثيات الصفحة). */
+    var textDragRect by remember { mutableStateOf<FloatArray?>(null) }
+    val layerCache = remember { arrayOfNulls<List<Ink>>(2) }
+    // أثناء سحب التحديد: خطوطه تُرسم متحركة فوق الصفحة، فتُخفى من صورة الصفحة
+    val dragging = session.lassoPreview != null && session.lassoSel?.page == index
+    val dragSel = if (dragging) session.lassoSel else null
+    val layerStrokes = remember(strokes, dragSel) {
+        if (dragSel == null) strokes else {
+            val picked = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(dragSel.strokes) }
+            strokes.filter { it !in picked }
+        }
+    }
+    val (underInk, overInk) = remember(layerStrokes) {
+        val strokes = layerStrokes
+        fun keep(i: Int, l: List<Ink>): List<Ink> {
+            val old = layerCache[i]
+            val r = if (old != null && old.size == l.size && old.indices.all { old[it] === l[it] }) old else l
+            layerCache[i] = r
+            return r
+        }
+        if (strokes.none { it.inUnderlay() }) keep(0, emptyList()) to keep(1, strokes)
+        else keep(0, strokes.filter { it.inUnderlay() }) to keep(1, strokes.filter { it.inOverlay() })
+    }
     /** الجزء الظاهر من الصفحة على الشاشة بإحداثياتها (بالبكسل). */
     val visRect = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val laser = remember { ArrayList<LaserPt>() }
     val lz = remember { LaserState() }
     var laserOn by remember { mutableStateOf(false) }
     var tick by remember { mutableStateOf(0) }
+    /** آخر ما رُسم في صورتي الطبقتين (0 = الخلفية، 1 = الكتابة). */
+    val layerDrawn = remember { arrayOfNulls<List<List<Ink>>>(2) }
+    /** بعد تحديث صورة طبقة: الخط المعلّق الذي ظهر في كل طبقاته لا يُرسم مؤقتاً بعد الآن. */
+    fun settlePending(drawnLists: List<List<Ink>>, under: Boolean) {
+        layerDrawn[if (under) 0 else 1] = drawnLists
+        if (pendingInk.isEmpty()) return
+        fun shown(i: Int, p: Ink) = layerDrawn[i]?.let { ls -> ls.isNotEmpty() && ls.all { l -> l.any { it === p } } } ?: false
+        val cur = strokesNow
+        val before = pendingInk.size
+        pendingInk.removeAll { p ->
+            ((!p.inUnderlay() || shown(0, p)) && (!p.inOverlay() || shown(1, p))) || cur.none { it === p }
+        }
+        if (pendingInk.size != before) tick++
+    }
 
     // تلاشي أثر الليزر وإبقاء نقطته حاضرة طالما القلم فوق الشاشة
     LaunchedEffect(laserOn) {
@@ -2051,12 +2247,17 @@ private fun PageView(
         Modifier.fillMaxWidth().aspectRatio(ratio)
             .onSizeChanged { wPx = it.width }
             .onGloballyPositioned { co ->
+                session.pageWindowRects[index] = androidx.compose.ui.geometry.Rect(
+                    co.localToWindow(Offset.Zero),
+                    co.localToWindow(Offset(co.size.width.toFloat(), co.size.height.toFloat()))
+                )
                 val b = co.boundsInWindow()
                 visRect.value = if (b.isEmpty) androidx.compose.ui.geometry.Rect.Zero
                 else androidx.compose.ui.geometry.Rect(co.windowToLocal(b.topLeft), co.windowToLocal(b.bottomRight))
             }
             .shadow(6.dp, paper)
             .background(if (night) nightOf(paperColor) else paperColor)
+            .then(if (TrayDrag.overPage == index) Modifier.border(3.dp, Color(0xFF16A34A), paper) else Modifier)
     ) {
         val b = bmp
         if (b != null) {
@@ -2167,6 +2368,25 @@ private fun PageView(
             }
         }
 
+        // الهايلايتر وملء الأشكال: تحت النص والكتابة
+        InkLayer("${session.id}:$index:u", underInk, night, visRect, Modifier.fillMaxSize(), under = true) { settlePending(it, under = true) }
+        // الحي منها (أثناء الرسم) وما لم يظهر بعد في صورتها: تحت النص والكتابة أيضاً
+        Canvas(Modifier.fillMaxSize()) {
+            @Suppress("UNUSED_VARIABLE")
+            val t = tick
+            if (lassoDrawing[0]) return@Canvas
+            pendingInk.forEach { if (it.inUnderlay()) drawUnder(it, if (night) nightOf(it.color) else it.color) }
+            val lc = if (night) nightOf(live.color) else live.color
+            // معاينة ملء الشكل أثناء السحب
+            if (live.sharp && PenPrefs.shapeActive && PenPrefs.shapeFill && PenPrefs.shapeKind.closed() && livePts.size > 2) {
+                drawUnder(Ink(livePts.toList(), live.color, live.width, Tool.BALLPOINT, shape = true, shapeFill = true, fillAlpha = PenPrefs.shapeFillAlpha), lc)
+            }
+            if (live.tool == Tool.HIGHLIGHTER && !live.sharp && livePts.isNotEmpty()) {
+                val extra = if (live.hasPred) Pt(live.predX, live.predY, live.predP) else null
+                drawInk(livePts, lc, live.width, live.tool, extra, style = live.style)
+            }
+        }
+
         // مربعات النص المكتوب
         if (wPx > 0) {
             val wp = wPx.toFloat()
@@ -2186,7 +2406,7 @@ private fun PageView(
                                 .background(Color(0xFFFFE27A), RoundedCornerShape(6.dp))
                                 .then(if (selected) Modifier.border(1.5.dp, Palette.Navy, RoundedCornerShape(6.dp)) else Modifier),
                             contentAlignment = Alignment.Center
-                        ) { PhIcon(R.drawable.ph_note, Color(0xFF6B4E00), side * 0.6f) }
+                        ) { PhIcon(R.drawable.ph_sticky_note, Color(0xFF6B4E00), side * 0.6f) }
                     } else if (tb.linkDoc != null) {
                         // رابط إلى صفحة: شارة بعنوانه (نقرة تحدده، ونقرة ثانية تفتحه)
                         Row(
@@ -2204,12 +2424,21 @@ private fun PageView(
                             Spacer(Modifier.width(6.dp))
                             Text(tb.text, fontSize = 13.sp, color = Palette.Navy, fontWeight = FontWeight.Medium, maxLines = 1)
                         }
-                    } else {
+                    } else if (tb.id != session.inlineEditId) {
+                    // خط من المكتبة: يُنزَّل إن لم يكن على هذا الجهاز (مستند منقول من جهاز آخر)
+                    val ready = tb.font.isEmpty() || FontStore.state[tb.font] == true || FontStore.isReady(tb.font)
+                    if (!ready) LaunchedEffect(tb.font) { FontStore.ensure(tb.font, retryFailed = false) }
                     Text(
                         tb.text,
                         color = if (night) nightOf(tb.color) else tb.color,
+                        fontFamily = if (ready) FontStore.family(tb.font) else null,
                         fontSize = fs,
                         lineHeight = fs * 1.25f,
+                        fontWeight = if (tb.bold) FontWeight.Bold else null,
+                        fontStyle = if (tb.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
+                        textDecoration = if (tb.underline) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+                        textAlign = textAlignOf(tb),
+                        onTextLayout = { lay -> session.textLayouts[tb.id] = lay to wp },
                         modifier = Modifier
                             .align(AbsoluteAlignment.TopLeft)
                             .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
@@ -2223,7 +2452,7 @@ private fun PageView(
                     }
                 }
             }
-            val selTb = session.selectedTextId?.let { id -> pageTexts.firstOrNull { it.id == id } }
+            val selTb = session.selectedTextId?.takeIf { it != session.inlineEditId }?.let { id -> pageTexts.firstOrNull { it.id == id } }
             if (selTb != null) {
                 Canvas(Modifier.fillMaxSize()) {
                     val w = size.width
@@ -2237,14 +2466,7 @@ private fun PageView(
         }
 
         // الخطوط المثبّتة: صورة Bitmap للصفحة تُعرض بأمر واحد (InkLayer.kt)
-        InkLayer("${session.id}:$index", strokes, night, visRect, Modifier.fillMaxSize()) { drawnLists ->
-            if (pendingInk.isNotEmpty()) {
-                val cur = strokesNow
-                val before = pendingInk.size
-                pendingInk.removeAll { p -> drawnLists.all { l -> l.any { it === p } } || cur.none { it === p } }
-                if (pendingInk.size != before) tick++
-            }
-        }
+        InkLayer("${session.id}:$index", overInk, night, visRect, Modifier.fillMaxSize()) { settlePending(it, under = false) }
         // الملاحظات اللاصقة فوق الكتابة
         NotesLayer(session, index, night)
 
@@ -2269,14 +2491,18 @@ private fun PageView(
                         var carry: PointerEvent? = null
                         /** الإصبع يكتب هنا: الوضع مفعّل، ولا نافذة كتابة مكبّرة، والقلم ليس قريبًا (راحة اليد). */
                         fun fingerInk(e: PointerEvent): Boolean =
-                            PenInput.fingerWrites && session.zoomBox == null && !PenInput.stylusActiveRecently() &&
+                            PenInput.fingerWrites && session.zoomBox == null && !PenInput.stylusActiveRecently() && !session.sideOpen() &&
                                 e.changes.count { it.pressed && it.type == PointerType.Touch } == 1
                         while (true) {
                             val ev = carry ?: awaitPointerEvent()
                             carry = null
+                            // لمس الورقة يغلق نافذة إعدادات الصفحة الجانبية
+                            if (ev.type == PointerEventType.Press && session.pageMenuOpen) session.pageMenuOpen = false
 
                             // التحديد والأشكال والملاحظات تتقدم على الليزر (الأداة تبقى ليزرًا عند تفعيلها)
-                            if (toolNow == Tool.LASER && !lassoNow && !PenPrefs.shapeActive && !PenPrefs.stickyActive) {
+                            if (toolNow == Tool.LASER && !lassoNow && !PenPrefs.shapeActive && !PenPrefs.stickyActive &&
+                                !PenPrefs.textActive && session.inlineEditId == null
+                            ) {
                                 val lc = ev.changes.firstOrNull {
                                     it.type == PointerType.Stylus || it.type == PointerType.Mouse ||
                                         (it.type == PointerType.Touch && it.pressed && fingerInk(ev))
@@ -2347,11 +2573,51 @@ private fun PageView(
                             val w = size.width.toFloat()
                             if (w <= 0f) continue
                             val id = down.id
+                            session.activePage = index
+
+                            // الكتابة المباشرة: لمسة القلم خارج المربع المفتوح تنهي الكتابة،
+                            // وأداة النص: نقرة القلم تضع مربع كتابة في مكانها
+                            if ((session.inlineEditId != null || PenPrefs.textActive) && down.type != PointerType.Eraser) {
+                                down.consume()
+                                if (session.inlineEditId != null) {
+                                    session.finishInlineEdit()
+                                    while (true) {
+                                        val e = awaitPointerEvent()
+                                        val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                        ch.consume()
+                                        if (!ch.pressed) break
+                                    }
+                                    continue
+                                }
+                                // أداة النص: سحب القلم يرسم مستطيل المربع بالحجم المطلوب، والنقرة تضعه بالحجم المعتاد
+                                val a = down.position
+                                var b = a
+                                var dragged = false
+                                while (true) {
+                                    val e = awaitPointerEvent()
+                                    val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                    ch.consume()
+                                    if (!ch.pressed) break
+                                    b = ch.position
+                                    if (!dragged && (b - a).getDistance() > viewConfiguration.touchSlop * 2f) dragged = true
+                                    if (dragged) {
+                                        textDragRect = floatArrayOf(minOf(a.x, b.x) / w, minOf(a.y, b.y) / w, maxOf(a.x, b.x) / w, maxOf(a.y, b.y) / w)
+                                    }
+                                }
+                                val rect = textDragRect
+                                textDragRect = null
+                                if (dragged && rect != null && rect[2] - rect[0] > 0.04f) {
+                                    placeOrEditText(session, index, rect[0], rect[1], textsNow, textHeights, rect)
+                                } else {
+                                    placeOrEditText(session, index, a.x / w, a.y / w, textsNow, textHeights)
+                                }
+                                continue
+                            }
 
                             // التحديد الحر: تحريك/تكبير التحديد، أو رسم حلقة تحديد جديدة
                             if (lassoNow && down.type != PointerType.Eraser) {
                                 down.consume()
-                                if (dragLasso(session, index, down, w)) continue
+                                if (dragLasso(session, index, down, w) { pendingInk.addAll(it); tick++ }) continue
                                 session.lassoSel = null
                                 livePts.clear()
                                 livePts.add(Pt(down.position.x / w, down.position.y / w, 0.5f))
@@ -2397,6 +2663,18 @@ private fun PageView(
                             live.sharp = false
                             val eraseR = eraserNow
 
+                            // صورة أو ملصق اختير من الدرج بنقرة: نقرة القلم تضعه هنا
+                            if (TrayDrag.armed != null && down.type != PointerType.Eraser) {
+                                down.consume()
+                                TrayDrag.placeArmed(session, index, Offset(down.position.x / w, down.position.y / w))
+                                while (true) {
+                                    val e = awaitPointerEvent()
+                                    val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                    ch.consume()
+                                    if (!ch.pressed) break
+                                }
+                                continue
+                            }
                             // أداة الملاحظات: نقرة القلم تضع ملاحظة
                             if (PenPrefs.stickyActive && down.type != PointerType.Eraser) {
                                 down.consume()
@@ -2449,8 +2727,20 @@ private fun PageView(
                                         val parts = ShapeBuilder.build(kind, a, bEnd, PenPrefs.shapeRounded, PenPrefs.arrowStart, PenPrefs.arrowEnd, sw)
                                         session.beginEdit()
                                         val now = System.currentTimeMillis()
-                                        parts.forEach { pts ->
-                                            session.addInk(index, Ink(pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now, PenPrefs.shapeStyle, true))
+                                        // الملء للشكل المغلق نفسه فقط (لا لرؤوس الأسهم)
+                                        val fillIt = PenPrefs.shapeFill && kind.closed()
+                                        parts.forEachIndexed { pi, pts ->
+                                            // رأس السهم المغلق: مثلث مملوء بلون الخط (ومتصل دائماً، لا متقطع)
+                                            val closedHead = pi > 0 && isClosedShape(pts)
+                                            session.addInk(
+                                                index,
+                                                Ink(
+                                                    pts, Color(PenPrefs.shapeColor), sw, Tool.BALLPOINT, now,
+                                                    if (pi > 0) LineStyle.SOLID else PenPrefs.shapeStyle, true,
+                                                    shapeFill = (fillIt && pi == 0) || closedHead,
+                                                    fillAlpha = if (closedHead) 1f else PenPrefs.shapeFillAlpha
+                                                )
+                                            )
                                         }
                                         session.endEdit()
                                     }
@@ -2461,6 +2751,7 @@ private fun PageView(
                             AppController.lastInkAt = System.currentTimeMillis()
                             if (session.selection != null) session.selection = null
                             session.beginEdit()
+                            AutoFont.penDown()
                             livePts.clear()
                             // عرض الخط: ضغط القلم بعد المعايرة، أو السرعة للإصبع والأقلام بلا ضغط
                             val speedW = SpeedWidth()
@@ -2625,16 +2916,26 @@ private fun PageView(
                                         } else null
                                         // بلا تدبيب عند الحفظ: الخط المحفوظ يطابق ما كان ظاهرًا أثناء الكتابة
                                         val pts = shaped ?: raw
-                                        val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null)
+                                        // شكل مغلق مرتب بالقلم: يُملأ ملئاً خفيفاً بلونه إن كان «ملء الشكل» مفعّلاً
+                                        val fillIt = shaped != null && PenPrefs.shapeFill && isClosedShape(pts)
+                                        val ink = Ink(pts, live.color, live.width, live.tool, System.currentTimeMillis(), live.style, shaped != null, shapeFill = fillIt, fillAlpha = PenPrefs.shapeFillAlpha)
                                         if (noteTarget != null) session.addNoteInk(noteTarget, ink) else {
-                                            pendingInk.add(ink)
-                                            session.addInk(index, ink)
+                                            // على النص المتحول: شخبطة/خط = حذف كلمة، ∧ = مكان إضافة (لا تُحفظ كحبر)
+                                            if (shaped == null && AutoFont.gesture(session, index, ink)) {
+                                                Unit
+                                            } else {
+                                                pendingInk.add(ink)
+                                                session.addInk(index, ink)
+                                                // «Aa تلقائي»: الجملة تتحول إلى الخط المختار عند إنهائها
+                                                if (shaped == null) AutoFont.onStroke(session, index, ink)
+                                            }
                                         }
                                     }
                                 }
                                 livePts.clear()
                                 tick++
                                 session.endEdit()
+                                AutoFont.penUp()
                                 // الهايلايتر الملتقط: يتحول الخط إلى تمييز خلف كلمات السطر ويُضاف إلى الملخصات
                                 if (snapPts != null) session.snapHighlight(index, snapPts, live.color, live.width)
                                 if (backToPen) AppController.selectTool(AppController.lastWriting)
@@ -2647,14 +2948,45 @@ private fun PageView(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         if (down.type != PointerType.Touch) return@awaitEachGesture
+                        // درج الأوراق أو الملخصات مفتوح: نقرة الإصبع تغلقه فقط (يتولاها PageArea)
+                        if (session.sideOpen()) return@awaitEachGesture
                         val w = size.width.toFloat()
                         if (w <= 0f) return@awaitEachGesture
                         val nx = down.position.x / w
                         val ny = down.position.y / w
+                        session.activePage = index
+
+                        // الكتابة المباشرة: نقرة خارج المربع المفتوح تنهي الكتابة (والسحب يمرّر كالعادة)
+                        if (session.inlineEditId != null) {
+                            var moved = false
+                            while (true) {
+                                val e = awaitPointerEvent()
+                                val ch = e.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!ch.pressed) break
+                                if (ch.isConsumed || (ch.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                                    moved = true
+                                    break
+                                }
+                            }
+                            if (!moved) session.finishInlineEdit()
+                            return@awaitEachGesture
+                        }
+                        // أداة النص: النقرة تضع مربع كتابة (أو تفتح الكتابة في مربع موجود)
+                        if (PenPrefs.textActive) {
+                            down.consume()
+                            placeOrEditText(session, index, nx, ny, textsNow, textHeights)
+                            return@awaitEachGesture
+                        }
 
                         // تحريك التحديد الحر بالإصبع أيضًا
-                        if (session.lassoSel?.page == index && dragLasso(session, index, down, w)) return@awaitEachGesture
+                        if (session.lassoSel?.page == index && dragLasso(session, index, down, w) { pendingInk.addAll(it); tick++ }) return@awaitEachGesture
 
+                        // صورة أو ملصق اختير من الدرج بنقرة: نقرة الإصبع تضعه هنا
+                        if (TrayDrag.armed != null) {
+                            down.consume()
+                            TrayDrag.placeArmed(session, index, Offset(nx, ny))
+                            return@awaitEachGesture
+                        }
                         // الملاحظات اللاصقة: وضع، تحديد، تحريك، تكبير
                         if (PenPrefs.stickyActive) {
                             down.consume()
@@ -2709,7 +3041,8 @@ private fun PageView(
                                 if (!moved && inside) {
                                     val ld = selText.linkDoc
                                     if (ld != null) AppController.followLink(session, ld, selText.linkPage)
-                                    else session.textDialog = TextDialogReq(selText.id, index)
+                                    else if (selText.sticky) session.textDialog = TextDialogReq(selText.id, index, sticky = true)
+                                    else session.startInlineEdit(selText.id)
                                 }
                                 return@awaitEachGesture
                             }
@@ -2780,6 +3113,28 @@ private fun PageView(
                                     val th = textHeights[it.id] ?: 0.03f
                                     nx >= it.x && nx <= it.x + it.w && ny >= it.y && ny <= it.y + th
                                 }
+                                // كلمة متحولة لها قراءات أخرى: نقرة تعرض البدائل للتصحيح
+                                if (UiPrefs.wordAltsOn && textHit != null && textHit.alts.isNotEmpty() && textHit.id != session.selectedTextId) {
+                                    val lw = session.textLayouts[textHit.id]
+                                    if (lw != null) {
+                                        val (lay, lwp) = lw
+                                        val o = lay.getOffsetForPosition(Offset((nx - textHit.x) * lwp, (ny - textHit.y) * lwp))
+                                        val wb = lay.getWordBoundary(o.coerceIn(0, textHit.text.length))
+                                        val word = if (wb.end > wb.start) textHit.text.substring(wb.start, wb.end) else ""
+                                        val alts = textHit.alts[word] ?: emptyList()
+                                        if (alts.isNotEmpty()) {
+                                            val li = lay.getLineForOffset(wb.start)
+                                            val bx = lay.getBoundingBox(wb.start.coerceAtMost((textHit.text.length - 1).coerceAtLeast(0)))
+                                            session.altPopup = DocSession.AltPopup(
+                                                textHit.id, index, wb.start, wb.end, alts,
+                                                Offset(textHit.x + bx.left / lwp, textHit.y + lay.getLineBottom(li) / lwp)
+                                            )
+                                            session.selectedTextId = null
+                                            return@awaitEachGesture
+                                        }
+                                    }
+                                }
+                                if (session.altPopup != null) session.altPopup = null
                                 if (textHit != null) {
                                     session.selectedTextId = textHit.id
                                     session.selectedImageId = null
@@ -2870,14 +3225,37 @@ private fun PageView(
                     )
                 }
             } else {
-                // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط
-                pendingInk.forEach { drawStroke(it, if (night) nightOf(it.color) else it.color) }
+                // التحديد أثناء سحبه: يُرسم متحركاً هنا (الخطوط تُعدَّل عند الرفع فقط)
+                val pv = session.lassoPreview
+                val ls = session.lassoSel
+                if (pv != null && ls != null && ls.page == index) {
+                    val w = size.width
+                    withTransform({
+                        translate(pv.dx * w, pv.dy * w)
+                        scale(pv.k, pv.k, Offset(pv.px * w, pv.py * w))
+                    }) {
+                        drawStack(ls.strokes, { if (night) nightOf(it.color) else it.color })
+                    }
+                }
+                // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط (الهايلايتر وملء الأشكال في الطبقة السفلية)
+                pendingInk.forEach { if (it.inOverlay()) drawStroke(it, if (night) nightOf(it.color) else it.color) }
                 val lc = if (night) nightOf(live.color) else live.color
-                if (livePts.isNotEmpty() && extra == null && liveRaster.handles(live.style, live.sharp)) {
+                if (live.tool == Tool.HIGHLIGHTER && !live.sharp) {
+                    // الهايلايتر الحي يُرسم في الطبقة السفلية (تحت القلم والنص)
+                } else if (livePts.isNotEmpty() && extra == null && liveRaster.handles(live.style, live.sharp)) {
                     liveRaster.draw(this, livePts, lc, live.width, live.tool, visRect.value, liveGen[0])
                 } else {
                     drawInk(livePts, lc, live.width, live.tool, if (live.sharp) null else extra, style = live.style, sharp = live.sharp)
                 }
+            }
+
+            // مستطيل مربع النص أثناء رسمه
+            textDragRect?.let { r ->
+                val w = size.width
+                drawRect(
+                    Palette.Navy, Offset(r[0] * w, r[1] * w), Size((r[2] - r[0]) * w, (r[3] - r[1]) * w),
+                    style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                )
             }
 
             // التحديد الحر: إطار متقطع حول الخطوط المحددة ومقبض للتكبير
@@ -2991,6 +3369,31 @@ private fun PageView(
                 Text(L("جارٍ قراءة الصفحة…", "Reading page…"), fontSize = 13.sp, color = Palette.TextPrimary)
             }
         }
+
+        // بدائل الكلمة للتصحيح، ومربع الإضافة المنقط (فوق كل الطبقات)
+        val ap = session.altPopup?.takeIf { it.page == index }
+        if (ap != null && wPx > 0) AltWordPopup(session, ap, wPx.toFloat())
+        val insT = AutoFont.insertTarget?.takeIf { it.s === session && it.page == index }
+        if (insT != null && wPx > 0) {
+            val wpf = wPx.toFloat()
+            Box(
+                Modifier.align(AbsoluteAlignment.TopLeft)
+                    .absoluteOffset { IntOffset((insT.area.left * wpf).roundToInt(), (insT.area.top * wpf).roundToInt()) }
+                    .size(with(density) { (insT.area.width * wpf).toDp() }, with(density) { (insT.area.height * wpf).toDp() })
+                    .drawWithContent {
+                        drawRect(
+                            Palette.Navy.copy(alpha = 0.7f),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 9f))
+                            )
+                        )
+                    }
+            )
+        }
+
+        // الكتابة المباشرة فوق كل الطبقات (حتى تصل لمسات حقل النص إليه)
+        val editTb = session.inlineEditId?.let { id -> pageTexts.firstOrNull { it.id == id } }
+        if (editTb != null && wPx > 0) InlineTextEditor(session, editTb, wPx.toFloat(), ratio, night) { h -> textHeights[editTb.id] = h }
     }
 }
 
@@ -3049,7 +3452,7 @@ private fun LinkDialog(s: DocSession, cur: Int, onDismiss: () -> Unit) {
                         text = title, color = Palette.Navy, size = 0.02f, linkDoc = t.id, linkPage = p
                     )
                 )
-                c.messages.tryEmit(L("أُضيف الرابط: اسحبه لمكانه، وانقر عليه مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
+                c.say(MsgKind.TIP, L("أُضيف الرابط: اسحبه لمكانه، وانقر عليه مرتين لفتحه", "Link added: drag it into place; tap it twice to open"))
                 onDismiss()
             }) { Text(L("إضافة", "Add")) }
         },
@@ -3279,6 +3682,173 @@ fun PageScrubber(s: DocSession, pdf: PdfDoc, modifier: Modifier) {
     }
 }
 
+
+/** درج الأوراق أو درج الملخصات ظاهر الآن. */
+internal fun DocSession.sideOpen(): Boolean = drawerOpen || (summaryOpen && UiPrefs.summariesOn)
+
+internal fun textAlignOf(tb: TextBox): androidx.compose.ui.text.style.TextAlign = when (tb.align) {
+    1 -> androidx.compose.ui.text.style.TextAlign.Center
+    2 -> androidx.compose.ui.text.style.TextAlign.End
+    else -> androidx.compose.ui.text.style.TextAlign.Start
+}
+
+/** أداة النص: نقرة على مربع موجود تفتح الكتابة فيه، وإلا يوضع مربع جديد في مكان النقرة. */
+private fun placeOrEditText(
+    session: DocSession, page: Int, nx: Float, ny: Float,
+    texts: List<TextBox>, heights: Map<String, Float>,
+    /** مستطيل رسمه المستخدم بالقلم (يسار، أعلى، يمين): المربع بعرضه وفي مكانه. */
+    rect: FloatArray? = null
+) {
+    PenPrefs.textActive = false
+    if (rect != null) {
+        val c = AppController
+        val pen = if (c.tool.isPen()) c.tool else c.lastPen
+        val color = TextPrefs.color?.let { Color(it) } ?: c.colorFor(pen)
+        session.placeInlineText(page, rect[0], rect[1], color, TextPrefs.sizeUnits(), width = rect[2] - rect[0], top = true)
+        session.inlineEditId?.let { id -> session.updateTextBox(id) { TextPrefs.applyTo(it) } }
+        return
+    }
+    val hit = texts.lastOrNull {
+        !it.sticky && it.linkDoc == null &&
+            nx >= it.x && nx <= it.x + it.w && ny >= it.y && ny <= it.y + (heights[it.id] ?: 0.03f)
+    }
+    if (hit != null) {
+        session.startInlineEdit(hit.id)
+        return
+    }
+    val c = AppController
+    val pen = if (c.tool.isPen()) c.tool else c.lastPen
+    // النص العربي يبدأ من يمين المربع: نقطة النقر تكون بدايته
+    val w = 0.42f
+    val left = if (I18n.english) nx else nx - w
+    // إعدادات نافذة مربع النص (الخط والحجم والنمط واللون)
+    val color = TextPrefs.color?.let { Color(it) } ?: c.colorFor(pen)
+    session.placeInlineText(page, left, ny, color, TextPrefs.sizeUnits())
+    session.inlineEditId?.let { id -> session.updateTextBox(id) { TextPrefs.applyTo(it) } }
+}
+
+/**
+ * الكتابة المباشرة على الصفحة: حقل نص في مكان المربع ولوحة المفاتيح مفتوحة،
+ * وفوقه شريط صغير: الخط، تصغير/تكبير، وتم.
+ */
+@Composable
+private fun BoxScope.InlineTextEditor(
+    s: DocSession, tb: TextBox, wp: Float, ratio: Float, night: Boolean, onHeight: (Float) -> Unit
+) {
+    val density = LocalDensity.current
+    val focus = remember { FocusRequester() }
+    val kb = LocalSoftwareKeyboardController.current
+    var value by remember(tb.id) { mutableStateOf(TextFieldValue(tb.text, TextRange(tb.text.length))) }
+    var fontPick by remember { mutableStateOf(false) }
+    var hPx by remember { mutableStateOf(0) }
+    var barW by remember { mutableStateOf(0) }
+    LaunchedEffect(tb.id, fontPick) {
+        if (!fontPick) {
+            delay(80)
+            try {
+                focus.requestFocus()
+            } catch (e: Throwable) {
+            }
+            kb?.show()
+        }
+    }
+    DisposableEffect(tb.id) { onDispose { kb?.hide() } }
+    val fs = with(density) { (tb.size * wp).toSp() }
+    val ready = tb.font.isEmpty() || FontStore.state[tb.font] == true || FontStore.isReady(tb.font)
+    if (!ready) LaunchedEffect(tb.font) { FontStore.ensure(tb.font, retryFailed = false) }
+    val col = if (night) nightOf(tb.color) else tb.color
+    val family = if (ready) FontStore.family(tb.font) else null
+    BasicTextField(
+        value = value,
+        onValueChange = { v ->
+            value = v
+            if (v.text != tb.text) s.updateTextBox(tb.id) { it.copy(text = v.text) }
+        },
+        textStyle = TextStyle(
+            color = col, fontSize = fs, lineHeight = fs * 1.25f, fontFamily = family,
+            fontWeight = if (tb.bold) FontWeight.Bold else null,
+            fontStyle = if (tb.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
+            textDecoration = if (tb.underline) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+            textAlign = textAlignOf(tb)
+        ),
+        cursorBrush = SolidColor(Palette.Navy),
+        modifier = Modifier
+            .align(AbsoluteAlignment.TopLeft)
+            .absoluteOffset { IntOffset((tb.x * wp).roundToInt(), (tb.y * wp).roundToInt()) }
+            .width(with(density) { (tb.w * wp).toDp() })
+            .onSizeChanged { hPx = it.height; onHeight(it.height / wp) }
+            .background(Color.White.copy(alpha = if (night) 0.08f else 0.5f), RoundedCornerShape(3.dp))
+            .border(1.5.dp, Palette.Navy, RoundedCornerShape(3.dp))
+            .focusRequester(focus),
+        decorationBox = { inner ->
+            Box {
+                if (value.text.isEmpty()) {
+                    Text(L("اكتب هنا…", "Type here…"), color = col.copy(alpha = 0.4f), fontSize = fs, lineHeight = fs * 1.25f, fontFamily = family)
+                }
+                inner()
+            }
+        }
+    )
+    // الشريط الصغير: فوق المربع إن كان له مكان، وإلا تحته
+    val barH = with(density) { 44.dp.toPx() }
+    val gap = with(density) { 6.dp.toPx() }
+    val top = tb.y * wp
+    val pageH = wp / ratio
+    val barY = if (top - barH - gap >= 0f) top - barH - gap else (top + hPx + gap).coerceAtMost(pageH - barH)
+    val barX = (tb.x * wp).coerceIn(0f, (wp - barW).coerceAtLeast(0f))
+    Row(
+        Modifier.align(AbsoluteAlignment.TopLeft)
+            .absoluteOffset { IntOffset(barX.roundToInt(), barY.roundToInt()) }
+            .onSizeChanged { barW = it.width }
+            .height(44.dp)
+            .shadow(6.dp, RoundedCornerShape(12.dp))
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        InlineChip("Aa", bold = true, fg = Palette.Navy) { fontPick = true }
+        InlineChip("A−") { s.updateTextBox(tb.id) { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) } }
+        InlineChip("A+") { s.updateTextBox(tb.id) { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) } }
+        // حذف مربع النص
+        InlineChip(L("حذف", "Delete"), fg = Color(0xFFC62828)) { s.deleteInlineBox() }
+        InlineChip("✓ " + L("تم", "Done"), bold = true, fg = Color.White, bg = Palette.Navy) { s.finishInlineEdit() }
+    }
+    if (fontPick) {
+        FontLibraryDialog(tb.text.ifBlank { L("HAMISH PRO", "HAMISH PRO") }, tb.font, onPick = { f ->
+            s.updateTextBox(tb.id) { it.copy(font = f) }
+        }, onDismiss = { fontPick = false })
+    }
+}
+
+/** نافذة صغيرة تحت الكلمة: قراءات أخرى لها، و✎ للكتابة يدوياً. */
+@Composable
+private fun BoxScope.AltWordPopup(s: DocSession, p: DocSession.AltPopup, wp: Float) {
+    var bw by remember { mutableStateOf(0) }
+    val x = (p.at.x * wp).coerceIn(0f, (wp - bw).coerceAtLeast(0f))
+    val y = p.at.y * wp + with(LocalDensity.current) { 4.dp.toPx() }
+    Row(
+        Modifier.align(AbsoluteAlignment.TopLeft)
+            .absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
+            .onSizeChanged { bw = it.width }
+            .shadow(8.dp, RoundedCornerShape(12.dp))
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        p.alts.forEach { a -> InlineChip(a, bg = Palette.NavySoft) { s.applyAlt(p, a) } }
+        InlineChip("✎", fg = Palette.Navy) { s.altPopup = null; s.startInlineEdit(p.boxId) }
+        InlineChip("✕", fg = Palette.TextSecondary) { s.altPopup = null }
+    }
+}
+
+@Composable
+private fun InlineChip(label: String, bold: Boolean = false, fg: Color = Palette.TextPrimary, bg: Color = Color.Transparent, onClick: () -> Unit) {
+    Box(
+        Modifier.padding(horizontal = 2.dp).clip(RoundedCornerShape(9.dp)).background(bg)
+            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, fontSize = 14.sp, color = fg, fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium) }
+}
 
 /** يضع ملاحظة لاصقة (أو الملاحظة المنسوخة) عند النقطة، ثم يُطفئ وضع الإضافة. */
 private fun placeSticky(session: DocSession, page: Int, nx: Float, ny: Float, pageH: Float) {

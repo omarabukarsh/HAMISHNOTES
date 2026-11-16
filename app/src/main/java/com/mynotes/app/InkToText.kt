@@ -43,7 +43,7 @@ import com.google.mlkit.vision.digitalink.Ink as MlInk
 object InkToText {
     /** يقسم الخطوط إلى أسطر حسب موضعها الرأسي. */
     fun lines(strokes: List<Ink>): List<List<Ink>> {
-        val sorted = strokes.filter { it.pts.isNotEmpty() }.sortedBy { s -> s.pts.sumOf { it.y.toDouble() } / s.pts.size }
+        val sorted = strokes.filter { it.pts.isNotEmpty() && !it.fill }.sortedBy { s -> s.pts.sumOf { it.y.toDouble() } / s.pts.size }
         val out = ArrayList<MutableList<Ink>>()
         var top = 0f
         var bottom = 0f
@@ -61,7 +61,43 @@ object InkToText {
                 if (b > bottom) bottom = b
             }
         }
-        return out
+        return mergeSmall(out)
+    }
+
+    /**
+     * علامة صغيرة فوق السطر أو تحته (نقطة i، همزة، نقاط الحروف العربية، تشكيل) كُتبت قبل حروف سطرها
+     * تبدأ سطراً وحدها فتُقرأ حرفاً مستقلاً (مثل «r» فوق الكلمة): تُضم إلى أقرب سطر فوقه أو تحته.
+     */
+    private fun mergeSmall(groups: MutableList<MutableList<Ink>>): List<List<Ink>> {
+        if (groups.size < 2) return groups
+        class Band(val strokes: MutableList<Ink>) {
+            val t get() = strokes.minOf { s -> s.pts.minOf { it.y } }
+            val b get() = strokes.maxOf { s -> s.pts.maxOf { it.y } }
+            val l get() = strokes.minOf { s -> s.pts.minOf { it.x } }
+            val r get() = strokes.maxOf { s -> s.pts.maxOf { it.x } }
+            val h get() = b - t
+        }
+        val bands = groups.map { Band(it) }.toMutableList()
+        var merged = true
+        while (merged && bands.size > 1) {
+            merged = false
+            val main = bands.maxOf { it.h }
+            for (small in bands.sortedBy { it.h }) {
+                if (small.h >= main * 0.45f) break
+                val target = bands.filter { it !== small && it.h > small.h }.minByOrNull { o ->
+                    maxOf(0f, maxOf(small.t, o.t) - minOf(small.b, o.b))
+                } ?: continue
+                val gap = maxOf(0f, maxOf(small.t, target.t) - minOf(small.b, target.b))
+                val overX = small.r >= target.l - target.h * 0.5f && small.l <= target.r + target.h * 0.5f
+                if (gap < target.h * 0.9f && overX) {
+                    target.strokes.addAll(small.strokes)
+                    bands.remove(small)
+                    merged = true
+                    break
+                }
+            }
+        }
+        return bands.sortedBy { it.t }.map { it.strokes }
     }
 }
 
@@ -167,7 +203,7 @@ fun InkToTextDialog(s: DocSession, onDismiss: () -> Unit) {
                 TextButton(enabled = !busy && text.isNotBlank(), onClick = {
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-                    AppController.messages.tryEmit(L("تم النسخ", "Copied"))
+                    AppController.say(MsgKind.DONE, L("تم النسخ", "Copied"))
                 }) { Text(L("نسخ", "Copy")) }
                 TextButton(enabled = !busy && text.isNotBlank(), onClick = {
                     val bb = s.lassoBounds()

@@ -68,14 +68,19 @@ object Exporter {
                     val c = Canvas(base)
                     drawMarks(c, snap.marks[i] ?: emptyList(), w)
                     drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
+                    val pageInk = snap.ink[i] ?: emptyList()
+                    // الهايلايتر وملء الأشكال تحت النص والكتابة
+                    pageInk.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
                     drawTexts(c, snap.texts[i] ?: emptyList(), w)
-                    (snap.ink[i] ?: emptyList()).forEach { drawInk(c, it, w) }
+                    pageInk.forEach { if (it.inOverlay()) drawInk(c, it, w) }
                     // الملاحظات اللاصقة فوق الصفحة
                     (snap.notes[i] ?: emptyList()).forEach { n ->
                         val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
                         val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
                         c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
-                        n.pageInk().forEach { drawInk(c, it, w) }
+                        val ni = n.pageInk()
+                        ni.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
+                        ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
                         n.textBox()?.let { drawTexts(c, listOf(it), w) }
                     }
 
@@ -244,16 +249,34 @@ object Exporter {
                     bmp.recycle()
                 }
             }
+            // الهايلايتر وملء الأشكال: تحت النص والكتابة
+            for (s in ink) {
+                if (!s.shapeFill || s.pts.size < 3) continue
+                cs.saveGraphicsState()
+                val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                gs.nonStrokingAlphaConstant = s.color.alpha * s.fillAlpha
+                cs.setGraphicsStateParameters(gs)
+                cs.setNonStrokingColor(s.color.red, s.color.green, s.color.blue)
+                cs.moveTo(px(s.pts[0].x), py(s.pts[0].y))
+                for (j in 1 until s.pts.size) cs.lineTo(px(s.pts[j].x), py(s.pts[j].y))
+                cs.closePath()
+                cs.fill()
+                cs.restoreGraphicsState()
+            }
+            // الهايلايتر قبل مربعات النص، وبقية الكتابة بعدها
+            val ordered = ink.filter { it.tool == Tool.HIGHLIGHTER } + ink.filter { it.tool != Tool.HIGHLIGHTER }
+            val textAfter = ink.count { it.tool == Tool.HIGHLIGHTER }
             // مربعات النص: تُرسم كصورة شفافة حتى يبقى شكل الحروف العربية صحيحًا
-            for (tb in texts) {
-                if (tb.text.isBlank()) continue
+            fun drawTextBoxes() = texts.forEach { tb ->
+                if (tb.text.isBlank()) return@forEach
                 val scale = 3f
                 val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = tb.color.toArgb()
                     textSize = tb.size * w * scale
+                    applyTextStyle(this, tb)
                 }
                 val lw = (tb.w * w * scale).toInt().coerceAtLeast(10)
-                val layout = layoutOf(tb.text, tp, lw, 1.25f)
+                val layout = layoutOf(tb.text, tp, lw, 1.25f, alignOf(tb))
                 val bmp = Bitmap.createBitmap(lw, layout.height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
                 try {
                     layout.draw(Canvas(bmp))
@@ -264,9 +287,29 @@ object Exporter {
                     bmp.recycle()
                 }
             }
-            // الكتابة اليدوية
-            for (s in ink) {
+            // الكتابة اليدوية (الهايلايتر أولاً، ثم مربعات النص، ثم بقية الكتابة)
+            for ((k, s) in ordered.withIndex()) {
+                if (k == textAfter) drawTextBoxes()
                 if (s.pts.isEmpty()) continue
+                if (s.fill) {
+                    // حرف مملوء من خط: مسار مغلق لكل حد، يُملأ بقاعدة nonzero
+                    cs.saveGraphicsState()
+                    cs.setNonStrokingColor(s.color.red, s.color.green, s.color.blue)
+                    cs.setStrokingColor(s.color.red, s.color.green, s.color.blue)
+                    for (ct in InkFill.contours(s.pts)) {
+                        if (ct.size < 2) continue
+                        cs.moveTo(px(ct[0].x), py(ct[0].y))
+                        for (j in 1 until ct.size) cs.lineTo(px(ct[j].x), py(ct[j].y))
+                        cs.closePath()
+                    }
+                    if (s.width > 0f) {
+                        cs.setLineWidth(s.width * w)
+                        cs.setLineJoinStyle(1)
+                        cs.fillAndStroke()
+                    } else cs.fill()
+                    cs.restoreGraphicsState()
+                    continue
+                }
                 val alpha = when (s.tool) {
                     Tool.HIGHLIGHTER -> 0.35f
                     Tool.PENCIL -> 0.78f
@@ -313,6 +356,7 @@ object Exporter {
                 }
                 cs.restoreGraphicsState()
             }
+            if (textAfter >= ordered.size) drawTextBoxes()
         }
     }
 
@@ -370,9 +414,37 @@ object Exporter {
         }
     }
 
+    /** ما يُرسم من الخط تحت النص: الهايلايتر كاملاً، أو ملء الشكل. */
+    private fun drawUnder(c: Canvas, s: Ink, w: Float) {
+        if (s.tool == Tool.HIGHLIGHTER) { drawInk(c, s, w); return }
+        if (!s.shapeFill || s.pts.size < 3) return
+        val path = Path()
+        path.moveTo(s.pts[0].x * w, s.pts[0].y * w)
+        for (j in 1 until s.pts.size) path.lineTo(s.pts[j].x * w, s.pts[j].y * w)
+        path.close()
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = s.color.copy(alpha = s.color.alpha * s.fillAlpha).toArgb(); style = Paint.Style.FILL })
+    }
+
     private fun drawInk(c: Canvas, s: Ink, w: Float) {
         val pts = s.pts
         if (pts.isEmpty()) return
+        if (s.fill) {
+            // حرف مملوء من خط
+            val path = Path().apply { fillType = Path.FillType.WINDING }
+            for (ct in InkFill.contours(pts)) {
+                if (ct.size < 2) continue
+                path.moveTo(ct[0].x * w, ct[0].y * w)
+                for (i in 1 until ct.size) path.lineTo(ct[i].x * w, ct[i].y * w)
+                path.close()
+            }
+            val fp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = s.color.toArgb(); style = Paint.Style.FILL }
+            c.drawPath(path, fp)
+            if (s.width > 0f) {
+                fp.style = Paint.Style.STROKE; fp.strokeWidth = s.width * w; fp.strokeJoin = Paint.Join.ROUND
+                c.drawPath(path, fp)
+            }
+            return
+        }
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.style = Paint.Style.STROKE
         p.strokeJoin = Paint.Join.ROUND
@@ -450,7 +522,8 @@ object Exporter {
             val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
             tp.color = tb.color.toArgb()
             tp.textSize = tb.size * w
-            val layout = layoutOf(tb.text, tp, (tb.w * w).toInt().coerceAtLeast(10), 1.25f)
+            applyTextStyle(tp, tb)
+            val layout = layoutOf(tb.text, tp, (tb.w * w).toInt().coerceAtLeast(10), 1.25f, alignOf(tb))
             c.save()
             c.translate(tb.x * w, tb.y * w)
             layout.draw(c)
@@ -458,9 +531,31 @@ object Exporter {
         }
     }
 
-    private fun layoutOf(text: CharSequence, tp: TextPaint, width: Int, spacing: Float): StaticLayout =
+    /** خط مربع النص ونمطه (عريض/مائل/تحته خط) على قلم الرسم. */
+    private fun applyTextStyle(tp: TextPaint, tb: TextBox) {
+        val base = FontStore.typeface(tb.font) ?: Typeface.DEFAULT
+        val style = when {
+            tb.bold && tb.italic -> Typeface.BOLD_ITALIC
+            tb.bold -> Typeface.BOLD
+            tb.italic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        }
+        tp.typeface = if (style != Typeface.NORMAL) Typeface.create(base, style) else base
+        // الخطوط بلا نسخة عريضة/مائلة: محاكاة
+        if (tb.bold && !tp.typeface.isBold) tp.isFakeBoldText = true
+        if (tb.italic && !tp.typeface.isItalic) tp.textSkewX = -0.22f
+        tp.isUnderlineText = tb.underline
+    }
+
+    private fun alignOf(tb: TextBox): Layout.Alignment = when (tb.align) {
+        1 -> Layout.Alignment.ALIGN_CENTER
+        2 -> Layout.Alignment.ALIGN_OPPOSITE
+        else -> Layout.Alignment.ALIGN_NORMAL
+    }
+
+    private fun layoutOf(text: CharSequence, tp: TextPaint, width: Int, spacing: Float, align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
         StaticLayout.Builder.obtain(text, 0, text.length, tp, width)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setAlignment(align)
             .setLineSpacing(0f, spacing)
             .setIncludePad(false)
             .build()

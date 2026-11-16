@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -207,4 +208,31 @@ fun StickerIcon(key: String, size: Dp, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/** ملصق غلاف كصورة شفافة مربعة (لوضعه على الصفحة كملصق). null إن لم يكن من الرسومات. */
+internal fun coverStickerBitmap(key: String, px: Int): android.graphics.Bitmap? {
+    val pieces = StickerArt[key] ?: return null
+    val bmp = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(bmp)
+    c.scale(px / 100f, px / 100f)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        strokeCap = android.graphics.Paint.Cap.ROUND
+        strokeJoin = android.graphics.Paint.Join.ROUND
+    }
+    for (p in pieces) {
+        val path = PathParser().parsePathString(p.d).toPath().asAndroidPath()
+        p.fill?.let {
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = it.toInt()
+            c.drawPath(path, paint)
+        }
+        p.stroke?.let {
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = p.w
+            paint.color = it.toInt()
+            c.drawPath(path, paint)
+        }
+    }
+    return bmp
 }

@@ -60,6 +60,10 @@ object PenPrefs {
     var shapeStyle by mutableStateOf(LineStyle.SOLID); private set
     var shapeSize by mutableStateOf(2); private set
     var shapeRounded by mutableStateOf(true); private set
+    /** ملء خفيف بلون الشكل للأشكال المغلقة (تحت الكتابة). */
+    var shapeFill by mutableStateOf(false); private set
+    /** شفافية ملء الأشكال (0.1..1). */
+    var shapeFillAlpha by mutableStateOf(SHAPE_FILL_ALPHA); private set
     var arrowStart by mutableStateOf(ArrowHead.NONE); private set
     var arrowEnd by mutableStateOf(ArrowHead.NONE); private set
     var shapeColor by mutableStateOf(0xFF000000.toInt()); private set
@@ -67,6 +71,8 @@ object PenPrefs {
     // ---- الملاحظات اللاصقة ----
     /** وضع إضافة ملاحظة: النقرة التالية على الصفحة تضع ملاحظة. */
     var stickyActive by mutableStateOf(false)
+    /** أداة النص: النقرة التالية على الصفحة تضع مربع كتابة مباشرة في مكانها. */
+    var textActive by mutableStateOf(false)
     var stickyColor by mutableStateOf(0xFFF6B3B5.toInt()); private set
     var stickyStyle by mutableStateOf(0); private set
     /** الاسم الذي يظهر أسفل الملاحظات. */
@@ -114,6 +120,8 @@ object PenPrefs {
         shapeStyle = sp.getInt("shape_style", 0)
         shapeSize = sp.getInt("shape_size", 2)
         shapeRounded = sp.getBoolean("shape_round", true)
+        shapeFill = sp.getBoolean("shape_fill", false)
+        shapeFillAlpha = sp.getFloat("shape_fill_a", SHAPE_FILL_ALPHA).coerceIn(0.1f, 1f)
         arrowStart = try { ArrowHead.valueOf(sp.getString("arrow_s", "NONE")!!) } catch (t: Throwable) { ArrowHead.NONE }
         arrowEnd = try { ArrowHead.valueOf(sp.getString("arrow_e", "NONE")!!) } catch (t: Throwable) { ArrowHead.NONE }
         shapeColor = sp.getInt("shape_color", 0xFF000000.toInt())
@@ -195,6 +203,8 @@ object PenPrefs {
     fun changeShapeStyle(v: Int) { shapeStyle = v; put("shape_style", v) }
     fun changeShapeSize(v: Int) { shapeSize = v; put("shape_size", v) }
     fun changeShapeRounded(v: Boolean) { shapeRounded = v; put("shape_round", v) }
+    fun changeShapeFill(v: Boolean) { shapeFill = v; put("shape_fill", v) }
+    fun changeShapeFillAlpha(v: Float) { shapeFillAlpha = v.coerceIn(0.1f, 1f); put("shape_fill_a", shapeFillAlpha) }
     fun changeArrowStart(v: ArrowHead) { arrowStart = v; put("arrow_s", v.name) }
     fun changeArrowEnd(v: ArrowHead) { arrowEnd = v; put("arrow_e", v.name) }
     fun changeShapeColor(v: Int) { shapeColor = v; put("shape_color", v) }
@@ -289,14 +299,25 @@ object ShapeBuilder {
             }
             ShapeKind.ELLIPSE -> ellipse(cx, cy, (r - l) / 2f, (bt - t) / 2f)
         }
-        val out = arrayListOf(body)
-        if (kind == ShapeKind.LINE || kind == ShapeKind.ELBOW || kind == ShapeKind.CURVE) {
-            if (body.size >= 2) {
-                if (end != ArrowHead.NONE) out.add(head(body[body.size - 2], body.last(), end, width, rounded))
-                if (start != ArrowHead.NONE) out.add(head(body[1], body[0], start, width, rounded))
+        if ((kind == ShapeKind.LINE || kind == ShapeKind.ELBOW || kind == ShapeKind.CURVE) && body.size >= 2 &&
+            (start != ArrowHead.NONE || end != ArrowHead.NONE)
+        ) {
+            val len = headLen(width)
+            var shaft = body
+            val heads = ArrayList<List<Pt>>()
+            // اتجاه الرأس من نقطة على الخط بعيدة بطول الرأس (لا من آخر نقطتين بعد تدوير الزاوية)
+            if (end != ArrowHead.NONE) {
+                heads.add(head(pointBack(body, len), body.last(), end, width))
+                if (end == ArrowHead.CLOSED) shaft = trimEnd(shaft, len * cos(SPREAD))
             }
+            if (start != ArrowHead.NONE) {
+                val rev = body.asReversed()
+                heads.add(head(pointBack(rev, len), body.first(), start, width))
+                if (start == ArrowHead.CLOSED) shaft = trimEnd(shaft.asReversed(), len * cos(SPREAD)).asReversed()
+            }
+            return listOf(shaft) + heads
         }
-        return out
+        return listOf(body)
     }
 
     private fun ellipse(cx: Float, cy: Float, rx: Float, ry: Float): List<Pt> =
@@ -327,13 +348,53 @@ object ShapeBuilder {
         return out
     }
 
-    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float, rounded: Boolean): List<Pt> {
+    /** نصف زاوية رأس السهم. */
+    private const val SPREAD = 0.45f
+
+    private fun headLen(width: Float) = 0.018f + width * 3f
+
+    /**
+     * رأس السهم عند tip، متجهاً من from. حاد دائماً (لا تدوير للزوايا)؛ المغلق مثلث مغلق
+     * (يُملأ بلون الخط عند الرسم).
+     */
+    private fun head(from: Pt, tip: Pt, kind: ArrowHead, width: Float): List<Pt> {
         val ang = atan2(tip.y - from.y, tip.x - from.x)
-        val len = (0.018f + width * 3f)
-        val spread = 0.45f
-        val l = p(tip.x - len * cos(ang - spread), tip.y - len * sin(ang - spread))
-        val r = p(tip.x - len * cos(ang + spread), tip.y - len * sin(ang + spread))
-        return if (kind == ArrowHead.CLOSED) closed(listOf(l, p(tip.x, tip.y), r), rounded)
-        else listOf(l, p(tip.x, tip.y), r).let { if (rounded) roundCorners(it, false) else it }
+        val len = headLen(width)
+        val l = p(tip.x - len * cos(ang - SPREAD), tip.y - len * sin(ang - SPREAD))
+        val r = p(tip.x - len * cos(ang + SPREAD), tip.y - len * sin(ang + SPREAD))
+        val t = p(tip.x, tip.y)
+        return if (kind == ArrowHead.CLOSED) listOf(l, t, r, l) else listOf(l, t, r)
+    }
+
+    /** نقطة على الخط تبعد dist عن آخره (مقيسة على طول الخط). */
+    internal fun pointBack(pts: List<Pt>, dist: Float): Pt {
+        var left = dist
+        for (i in pts.size - 1 downTo 1) {
+            val a = pts[i]
+            val b = pts[i - 1]
+            val d = hypot(b.x - a.x, b.y - a.y)
+            if (d >= left && d > 0f) {
+                val f = left / d
+                return p(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+            }
+            left -= d
+        }
+        return pts.first()
+    }
+
+    /** يقصّر الخط من آخره بمقدار dist (ليتوقف عند قاعدة رأس السهم المغلق). */
+    internal fun trimEnd(pts: List<Pt>, dist: Float): List<Pt> {
+        var left = dist
+        for (i in pts.size - 1 downTo 1) {
+            val a = pts[i]
+            val b = pts[i - 1]
+            val d = hypot(b.x - a.x, b.y - a.y)
+            if (d >= left && d > 0f) {
+                val f = left / d
+                return pts.subList(0, i) + p(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+            }
+            left -= d
+        }
+        return pts
     }
 }

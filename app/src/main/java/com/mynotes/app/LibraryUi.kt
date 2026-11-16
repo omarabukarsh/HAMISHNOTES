@@ -100,13 +100,23 @@ fun NotebookCover(entry: DocEntry, modifier: Modifier = Modifier, compact: Boole
                 )
             }
             when {
+                entry.isMap && !locked -> PhIcon(
+                    R.drawable.ph_mindmap, Color.White.copy(alpha = 0.92f), if (compact) 26.dp else 44.dp,
+                    modifier = Modifier.align(Alignment.Center).offset(x = 6.dp, y = 14.dp)
+                )
                 locked -> PhIcon(R.drawable.ph_lock, Lib.accent, if (compact) 22.dp else 36.dp, modifier = Modifier.align(Alignment.Center).offset(x = 6.dp, y = 14.dp))
                 entry.sticker.isNotEmpty() -> StickerIcon(
                     entry.sticker, w * 0.5f,
                     Modifier.align(Alignment.Center).offset(x = w * 0.05f, y = h * 0.15f)
                 )
             }
-            if (entry.isNote) {
+            if (entry.isMap) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                        .clip(RoundedCornerShape(6.dp)).background(Color.White)
+                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                ) { Text(L("خريطة", "Map"), color = Color(0xFF1E2A44), fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            } else if (entry.isNote) {
                 Box(
                     Modifier.align(Alignment.BottomEnd).padding(8.dp)
                         .clip(RoundedCornerShape(6.dp)).background(Lib.accent)
@@ -200,7 +210,7 @@ fun IconCircleButton(icon: Int, description: String, selected: Boolean = false, 
 
 /** زر «جديد» الأصفر: ملاحظة جديدة أو استيراد PDF. */
 @Composable
-fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit) {
+fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit, onNewMap: () -> Unit = {}, onNewCard: () -> Unit = {}) {
     var open by remember { mutableStateOf(false) }
     val caret by animateFloatAsState(if (open) 180f else 0f, Motion.grow(), label = "newCaret")
     Box {
@@ -225,6 +235,16 @@ fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit) {
                 text = { Text(L("استيراد PDF", "Import PDF"), color = Lib.text) },
                 leadingIcon = { PhIcon(R.drawable.ph_export, Lib.text, 20.dp, modifier = Modifier.rotate(180f)) },
                 onClick = { open = false; onImport() }
+            )
+            DropdownMenuItem(
+                text = { Text(L("خريطة ذهنية جديدة", "New mind map"), color = Lib.text) },
+                leadingIcon = { PhIcon(R.drawable.ph_mindmap, Lib.iconBlue, 20.dp) },
+                onClick = { open = false; onNewMap() }
+            )
+            DropdownMenuItem(
+                text = { Text(L("بطاقة جديدة", "New card"), color = Lib.text) },
+                leadingIcon = { PhIcon(R.drawable.ph_cards, CardTeal, 20.dp) },
+                onClick = { open = false; onNewCard() }
             )
         }
     }

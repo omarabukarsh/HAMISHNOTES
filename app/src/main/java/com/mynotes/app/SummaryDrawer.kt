@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
@@ -105,6 +106,15 @@ fun SummaryDrawer(
     var selectForMap by remember { mutableStateOf(false) }
     // نصوص تُوضع الآن: تفتح الخريطة لاختيار مكانها
     var placeKeys by remember { mutableStateOf<List<String>?>(null) }
+    // صنع بطاقة من النصوص المختارة: لكل نص دوره (true = عنوان). null = ليس في هذا الوضع
+    var cardRoles by remember { mutableStateOf<Map<String, Boolean>?>(null) }
+    var cardDraft by remember { mutableStateOf<Pair<String, String>?>(null) }
+    fun endSelecting() {
+        selecting = false
+        selectForMap = false
+        selected = emptyList()
+        cardRoles = null
+    }
 
     Surface(
         modifier.fillMaxHeight().width(420.dp),
@@ -201,11 +211,30 @@ fun SummaryDrawer(
             }
             // شريط «فيه تعديلات يدوية… استعادة التلقائي» أُزيل بطلب المستخدم؛ الاستعادة لكل جزء من قائمته («كما اكتشفه البرنامج»)
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Gold.copy(alpha = 0.45f)))
-            if (selecting && selectForMap) {
+            val roles = cardRoles
+            if (selecting && selectForMap && roles != null) {
+                CardRoleBar(
+                    titles = roles.values.count { it },
+                    contents = roles.values.count { !it },
+                    onBack = { cardRoles = null },
+                    onNext = {
+                        // العنوان: النصوص المختارة عنوانًا بترتيبها، والمحتوى نقاط بترتيب الاختيار
+                        val texts = selected.mapNotNull { k -> blocks.firstOrNull { it.key == k }?.let { k to Summary.plainText("", listOf(it)).trim() } }
+                            .filter { it.second.isNotEmpty() }
+                        val front = texts.filter { roles[it.first] == true }.joinToString(" · ") { it.second.replace('\n', ' ') }
+                        val body = texts.filter { roles[it.first] != true }.map { it.second }
+                        val back = if (body.size == 1) body[0] else body.joinToString("\n") { "• $it" }
+                        cardDraft = front to back
+                    },
+                    onCancel = { endSelecting() }
+                )
+            } else if (selecting && selectForMap) {
                 MapSelectBar(
                     count = selected.size,
                     onPlace = { placeKeys = selected.mapNotNull { MindMap.nodeKey(it) } },
-                    onCancel = { selecting = false; selectForMap = false; selected = emptyList() }
+                    onCancel = { endSelecting() },
+                    // رقم ١ عنوان تلقائيًا، والباقي محتوى
+                    onCard = { cardRoles = selected.mapIndexed { i, k -> k to (i == 0) }.toMap() }
                 )
             }
             if (selecting && !selectForMap) {
@@ -286,14 +315,23 @@ fun SummaryDrawer(
                     blocks.forEachIndexed { i, b ->
                         item(key = "b$i") {
                             val isSel = b.key in selected
+                            val cr = cardRoles
+                            val role = cr?.get(b.key)
                             Box(
                                 Modifier.fillMaxWidth().background(Palette.Ivory)
                                     .padding(horizontal = 14.dp)
                                     .then(
-                                        if (selecting) Modifier.clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSel) Palette.GoldSoft else Color.Transparent)
-                                            .border(1.dp, if (isSel) Palette.Gold else Palette.Divider, RoundedCornerShape(8.dp))
-                                        else Modifier
+                                        when {
+                                            // صنع بطاقة: العنوان كحلي، والمحتوى أخضر، وغير المختار باهت
+                                            cr != null && role != null -> Modifier.clip(RoundedCornerShape(8.dp))
+                                                .background(if (role) Palette.NavySoft else CardTeal.copy(alpha = 0.08f))
+                                                .border(2.dp, if (role) Palette.Navy else CardTeal, RoundedCornerShape(8.dp))
+                                            cr != null -> Modifier.alpha(0.4f)
+                                            selecting -> Modifier.clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSel) Palette.GoldSoft else Color.Transparent)
+                                                .border(1.dp, if (isSel) Palette.Gold else Palette.Divider, RoundedCornerShape(8.dp))
+                                            else -> Modifier
+                                        }
                                     )
                                     .padding(horizontal = 6.dp)
                             ) {
@@ -303,11 +341,15 @@ fun SummaryDrawer(
                                     shownKeys = blocks.map { it.key },
                                     selecting = selecting,
                                     onToggleSelect = {
-                                        if (b.key != tableTarget && (!selectForMap || MindMap.nodeKey(b.key) != null)) {
+                                        if (cr != null) {
+                                            // لمسة على نص مختار تبدّل دوره
+                                            if (role != null) cardRoles = cr + (b.key to !role)
+                                        } else if (b.key != tableTarget && (!selectForMap || MindMap.nodeKey(b.key) != null)) {
                                             selected = if (isSel) selected - b.key else selected + b.key
                                         }
                                     },
-                                    selectable = !(selecting && b.key == tableTarget) && !(selecting && selectForMap && MindMap.nodeKey(b.key) == null),
+                                    selectable = if (cr != null) role != null
+                                    else !(selecting && b.key == tableTarget) && !(selecting && selectForMap && MindMap.nodeKey(b.key) == null),
                                     mapKey = if (tidy) null else MindMap.nodeKey(b.key),
                                     onMapPlace = { k -> placeKeys = listOf(k) },
                                     onMapSelect = {
@@ -332,8 +374,16 @@ fun SummaryDrawer(
                                     onEditTable = { editingTable = it },
                                     onMakeCard = { cardFrom = it },
                                     onJump = onJump,
-                                    onEdit = { editing = it }
+                                    onEdit = { editing = it },
+                                    isTableTarget = tableTarget != null && b.key == tableTarget
                                 )
+                                if (cr != null && role != null) {
+                                    CardRoleChips(
+                                        title = role,
+                                        onSelect = { v -> cardRoles = cr + (b.key to v) },
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -359,7 +409,23 @@ fun SummaryDrawer(
             onJump = { m -> placeKeys = null; onJump(m) },
             onDismiss = { placeKeys = null },
             placing = pk,
-            onPlaced = { placeKeys = null; selecting = false; selectForMap = false; selected = emptyList() }
+            onPlaced = { placeKeys = null; endSelecting() }
+        )
+    }
+
+    val cd = cardDraft
+    if (cd != null) {
+        AddCardDialog(
+            initialFront = cd.first,
+            initialBack = cd.second,
+            confirm = L("حفظ البطاقة", "Save card"),
+            dismissLabel = L("رجوع للاختيار", "Back to selection"),
+            onSave = { f, bk ->
+                s.addCustomCard(f, bk)
+                cardDraft = null
+                endSelecting()
+            },
+            onDismiss = { cardDraft = null }
         )
     }
 
@@ -403,7 +469,7 @@ fun SummaryDrawer(
 private fun copy(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-    AppController.messages.tryEmit(L("تم النسخ", "Copied"))
+    AppController.say(MsgKind.DONE, L("تم النسخ", "Copied"))
 }
 
 /** نص الفقرة مع إبراز الأجزاء المهمة بخط عريض وتظليل ذهبي فاتح. */
@@ -435,7 +501,8 @@ private fun BlockView(
     onEdit: (TextMark) -> Unit,
     mapKey: String? = null,
     onMapPlace: (String) -> Unit = {},
-    onMapSelect: () -> Unit = {}
+    onMapSelect: () -> Unit = {},
+    isTableTarget: Boolean = false
 ) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
@@ -461,7 +528,7 @@ private fun BlockView(
                         .padding(horizontal = 7.dp, vertical = 1.dp)
                 )
             }
-            if (selecting && !selectable) {
+            if (selecting && isTableTarget) {
                 Text(L("الجدول الذي تضم إليه", "Table you are adding to"), fontSize = 11.sp, color = Palette.GoldDeep)
             }
             when (b) {

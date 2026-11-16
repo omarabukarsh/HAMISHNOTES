@@ -117,6 +117,34 @@ object Templates {
         return Pair(kind, bg)
     }
 
+    /**
+     * مواضع الأسطر الأفقية في قالب الصفحة (بنفس وحدات w و h)، لوضع النص على السطر.
+     * فارغة للقوالب التي بلا أسطر كتابة (سادة، نقاط، ...).
+     */
+    fun lineYs(kind: String, w: Float, h: Float): List<Float> {
+        val unit = min(w, h * 0.707f)
+        val step = unit / 24f
+        val m = step * 0.8f
+        fun r(y0: Float, y1: Float, st: Float): List<Float> {
+            val out = ArrayList<Float>()
+            var y = y0
+            while (y < y1) { out.add(y); y += st }
+            return out
+        }
+        return when (kind) {
+            "lined" -> r(step * 2.5f, h - step, step)
+            "lined_n" -> r(step * 2.5f, h - step, step * 0.75f)
+            "grid" -> r(step, h, step)
+            "grid_s" -> r(step * 0.6f, h, step * 0.6f)
+            "cornell" -> r(h * 0.085f + step * 1.2f, h * 0.80f - step * 0.3f, step) + r(h * 0.80f + step * 1.2f, h - step * 0.5f, step)
+            "legal" -> r(step * 3f, h - step * 0.5f, step)
+            "header" -> r(h * 0.10f + step * 1.2f, h - step * 0.5f, step)
+            "columns2", "columns3" -> r(h * 0.08f + step * 1.2f, h - step * 0.5f, step)
+            "table" -> r(h * 0.08f + step * 2.8f, h - m, step * 1.4f)
+            else -> emptyList()
+        }
+    }
+
     // ---------- الرسم ----------
 
     private fun ruled(canvas: Canvas, x0: Float, x1: Float, y0: Float, y1: Float, step: Float, p: Paint) {

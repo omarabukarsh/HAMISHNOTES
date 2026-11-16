@@ -37,6 +37,11 @@ object AppController {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
+    /** رسالة منبثقة أسفل الشاشة، تظهر إن لم يُطفئ المستخدم نوعها من الإعدادات. */
+    fun say(kind: MsgKind, text: String) {
+        if (UiPrefs.showsMessages(kind)) messages.tryEmit(text)
+    }
+
     /** آخر لحظة كتب فيها المستخدم بالقلم؛ تتوقف القراءة الضوئية مؤقتًا بعدها كي لا تؤخّر الكتابة. */
     @Volatile
     var lastInkAt: Long = 0L
@@ -84,6 +89,7 @@ object AppController {
         for (k in library.indices) if (library[k].folder == old) library[k] = library[k].copy(folder = n)
         if (libraryFolder == old) libraryFolder = n
         examDates.remove(old)?.let { examDates[n] = it; saveExamDates() }
+        CardDeck.onFolderRenamed(old, n)
         saveFolders()
         saveLibrary()
     }
@@ -93,6 +99,7 @@ object AppController {
         for (k in library.indices) if (library[k].folder == name) library[k] = library[k].copy(folder = "")
         if (libraryFolder == name) libraryFolder = null
         if (examDates.remove(name) != null) saveExamDates()
+        CardDeck.onFolderRenamed(name, "")
         saveFolders()
         saveLibrary()
     }
@@ -101,7 +108,7 @@ object AppController {
         if (folder.isNotEmpty()) addFolder(folder)
         updateEntry(id) { it.copy(folder = folder) }
         saveLibrary()
-        messages.tryEmit(if (folder.isEmpty()) L("أُزيل المستند من المادة", "Document removed from the subject") else L("نُقل المستند إلى «$folder»", "Document moved to “$folder”"))
+        say(MsgKind.DONE, if (folder.isEmpty()) L("أُزيل المستند من المادة", "Document removed from the subject") else L("نُقل المستند إلى «$folder»", "Document moved to “$folder”"))
     }
 
     // ---------- إحصاءات الدراسة ----------
@@ -175,7 +182,7 @@ object AppController {
     fun toggleHighlightToSummary() {
         highlightToSummary = !highlightToSummary
         prefs.edit().putBoolean("hl_summary", highlightToSummary).apply()
-        messages.tryEmit(
+        say(MsgKind.TIP, 
             if (highlightToSummary) L("التمييز الجديد يُضاف إلى الملخصات", "New highlights are added to summaries")
             else L("التمييز الجديد يبقى على الصفحة فقط ولا يظهر في الملخصات", "New highlights stay on the page only and are not added to summaries")
         )
@@ -191,7 +198,7 @@ object AppController {
     fun toggleHighlightSnap() {
         highlightSnap = !highlightSnap
         prefs.edit().putBoolean("hl_snap", highlightSnap).apply()
-        messages.tryEmit(
+        say(MsgKind.TIP, 
             if (highlightSnap) L("التقاط النص مفعّل: مرّر الهايلايتر على السطر ليُميَّز ويُضاف إلى الملخصات", "Text snap on: run the highlighter over a line to mark it and add it to summaries")
             else L("التقاط النص متوقف: الهايلايتر يرسم بحرية", "Text snap off: the highlighter draws freely")
         )
@@ -312,11 +319,11 @@ object AppController {
                         saveStats()
                         pomoPhase = 2
                         pomoEndsAt = now + BREAK_MS
-                        messages.tryEmit(L("انتهت جلسة الدراسة. استرح $breakMin دقائق", "Study session finished. Take a $breakMin-minute break"))
+                        say(MsgKind.DONE, L("انتهت جلسة الدراسة. استرح $breakMin دقائق", "Study session finished. Take a $breakMin-minute break"))
                     } else {
                         pomoPhase = 1
                         pomoEndsAt = now + STUDY_MS
-                        messages.tryEmit(L("انتهت الراحة. جلسة دراسة جديدة $studyMin دقيقة", "Break over. New $studyMin-minute study session"))
+                        say(MsgKind.DONE, L("انتهت الراحة. جلسة دراسة جديدة $studyMin دقيقة", "Break over. New $studyMin-minute study session"))
                     }
                     pomoLeftMs = pomoEndsAt - now
                 }
@@ -392,7 +399,7 @@ object AppController {
         if (presets.size >= 12) presets.removeAt(0)
         presets.add(p)
         savePresets()
-        messages.tryEmit(L("حُفظ في أقلامي المفضلة (اضغط مطولًا لحذفه)", "Saved to favorite pens (long-press to remove)"))
+        say(MsgKind.TIP, L("حُفظ في أقلامي المفضلة (اضغط مطولًا لحذفه)", "Saved to favorite pens (long-press to remove)"))
     }
 
     fun applyPreset(p: PenPreset) {
@@ -492,7 +499,7 @@ object AppController {
         updateEntry(id) { it.copy(locked = !it.locked) }
         if (e.locked) unlocked.remove(id) else unlocked.add(id)
         saveLibrary()
-        messages.tryEmit(if (e.locked) L("أُلغي قفل المستند", "Document unlocked") else L("قُفل المستند: يحتاج الرمز أو البصمة لفتحه", "Document locked: needs your PIN or fingerprint to open"))
+        say(MsgKind.DONE, if (e.locked) L("أُلغي قفل المستند", "Document unlocked") else L("قُفل المستند: يحتاج الرمز أو البصمة لفتحه", "Document locked: needs your PIN or fingerprint to open"))
     }
 
     /** بعد التحقق: يُفتح المستند المطلوب. */
@@ -546,7 +553,7 @@ object AppController {
             delay(20_000)
             if (penKeyLearning) {
                 penKeyLearning = false
-                messages.tryEmit(L("لم تصل إشارة من القلم، أُلغي التعليم", "No signal from the pen; teaching cancelled"))
+                say(MsgKind.ERROR, L("لم تصل إشارة من القلم، أُلغي التعليم", "No signal from the pen; teaching cancelled"))
             }
         }
     }
@@ -575,7 +582,7 @@ object AppController {
             learnPenKey(false)
             penKeyCode = code
             prefs.edit().putInt("pen_key", code).apply()
-            messages.tryEmit(L("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم", "Done: double-tapping the pen now switches between the eraser and your last pen"))
+            say(MsgKind.DONE, L("تم: نقرتا القلم تبدّلان الآن بين الممحاة وآخر قلم", "Done: double-tapping the pen now switches between the eraser and your last pen"))
             return true
         }
         if (code in stylusKeys || (penKeyCode >= 0 && code == penKeyCode)) {
@@ -653,7 +660,7 @@ object AppController {
         selectTool(t)
         if (!prefs.getBoolean("tool_hint_shown", false)) {
             prefs.edit().putBoolean("tool_hint_shown", true).apply()
-            messages.tryEmit(L("اضغط على الأداة مرة ثانية لفتح إعداداتها: النوع واللون والحجم", "Tap the tool again to open its settings: type, color and size"))
+            say(MsgKind.TIP, L("اضغط على الأداة مرة ثانية لفتح إعداداتها: النوع واللون والحجم", "Tap the tool again to open its settings: type, color and size"))
         }
     }
 
@@ -687,6 +694,11 @@ object AppController {
         PenPrefs.init(app)
         PenInput.init(app)
         UiPrefs.init(app)
+        CardDeck.init(app)
+        FontStore.init(app)
+        StickerStore.init(app)
+        AutoFont.init(app)
+        TextPrefs.init(app)
         try {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(app)
         } catch (t: Throwable) {
@@ -835,7 +847,7 @@ object AppController {
     fun openSplit(id: String) {
         val entry = library.firstOrNull { it.id == id } ?: return
         if (entry.locked && id !in unlocked) {
-            messages.tryEmit(L("افتح قفل المستند أولًا", "Unlock the document first"))
+            say(MsgKind.ERROR, L("افتح قفل المستند أولًا", "Unlock the document first"))
             return
         }
         if (id == activeId) return
@@ -953,7 +965,7 @@ object AppController {
     /** يتبع رابطًا: يفتح المستند على الصفحة، ويحفظ مكانك للرجوع. */
     fun followLink(from: DocSession, docId: String, page: Int) {
         if (library.none { it.id == docId }) {
-            messages.tryEmit(L("المستند المرتبط لم يعد موجودًا", "The linked document no longer exists"))
+            say(MsgKind.ERROR, L("المستند المرتبط لم يعد موجودًا", "The linked document no longer exists"))
             return
         }
         linkBack = from.id to from.listState.firstVisibleItemIndex
@@ -1003,9 +1015,9 @@ object AppController {
                     if (sections.isEmpty()) 0
                     else Exporter.exportSummarySections(context.applicationContext, L("ملخص مادة: $folder", "Subject summary: $folder"), sections, uri)
                 }
-                messages.tryEmit(if (pages == 0) L("لا توجد ملخصات في مستندات هذه المادة", "No summaries in this subject’s documents") else L("تم حفظ ملخص المادة ($pages صفحة)", "Subject summary saved ($pages pages)"))
+                say(MsgKind.ERROR, if (pages == 0) L("لا توجد ملخصات في مستندات هذه المادة", "No summaries in this subject’s documents") else L("تم حفظ ملخص المادة ($pages صفحة)", "Subject summary saved ($pages pages)"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر حفظ ملخص المادة", "Could not save the subject summary"))
+                say(MsgKind.ERROR, L("تعذر حفظ ملخص المادة", "Could not save the subject summary"))
             } finally {
                 exporting = null
             }
@@ -1084,24 +1096,43 @@ object AppController {
 
     // ---------- الصور ----------
 
-    fun insertImage(s: DocSession, uri: Uri, page: Int) {
+    /** index: ترتيب الصورة بين عدة صور مختارة معًا (تُزاح قليلًا حتى لا تتطابق). width: عرضها نسبةً للصفحة. */
+    /**
+     * يضيف صورة إلى الصفحة. at = وسط الصورة بوحدات عرض الصفحة (مكان الإسقاط أو وسط الجزء الظاهر)؛
+     * null = أعلى الصفحة كما كان.
+     */
+    fun insertImage(
+        s: DocSession, uri: Uri, page: Int, index: Int = 0, width: Float = 0.45f, quiet: Boolean = false,
+        at: androidx.compose.ui.geometry.Offset? = null,
+        /** بعد إضافة الصورة إلى الصفحة (أو فشلها). */
+        onDone: (() -> Unit)? = null
+    ) {
         scope.launch {
             try {
                 val res = withContext(Dispatchers.IO) { repo.importImage(s.id, uri) }
+                val shift = (index % 8) * 0.035f
+                val aspect = if (res.second > 0f) res.second else 1f
+                val pageH = 1f / (s.pdf?.ratio(page) ?: 0.707f)
+                val h = width / aspect
+                val x = if (at != null) at.x - width / 2f + shift else (1f - width) / 2f + shift
+                val y = if (at != null) at.y - h / 2f + shift else 0.15f + shift
                 s.addImage(
                     ImageItem(
                         id = UUID.randomUUID().toString(),
                         file = res.first,
                         page = page,
-                        x = 0.275f,
-                        y = 0.15f,
-                        w = 0.45f,
+                        x = x.coerceIn(0f, (1f - width).coerceAtLeast(0f)),
+                        y = y.coerceIn(0f, (pageH - h).coerceAtLeast(0f)),
+                        w = width,
                         aspect = res.second
                     )
                 )
-                messages.tryEmit(L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
+                s.activePage = page
+                if (!quiet) say(MsgKind.TIP, L("أُضيفت الصورة. اسحبها لتحريكها واسحب النقطة في زاويتها لتغيير حجمها", "Image added. Drag to move it, drag the corner dot to resize"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر إضافة الصورة", "Could not add the image"))
+                say(MsgKind.ERROR, L("تعذر إضافة الصورة", "Could not add the image"))
+            } finally {
+                onDone?.invoke()
             }
         }
     }
@@ -1131,7 +1162,7 @@ object AppController {
                     text = clean, color = Color(0xFF6B4E00), size = 0.022f, sticky = true
                 )
             )
-            messages.tryEmit(L("أُضيفت الملاحظة اللاصقة. انقر عليها لفتحها، واسحبها لتحريكها", "Sticky note added. Tap to open it, drag to move it"))
+            say(MsgKind.TIP, L("أُضيفت الملاحظة اللاصقة. انقر عليها لفتحها، واسحبها لتحريكها", "Sticky note added. Tap to open it, drag to move it"))
             return
         }
         val pen = if (tool.isPen()) tool else lastPen
@@ -1147,7 +1178,7 @@ object AppController {
                 size = 0.024f
             )
         )
-        messages.tryEmit(L("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله", "Text added. Drag it with your finger to move it, tap it again to edit"))
+        say(MsgKind.TIP, L("أُضيف النص. اسحبه بإصبعك لتحريكه، وانقر عليه مرة ثانية لتعديله", "Text added. Drag it with your finger to move it, tap it again to edit"))
     }
 
     // ---------- التصدير ----------
@@ -1161,7 +1192,7 @@ object AppController {
         val snap = Exporter.snapshotOf(s) ?: throw IllegalStateException("not ready")
         val total = snap.pages.size
         val data = if (editable) repo.docDataJson(
-            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes)
+            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes, s.mindNotes)
         ) else null
         val imgs = if (editable) s.images.values.flatten().map { repo.imageFile(s.id, it.file) } else emptyList()
         return withContext(Dispatchers.IO) {
@@ -1233,16 +1264,16 @@ object AppController {
                 val selectable = withDocSession(docId) { s -> writeDocPdf(context, s, target, editable) }
                     ?: throw IllegalStateException("not ready")
                 if (file != null) launchShare(context, file)
-                else messages.tryEmit(
+                else say(MsgKind.DONE, 
                     when {
                         editable && selectable -> L("حُفظت نسخة قابلة للتعديل: افتحها في التطبيق لتعديل الكتابة", "Editable copy saved: open it in the app to edit the writing")
                         selectable -> L("حُفظت نسخة نهائية مع التعليقات", "Final copy saved with annotations")
                         else -> L("حُفظ المستند كصور (نسخة نهائية)", "Document saved as images (final copy)")
                     }
                 )
-                if (editable && !selectable) messages.tryEmit(L("تعذر عمل نسخة قابلة للتعديل لهذا الملف، فحُفظت نسخة نهائية", "Couldn’t make an editable copy of this file; a final copy was made"))
+                if (editable && !selectable) say(MsgKind.ERROR, L("تعذر عمل نسخة قابلة للتعديل لهذا الملف، فحُفظت نسخة نهائية", "Couldn’t make an editable copy of this file; a final copy was made"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر تجهيز ملف PDF", "Could not prepare the PDF"))
+                say(MsgKind.ERROR, L("تعذر تجهيز ملف PDF", "Could not prepare the PDF"))
             } finally {
                 exporting = null
             }
@@ -1272,13 +1303,93 @@ object AppController {
                     return@launch
                 }
                 if (file != null) launchShare(context, file)
-                else messages.tryEmit(L("تم حفظ الملخصات ($pages صفحة)", "Summaries saved ($pages pages)"))
+                else say(MsgKind.DONE, L("تم حفظ الملخصات ($pages صفحة)", "Summaries saved ($pages pages)"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر تجهيز الملخصات", "Could not prepare the summaries"))
+                say(MsgKind.ERROR, L("تعذر تجهيز الملخصات", "Could not prepare the summaries"))
             } finally {
                 exporting = null
             }
         }
+    }
+
+    /**
+     * مشاركة عدة مستندات معًا (ملف PDF لكل مستند) أو حفظها في مجلد يختاره المستخدم.
+     * folderUri = null للمشاركة. المستندات المقفلة تُتخطى.
+     */
+    fun shareOrSaveDocs(context: Context, ids: List<String>, editable: Boolean, folderUri: Uri?) {
+        if (exporting != null) return
+        val entries = ids.mapNotNull { id -> library.firstOrNull { it.id == id } }
+        val open = entries.filter { !it.locked }
+        val skipped = entries.size - open.size
+        if (open.isEmpty()) {
+            say(MsgKind.ERROR, L("افتح قفل المستندات أولًا", "Unlock the documents first"))
+            return
+        }
+        exporting = L("جارٍ تجهيز ${open.size} ملفات…", "Preparing ${open.size} files…")
+        scope.launch {
+            val resolver = context.contentResolver
+            val done = ArrayList<File>()
+            var saved = 0
+            var failed = 0
+            try {
+                val dir = if (folderUri == null) {
+                    File(appContext.cacheDir, "share").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+                } else null
+                val parent = folderUri?.let {
+                    android.provider.DocumentsContract.buildDocumentUriUsingTree(it, android.provider.DocumentsContract.getTreeDocumentId(it))
+                }
+                val used = HashSet<String>()
+                open.forEachIndexed { i, e ->
+                    exporting = L("جارٍ تجهيز ${i + 1} من ${open.size}…", "Preparing ${i + 1} of ${open.size}…")
+                    // أسماء غير مكررة داخل المجموعة نفسها
+                    val base = (e.name + if (editable) "" else L(" - نهائي", " - final"))
+                        .replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80).ifBlank { "document" }
+                    var name = base
+                    var n = 2
+                    while (!used.add(name.lowercase())) name = "$base ($n)".also { n++ }
+                    try {
+                        val target: Uri = if (dir != null) {
+                            Uri.fromFile(File(dir, "$name.pdf"))
+                        } else {
+                            withContext(Dispatchers.IO) {
+                                android.provider.DocumentsContract.createDocument(resolver, parent!!, "application/pdf", "$name.pdf")
+                            } ?: throw IllegalStateException("create failed")
+                        }
+                        withDocSession(e.id) { s -> writeDocPdf(context, s, target, editable) } ?: throw IllegalStateException("not ready")
+                        if (dir != null) done.add(File(dir, "$name.pdf")) else saved++
+                    } catch (c: kotlinx.coroutines.CancellationException) {
+                        throw c
+                    } catch (t: Throwable) {
+                        failed++
+                    }
+                }
+                if (dir != null) {
+                    if (done.isNotEmpty()) launchShareMany(context, done)
+                } else if (saved > 0) {
+                    say(MsgKind.DONE, L("حُفظت $saved ملفات في المجلد الذي اخترته", "Saved $saved files to the folder you chose"))
+                }
+                if (failed > 0) say(MsgKind.ERROR, L("تعذر تجهيز $failed من الملفات", "Could not prepare $failed of the files"))
+                if (skipped > 0) say(MsgKind.ERROR, L("تُخطي $skipped مستند مقفل", "Skipped $skipped locked document(s)"))
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                say(MsgKind.ERROR, L("تعذر تجهيز الملفات", "Could not prepare the files"))
+            } finally {
+                exporting = null
+            }
+        }
+    }
+
+    private fun launchShareMany(context: Context, files: List<File>) {
+        if (files.size == 1) return launchShare(context, files[0])
+        val uris = ArrayList<Uri>(files.map { androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", it) })
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE)
+            .setType("application/pdf")
+            .putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, uris)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val chooser = android.content.Intent.createChooser(send, L("مشاركة عبر", "Share via"))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
     }
 
     fun exportDocument(context: Context, s: DocSession, uri: Uri) = shareOrSaveDoc(context, s.id, false, uri)
@@ -1296,7 +1407,22 @@ object AppController {
                 saveLibrary()
                 openDocument(e.id)
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر إنشاء الملاحظة", "Could not create the note"))
+                say(MsgKind.ERROR, L("تعذر إنشاء الملاحظة", "Could not create the note"))
+            }
+        }
+    }
+
+    /** خريطة ذهنية جديدة بلا ملف (تُحفظ كمستند في المكتبة، ويمكن وضعها في مادة). */
+    fun createMap(name: String, folder: String) {
+        scope.launch {
+            try {
+                val e = withContext(Dispatchers.IO) { repo.createNote(name, "plain", 0xFFFFFFFF.toInt()) }
+                    .copy(isMap = true, isNote = false, folder = folder)
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+            } catch (t: Throwable) {
+                say(MsgKind.ERROR, L("تعذر إنشاء الخريطة", "Could not create the map"))
             }
         }
     }
@@ -1313,7 +1439,7 @@ object AppController {
         val ratio = pageRatio ?: doc.ratio(base)
         s.insertPages(after, listOf(PageRef(Templates.src(template, color), 0, ratio)))
         scope.launch { s.listState.scrollToItem((after + 1).coerceAtLeast(0)) }
-        messages.tryEmit(L("أُضيفت صفحة جديدة (${doc.count} صفحة الآن)", "New page added (${doc.count} pages now)"))
+        say(MsgKind.DONE, L("أُضيفت صفحة جديدة (${doc.count} صفحة الآن)", "New page added (${doc.count} pages now)"))
     }
 
     /** يضيف كل صفحات ملف PDF آخر إلى هذا المستند بعد الصفحة رقم after. */
@@ -1327,9 +1453,9 @@ object AppController {
                 }
                 s.insertPages(after, refs)
                 s.listState.scrollToItem((after + 1).coerceAtLeast(0))
-                messages.tryEmit(L("أُضيفت ${refs.size} صفحة من الملف (${doc.count} صفحة الآن)", "Added ${refs.size} pages from the file (${doc.count} pages now)"))
+                say(MsgKind.DONE, L("أُضيفت ${refs.size} صفحة من الملف (${doc.count} صفحة الآن)", "Added ${refs.size} pages from the file (${doc.count} pages now)"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر إضافة الملف. تأكد أنه PDF سليم.", "Could not add the file. Make sure it is a valid PDF."))
+                say(MsgKind.ERROR, L("تعذر إضافة الملف. تأكد أنه PDF سليم.", "Could not add the file. Make sure it is a valid PDF."))
             }
         }
     }
@@ -1381,7 +1507,7 @@ object AppController {
                 ok == 0 -> L("تعذر الاستيراد. تأكد أن الملف PDF سليم.", "Import failed. Make sure the file is a valid PDF.")
                 else -> L("تم استيراد $ok وتعذر استيراد $failed", "Imported $ok, failed to import $failed")
             }
-            messages.tryEmit(msg)
+            say(MsgKind.DONE, msg)
             added.forEach { queueOcr(it) }
         }
     }
@@ -1433,7 +1559,7 @@ object AppController {
                     }
                     pptJob = Presentations.Job(name, f, Presentations.mimeFor(name))
                 } catch (t: Throwable) {
-                    messages.tryEmit(L("تعذر قراءة ملف العرض", "Could not read the presentation"))
+                    say(MsgKind.ERROR, L("تعذر قراءة ملف العرض", "Could not read the presentation"))
                 }
                 return@launch
             }
@@ -1452,7 +1578,7 @@ object AppController {
                 openDocument(e.id)
                 queueOcr(e)
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
+                say(MsgKind.ERROR, L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
             } finally {
                 importing = false
             }
@@ -1486,9 +1612,9 @@ object AppController {
                 val copy = withContext(Dispatchers.IO) { repo.duplicate(entry, L(" (نسخة)", " (copy)")) }
                 library.add(0, copy)
                 saveLibrary()
-                messages.tryEmit(L("تم إنشاء نسخة من المستند", "Document duplicated"))
+                say(MsgKind.DONE, L("تم إنشاء نسخة من المستند", "Document duplicated"))
             } catch (t: Throwable) {
-                messages.tryEmit(L("تعذر نسخ المستند", "Could not duplicate the document"))
+                say(MsgKind.ERROR, L("تعذر نسخ المستند", "Could not duplicate the document"))
             }
         }
     }
@@ -1499,6 +1625,6 @@ object AppController {
         library.removeAll { it.id == entry.id }
         saveLibrary()
         scope.launch { withContext(Dispatchers.IO) { repo.delete(entry) } }
-        messages.tryEmit(L("تم حذف المستند", "Document deleted"))
+        say(MsgKind.DONE, L("تم حذف المستند", "Document deleted"))
     }
 }

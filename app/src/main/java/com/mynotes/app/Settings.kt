@@ -107,9 +107,11 @@ object ToolCatalog {
         ToolInfo("bookmark", L("العلامة المرجعية", "Bookmark"), L("علّم الصفحات المهمة بشريط ذهبي، وتجدها في «العلامات» داخل درج الصفحات.", "Mark important pages with a gold ribbon; find them under “Bookmarks” in the pages drawer."), R.drawable.ph_bookmark, Demo.BOOKMARK),
         ToolInfo("timer", L("مؤقت الدراسة", "Study timer"), L("جلسة دراسة ثم راحة بالمدة التي تختارها في الإعدادات. أوقفه مؤقتًا أو أنهه متى شئت، ووقته يُحسب في إحصاءاتك.", "A study session then a break, with durations you choose in Settings. Pause or stop it anytime; its time counts in your stats."), R.drawable.ph_timer, Demo.TIMER),
         ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
+        ToolInfo("stickers", L("الملصقات", "Stickers"), L("ضع ملصقًا جاهزًا على الصفحة، أو اصنع ملصقاتك من صورة أو من رسمك فتبقى محفوظة في التطبيق.", "Put a ready-made sticker on the page, or make your own from a photo or your drawing; they stay saved in the app."), R.drawable.ph_sticker, Demo.IMAGE),
         ToolInfo("lasso", L("التحديد الحر", "Lasso"), L("أحِط بالقلم حول كتابتك لتحديدها، ثم اسحبها أو كبّرها بالمقبض أو غيّر لونها أو انسخها أو حوّلها إلى نص مكتوب أو احذفها.", "Loop around your writing to select it, then drag it, resize with the handle, recolor, duplicate, convert to typed text or delete."), R.drawable.ph_lasso, Demo.LASSO),
+        ToolInfo("autofont", L("Aa تحويل الكتابة تلقائياً", "Aa Auto-convert handwriting"), L("اكتب بالقلم كالعادة؛ عند إنهاء الجملة تتحول في مكانها إلى الخط الذي تختاره، والتراجع يعيدها لخط يدك.", "Write as usual; when you finish a sentence it turns into the font you chose, in place. Undo brings your handwriting back."), R.drawable.ph_text, Demo.TEXT),
         ToolInfo("shapetool", L("أداة الأشكال", "Shapes tool"), L("ارسم مستطيلًا أو دائرة أو مثلثًا أو معينًا أو خطًا أو سهمًا أو موصلًا بالسحب، مع نمط الخط وسماكته ورؤوس الأسهم.", "Drag to draw rectangles, circles, triangles, diamonds, lines, arrows or connectors, with line style, thickness and arrowheads."), R.drawable.ph_shapes, Demo.SHAPES),
-        ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("اختر لونًا وانقر على الصفحة لتضع ملاحظة تكتب عليها بالقلم؛ اسحبها لتحريكها، ومن زاويتها لتكبيرها، واطوها لتصبح مربعًا صغيرًا.", "Pick a color and tap the page to place a note you write on with the pen; drag to move, drag its corner to resize, and collapse it to a small square."), R.drawable.ph_note, Demo.STICKY),
+        ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("اختر لونًا وانقر على الصفحة لتضع ملاحظة تكتب عليها بالقلم؛ اسحبها لتحريكها، ومن زاويتها لتكبيرها، واطوها لتصبح مربعًا صغيرًا.", "Pick a color and tap the page to place a note you write on with the pen; drag to move, drag its corner to resize, and collapse it to a small square."), R.drawable.ph_sticky_note, Demo.STICKY),
         ToolInfo("link", L("رابط إلى صفحة", "Page link"), L("ضع على الصفحة رابطًا إلى صفحة أخرى أو مستند آخر (مثل «جدول المضادات ص 12»)؛ انقر عليه مرتين لتنتقل، ويظهر زر للرجوع.", "Place a link to another page or document (e.g. “antibiotics table p. 12”); tap it twice to jump, with a Back button."), R.drawable.ph_link, Demo.NAV),
         ToolInfo("record", L("تسجيل المحاضرة", "Lecture recording"), L("سجّل الصوت أثناء الكتابة؛ كل خط يُربط بلحظته، فتحدد الكتابة لاحقًا وتسمع ما قيل وقتها.", "Record audio while writing; every stroke is linked to its moment, so you can lasso writing later and hear what was said."), R.drawable.ph_mic, Demo.NAV),
         ToolInfo("split", L("مستندان جنبًا إلى جنب", "Split view"), L("اعرض مستندًا آخر بجانب الحالي (مثل الكتاب والملخص) واسحب الفاصل لتغيير العرض.", "Show another document next to this one (e.g. book and notes) and drag the divider to resize."), R.drawable.ph_split, Demo.NAV),
@@ -161,7 +163,7 @@ private fun SettingsPage.lead(): String = when (this) {
     SettingsPage.PEN -> L("قلمك، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Your pen, pen or finger writing, and the toolbar.")
     SettingsPage.HIGHLIGHTS -> L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
     SettingsPage.STUDY -> L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
-    SettingsPage.APPEARANCE -> L("اجعل هامش يبدو كما تحب.", "Make Hamish look and feel the way you like.")
+    SettingsPage.APPEARANCE -> L("اجعل HAMISH PRO يبدو كما تحب.", "Make HAMISH PRO look and feel the way you like.")
     SettingsPage.PRIVACY -> L("قفل المستندات وما يحفظه التطبيق.", "Document lock and what the app stores.")
     SettingsPage.ABOUT -> L("الإصدار والتراخيص والشروط.", "Version, licenses and terms.")
 }
@@ -348,6 +350,37 @@ private fun SettingsPane(
                         GroupRow(R.drawable.ph_translate, TileBlue, L("لغة التطبيق", "App language")) {
                             Segmented(listOf("العربية", "English"), if (I18n.english) 1 else 0) { c.setEnglish(it == 1) }
                         }
+                    }
+                    // الرسائل المنبثقة أسفل الشاشة: كل نوع بمفتاح
+                    GroupLabel(L("الرسائل المنبثقة", "Pop-up messages"))
+                    SettingsGroup {
+                        SwitchRow(
+                            R.drawable.ph_info, TileBlue,
+                            L("الإرشادات", "Tips"),
+                            L("تشرح كيف تستعمل الأداة، مثل «اضغط على الأداة مرة ثانية لفتح إعداداتها»", "Explain how to use a tool, like “Tap the tool again to open its settings”"),
+                            UiPrefs.tipsOn
+                        ) { UiPrefs.changeTips(!UiPrefs.tipsOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_check_circle, TileGreen,
+                            L("التأكيدات", "Confirmations"),
+                            L("تخبرك أن شيئاً تم، مثل «تم النسخ» و«أُضيفت البطاقة»", "Tell you something was done, like “Copied” and “Card added”"),
+                            UiPrefs.doneOn
+                        ) { UiPrefs.changeDone(!UiPrefs.doneOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_info, TileRed,
+                            L("الأخطاء والتنبيهات", "Errors & warnings"),
+                            L("شيء لم ينجح أو يحتاج منك فعلاً، مثل «تعذر تنزيل الخط»", "Something failed or needs you, like “Could not download the font”"),
+                            UiPrefs.errorsOn
+                        ) { UiPrefs.changeErrors(!UiPrefs.errorsOn) }
+                        GroupDivider()
+                        SwitchRow(
+                            R.drawable.ph_text, TileGray,
+                            L("قراءات الكلمة البديلة", "Other readings of a word"),
+                            L("النقر على كلمة محوّلة يعرض قراءات أخرى لها للتصحيح", "Tapping a converted word shows other readings to correct it"),
+                            UiPrefs.wordAltsOn
+                        ) { UiPrefs.changeWordAlts(!UiPrefs.wordAltsOn) }
                     }
                     GroupLabel(L("المستندات", "Documents"))
                     SettingsGroup {
@@ -709,7 +742,7 @@ private fun PenKeyLearnRow() {
                 // نافذة الإعدادات تحجب إشارات القلم عن الشاشة الرئيسية، فنغلقها أثناء التعليم
                 c.learnPenKey(true)
                 c.settingsOpen = false
-                c.messages.tryEmit(L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
+                c.say(MsgKind.TIP, L("انقر الآن على القلم مرتين…", "Double-tap the pen now…"))
             }
         }
     }
@@ -1592,7 +1625,7 @@ private fun ReminderRow() {
     val permission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { ok ->
-        if (!ok) c.messages.tryEmit(L("لن تظهر التذكيرات دون السماح بالإشعارات", "Reminders won’t show without notification permission"))
+        if (!ok) c.say(MsgKind.ERROR, L("لن تظهر التذكيرات دون السماح بالإشعارات", "Reminders won’t show without notification permission"))
     }
     fun hhmm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
     val shape = RoundedCornerShape(14.dp)

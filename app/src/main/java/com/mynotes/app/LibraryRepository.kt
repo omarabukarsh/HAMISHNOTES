@@ -134,7 +134,8 @@ class LibraryRepository(context: Context) {
                         folder = o.optString("folder", ""),
                         locked = o.optBoolean("lock", false),
                         coverColor = o.optInt("cover", 0),
-                        sticker = o.optString("sticker", "")
+                        sticker = o.optString("sticker", ""),
+                        isMap = o.optBoolean("map", false)
                     )
                 } catch (e: Throwable) {
                     null
@@ -172,6 +173,7 @@ class LibraryRepository(context: Context) {
                             .put("lock", e.locked)
                             .put("cover", e.coverColor)
                             .put("sticker", e.sticker)
+                            .put("map", e.isMap)
                     )
                 }
                 atomicWrite(indexFile, JSONObject().put("version", 1).put("docs", arr).toString())
@@ -413,7 +415,7 @@ class LibraryRepository(context: Context) {
                             Tool.FOUNTAIN
                         }
                         val safeKind = if (kind == Tool.ERASER || kind == Tool.LASER) Tool.FOUNTAIN else kind
-                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L), o.optInt("ls", 0), o.optBoolean("sh", false)))
+                        list.add(Ink(pts, Color(o.getInt("c")), o.getDouble("w").toFloat(), safeKind, o.optLong("t", 0L), o.optInt("ls", 0), o.optBoolean("sh", false), o.optBoolean("fl", false), o.optDouble("lf", -1.0).toFloat(), o.optDouble("ef", 0.0).toFloat(), o.optBoolean("sf", false), o.optDouble("sfa", SHAPE_FILL_ALPHA.toDouble()).toFloat(), o.optString("wd", ""), o.optLong("wi", 0L)))
                     }
                     ink[key.toInt()] = list
                 }
@@ -518,7 +520,19 @@ class LibraryRepository(context: Context) {
                                 size = o.getDouble("s").toFloat(),
                                 sticky = o.optBoolean("st", false),
                                 linkDoc = o.optString("ld", "").ifEmpty { null },
-                                linkPage = o.optInt("lp", 0)
+                                linkPage = o.optInt("lp", 0),
+                                font = o.optString("f", ""),
+                                ink = parseInkArray(o.optJSONArray("ink")),
+                                alts = o.optJSONObject("alts")?.let { ao ->
+                                    ao.keys().asSequence().associateWith { k ->
+                                        val arr = ao.optJSONArray(k)
+                                        if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
+                                    }
+                                } ?: emptyMap(),
+                                bold = o.optBoolean("b", false),
+                                italic = o.optBoolean("i", false),
+                                underline = o.optBoolean("u", false),
+                                align = o.optInt("al", 0)
                             )
                         )
                     } catch (e: Throwable) {
@@ -556,7 +570,7 @@ class LibraryRepository(context: Context) {
                                     j += 3
                                 }
                                 val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
-                                inks.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false)))
+                                inks.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat(), so.optBoolean("sf", false), so.optDouble("sfa", SHAPE_FILL_ALPHA.toDouble()).toFloat(), so.optString("wd", ""), so.optLong("wi", 0L)))
                             }
                         }
                         all.add(
@@ -612,7 +626,7 @@ class LibraryRepository(context: Context) {
                                 .put("w", s.width.toDouble())
                                 .put("k", s.tool.name)
                                 .put("t", s.t)
-                                .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                                .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) }; if (s.word.isNotEmpty()) { put("wd", s.word); put("wi", s.wid) } }
                                 .put("p", flat)
                         )
                     }
@@ -679,6 +693,17 @@ class LibraryRepository(context: Context) {
                             .put("st", tb.sticky)
                             .put("ld", tb.linkDoc ?: "")
                             .put("lp", tb.linkPage)
+                            .apply {
+                                if (tb.font.isNotEmpty()) put("f", tb.font)
+                                if (tb.bold) put("b", true)
+                                if (tb.italic) put("i", true)
+                                if (tb.underline) put("u", true)
+                                if (tb.align != 0) put("al", tb.align)
+                                if (tb.ink.isNotEmpty()) put("ink", inkArray(tb.ink))
+                                if (tb.alts.isNotEmpty()) put("alts", JSONObject().apply {
+                                    tb.alts.forEach { (k, v) -> put(k, JSONArray(v)) }
+                                })
+                            }
                     )
                 }
             }
@@ -709,7 +734,7 @@ class LibraryRepository(context: Context) {
                                                 put(
                                                     JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble())
                                                         .put("k", s.tool.name).put("t", s.t)
-                                                        .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true) }
+                                                        .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) }; if (s.word.isNotEmpty()) { put("wd", s.word); put("wi", s.wid) } }
                                                         .put("p", flat)
                                                 )
                                             }
@@ -785,6 +810,40 @@ class LibraryRepository(context: Context) {
             .apply { if (!e.map.isEmpty()) put("map", mapJson(e.map)) }
     }
 
+    /** خطوط كتابة يدوية بنفس صيغة الحفظ («p» نقاط مسطحة x,y,ضغط). */
+    private fun inkArray(list: List<Ink>): JSONArray = JSONArray().apply {
+        list.forEach { s ->
+            val flat = JSONArray()
+            s.pts.forEach { flat.put(it.x.toDouble()); flat.put(it.y.toDouble()); flat.put(it.p.toDouble()) }
+            put(
+                JSONObject().put("c", s.color.toArgb()).put("w", s.width.toDouble()).put("k", s.tool.name).put("t", s.t)
+                    .apply { if (s.style != 0) put("ls", s.style); if (s.shape) put("sh", true); if (s.fill) put("fl", true); if (s.lineF >= 0f) { put("lf", s.lineF.toDouble()); put("ef", s.emF.toDouble()) }; if (s.shapeFill) { put("sf", true); put("sfa", s.fillAlpha.toDouble()) }; if (s.word.isNotEmpty()) { put("wd", s.word); put("wi", s.wid) } }
+                    .put("p", flat)
+            )
+        }
+    }
+
+    private fun parseInkArray(a: JSONArray?): List<Ink> {
+        if (a == null) return emptyList()
+        val out = ArrayList<Ink>()
+        for (k in 0 until a.length()) {
+            try {
+                val so = a.getJSONObject(k)
+                val flat = so.getJSONArray("p")
+                val pts = ArrayList<Pt>(flat.length() / 3)
+                var j = 0
+                while (j + 2 < flat.length()) {
+                    pts.add(Pt(flat.getDouble(j).toFloat(), flat.getDouble(j + 1).toFloat(), flat.getDouble(j + 2).toFloat()))
+                    j += 3
+                }
+                val kind = try { Tool.valueOf(so.optString("k", "FOUNTAIN")) } catch (e: Throwable) { Tool.FOUNTAIN }
+                out.add(Ink(pts, Color(so.getInt("c")), so.getDouble("w").toFloat(), kind, so.optLong("t", 0L), so.optInt("ls", 0), so.optBoolean("sh", false), so.optBoolean("fl", false), so.optDouble("lf", -1.0).toFloat(), so.optDouble("ef", 0.0).toFloat(), so.optBoolean("sf", false), so.optDouble("sfa", SHAPE_FILL_ALPHA.toDouble()).toFloat(), so.optString("wd", ""), so.optLong("wi", 0L)))
+            } catch (e: Throwable) {
+            }
+        }
+        return out
+    }
+
     private fun parseMap(o: JSONObject?): MapEdits {
         if (o == null) return MapEdits()
         return try {
@@ -799,7 +858,11 @@ class LibraryRepository(context: Context) {
                 }
             }
             val collapsed = o.optJSONArray("collapsed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-            MapEdits(nodes, collapsed)
+            val texts = LinkedHashMap<String, String>()
+            o.optJSONObject("texts")?.let { tx -> for (k in tx.keys()) tx.optString(k).takeIf { it.isNotBlank() }?.let { texts[k] = it } }
+            val free = LinkedHashMap<String, String>()
+            o.optJSONObject("free")?.let { fr -> for (k in fr.keys()) fr.optString(k).takeIf { it.isNotBlank() }?.let { free[k] = it } }
+            MapEdits(nodes, collapsed, texts, free)
         } catch (e: Throwable) {
             MapEdits()
         }
@@ -815,6 +878,8 @@ class LibraryRepository(context: Context) {
         }
         return JSONObject().put("nodes", nodes)
             .put("collapsed", JSONArray().apply { m.collapsed.forEach { put(it) } })
+            .apply { if (m.texts.isNotEmpty()) put("texts", JSONObject().apply { m.texts.forEach { (k, v) -> put(k, v) } }) }
+            .apply { if (m.free.isNotEmpty()) put("free", JSONObject().apply { m.free.forEach { (k, v) -> put(k, v) } }) }
     }
 
     /** يحفظ صورة جاهزة (مثل الخريطة الذهنية) لتوضع على صفحة. خارج الخيط الرئيسي. */
@@ -866,7 +931,7 @@ class LibraryRepository(context: Context) {
         }
 
         val isPng = try {
-            resolver.getType(uri) == "image/png"
+            resolver.getType(uri) == "image/png" || uri.path?.endsWith(".png", ignoreCase = true) == true
         } catch (e: Throwable) {
             false
         }

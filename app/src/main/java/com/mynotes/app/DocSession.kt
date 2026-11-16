@@ -28,7 +28,12 @@ sealed interface SessionStatus {
 
 /** يمسح كل خط تلمسه الممحاة كاملًا. يعيد القائمة نفسها إن لم يتغير شيء. */
 fun eraseStrokes(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink) -> Boolean = { true }): List<Ink> {
-    val next = list.filterNot { s -> canErase(s) && s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } }
+    val next = list.filterNot { s ->
+        canErase(s) && if (s.fill) InkFill.hit(s.pts, at.x, at.y, radius, s.width)
+        else s.pts.any { hypot(it.x - at.x, it.y - at.y) < radius } ||
+            // شكل مملوء: لمس داخله يمسحه أيضاً
+            (s.shapeFill && InkFill.winding(at.x, at.y, listOf(s.pts)) != 0)
+    }
     return if (next.size == list.size) list else next
 }
 
@@ -43,6 +48,12 @@ fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink)
     for (s in list) {
         if (!canErase(s)) {
             out.add(s); continue
+        }
+        // حرف مملوء (تجميل الخط): يُقص منه ما مرت عليه الممحاة فقط
+        if (s.fill) {
+            val parts = InkCut.cut(s, at.x, at.y, radius)
+            if (parts == null) out.add(s) else { changed = true; out.addAll(parts) }
+            continue
         }
         // رفض سريع بالمستطيل المحيط
         var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -75,13 +86,14 @@ fun eraseStrokesArea(list: List<Ink>, at: Offset, radius: Float, canErase: (Ink)
         var cur = ArrayList<Pt>()
         for (p in dense) {
             if (inside(p)) {
-                if (cur.size >= 2) out.add(s.copy(pts = cur))
+                // الشكل المقطوع لم يعد مغلقاً: بلا ملء
+                if (cur.size >= 2) out.add(s.copy(pts = cur, shapeFill = false))
                 cur = ArrayList()
             } else {
                 cur.add(p)
             }
         }
-        if (cur.size >= 2) out.add(s.copy(pts = cur))
+        if (cur.size >= 2) out.add(s.copy(pts = cur, shapeFill = false))
     }
     return if (changed) out else list
 }
@@ -120,6 +132,8 @@ const val NOTE_COLLAPSED = 0.045f
 
 class DocSession(entry: DocEntry) {
     val id: String = entry.id
+    /** خريطة ذهنية مستقلة: تُعرض الخريطة بدل الصفحات. */
+    val isMap: Boolean = entry.isMap
 
     var title by mutableStateOf(entry.name)
     var status by mutableStateOf<SessionStatus>(SessionStatus.Loading)
@@ -203,7 +217,7 @@ class DocSession(entry: DocEntry) {
         if (f.isEmpty() || b.isEmpty()) return
         customCards = customCards + Card("u:" + UUID.randomUUID().toString(), f, b)
         persist()
-        AppController.messages.tryEmit(L("أُضيفت البطاقة", "Card added"))
+        AppController.say(MsgKind.DONE, L("أُضيفت البطاقة", "Card added"))
     }
 
     /** يضيف نصًا محددًا إلى الخريطة الذهنية (بنقرة واحدة) مع عنوانه في المستند إن عُرف. */
@@ -274,7 +288,7 @@ class DocSession(entry: DocEntry) {
     fun toggleBookmark(page: Int) {
         bookmarks = if (page in bookmarks) bookmarks - page else bookmarks + page
         persist()
-        AppController.messages.tryEmit(if (page in bookmarks) L("أُضيفت علامة على الصفحة ${page + 1}", "Bookmarked page ${page + 1}") else L("أُزيلت العلامة", "Bookmark removed"))
+        AppController.say(MsgKind.DONE, if (page in bookmarks) L("أُضيفت علامة على الصفحة ${page + 1}", "Bookmarked page ${page + 1}") else L("أُزيلت العلامة", "Bookmark removed"))
     }
 
     /** تضبطهما شاشة القراءة: الانتقال إلى موضع تمييز، وملاءمة الصفحة كاملة/عرض الشاشة. */
@@ -285,6 +299,139 @@ class DocSession(entry: DocEntry) {
     val redoStack = mutableStateListOf<EditSnapshot>()
 
     val listState = LazyListState(entry.lastPage.coerceIn(0, maxOf(0, entry.pageCount - 1)), 0)
+
+    // ---- الصفحة الحالية: آخر صفحة لُمست أو كُتب عليها، وإلا الأكثر ظهوراً على الشاشة ----
+    /** آخر صفحة لمسها المستخدم (-1 = لا شيء؛ تُلغى عند التمرير باليد). */
+    var activePage by mutableStateOf(-1)
+
+    /** الصفحة الأكثر ظهوراً في الشاشة الآن. */
+    fun mostVisiblePage(): Int {
+        val info = listState.layoutInfo
+        val vis = info.visibleItemsInfo
+        if (vis.isEmpty()) return listState.firstVisibleItemIndex
+        val top = info.viewportStartOffset
+        val bottom = info.viewportEndOffset
+        return vis.maxByOrNull { minOf(it.offset + it.size, bottom) - maxOf(it.offset, top) }?.index
+            ?: listState.firstVisibleItemIndex
+    }
+
+    /** رقم الصفحة الذي يظهر في الشريط وتعمل عليه الأزرار (إضافة صورة، ملصق، ...). */
+    fun currentPage(): Int {
+        val n = pdf?.count ?: Int.MAX_VALUE
+        val a = activePage
+        if (a in 0 until n && listState.layoutInfo.visibleItemsInfo.any { it.index == a }) return a
+        return mostVisiblePage().coerceIn(0, maxOf(0, n - 1))
+    }
+
+    /** وسط الجزء الظاهر من الصفحة (بوحدات عرض الصفحة): هنا توضع الصورة أو الملصق عند النقر. */
+    fun visibleCenter(page: Int): Offset {
+        val ratio = pdf?.ratio(page) ?: 0.707f
+        val pageH = 1f / ratio
+        val info = listState.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { v -> v.index == page } ?: return Offset(0.5f, pageH / 2f)
+        if (item.size <= 0) return Offset(0.5f, pageH / 2f)
+        val top = maxOf(item.offset, info.viewportStartOffset)
+        val bottom = minOf(item.offset + item.size, info.viewportEndOffset)
+        val cy = ((top + bottom) / 2f - item.offset) / item.size * pageH
+        return Offset(0.5f, cy.coerceIn(0f, pageH))
+    }
+
+    /** مواضع الصفحات الظاهرة في النافذة (لإسقاط الصور والملصقات المسحوبة عليها). */
+    val pageWindowRects = HashMap<Int, androidx.compose.ui.geometry.Rect>()
+    /** الجزء الظاهر من قائمة الصفحات في النافذة (للتمرير التلقائي أثناء سحب عنصر إليها). */
+    var pagesViewport = androidx.compose.ui.geometry.Rect.Zero
+
+    /** الصفحة التي تقع تحت نقطة في النافذة، وموضعها داخل الصفحة بوحدات عرض الصفحة. */
+    fun pageAt(win: Offset): Pair<Int, Offset>? {
+        val vis = listState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
+        val hit = pageWindowRects.entries.firstOrNull { it.key in vis && it.value.contains(win) } ?: return null
+        val r = hit.value
+        if (r.width <= 0f) return null
+        return hit.key to Offset((win.x - r.left) / r.width, (win.y - r.top) / r.width)
+    }
+
+    // ---- الكتابة المباشرة على الصفحة ----
+    /** مربع النص الذي يُكتب فيه الآن مباشرة على الصفحة (null = لا شيء). */
+    var inlineEditId by mutableStateOf<String?>(null)
+
+    /** يبدأ الكتابة المباشرة في مربع موجود. */
+    fun startInlineEdit(boxId: String) {
+        if (inlineEditId != null && inlineEditId != boxId) finishInlineEdit()
+        beginEdit()
+        inlineEditId = boxId
+        selectedTextId = boxId
+        selectedImageId = null
+    }
+
+    /** ينهي الكتابة المباشرة: مربع فارغ يُحذف، وإلا يُحفظ التعديل كخطوة تراجع واحدة. */
+    fun finishInlineEdit() {
+        val id = inlineEditId ?: return
+        inlineEditId = null
+        val tb = textBox(id)
+        if (tb != null && tb.text.isBlank()) {
+            texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).filter { it.id != id })
+            if (selectedTextId == id) selectedTextId = null
+        }
+        if (snapshot != null) endEdit() else persist()
+    }
+
+    /** يحذف مربع النص المفتوح للكتابة (خطوة تراجع واحدة مع ما كُتب فيه). */
+    fun deleteInlineBox() {
+        val id = inlineEditId ?: return
+        updateTextBox(id) { it.copy(text = "") }
+        finishInlineEdit()
+    }
+
+    /**
+     * يضع مربع نص فارغاً ويفتح الكتابة فيه مباشرة: عند النقر (y مستوى السطر) بعرض افتراضي،
+     * أو في المستطيل الذي رسمه المستخدم (top = true: y أعلى المربع، و[width] عرضه).
+     */
+    fun placeInlineText(page: Int, x: Float, y: Float, color: Color, size: Float, width: Float = 0.42f, top: Boolean = false) {
+        finishInlineEdit()
+        val ratio = pdf?.ratio(page) ?: 0.707f
+        val w = width.coerceIn(0.04f, 1f)
+        val tb = TextBox(
+            UUID.randomUUID().toString(), page,
+            x.coerceIn(0f, 1f - w * 0.3f), (if (top) y else y - size * 0.6f).coerceIn(0f, maxOf(0f, 1f / ratio - size * 1.4f)),
+            w, "", color, size
+        )
+        beginEdit()
+        texts = texts + (page to ((texts[page] ?: emptyList()) + tb))
+        inlineEditId = tb.id
+        selectedTextId = tb.id
+        selectedImageId = null
+        activePage = page
+    }
+
+    /** تخطيط النص المعروض لكل مربع نص وعرض الصفحة بالبكسل (لمعرفة الكلمة تحت الإصبع أو القلم). */
+    val textLayouts = HashMap<String, Pair<androidx.compose.ui.text.TextLayoutResult, Float>>()
+
+    /** بدائل كلمة متحولة معروضة للتصحيح: [start, end) موضع الكلمة في نص المربع. */
+    class AltPopup(val boxId: String, val page: Int, val start: Int, val end: Int, val alts: List<String>, val at: Offset)
+    var altPopup by mutableStateOf<AltPopup?>(null)
+
+    /** يستبدل الكلمة المعروضة ببديل (خطوة تراجع واحدة). */
+    fun applyAlt(p: AltPopup, word: String) {
+        altPopup = null
+        val tb = textBox(p.boxId) ?: return
+        if (p.end > tb.text.length || p.start > p.end) return
+        val old = tb.text.substring(p.start, p.end)
+        beginEdit()
+        updateTextBox(p.boxId) {
+            val others = (it.alts[old] ?: emptyList()) + old
+            it.copy(
+                text = it.text.substring(0, p.start) + word + it.text.substring(p.end),
+                alts = it.alts - old + (word to others.filter { o -> o != word }.distinct())
+            )
+        }
+        endEdit()
+    }
+
+    /** مكان زري الصور والملصقات في النافذة: درجهما يخرج من الزر ويستقر تحته. */
+    val trayAnchors = androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>()
+
+    /** الدرج الجانبي المفتوح: "stickers" أو "photos" أو null. */
+    var trayMode by mutableStateOf<String?>(null)
 
     // ---- القراءة الضوئية والتحديد والبحث ----
     val ocr = mutableStateMapOf<Int, OcrPage>()
@@ -471,16 +618,41 @@ class DocSession(entry: DocEntry) {
         }.map { it.id }
         val sel = LassoSel(page, picked, imgs, txts)
         lassoSel = if (sel.isEmpty()) null else sel
-        if (sel.isEmpty()) AppController.messages.tryEmit(L("لم تحدد أي شيء", "Nothing selected"))
+        if (sel.isEmpty()) AppController.say(MsgKind.ERROR, L("لم تحدد أي شيء", "Nothing selected"))
     }
+
+    /**
+     * تحريك/تكبير التحديد أثناء السحب: يُعرض فقط (طبقة فوق الصفحة)، والخطوط تُعدَّل مرة واحدة عند الرفع.
+     * x' = px + (x - px)·k + dx.
+     */
+    class LassoPreview(val dx: Float, val dy: Float, val k: Float, val px: Float, val py: Float) {
+        fun x(v: Float) = px + (v - px) * k + dx
+        fun y(v: Float) = py + (v - py) * k + dy
+    }
+    var lassoPreview by mutableStateOf<LassoPreview?>(null)
+
+    /** حدود خطوط التحديد محفوظة لكل تحديد (لا تُحسب من آلاف النقاط في كل إطار أثناء السحب). */
+    private var strokeBoxOf: LassoSel? = null
+    private var strokeBox: FloatArray? = null
 
     /** المستطيل المحيط بالتحديد (l, t, r, b) بإحداثيات الصفحة. */
     fun lassoBounds(): FloatArray? {
         val sel = lassoSel ?: return null
-        var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
-        for (s in sel.strokes) for (p in s.pts) {
-            if (p.x < l) l = p.x; if (p.x > r) r = p.x
-            if (p.y < t) t = p.y; if (p.y > b) b = p.y
+        if (strokeBoxOf !== sel) {
+            var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+            for (s in sel.strokes) for (p in s.pts) {
+                if (p.x < l) l = p.x; if (p.x > r) r = p.x
+                if (p.y < t) t = p.y; if (p.y > b) b = p.y
+            }
+            strokeBox = floatArrayOf(l, t, r, b)
+            strokeBoxOf = sel
+        }
+        val sb = strokeBox!!
+        var l = sb[0]; var t = sb[1]; var r = sb[2]; var b = sb[3]
+        // أثناء السحب: حدود الخطوط بعد التحريك المعروض
+        val pv = lassoPreview
+        if (pv != null && l <= r) {
+            l = pv.x(l); r = pv.x(r); t = pv.y(t); b = pv.y(b)
         }
         fun box(x0: Float, y0: Float, x1: Float, y1: Float) {
             if (x0 < l) l = x0; if (x1 > r) r = x1
@@ -520,6 +692,28 @@ class DocSession(entry: DocEntry) {
 
     /** تحريك بمقدار (dx, dy) وتكبير بنسبة k حول النقطة (px, py). */
     fun lassoTransform(dx: Float, dy: Float, k: Float = 1f, px: Float = 0f, py: Float = 0f) {
+        lassoMoveObjects(dx, dy, k, px, py)
+        lassoReplace { s ->
+            s.copy(
+                pts = s.pts.map { p -> Pt(px + (p.x - px) * k + dx, py + (p.y - py) * k + dy, p.p) },
+                width = s.width * k
+            )
+        }
+    }
+
+    /** ينهي السحب: يطبّق التحريك المعروض على الخطوط مرة واحدة، ويعيد الخطوط بعد التعديل. */
+    fun lassoCommitPreview(): List<Ink> {
+        val pv = lassoPreview ?: return emptyList()
+        lassoPreview = null
+        if (pv.dx == 0f && pv.dy == 0f && pv.k == 1f) return emptyList()
+        lassoReplace { s ->
+            s.copy(pts = s.pts.map { p -> Pt(pv.x(p.x), pv.y(p.y), p.p) }, width = s.width * pv.k)
+        }
+        return lassoSel?.strokes ?: emptyList()
+    }
+
+    /** يحرّك صور ومربعات نص التحديد فقط (عناصر خفيفة تتحرك مباشرة أثناء السحب). */
+    fun lassoMoveObjects(dx: Float, dy: Float, k: Float = 1f, px: Float = 0f, py: Float = 0f) {
         val sel = lassoSel ?: return
         if (sel.imageIds.isNotEmpty()) {
             val list = images[sel.page] ?: emptyList()
@@ -535,12 +729,6 @@ class DocSession(entry: DocEntry) {
                     w = tb.w * k, size = if (tb.sticky) tb.size else tb.size * k
                 ) else tb
             })
-        }
-        lassoReplace { s ->
-            s.copy(
-                pts = s.pts.map { p -> Pt(px + (p.x - px) * k + dx, py + (p.y - py) * k + dy, p.p) },
-                width = s.width * k
-            )
         }
     }
 
@@ -643,6 +831,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun undo() {
+        if (inlineEditId != null) finishInlineEdit()
         if (undoStack.isEmpty()) return
         redoStack.add(snap())
         restore(undoStack.removeAt(undoStack.lastIndex))
@@ -650,6 +839,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun redo() {
+        if (inlineEditId != null) finishInlineEdit()
         if (redoStack.isEmpty()) return
         undoStack.add(snap())
         restore(redoStack.removeAt(redoStack.lastIndex))
@@ -868,6 +1058,7 @@ class DocSession(entry: DocEntry) {
         val doc = pdf ?: return
         lassoSel = null
         zoomBox = null
+        inlineEditId = null
         undoStack.clear()
         redoStack.clear()
         snapshot = null
@@ -920,7 +1111,7 @@ class DocSession(entry: DocEntry) {
         if (existing != null && isFresh(existing, strokes)) return existing
         val lang = PenPrefs.hwLang
 
-        val result: OcrPage? = try {
+        val found: OcrPage? = try {
             withContext(Dispatchers.Default) {
                 val ref = doc.pages.getOrNull(page) ?: return@withContext null
                 // 1) النص الرقمي داخل الملف: دقيق ويدعم العربية
@@ -1013,6 +1204,18 @@ class DocSession(entry: DocEntry) {
             null
         }
 
+        // الكتابة المحوّلة (تجميل الخط): كلماتها محفوظة مع حروفها، فتُضاف بأماكنها
+        // (وتحل محل ما قرأته القراءة الضوئية في نفس المكان)
+        val converted = ConvertedWords.read(strokes)
+        val result = if (converted.isEmpty()) found else {
+            val others = (found?.words ?: emptyList()).filter { w ->
+                val cx = (w.l + w.r) / 2f
+                val cy = (w.t + w.b) / 2f
+                converted.none { c -> cx >= c.l && cx <= c.r && cy >= c.t && cy <= c.b }
+            }
+            val offset = (others.maxOfOrNull { it.line } ?: -1) + 1
+            OcrPage(others + converted.map { it.copy(line = it.line + offset) }, found?.version ?: ver)
+        }
         if (result != null) {
             ocr[page] = result
             withContext(Dispatchers.IO) { AppController.repo.saveOcrPage(id, page, result) }
@@ -1150,7 +1353,7 @@ class DocSession(entry: DocEntry) {
             summaryEdits = summaryEdits.copy(map = MindMap.migrate(summaryEdits.map, removed, added[0]))
         }
         if (!nested) endEdit()
-        res.message?.let { AppController.messages.tryEmit(it) }
+        res.message?.let { AppController.say(MsgKind.DONE, it) }
     }
 
     /**
@@ -1167,7 +1370,7 @@ class DocSession(entry: DocEntry) {
                 if (!nested) beginEdit()
                 addInk(page, Ink(pts, color, width, Tool.HIGHLIGHTER))
                 if (!nested) endEdit()
-                AppController.messages.tryEmit(L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
+                AppController.say(MsgKind.DONE, L("لا يوجد نص مقروء تحت التمييز، فحُفظ كتمييز حر", "No readable text under the highlight, so it was kept as a free highlight"))
             }
         }
         // القراءة المحفوظة قد تسبق ما كُتب بعدها؛ تُعاد قراءتها حينئذ (الأسطر الجديدة فقط تُقرأ فعلًا)
@@ -1198,7 +1401,7 @@ class DocSession(entry: DocEntry) {
         val b = maxOf(sel.start, sel.end)
         addMark(sel.page, words, (a..b).toList(), color)
         selection = null
-        AppController.messages.tryEmit(
+        AppController.say(MsgKind.DONE, 
             if (AppController.highlightToSummary && UiPrefs.summariesOn) L("أُضيف النص إلى الملخصات", "Text added to summaries") else L("مُيّز النص دون إضافته إلى الملخصات", "Text highlighted without adding it to summaries")
         )
     }
@@ -1376,7 +1579,11 @@ class DocSession(entry: DocEntry) {
         persist()
     }
 
-    private fun mapItems() = MindMap.items(allMarks())
+    private fun mapItems() = MindMap.allItems(allMarks(), summaryEdits.map)
+
+    /** يضيف نصًا حرًا في الخريطة (غير مرتبط بالملخص). */
+    fun mapAddFree(text: String, target: MapTarget) =
+        changeMap { MindMap.addFree(it, allMarks(), text, target, UUID.randomUUID().toString()).first }
 
     /** يضع النصوص (بترتيبها) في المكان المختار على الخريطة. */
     fun mapPlace(keys: List<String>, target: MapTarget) = changeMap { MindMap.place(it, mapItems(), keys, target) }
@@ -1391,11 +1598,72 @@ class DocSession(entry: DocEntry) {
         return n
     }
 
+    /** يعدّل نص العقدة في الخريطة فقط (يمكن التراجع عنه). */
+    fun mapSetText(key: String, text: String) = changeMap { MindMap.setText(it, mapItems(), key, text) }
+
     fun mapToggleCollapsed(key: String) = changeMapQuiet { m ->
         m.copy(collapsed = if (key in m.collapsed) m.collapsed - key else m.collapsed + key)
     }
 
     fun mapSetCollapsed(keys: Set<String>) = changeMapQuiet { it.copy(collapsed = keys) }
+
+    // ---------- تغيير خط الكتابة اليدوية ----------
+
+    /** يستبدل خطوط الكتابة المحددة بمربع نص بخط من المكتبة (خطوة تراجع واحدة). */
+    fun inkToTextBox(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        lassoSel = null
+        selectedTextId = box.id
+        endEdit()
+    }
+
+    /** التحويل التلقائي: الكتابة تصبح نصاً بالخط المختار دون تغيير التحديد (خطوة تراجع واحدة). */
+    fun autoInkToText(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to ((texts[page] ?: emptyList()) + box))
+        endEdit()
+    }
+
+    /** يحذف خطوط الكتابة ويستبدل مربع نص موجود بنسخته المحدّثة (خطوة تراجع واحدة). */
+    fun autoReplace(page: Int, strokes: List<Ink>, box: TextBox) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(strokes) }
+        beginEdit()
+        annotations = annotations + (page to (annotations[page] ?: emptyList()).filter { it !in gone })
+        texts = texts + (page to (texts[page] ?: emptyList()).map { if (it.id == box.id) box else it })
+        endEdit()
+    }
+
+    /** يستبدل خطوط كتابة بخطوط أخرى في الصفحة (خطوة تراجع واحدة): كتابة يد ← نفس الكلمات بخط آخر. */
+    fun replaceInk(page: Int, remove: List<Ink>, add: List<Ink>) {
+        val gone = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Ink, Boolean>()).apply { addAll(remove) }
+        beginEdit()
+        annotations = annotations + (page to ((annotations[page] ?: emptyList()).filter { it !in gone } + add))
+        if (lassoSel?.strokes?.any { it in gone } == true) lassoSel = null
+        endEdit()
+    }
+
+    /** يحرّك مربع نص رأسياً بدون خطوة تراجع (تصحيح موضع بعد التحويل مباشرة). */
+    fun nudgeText(boxId: String, dy: Float) {
+        val tb = textBox(boxId) ?: return
+        texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).map { if (it.id == boxId) it.copy(y = (it.y + dy).coerceAtLeast(0f)) else it })
+        persist()
+    }
+
+    /** يعيد الكتابة اليدوية الأصلية بدل مربع النص. */
+    fun textBoxToInk(boxId: String) {
+        val tb = textBox(boxId) ?: return
+        if (tb.ink.isEmpty()) return
+        beginEdit()
+        texts = texts + (tb.page to (texts[tb.page] ?: emptyList()).filter { it.id != boxId })
+        annotations = annotations + (tb.page to ((annotations[tb.page] ?: emptyList()) + tb.ink))
+        selectedTextId = null
+        endEdit()
+    }
 
     // ---------- مربعات النص ----------
 
@@ -1513,6 +1781,7 @@ class DocSession(entry: DocEntry) {
     }
 
     fun dispose() {
+        finishInlineEdit()
         flushPersist()
         disposed = true
         ocrJob?.cancel()

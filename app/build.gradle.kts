@@ -45,6 +45,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -86,6 +87,13 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    // اختبارات الواجهة على الحاسوب بلا جهاز
+    testImplementation("org.robolectric:robolectric:4.14.1") {
+        exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
+    }
+    testImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 kotlin {

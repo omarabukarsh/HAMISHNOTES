@@ -1,5 +1,6 @@
 package com.mynotes.app
 
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -249,7 +250,7 @@ fun EraserAdvancedSection() {
     }
     if (confirm) {
         val s = c.tabs.firstOrNull { it.id == c.activeId }
-        val page = s?.listState?.firstVisibleItemIndex ?: 0
+        val page = s?.currentPage() ?: 0
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text(L("مسح الصفحة ${page + 1}؟", "Clear page ${page + 1}?")) },
@@ -268,7 +269,9 @@ fun EraserAdvancedSection() {
 
 /** نوع التحديد (حر/مستطيل) وما يدخل فيه. */
 @Composable
-fun LassoMenuContent(onOff: () -> Unit) {
+fun LassoMenuContent(s: DocSession?, onOff: () -> Unit) {
+    var changeFont by remember { mutableStateOf(false) }
+    var toText by remember { mutableStateOf(false) }
     Column(Modifier.width(260.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Text(L("التحديد", "Lasso selection"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
         Spacer(Modifier.height(6.dp))
@@ -289,9 +292,55 @@ fun LassoMenuContent(onOff: () -> Unit) {
         PanelSwitch(L("الصور", "Images"), PenPrefs.lassoImages) { PenPrefs.changeLassoImages(it) }
         PanelSwitch(L("مربعات النص", "Text boxes"), PenPrefs.lassoTexts) { PenPrefs.changeLassoTexts(it) }
         PanelSwitch(L("الملاحظات اللاصقة", "Sticky notes"), PenPrefs.lassoStickies) { PenPrefs.changeLassoStickies(it) }
+        // أوامر ما بعد التحديد (نفس أوامر الشريط الذي يظهر فوق التحديد)
+        Spacer(Modifier.height(12.dp))
+        PanelLabel(L("بعد التحديد", "After selecting"))
+        val has = s?.lassoSel?.isEmpty() == false
+        if (!has) {
+            Text(
+                L("أحِط بالقلم حول شيء أولاً لتعمل هذه الأوامر.", "Draw around something first to use these."),
+                fontSize = 12.sp, color = Palette.TextSecondary, lineHeight = 16.sp
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        Column(Modifier.alpha(if (has) 1f else 0.45f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LassoAction("Aa " + L("تغيير الخط", "Change font"), has, Modifier.weight(1f)) { changeFont = true }
+                LassoAction(L("إلى نص", "To text"), has, Modifier.weight(1f)) { toText = true }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LassoAction("☺ " + L("ملصق", "Sticker"), has, Modifier.weight(1f)) { s?.let { StickerStore.saveFromLasso(it) } }
+                LassoAction(L("نسخ", "Duplicate"), has, Modifier.weight(1f)) { s?.lassoDuplicate() }
+                LassoAction(L("حذف", "Delete"), has, Modifier.weight(1f), Color(0xFFC62828)) { s?.lassoDelete() }
+            }
+            // تلوين المحدد
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(L("تلوين", "Recolor"), fontSize = 13.sp, color = Palette.TextPrimary, modifier = Modifier.padding(end = 4.dp))
+                AppController.penPalette.take(6).forEach { col ->
+                    Box(
+                        Modifier.size(32.dp).clip(CircleShape).clickable(enabled = has) { s?.lassoRecolor(col) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.size(22.dp).clip(CircleShape).background(col).border(1.dp, Palette.Divider, CircleShape))
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(6.dp))
         TextButton(onClick = onOff) { Text(L("إيقاف التحديد", "Turn off lasso"), color = Palette.Navy, fontWeight = FontWeight.Bold) }
     }
+    if (s != null && changeFont) ChangeFontDialog(s) { changeFont = false }
+    if (s != null && toText) InkToTextDialog(s) { toText = false }
+}
+
+/** زر أمر من أوامر ما بعد التحديد (بنفس شكل خيارات النافذة). */
+@Composable
+private fun LassoAction(label: String, enabled: Boolean, modifier: Modifier, color: Color = Palette.TextPrimary, onClick: () -> Unit) {
+    Box(
+        modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
+            .clickable(enabled = enabled, onClick = onClick).padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, fontSize = 12.5.sp, color = color, maxLines = 1) }
 }
 
 // ---------------------------------------------------------------- الأشكال
@@ -313,7 +362,6 @@ fun ShapeBar() {
     val c = AppController
     val pill = RoundedCornerShape(26.dp)
     var strokeMenu by remember { mutableStateOf(false) }
-    var colorMenu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)) {
@@ -332,38 +380,29 @@ fun ShapeBar() {
                     TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
                 }
                 ToolbarSep()
+                // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
                 Box {
-                    TBtn(onClick = { strokeMenu = true }) { LineStyleSample(PenPrefs.shapeStyle, Palette.TextPrimary, 4f) }
-                    DropdownMenu(
-                        expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
-                        shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
-                    ) { ShapeStrokePanel() }
-                }
-                Box {
-                    Box(
-                        Modifier.size(42.dp).clip(CircleShape).clickable { colorMenu = true },
-                        contentAlignment = Alignment.Center
+                    Row(
+                        Modifier.padding(horizontal = 4.dp).height(40.dp).clip(RoundedCornerShape(20.dp))
+                            .background(Palette.NavySoft.copy(alpha = 0.5f))
+                            .border(1.5.dp, Palette.Navy, RoundedCornerShape(20.dp))
+                            .clickable { strokeMenu = true }
+                            .padding(start = 10.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Box(Modifier.size(24.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
+                        LineStyleSample(PenPrefs.shapeStyle, Color(PenPrefs.shapeColor), (1.5f + PenPrefs.shapeSize * 0.6f).coerceAtMost(6f))
+                        Box(Modifier.size(18.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
+                        PhIcon(R.drawable.ph_caret_down, Palette.Navy, 12.dp)
                     }
                     DropdownMenu(
-                        expanded = colorMenu, onDismissRequest = { colorMenu = false },
-                        shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                        expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
+                        shape = RoundedCornerShape(20.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) {
-                        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            (c.penPalette + c.customColors.toList()).take(10).forEach { col ->
-                                val sel = col.toArgb() == PenPrefs.shapeColor
-                                Box(
-                                    Modifier.size(32.dp).clip(CircleShape).background(col)
-                                        .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
-                                        .clickable { PenPrefs.changeShapeColor(col.toArgb()); colorMenu = false }
-                                )
-                            }
-                            Box(
-                                Modifier.size(32.dp).clip(CircleShape).clickable { colorMenu = false; picker = true },
-                                contentAlignment = Alignment.Center
-                            ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp) }
-                        }
+                        ShapeSettingsWindow(
+                            onClose = { strokeMenu = false },
+                            onCustom = { strokeMenu = false; picker = true }
+                        )
                     }
                 }
                 ToolbarSep()
@@ -382,33 +421,117 @@ fun ShapeBar() {
     }
 }
 
-/** إعدادات خط الأشكال: النمط، السماكة، الزوايا المستديرة، رؤوس الأسهم. */
+/** سماكات سريعة للأشكال (من مستويات Sizes). */
+private val SHAPE_SIZES = listOf(1, 3, 5, 8)
+
+/**
+ * نافذة «إعدادات الشكل» الموحّدة: معاينة، اللون، نمط الخط، السماكة، الملء وشفافيته،
+ * الزوايا المستديرة ورؤوس الأسهم. تفتح داخل قائمة منسدلة (بلا مكوّنات تقيس محتواها لاحقاً).
+ */
 @Composable
-private fun ShapeStrokePanel() {
-    Column(Modifier.width(270.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
-        StrokeStyleSection(
-            style = PenPrefs.shapeStyle, onStyle = { PenPrefs.changeShapeStyle(it) },
-            size = PenPrefs.shapeSize, onSize = { PenPrefs.changeShapeSize(it) },
-            widthOf = { Sizes.width(Tool.BALLPOINT, it) },
-            onReset = { PenPrefs.resetShape() }
-        )
-        Divider()
-        PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
-        Spacer(Modifier.height(8.dp))
-        PanelLabel(L("رؤوس الأسهم (للخطوط والموصلات)", "Arrowheads (lines and connectors)"))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ArrowHead.values().forEach { h ->
-                    ArrowOption(h, start = true, selected = PenPrefs.arrowStart == h) { PenPrefs.changeArrowStart(h) }
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ArrowOption(ArrowHead.NONE, start = false, selected = PenPrefs.arrowEnd == ArrowHead.NONE) { PenPrefs.changeArrowEnd(ArrowHead.NONE) }
-                ArrowOption(ArrowHead.OPEN, start = false, selected = PenPrefs.arrowEnd == ArrowHead.OPEN) { PenPrefs.changeArrowEnd(ArrowHead.OPEN) }
-                ArrowOption(ArrowHead.CLOSED, start = false, selected = PenPrefs.arrowEnd == ArrowHead.CLOSED) { PenPrefs.changeArrowEnd(ArrowHead.CLOSED) }
+internal fun ShapeSettingsWindow(onClose: () -> Unit, onCustom: () -> Unit) {
+    val c = AppController
+    val col = Color(PenPrefs.shapeColor)
+    val cardShape = RoundedCornerShape(12.dp)
+    @Composable
+    fun Choice(sel: Boolean, modifier: Modifier, h: androidx.compose.ui.unit.Dp = 42.dp, onClick: () -> Unit, content: @Composable () -> Unit) {
+        Box(
+            modifier.height(h).clip(cardShape)
+                .background(if (sel) Palette.NavySoft else Palette.Background)
+                .border(if (sel) 2.dp else 0.dp, if (sel) Palette.Navy else Color.Transparent, cardShape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) { content() }
+    }
+    Column(Modifier.width(340.dp).padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(L("إعدادات الشكل", "Shape settings"), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+            Box(Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 18.dp, L("إغلاق", "Close"))
             }
         }
+        // معاينة الشكل بإعداداته
+        Canvas(Modifier.fillMaxWidth().height(70.dp).clip(cardShape).background(Color(0xFFFCF6E4))) {
+            val sw = (1.5f + PenPrefs.shapeSize * 0.7f).dp.toPx()
+            val l = size.width * 0.28f; val r = size.width * 0.72f
+            val t = size.height * 0.2f; val b = size.height * 0.8f
+            val cx = (l + r) / 2f; val cy = (t + b) / 2f
+            val kind = PenPrefs.shapeKind
+            val path = Path()
+            when (kind) {
+                ShapeKind.LINE -> { path.moveTo(l, b); path.lineTo(r, t) }
+                ShapeKind.ELBOW -> { path.moveTo(l, t); path.lineTo(l, b); path.lineTo(r, b) }
+                ShapeKind.CURVE -> { path.moveTo(l, b); path.cubicTo(cx, b, cx, t, r, t) }
+                ShapeKind.RECT -> path.addRoundRect(androidx.compose.ui.geometry.RoundRect(l, t, r, b, if (PenPrefs.shapeRounded) 6.dp.toPx() else 0f, if (PenPrefs.shapeRounded) 6.dp.toPx() else 0f))
+                ShapeKind.CIRCLE -> path.addOval(androidx.compose.ui.geometry.Rect(Offset(cx, cy), (b - t) / 2f))
+                ShapeKind.ELLIPSE -> path.addOval(androidx.compose.ui.geometry.Rect(l, t, r, b))
+                ShapeKind.TRIANGLE -> { path.moveTo(cx, t); path.lineTo(r, b); path.lineTo(l, b); path.close() }
+                ShapeKind.DIAMOND -> { path.moveTo(cx, t); path.lineTo(r, cy); path.lineTo(cx, b); path.lineTo(l, cy); path.close() }
+            }
+            if (PenPrefs.shapeFill && kind.closed()) drawPath(path, col.copy(alpha = PenPrefs.shapeFillAlpha))
+            drawPath(path, col, style = Stroke(sw, cap = StrokeCap.Round, join = if (PenPrefs.shapeRounded) StrokeJoin.Round else StrokeJoin.Miter, pathEffect = dashEffect(PenPrefs.shapeStyle, sw)))
+        }
+        PanelSmallLabel(L("اللون", "Color"))
+        val colors = (c.penPalette + c.customColors.toList()).distinctBy { it.toArgb() }.take(7)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            colors.forEach { cl ->
+                val sel = cl.toArgb() == PenPrefs.shapeColor
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).background(cl)
+                        .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
+                        .clickable { PenPrefs.changeShapeColor(cl.toArgb()) }
+                )
+            }
+            Box(
+                Modifier.size(32.dp).clip(CircleShape).border(1.dp, Palette.Divider, CircleShape).clickable(onClick = onCustom),
+                contentAlignment = Alignment.Center
+            ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("لون آخر", "Other color")) }
+        }
+        PanelSmallLabel(L("نمط الخط", "Line style"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(LineStyle.SOLID, LineStyle.DASHED, LineStyle.DOTTED).forEach { st ->
+                Choice(PenPrefs.shapeStyle == st, Modifier.weight(1f), onClick = { PenPrefs.changeShapeStyle(st) }) {
+                    LineStyleSample(st, Palette.TextPrimary)
+                }
+            }
+        }
+        PanelSmallLabel(L("السماكة", "Thickness"))
+        val nearest = SHAPE_SIZES.minByOrNull { kotlin.math.abs(it - PenPrefs.shapeSize) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SHAPE_SIZES.forEach { sz ->
+                Choice(nearest == sz, Modifier.weight(1f), h = 38.dp, onClick = { PenPrefs.changeShapeSize(sz) }) {
+                    Box(Modifier.width(30.dp).height((1.5f + sz * 0.8f).dp).clip(RoundedCornerShape(50)).background(Palette.TextPrimary))
+                }
+            }
+        }
+        Divider()
+        PanelSwitch(L("ملء بلون الشكل", "Fill with color"), PenPrefs.shapeFill) { PenPrefs.changeShapeFill(it) }
+        if (PenPrefs.shapeFill) {
+            PercentSlider(L("الشفافية", "Opacity"), PenPrefs.shapeFillAlpha, steps = 8) {
+                PenPrefs.changeShapeFillAlpha(kotlin.math.round(it * 10f) / 10f)
+            }
+        }
+        Divider()
+        PanelSwitch(L("زوايا مستديرة", "Rounded corners"), PenPrefs.shapeRounded) { PenPrefs.changeShapeRounded(it) }
+        PanelSmallLabel(L("رؤوس الأسهم (للخطوط): النهاية ثم البداية", "Arrowheads (lines): end, then start"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ArrowHead.values().forEach { h ->
+                Box(Modifier.weight(1f)) { ArrowOption(h, start = false, selected = PenPrefs.arrowEnd == h) { PenPrefs.changeArrowEnd(h) } }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ArrowHead.values().forEach { h ->
+                Box(Modifier.weight(1f)) { ArrowOption(h, start = true, selected = PenPrefs.arrowStart == h) { PenPrefs.changeArrowStart(h) } }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
+}
+
+@Composable
+private fun PanelSmallLabel(text: String) {
+    Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextSecondary, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
 }
 
 @Composable

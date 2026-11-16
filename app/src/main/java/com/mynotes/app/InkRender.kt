@@ -60,8 +60,54 @@ internal fun dashEffect(style: Int, strokePx: Float): PathEffect? = when (style)
 }
 
 /** يرسم خطًا محفوظًا بكل خصائصه (النمط والشكل). */
-internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.width) =
-    drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
+internal fun DrawScope.drawStroke(s: Ink, color: Color, scaleW: Float = size.width) {
+    if (s.fill) drawFilled(s, color, scaleW) else drawInk(s.pts, color, s.width, s.tool, null, scaleW, s.style, s.shape)
+}
+
+/** شفافية ملء الأشكال الافتراضية: تظليل خفيف بلون الشكل. */
+const val SHAPE_FILL_ALPHA = 0.2f
+
+/** طبقة الخلفية: الهايلايتر وملء الأشكال، تُرسم تحت النص والكتابة. */
+internal fun Ink.inUnderlay(): Boolean = tool == Tool.HIGHLIGHTER || shapeFill
+
+/** طبقة الكتابة: كل شيء عدا الهايلايتر (الشكل المملوء يُرسم إطاره هنا وملؤه في الخلفية). */
+internal fun Ink.inOverlay(): Boolean = tool != Tool.HIGHLIGHTER
+
+/** ما يُرسم من هذا الخط في طبقة الخلفية. */
+internal fun DrawScope.drawUnder(s: Ink, color: Color, scaleW: Float = size.width) {
+    if (s.tool == Tool.HIGHLIGHTER) drawStroke(s, color, scaleW)
+    else if (s.shapeFill && s.pts.size > 2) {
+        val path = Path()
+        path.moveTo(s.pts[0].x * scaleW, s.pts[0].y * scaleW)
+        for (i in 1 until s.pts.size) path.lineTo(s.pts[i].x * scaleW, s.pts[i].y * scaleW)
+        path.close()
+        drawPath(path, color.copy(alpha = color.alpha * s.fillAlpha))
+    }
+}
+
+/** يرسم مجموعة خطوط بترتيب الطبقات: الخلفية (هايلايتر وملء أشكال) ثم الكتابة. */
+internal fun DrawScope.drawStack(strokes: List<Ink>, colorOf: (Ink) -> Color, scaleW: Float = size.width) {
+    for (s in strokes) if (s.inUnderlay()) drawUnder(s, colorOf(s), scaleW)
+    for (s in strokes) if (s.inOverlay()) drawStroke(s, colorOf(s), scaleW)
+}
+
+/** شكل حرف مملوء من حدوده (قاعدة nonzero كالخطوط)، مع تعريض اختياري حوله. */
+internal fun fillPath(pts: List<Pt>, w: Float): Path {
+    val path = Path()
+    for (c in InkFill.contours(pts)) {
+        if (c.size < 2) continue
+        path.moveTo(c[0].x * w, c[0].y * w)
+        for (i in 1 until c.size) path.lineTo(c[i].x * w, c[i].y * w)
+        path.close()
+    }
+    return path
+}
+
+internal fun DrawScope.drawFilled(s: Ink, color: Color, scaleW: Float = size.width) {
+    val path = fillPath(s.pts, scaleW)
+    drawPath(path, color)
+    if (s.width > 0f) drawPath(path, color, style = Stroke(width = s.width * scaleW, join = StrokeJoin.Round, cap = StrokeCap.Round))
+}
 
 /** يرسم خطًا واحدًا حسب نوع القلم. */
 internal fun DrawScope.drawInk(

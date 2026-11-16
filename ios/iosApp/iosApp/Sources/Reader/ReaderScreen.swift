@@ -268,6 +268,12 @@ private struct ReaderTopBar: View {
         .padding(.horizontal, 10).padding(.vertical, 8)
         // تسجيل المحاضرة: نافذة مثل أندرويد، والعدّاد يبقى في زر الميكروفون بشريط الأدوات
         .appDialog(isPresented: $audioOpen) { close in AudioDialog(session: s, dismiss: close) }
+        // أداة من اليسار: الدرج ومربع النص المفتوح يُغلقان (النص والملاحظة أطفأهما AppController)
+        .onChange(of: app.leftToolPick) { _, _ in
+            if s.trayMode != nil { s.trayMode = nil }
+            textMenu = false
+            if s.inlineEditId != nil { s.finishInlineEdit() }
+        }
     }
 
     private var toolsRow: some View {
@@ -290,6 +296,18 @@ private struct ReaderTopBar: View {
     }
 
     private var s: DocSession { session }
+    /// أداة من القسم الأوسط نشطة (الدرج، النص، الملاحظة): أدوات اليسار لا تظهر مختارة معها.
+    private var insertOn: Bool { app.textActive || app.stickyActive || s.trayMode != nil || s.inlineEditId != nil }
+
+    /// تفعيل أداة من القسم الأوسط: التحديد والأشكال وشريط القلم تُغلق، فيبقى زرها وحده مختارًا.
+    private func enterInsert() {
+        app.lassoActive = false
+        s.lassoSel = nil
+        app.shapeActive = false
+        app.penBarOpen = false
+        settingsFor = nil
+        lassoMenu = false
+    }
     private var cur: Int { session.currentPage }
     private func v(_ id: String) -> Bool { app.toolVisible(id) }
     private var dim: Color { Palette.textSecondary.opacity(0.35) }
@@ -315,28 +333,29 @@ private struct ReaderTopBar: View {
     @ViewBuilder private var coreGroup: some View {
                     // الأدوات الأساسية
                     if app.toolbarStyle == .penBar {
-                        let writing = app.tool.isWriting && !app.lassoActive && !app.shapeActive
-                        let shown = writing ? app.tool : app.lastWriting
+                        let writing = app.tool.isWriting && !app.lassoActive && !app.shapeActive && !insertOn
+                        let shown = app.tool.isWriting ? app.tool : app.lastWriting
                         TBtn(selected: writing, action: {
-                            if !writing { app.selectTool(shown); app.penBarOpen = true } else { app.penBarOpen.toggle() }
+                            if !writing { app.pickLeft(); app.selectTool(shown); app.penBarOpen = true } else { app.penBarOpen.toggle() }
                         }) { ToolGlyph(tool: shown, selected: writing) }
                     } else {
-                        let penSel = app.tool.isPen && !app.lassoActive && !app.shapeActive
+                        let penSel = app.tool.isPen && !app.lassoActive && !app.shapeActive && !insertOn
                         let shownPen = app.tool.isPen ? app.tool : app.lastPen
                         toolSlot(shownPen, id: "pen", selected: penSel)
-                        toolSlot(.highlighter, id: "hl", selected: app.tool == .highlighter && !app.lassoActive)
+                        toolSlot(.highlighter, id: "hl", selected: app.tool == .highlighter && !app.lassoActive && !insertOn)
                         if app.tool == .highlighter && v("snap") {
                             TBtn(selected: app.highlightSnap && pm.active, locked: !pm.active, action: { if pm.require(.snap) { app.highlightSnap.toggle() } }) {
                                 PhIcon("ph_snap", tintFor(app.highlightSnap))
                             }
                         }
                     }
-                    toolSlot(.eraser, id: "er", selected: app.tool == .eraser && !app.lassoActive)
-                    toolSlot(.laser, id: "ls", selected: app.tool == .laser && !app.lassoActive)
+                    toolSlot(.eraser, id: "er", selected: app.tool == .eraser && !app.lassoActive && !insertOn)
+                    toolSlot(.laser, id: "ls", selected: app.tool == .laser && !app.lassoActive && !insertOn)
                     if v("lasso") {
                         TBtn(selected: app.lassoActive, action: {
                             // نقرة تفعّل التحديد، ونقرة ثانية تفتح إعداداته
                             if app.lassoActive { lassoMenu = true } else {
+                                app.pickLeft()
                                 app.lassoActive = true
                                 app.shapeActive = false
                                 app.say(.tip, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
@@ -349,6 +368,7 @@ private struct ReaderTopBar: View {
                     if v("shapetool") {
                         TBtn(selected: app.shapeActive && !app.lassoActive, action: {
                             if app.shapeActive && !app.lassoActive { app.shapeActive = false } else {
+                                app.pickLeft()
                                 app.lassoActive = false
                                 if !app.tool.isWriting { app.selectTool(app.lastPen) }
                                 app.shapeActive = true
@@ -371,12 +391,12 @@ private struct ReaderTopBar: View {
     @ViewBuilder private var insertGroupA: some View {
                     if ["image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export"].contains(where: v) { ToolbarSep() }
                     if v("image") {
-                        TBtn(selected: s.trayMode == "photos", action: { s.trayMode = s.trayMode == "photos" ? nil : "photos"; s.summaryOpen = false }) {
+                        TBtn(selected: s.trayMode == "photos", action: { openTray("photos") }) {
                             PhIcon("ph_image", tintFor(s.trayMode == "photos"))
                         }
                     }
                     if v("stickers") {
-                        TBtn(selected: s.trayMode == "stickers", action: { s.trayMode = s.trayMode == "stickers" ? nil : "stickers"; s.summaryOpen = false }) {
+                        TBtn(selected: s.trayMode == "stickers", action: { openTray("stickers") }) {
                             PhIcon("ph_sticker", tintFor(s.trayMode == "stickers"))
                         }
                     }
@@ -386,6 +406,9 @@ private struct ReaderTopBar: View {
                         TBtn(selected: on, action: {
                             if on { textMenu = true } else {
                                 s.finishInlineEdit()
+                                enterInsert()
+                                s.trayMode = nil
+                                app.stickyActive = false
                                 app.textActive = true
                                 app.say(.tip, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
@@ -398,6 +421,11 @@ private struct ReaderTopBar: View {
                     if v("sticky") {
                         TBtn(selected: app.stickyActive, action: {
                             if app.stickyActive { app.stickyActive = false } else {
+                                enterInsert()
+                                s.trayMode = nil
+                                app.textActive = false
+                                textMenu = false
+                                if s.inlineEditId != nil { s.finishInlineEdit() }
                                 app.stickyActive = true
                                 app.say(.tip, L("اختر لونًا ثم انقر على الصفحة", "Pick a color and tap the page"))
                             }
@@ -481,6 +509,18 @@ private struct ReaderTopBar: View {
         .buttonStyle(PressScale())
     }
 
+    /// زر الصور أو الملصقات: يفتح الدرج (ويطفئ النص والملاحظة)، ونقرة ثانية تغلقه.
+    private func openTray(_ mode: String) {
+        s.summaryOpen = false
+        if s.trayMode == mode { s.trayMode = nil; return }
+        enterInsert()
+        app.textActive = false
+        app.stickyActive = false
+        textMenu = false
+        if s.inlineEditId != nil { s.finishInlineEdit() }
+        s.trayMode = mode
+    }
+
     /// زر أداة: نقرة تختارها، ونقرة ثانية على الأداة المختارة تفتح إعداداتها.
     private func toolSlot(_ t: Tool, id: String, selected: Bool) -> some View {
         TBtn(selected: selected, action: {
@@ -535,7 +575,7 @@ private struct PenBar: View {
             // نقرة ثانية على الأداة المختارة تفتح إعداداتها تحتها مباشرة
             ForEach([inkPen, .pencil, .highlighter], id: \.self) { pt in
                 let sel = pt == t
-                TBtn(selected: sel, action: { if sel { more = true } else { app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
+                TBtn(selected: sel, action: { if sel { more = true } else { app.pickLeft(); app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
                     .dropdown(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } })) {
                         ToolSettingsPanel(onCustomColor: { more = false; sheet = .colorPicker })
                             .environmentObject(app)

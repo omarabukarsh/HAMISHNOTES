@@ -587,13 +587,13 @@ struct SideTray: View {
                                         .frame(width: 48, height: 48).frame(width: 56, height: 56)
                                         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                                     }
-                                    .onDrag { NSItemProvider(object: (StickerDragPrefix + "mine:" + f) as NSString) }
+                                    .trayDraggable("mine:" + f, .sticker("mine:" + f))
                                     .contextMenu { Button(role: .destructive) { deleteSticker = f } label: { Text(L("حذف", "Delete")) } }
                                 }
                             }
                             Text(L("اضغط مطوّلًا على ملصق لحذفه", "Long-press a sticker to delete it")).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
                         }
-                        ForEach(Array(StickerCategories.enumerated()), id: \.offset) { _, cat in
+                        ForEach(Array(StickerCategories.enumerated()), id: \.offset) { ci, cat in
                             Text(cat.0).font(Fonts.sans(13, .bold)).foregroundColor(Palette.navy).padding(.top, 4)
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                                 ForEach(cat.1, id: \.self) { k in
@@ -601,13 +601,14 @@ struct SideTray: View {
                                         StickerIcon(key: k, size: 40).frame(width: 56, height: 56)
                                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
                                     }
-                                    .onDrag { NSItemProvider(object: (StickerDragPrefix + k) as NSString) }
+                                    .trayDraggable("c\(ci):" + k, .sticker(k))
                                 }
                             }
                         }
                     }
+                    .background(TrayDragInstaller())
                 }
-                Text(L("انقر الملصق ثم انقر مكانه في الصفحة، أو اضغط عليه مطوّلًا واسحبه إليها", "Tap a sticker, then tap its place on the page; or long-press and drag it there"))
+                Text(L("انقر الملصق ثم انقر مكانه في الصفحة، أو اسحبه جانبًا إلى الصفحة", "Tap a sticker, then tap its place on the page; or drag it sideways onto the page"))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                 Text(L("من رسمي: حدد رسمك بأداة التحديد الحر ثم اضغط «☺ ملصق»", "From my drawing: select your drawing with the lasso, then tap “☺ Sticker”"))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
@@ -624,6 +625,7 @@ struct SideTray: View {
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .onAppear { TrayDrag.shared.session = session }
         .alert(L("حذف الملصق؟", "Delete sticker?"), isPresented: Binding(get: { deleteSticker != nil }, set: { if !$0 { deleteSticker = nil } })) {
             Button(L("حذف", "Delete"), role: .destructive) { if let f = deleteSticker { StickerStore.shared.delete(f) }; deleteSticker = nil }
             Button(L("إلغاء", "Cancel"), role: .cancel) { deleteSticker = nil }
@@ -801,6 +803,7 @@ struct PhotoGalleryGrid: View {
                                 GalleryTile(asset: a, onPick: onPick)
                             }
                         }
+                        .background(TrayDragInstaller())
                     }
                 }
             default:
@@ -846,15 +849,7 @@ private struct GalleryTile: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-        .onDrag {
-            let p = NSItemProvider()
-            let a = asset
-            p.registerObject(ofClass: UIImage.self, visibility: .all) { done in
-                PhotoGallery.shared.full(a) { img in done(img, nil) }
-                return nil
-            }
-            return p
-        }
+        .trayDraggable("photo:" + asset.localIdentifier, .photo(asset))
         .onAppear { if image == nil { PhotoGallery.shared.thumb(asset) { img in DispatchQueue.main.async { if let i = img { image = i } } } } }
     }
 }

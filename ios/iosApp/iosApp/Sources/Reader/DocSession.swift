@@ -131,6 +131,8 @@ final class DocSession: ObservableObject, Identifiable {
     var visibleCenterHook: ((Int) -> CGPoint?)?
     /// تمرير مستمر إلى موضع من المستند (0…1) من شريط الصفحات.
     var scrubHook: ((CGFloat) -> Void)?
+    /// السحب من الدرج: نقطة في النافذة → الصفحة والنقطة عليها (ويُظهر إطار الصفحة)؛ nil يخفي الإطار، done ينهي السحب.
+    var trayDropHook: ((CGPoint?, Bool) -> (Int, CGPoint)?)?
 
     init(entry: DocEntry) {
         id = entry.id

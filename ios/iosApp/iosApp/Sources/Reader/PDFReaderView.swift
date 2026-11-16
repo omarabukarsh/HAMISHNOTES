@@ -96,6 +96,16 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         session.applyInkHook = { [weak self] pid, d in self?.overlays[pid]?.setDrawing(d) }
         session.visibleCenterHook = { [weak self] i in self?.visibleCenter(i) }
         session.scrubHook = { [weak self] f in self?.scrub(f) }
+        session.trayDropHook = { [weak self] wp, done in
+            guard let self, let v = self.pdfView else { return nil }
+            var hit: (Int, CGPoint)? = nil
+            if let wp {
+                let p = v.convert(wp, from: nil)
+                if v.bounds.contains(p) { hit = self.pagePoint(p) }
+            }
+            self.highlightDrop(done ? nil : hit.flatMap { self.session.pageId($0.0) })
+            return hit
+        }
         session.$wordSel.receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.overlays.values.forEach { $0.showWordSel() } }.store(in: &bag)
         // سحب ملصق أو صورة من الدرج وإفلاتها على الصفحة في مكانها

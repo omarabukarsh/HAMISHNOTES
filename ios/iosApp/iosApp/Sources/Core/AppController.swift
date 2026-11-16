@@ -60,6 +60,9 @@ final class AppController: ObservableObject {
     @Published var doneOn = true { didSet { prefs.set(doneOn, forKey: "msg_done") } }
     @Published var errorsOn = true { didSet { prefs.set(errorsOn, forKey: "msg_err") } }
     @Published var stickyActive = false
+    /// يزيد كلما اختار المستخدم أداة من القسم الأيسر: يُطفئ أداة القسم الأوسط (الدرج، النص، الملاحظة)
+    /// فلا يظهر زران مختاران معًا.
+    @Published var leftToolPick = 0
     @Published var shapeKind: ShapeKind = .line
     @Published var stickyColor: UInt32 = 0xFFFFF59D
     /// نمط الملاحظة: 0 سادة، 1 شريط، 2 أسطر، 3 مربعات.
@@ -715,8 +718,14 @@ final class AppController: ObservableObject {
         if t.isWriting { lastWriting = t }
         if t == .eraser || t == .laser { shapeActive = false }
         lassoActive = false
-        // أدوات الإدراج (نص، ملاحظة) مستقلة عن القلم: اختيار قلم أو لون لا يطفئها
         prefs.set(t.rawValue, forKey: "tool")
+    }
+
+    /// اختيار أداة من القسم الأيسر بيد المستخدم: أداة القسم الأوسط تُطفأ (يبقى زر واحد مختارًا).
+    func pickLeft() {
+        textActive = false
+        stickyActive = false
+        leftToolPick &+= 1
     }
 
     /// استعادة إعدادات القلم الافتراضية.
@@ -740,6 +749,7 @@ final class AppController: ObservableObject {
 
     func selectToolWithHint(_ t: Tool) {
         let was = tool
+        pickLeft()
         selectTool(t)
         if was == t { return }
         if t == .highlighter && highlightSnap {
@@ -790,6 +800,7 @@ final class AppController: ObservableObject {
     }
 
     func applyPreset(_ p: PenPreset) {
+        pickLeft()
         selectTool(p.tool)
         colorOf[p.tool.rawValue] = p.color
         sizeOf[p.tool.rawValue] = p.size
@@ -814,6 +825,7 @@ final class AppController: ObservableObject {
     /// النقر المزدوج على Apple Pencil: يبدّل بين الممحاة وآخر قلم.
     func penDoubleTap() {
         guard penDoubleTapEnabled else { return }
+        pickLeft()
         if tool == .eraser { selectTool(lastWriting) } else { selectTool(.eraser) }
     }
 

@@ -638,7 +638,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 // «Aa تلقائي»: الكتابة اليدوية تتحول إلى الخط المختار بعد إنهاء الجملة
                 if (v("autofont")) {
                     var autoDlg by remember { mutableStateOf(false) }
-                    TBtn(selected = AutoFont.on, locked = false, onClick = { autoDlg = true }) {
+                    TBtn(selected = AutoFont.on, onClick = { autoDlg = true }) {
                         Text("Aa", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (AutoFont.on) Palette.GoldDeep else Palette.TextSecondary)
                     }
                     if (autoDlg) AutoFontDialog { autoDlg = false }

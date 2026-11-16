@@ -290,7 +290,7 @@ private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose
             }
         }
         Text(
-            L("هامش", "Hamish") + " " + BuildConfig.VERSION_NAME,
+            "HAMISH PRO " + BuildConfig.VERSION_NAME,
             fontSize = 11.sp, color = Palette.TextSecondary, modifier = Modifier.padding(start = 10.dp, top = 8.dp)
         )
     }
@@ -524,7 +524,7 @@ private fun SettingsPane(
                             Image(painterResource(R.drawable.logo_app), null, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
                             Spacer(Modifier.width(14.dp))
                             Column {
-                                Text(L("هامش", "Hamish"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
+                                Text("HAMISH PRO", fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
                                 Text(L("الإصدار", "Version") + " " + BuildConfig.VERSION_NAME, fontSize = 13.sp, color = Palette.TextSecondary)
                             }
                         }

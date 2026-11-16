@@ -45,7 +45,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     // حالات الاختبار المرجعية (ملف PDF المرفق) مشتركة بين اختبارات JVM واختبارات الجهاز
     sourceSets {
         getByName("test").java.srcDir("src/sharedTest/java")

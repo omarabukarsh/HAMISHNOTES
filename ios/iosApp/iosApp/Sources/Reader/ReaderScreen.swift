@@ -616,21 +616,46 @@ struct BarCapsule: ViewModifier {
     }
 }
 
-/// ألوان الأداة الحالية ولون مخصص.
+/// ألوان الأداة الحالية ولون مخصص. في شريط القلم: الألوان في منطقة بعرض ثابت تُسحب أفقيًا لإظهار البقية،
+/// وزر اللون المخصص ثابت بجانبها، فلا يتغير طول الشريط مع الأداة أو عدد الألوان.
 struct ColorDots: View {
     @EnvironmentObject var app: AppController
     let onCustom: () -> Void
+    /// عدد الألوان الظاهرة في المنطقة الثابتة.
+    static let visible: CGFloat = 7
+    static let cell: CGFloat = 34
+
     var body: some View {
         let current = app.colorFor(app.tool)
+        // لون مخصص يطابق لونًا من اللوحة لا يظهر مرتين
+        let palette = app.paletteFor(app.tool)
+        let all = palette + app.customColors.filter { !palette.contains($0) }
         HStack(spacing: 0) {
-            // لون مخصص يطابق لونًا من اللوحة لا يظهر مرتين
-            let palette = app.paletteFor(app.tool)
-            ForEach(palette + app.customColors.filter { !palette.contains($0) }, id: \.self) { col in
-                let sel = col == current
-                Button { app.setColor(col) } label: {
-                    Circle().fill(Color(hex: col)).frame(width: sel ? 26 : 22, height: sel ? 26 : 22)
-                        .overlay(Circle().stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2.5 : 1))
-                        .frame(width: 34, height: 34)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(all, id: \.self) { col in
+                            let sel = col == current
+                            Button { app.setColor(col) } label: {
+                                Circle().fill(Color(hex: col)).frame(width: sel ? 26 : 22, height: sel ? 26 : 22)
+                                    .overlay(Circle().stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2.5 : 1))
+                                    .frame(width: Self.cell, height: Self.cell)
+                            }
+                            .id(col)
+                        }
+                    }
+                }
+                .frame(width: Self.cell * Self.visible)
+                // حافة باهتة: هناك ألوان أخرى بالسحب
+                .mask(HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 10)
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 10)
+                })
+                // اللون المختار يظهر دائمًا: عند فتح الشريط أو تغيير الأداة أو اللون
+                .onAppear { DispatchQueue.main.async { proxy.scrollTo(current, anchor: .center) } }
+                .onChange(of: "\(app.tool)|\(current)") { _, _ in
+                    withAnimation(Motion.enter) { proxy.scrollTo(app.colorFor(app.tool), anchor: .center) }
                 }
             }
             Button(action: onCustom) { PhIcon("ph_plus", Palette.textSecondary, 18, L("لون مخصص", "Custom color")).frame(width: 34, height: 34) }

@@ -185,6 +185,7 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         // كل ما يغيّر أداة الرسم: ومنه إعدادات الشكل (رؤوس الأسهم، النمط، السماكة، اللون، الزوايا)
         let key = "\(c.tool)|\(c.colorFor(c.tool))|\(c.sizeFor(c.tool))|\(c.lassoActive)|\(c.shapeActive)|\(c.shapeKind)|\(c.textActive)|\(c.stickyActive)|\(c.fingerWrites)|\(c.eraserMode)|\(c.laserMode)"
             + "|\(c.arrowStart)|\(c.arrowEnd)|\(c.shapeStyle)|\(c.shapeSize)|\(c.shapeColor)|\(c.shapeRounded)|\(c.lassoRect)"
+            + "|\(session.trayMode ?? "-")|\(session.pendingPlace != nil)"
             + "|\(c.shapeFill)|\(c.shapeFillAlpha)|\(c.penStyle)|\(c.penPressure)|\(c.penSharpness)|\(c.penStabilize)|\(c.hlStabilize)|\(c.hlStraight)"
         guard key != lastToolKey else { return }
         lastToolKey = key

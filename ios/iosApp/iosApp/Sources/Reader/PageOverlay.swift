@@ -151,7 +151,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         canvas.onErase = { [weak self] d in self?.erased(d) }
         // إعدادات القلم تُقرأ عند كل خط: أي تغيير في لوحة القلم يسري فورًا
         canvas.configProvider = { [weak self] in PageOverlayView.inkConfig(k: self?.k ?? 1) }
-        // نقرة القلم تضع ملاحظة أو نصًا أو ملصقًا (والسحب يبقى كتابة): القلم لا يتوقف مع هذه الأدوات
+        // نقرة القلم تضع ملاحظة أو نصًا أو ملصقًا ولا تُرسم نقطة
         canvas.tapBelongsElsewhere = { [weak session] in
             let c = AppController.shared
             guard let s = session else { return false }
@@ -167,8 +167,8 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         content.addSubview(canvas)
 
         topLayer.backgroundColor = .clear
-        // القلم يكتب فوق النصوص والملاحظات والصور مع كل الأدوات (عدا التحديد)؛ تُلمس العناصر بالإصبع
-        topLayer.pencilPasses = { !AppController.shared.lassoActive }
+        // القلم يكتب فوق النصوص والملاحظات والصور مع أدوات الكتابة؛ مع التحديد وأدوات الإدراج يلمس العناصر
+        topLayer.pencilPasses = { [weak self] in !AppController.shared.lassoActive && !(self?.insertOn ?? false) }
         hold.onHold = { [weak self] pts in self?.showHoldPreview(pts) }
         hold.onTrack = { [weak self] p in self?.showEraserCursor(p) }
         content.addSubview(topLayer)
@@ -404,6 +404,12 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
 
     // ======================================================== الأداة
 
+    /// أداة إدراج من القسم الأوسط نشطة (درج الصور أو الملصقات، النص، الملاحظة).
+    var insertOn: Bool {
+        let c = AppController.shared
+        return c.textActive || c.stickyActive || session?.trayMode != nil || session?.pendingPlace != nil
+    }
+
     /// يطبّق الأداة المختارة على الكانفاس.
     func applyTool() {
         let c = AppController.shared
@@ -420,9 +426,9 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         laser.width = Sizes.width(.laser, c.sizeFor(.laser)) * k
         laser.mode = c.laserMode
         shapes.isHidden = !shapeOn
-        // أدوات الإدراج (ملاحظة، نص، ملصق، صورة) لا تطفئ القلم: النقرة لها والسحب كتابة
         canvas.isUserInteractionEnabled = !laserOn && !shapeOn
-        canvas.writingEnabled = canvas.isUserInteractionEnabled && !c.lassoActive
+        // أداة من القسم الأوسط (الدرج، النص، الملاحظة) نشطة: القلم لا يكتب، ونقرته تذهب لها
+        canvas.writingEnabled = canvas.isUserInteractionEnabled && !c.lassoActive && !insertOn
 
         lasso.isHidden = !c.lassoActive
         lasso.fingerWrites = finger

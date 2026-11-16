@@ -70,4 +70,42 @@ final class StrokeToolsTests: XCTestCase {
         XCTAssertTrue(InkReader.isRTL(lines[0]))
         XCTAssertEqual(InkReader.wordBoxes(lines[0]).count, 2)
     }
+
+    /// شكل مرسوم باليد بزوايا مستديرة (تثبيت الخط)، يبدأ من منتصف ضلع.
+    private func handDrawn(_ corners: [CGPoint], smooth: CGFloat) -> [CGPoint] {
+        var raw: [CGPoint] = []
+        let n = corners.count
+        for k in 0...n {
+            let a = corners[k % n], b = corners[(k + 1) % n]
+            let from: CGFloat = k == 0 ? 0.5 : 0, to: CGFloat = k == n ? 0.55 : 1
+            var t = from
+            while t < to { raw.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)); t += 0.02 }
+        }
+        var s = raw[0]
+        return raw.map { p in s.x += (p.x - s.x) * (1 - smooth); s.y += (p.y - s.y) * (1 - smooth); return s }
+    }
+
+    private func corners(_ path: [CGPoint]) -> Int {
+        var n = 0
+        for i in 1..<(path.count - 1) {
+            let a = path[i - 1], b = path[i], c = path[i + 1]
+            var d = abs(atan2(c.y - b.y, c.x - b.x) - atan2(b.y - a.y, b.x - a.x))
+            if d > .pi { d = 2 * .pi - d }
+            if d > 0.3 { n += 1 }
+        }
+        return n + 1
+    }
+
+    /// صورة المستخدم: كل شكل كان يصير دائرة. المثلث والمعيّن يبقيان مثلثًا ومعيّنًا ولو رُسما بزوايا مستديرة.
+    func testTriangleAndDiamondAreNotCircles() throws {
+        let tri = handDrawn([CGPoint(x: 300, y: 100), CGPoint(x: 450, y: 350), CGPoint(x: 150, y: 350)], smooth: 0.8)
+        let t = try XCTUnwrap(ShapeRecognizer.recognize(tri, pageW: 600))
+        XCTAssertEqual(t.count, 1)
+        XCTAssertNotEqual(t[0].count, 97, "triangle became an ellipse")
+        XCTAssertEqual(corners(t[0]), 3)
+        let dia = handDrawn([CGPoint(x: 300, y: 100), CGPoint(x: 420, y: 250), CGPoint(x: 300, y: 400), CGPoint(x: 180, y: 250)], smooth: 0.7)
+        let d = try XCTUnwrap(ShapeRecognizer.recognize(dia, pageW: 600))
+        XCTAssertNotEqual(d[0].count, 97, "diamond became an ellipse")
+        XCTAssertEqual(corners(d[0]), 4)
+    }
 }

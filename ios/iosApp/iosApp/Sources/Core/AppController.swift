@@ -715,8 +715,7 @@ final class AppController: ObservableObject {
         if t.isWriting { lastWriting = t }
         if t == .eraser || t == .laser { shapeActive = false }
         lassoActive = false
-        textActive = false
-        stickyActive = false
+        // أدوات الإدراج (نص، ملاحظة) مستقلة عن القلم: اختيار قلم أو لون لا يطفئها
         prefs.set(t.rawValue, forKey: "tool")
     }
 

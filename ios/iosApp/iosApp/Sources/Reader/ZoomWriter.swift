@@ -101,6 +101,7 @@ final class ZoomCanvasView: UIView {
         canvas.onBegin = { AppController.shared.noteInteraction() }
         canvas.onStroke = { [weak self] st in self?.added(st) }
         canvas.onErase = { [weak self] d in self?.erased(d) }
+        canvas.configProvider = { [weak self] in PageOverlayView.inkConfig(k: self?.zoom ?? 1) }
         addSubview(canvas)
     }
 

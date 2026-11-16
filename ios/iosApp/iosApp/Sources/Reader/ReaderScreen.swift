@@ -339,8 +339,6 @@ private struct ReaderTopBar: View {
                             if app.lassoActive { lassoMenu = true } else {
                                 app.lassoActive = true
                                 app.shapeActive = false
-                                app.textActive = false
-                                app.stickyActive = false
                                 app.say(.tip, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", tintFor(app.lassoActive)) }
@@ -388,7 +386,6 @@ private struct ReaderTopBar: View {
                         TBtn(selected: on, action: {
                             if on { textMenu = true } else {
                                 s.finishInlineEdit()
-                                app.lassoActive = false; app.shapeActive = false; app.stickyActive = false
                                 app.textActive = true
                                 app.say(.tip, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
@@ -401,7 +398,6 @@ private struct ReaderTopBar: View {
                     if v("sticky") {
                         TBtn(selected: app.stickyActive, action: {
                             if app.stickyActive { app.stickyActive = false } else {
-                                app.lassoActive = false; app.shapeActive = false; app.textActive = false
                                 app.stickyActive = true
                                 app.say(.tip, L("اختر لونًا ثم انقر على الصفحة", "Pick a color and tap the page"))
                             }

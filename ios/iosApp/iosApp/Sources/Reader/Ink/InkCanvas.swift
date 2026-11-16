@@ -30,20 +30,27 @@ final class InkInput: UIGestureRecognizer {
     private var touch: UITouch?
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let c = canvas else { state = .failed; return }
-        if touch != nil {
+        guard let c = canvas else { return }
+        if let cur = touch {
             // إصبع ثانٍ أثناء الكتابة بالإصبع: تمرير أو تكبير، لا كتابة
-            if touches.contains(where: { $0.type == .direct }) && touch?.type == .direct {
+            if cur.type == .direct && touches.contains(where: { $0.type == .direct }) {
                 c.cancelStroke()
                 touch = nil
                 state = .cancelled
+                return
             }
+            // كف اليد أو إصبع على الشاشة أثناء الكتابة بالقلم: يُتجاهل
+            for t in touches where t !== cur { ignore(t, for: event) }
             return
         }
-        guard touches.count == 1, let t = touches.first, (event.allTouches?.count ?? 1) == 1, c.accepts(t) else {
-            state = .failed
-            return
+        // اللمسة التي لا تكتب (كف اليد، إصبع على ملاحظة أو صورة) تُتجاهل وحدها، ولا تُفشل الكتابة:
+        // كان رفضها يُطفئ القلم حتى تُرفع كل الأصابع عن الشاشة
+        let fingersDown = (event.allTouches ?? []).filter { $0.type == .direct && $0.phase != .ended && $0.phase != .cancelled }.count
+        var picked: UITouch?
+        for t in touches {
+            if picked == nil, c.accepts(t), t.type == .pencil || fingersDown <= 1 { picked = t } else { ignore(t, for: event) }
         }
+        guard let t = picked else { return }
         touch = t
         c.beginStroke(t, event)
         state = .began
@@ -56,7 +63,11 @@ final class InkInput: UIGestureRecognizer {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let t = touch, touches.contains(t) else { return }
+        guard let t = touch, touches.contains(t) else {
+            // لمسات متجاهلة انتهت ولا كتابة جارية: الالتقاط يبقى جاهزًا للقلم
+            if touch == nil && state == .possible && (event.allTouches ?? []).allSatisfy({ $0.phase == .ended || $0.phase == .cancelled }) { state = .failed }
+            return
+        }
         canvas?.endStroke(t, event)
         touch = nil
         state = .ended
@@ -91,7 +102,6 @@ final class InkStaticView: UIView {
         backgroundColor = .clear
         isUserInteractionEnabled = false
         contentMode = .redraw
-        layer.drawsAsynchronously = true
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -113,6 +123,12 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
     /// تقبل الكتابة الآن (تُطفأ مع الليزر والأشكال والتحديد).
     var writingEnabled = true
     var config = InkToolConfig()
+    /// إعدادات الأداة تُقرأ عند بدء كل خط (فأي تغيير في الإعدادات يسري فورًا على الخط التالي).
+    var configProvider: (() -> InkToolConfig)?
+    /// نقرة بالقلم (بلا حركة) تخص أداة أخرى الآن (وضع ملاحظة أو نص أو ملصق): لا تُرسم نقطة.
+    var tapBelongsElsewhere: () -> Bool = { false }
+    /// نقاط آخر خط كما رسمها القلم (بلا تثبيت)، بنقاط الصفحة: للتعرف على الأشكال.
+    private(set) var lastRaw: [CGPoint] = []
     /// عرض الصفحة بنقاطها (لحدة الطرف وسرعة الإصبع).
     var pageW: CGFloat = 600
 
@@ -156,6 +172,8 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
     private var livePath = CGMutablePath()
 
     private var pts: [InkPt] = []
+    private var rawPts: [CGPoint] = []
+    private var downAt: TimeInterval = 0
     private var smooth: CGPoint = .zero
     private var speed = InkPen.SpeedWidth()
     private var erasing = false
@@ -191,12 +209,11 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         staticView.frame = bounds
-        // حد لذاكرة صورة الحبر (نحو 16 مليون بكسل)، فالصفحة المكبّرة جدًا لا تستهلك الذاكرة
+        // الحبر المثبّت بدقة الشاشة نفسها التي يُرسم بها الخط الحي، فلا يتغير شكله عند رفع القلم
+        // (حجم الطبقة محدود أصلًا من الصفحة: PageOverlayView.clampScale)
         let screen = window?.screen.scale ?? UIScreen.main.scale
-        let px = max(1, bounds.width * bounds.height)
-        let s = min(screen, sqrt(16_000_000 / px))
-        if abs(staticView.contentScaleFactor - s) > 0.01 {
-            staticView.contentScaleFactor = max(0.5, s)
+        if abs(staticView.contentScaleFactor - screen) > 0.01 {
+            staticView.contentScaleFactor = screen
             staticView.setNeedsDisplay()
         }
         for l in [liveFill, liveLine, livePredict] { l.frame = bounds; l.contentsScale = screen }
@@ -253,8 +270,11 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
 
     func beginStroke(_ t: UITouch, _ event: UIEvent) {
         active = true
+        if let p = configProvider { config = p() }
         onBegin?()
         let p = pagePoint(t)
+        downAt = t.timestamp
+        rawPts = [p]
         if config.tool == .eraser {
             erasing = true
             eraseStart = drawing.strokes
@@ -282,6 +302,7 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
         let minGap = 0.4 / max(0.0001, k)
         for c in all {
             let raw = pagePoint(c)
+            rawPts.append(raw)
             if config.stabilize > 0.01 {
                 smooth.x += (raw.x - smooth.x) * follow
                 smooth.y += (raw.y - smooth.y) * follow
@@ -302,15 +323,30 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
             erasing = false
             lastErase = nil
             if eraseChanged { onErase?(drawing) }
+            staticView.layer.displayIfNeeded()
             onEnd?()
             return
         }
         // آخر نقطة في موضع القلم الحقيقي حتى لا يقصر الخط بعد التثبيت
         let end = pagePoint(t)
+        rawPts.append(end)
+        lastRaw = rawPts
         if let last = pts.last, hypot(end.x - last.x, end.y - last.y) > 0.05 { pts.append(InkPt(end, last.p)) }
+        // نقرة (بلا حركة) لأداة أخرى: لا نقطة حبر، والنقرة تصل إلى تلك الأداة
+        let spread = rawPts.reduce(CGFloat(0)) { max($0, hypot($1.x - rawPts[0].x, $1.y - rawPts[0].y)) } * k
+        if spread < 6 && t.timestamp - downAt < 0.35 && tapBelongsElsewhere() {
+            pts = []
+            clearLive()
+            onEnd?()
+            return
+        }
         let stroke = finishedStroke()
+        if let s = stroke {
+            // الخط المكتمل يُرسم في الطبقة الثابتة الآن، قبل إزالة الخط الحي، في الإطار نفسه: لا وميض ولا تبدّل
+            onStroke?(s)
+            staticView.layer.displayIfNeeded()
+        }
         clearLive()
-        if let s = stroke { onStroke?(s) }
         onEnd?()
     }
 

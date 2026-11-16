@@ -175,6 +175,7 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         // كل ما يغيّر أداة الرسم: ومنه إعدادات الشكل (رؤوس الأسهم، النمط، السماكة، اللون، الزوايا)
         let key = "\(c.tool)|\(c.colorFor(c.tool))|\(c.sizeFor(c.tool))|\(c.lassoActive)|\(c.shapeActive)|\(c.shapeKind)|\(c.textActive)|\(c.stickyActive)|\(c.fingerWrites)|\(c.eraserMode)|\(c.laserMode)"
             + "|\(c.arrowStart)|\(c.arrowEnd)|\(c.shapeStyle)|\(c.shapeSize)|\(c.shapeColor)|\(c.shapeRounded)|\(c.lassoRect)"
+            + "|\(c.shapeFill)|\(c.shapeFillAlpha)|\(c.penStyle)|\(c.penPressure)|\(c.penSharpness)|\(c.penStabilize)|\(c.hlStabilize)|\(c.hlStraight)"
         guard key != lastToolKey else { return }
         lastToolKey = key
         overlays.values.forEach { $0.applyTool() }
@@ -190,7 +191,8 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         // وإن كان الإصبع يكتب فالتحريك بإصبعين
         let pan = sv.panGestureRecognizer
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        pan.minimumNumberOfTouches = c.fingerWrites && !c.textActive && !c.stickyActive ? 2 : 1
+        // الإصبع يكتب مع كل الأدوات (ومنها الملاحظة والنص)، فالتمرير بإصبعين
+        pan.minimumNumberOfTouches = c.fingerWrites ? 2 : 1
     }
 
     /// وسط الجزء الظاهر من الصفحة بنقاط الصفحة.

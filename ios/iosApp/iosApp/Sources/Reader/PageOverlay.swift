@@ -104,8 +104,6 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
     private let insertLayer = CAShapeLayer()
     private var selectionFrame: ImageSelectionView?
     private var inlineView: InlineTextView?
-    private let textDrag = UIPanGestureRecognizer()
-    private let textDragLayer = CAShapeLayer()
     private let holdPreview = CAShapeLayer()
     private let holdFill = CAShapeLayer()
     private let eraserCursor = CAShapeLayer()
@@ -151,6 +149,16 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         canvas.onEnd = { [weak self] in self?.inkEnded() }
         canvas.onStroke = { [weak self] st in self?.newStroke(st) }
         canvas.onErase = { [weak self] d in self?.erased(d) }
+        // إعدادات القلم تُقرأ عند كل خط: أي تغيير في لوحة القلم يسري فورًا
+        canvas.configProvider = { [weak self] in PageOverlayView.inkConfig(k: self?.k ?? 1) }
+        // نقرة القلم تضع ملاحظة أو نصًا أو ملصقًا (والسحب يبقى كتابة): القلم لا يتوقف مع هذه الأدوات
+        canvas.tapBelongsElsewhere = { [weak session] in
+            let c = AppController.shared
+            guard let s = session else { return false }
+            return c.textActive || c.stickyActive || s.pendingPlace != nil || s.pastingNote || s.zoomBox != nil
+        }
+        // إفلات ملصق أو صورة من الدرج على الصفحة نفسها (فلا يعترضه عارض PDF)
+        addInteraction(UIDropInteraction(delegate: self))
         hold.cancelsTouchesInView = false
         hold.delaysTouchesBegan = false
         hold.delaysTouchesEnded = false
@@ -159,7 +167,8 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         content.addSubview(canvas)
 
         topLayer.backgroundColor = .clear
-        topLayer.pencilPasses = { let c = AppController.shared; return !c.textActive && !c.stickyActive && !c.lassoActive }
+        // القلم يكتب فوق النصوص والملاحظات والصور مع كل الأدوات (عدا التحديد)؛ تُلمس العناصر بالإصبع
+        topLayer.pencilPasses = { !AppController.shared.lassoActive }
         hold.onHold = { [weak self] pts in self?.showHoldPreview(pts) }
         hold.onTrack = { [weak self] p in self?.showEraserCursor(p) }
         content.addSubview(topLayer)
@@ -181,18 +190,10 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         content.addSubview(lasso)
         shapes.isHidden = true
         shapes.onShape = { [weak self] strokes in self?.commitShape(strokes) }
+        // إعدادات الشكل (اللون، السماكة، الملء وشفافيته، الرؤوس، النمط) تُقرأ عند بدء كل شكل: تسري فورًا
+        shapes.onBegin = { [weak self] in self?.configureShapes() }
         content.addSubview(shapes)
 
-        // أداة النص: سحب القلم يرسم مربع الكتابة بالعرض المطلوب
-        textDrag.addTarget(self, action: #selector(onTextDrag(_:)))
-        textDrag.delegate = self
-        textDrag.isEnabled = false
-        addGestureRecognizer(textDrag)
-        textDragLayer.fillColor = UIColor(Palette.navy).withAlphaComponent(0.05).cgColor
-        textDragLayer.strokeColor = UIColor(Palette.navy).cgColor
-        textDragLayer.lineWidth = 1.5
-        textDragLayer.lineDashPattern = [6, 4]
-        content.layer.addSublayer(textDragLayer)
 
         // ضغط مطوّل بالإصبع على نص الكتاب: تحديده (ثم السحب يمدّه)
         let press = UILongPressGestureRecognizer(target: self, action: #selector(onPress(_:)))
@@ -414,17 +415,14 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         shapes.fingerWrites = finger
         let laserOn = c.tool == .laser && !c.lassoActive
         let shapeOn = c.shapeActive && !c.lassoActive && c.tool.isWriting
-        let tapTools = c.textActive || c.stickyActive
         laser.isHidden = !laserOn
         laser.color = UIColor(argb: c.colorFor(.laser))
         laser.width = Sizes.width(.laser, c.sizeFor(.laser)) * k
         laser.mode = c.laserMode
         shapes.isHidden = !shapeOn
-        canvas.isUserInteractionEnabled = !laserOn && !shapeOn && !tapTools
+        // أدوات الإدراج (ملاحظة، نص، ملصق، صورة) لا تطفئ القلم: النقرة لها والسحب كتابة
+        canvas.isUserInteractionEnabled = !laserOn && !shapeOn
         canvas.writingEnabled = canvas.isUserInteractionEnabled && !c.lassoActive
-        textDrag.isEnabled = c.textActive
-        textDrag.allowedTouchTypes = finger ? [NSNumber(value: UITouch.TouchType.pencil.rawValue), NSNumber(value: UITouch.TouchType.direct.rawValue)]
-                                            : [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
 
         lasso.isHidden = !c.lassoActive
         lasso.fingerWrites = finger
@@ -436,16 +434,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
             return
         }
         canvas.config = PageOverlayView.inkConfig(k: k)
-        if shapeOn {
-            shapes.ink = shapeInk()
-            shapes.kind = c.shapeKind
-            shapes.style = c.shapeStyle
-            shapes.rounded = c.shapeRounded
-            shapes.arrowStart = c.arrowStart
-            shapes.arrowEnd = c.arrowEnd
-            shapes.fill = c.shapeFill
-            shapes.fillAlpha = CGFloat(c.shapeFillAlpha)
-        }
+        if shapeOn { configureShapes() }
     }
 
     /// إعدادات الكتابة للأداة المختارة. k = نسبة نقاط الطبقة إلى نقاط الصفحة (لحجم الممحاة على الشاشة).
@@ -465,6 +454,18 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         cfg.straight = c.hlStraight
         cfg.canErase = { c.canErase($0) }
         return cfg
+    }
+
+    private func configureShapes() {
+        let c = AppController.shared
+        shapes.ink = shapeInk()
+        shapes.kind = c.shapeKind
+        shapes.style = c.shapeStyle
+        shapes.rounded = c.shapeRounded
+        shapes.arrowStart = c.arrowStart
+        shapes.arrowEnd = c.arrowEnd
+        shapes.fill = c.shapeFill
+        shapes.fillAlpha = CGFloat(c.shapeFillAlpha)
     }
 
     private func shapeInk() -> (UInt32, CGFloat) {
@@ -542,8 +543,9 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
     /// «ارسم وأبقِ»: القلم ثبت لحظة قبل رفعه والخط يشبه شكلًا، فيصير شكلًا مرتبًا (ويُملأ إن كان الملء مفعّلًا).
     private func restyle(_ st: InkStroke) -> [InkStroke]? {
         let c = AppController.shared
-        guard c.drawAndHold, hold.heldNow, st.pts.count > 3,
-              let r = ShapeRecognizer.recognize(st.pts.map { $0.cg }, pageW: pageSize.width) else { return nil }
+        let raw = canvas.lastRaw.count > 3 ? canvas.lastRaw : st.pts.map { $0.cg }
+        guard c.drawAndHold, hold.heldNow, raw.count > 3,
+              let r = ShapeRecognizer.recognize(raw, pageW: pageSize.width) else { return nil }
         let fillPoly = c.shapeFill ? PageOverlayView.closedPolygon(r) : nil
         return r.map { path in
             var s = InkStroke(points: path, color: st.color, width: st.width, tool: st.tool, t: st.t, style: st.style, shape: true)
@@ -844,9 +846,14 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
             }
             return
         }
-        if c.textActive {
-            // نقرة أثناء الكتابة تنهيها؛ وإلا تضع مربعًا جديدًا وتبدأ الكتابة فيه
+        if c.textActive && !c.lassoActive {
+            // نقرة أثناء الكتابة تنهيها؛ ونقرة على مربع موجود تكتب فيه؛ وإلا تضع مربعًا جديدًا
             if s.inlineEditId != nil { s.finishInlineEdit(); return }
+            if let b = s.data.boxes.last(where: { $0.page == pageId && CGRect(x: $0.x, y: $0.y, width: $0.w, height: s.boxHeight($0)).contains(pp) }) {
+                s.beginInlineEdit(b.id)
+                c.textActive = false
+                return
+            }
             s.placeTextBox(pageId: pageId, at: pp)
             // كما في أندرويد: الأداة تنطفئ بعد وضع مربع واحد (تبقى الكتابة فيه)
             c.textActive = false
@@ -865,7 +872,12 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
             reloadItems()
             return
         }
-        if c.stickyActive {
+        if c.stickyActive && !c.lassoActive {
+            // نقرة على ملاحظة موجودة تحددها؛ وإلا تضع ملاحظة جديدة
+            if let n = s.data.notes.last(where: { $0.page == pageId && CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h).contains(pp) }) {
+                s.selectedNote = n.id
+                return
+            }
             let w = pageSize.width * 0.26
             let n = StickyNote(id: UUID().uuidString, page: pageId, x: pp.x - w / 2, y: pp.y - w / 2, w: w, h: w, color: c.stickyColor,
                                style: c.stickyStyle, author: c.noteAuthor)
@@ -896,7 +908,6 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    private var textDragStart: CGPoint = .zero
     private var selAnchor: CGPoint?
 
     @objc private func onPress(_ g: UILongPressGestureRecognizer) {
@@ -968,27 +979,6 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
             if d < bd { bd = d; best = i }
         }
         return best
-    }
-
-    @objc private func onTextDrag(_ g: UIPanGestureRecognizer) {
-        let p = g.location(in: content)
-        switch g.state {
-        case .began:
-            textDragStart = p
-            session?.finishInlineEdit()
-        case .changed:
-            let r = CGRect(x: min(textDragStart.x, p.x), y: min(textDragStart.y, p.y), width: abs(p.x - textDragStart.x), height: abs(p.y - textDragStart.y))
-            textDragLayer.path = UIBezierPath(roundedRect: r, cornerRadius: 4).cgPath
-        case .ended:
-            textDragLayer.path = nil
-            let r = CGRect(x: min(textDragStart.x, p.x), y: min(textDragStart.y, p.y), width: abs(p.x - textDragStart.x), height: abs(p.y - textDragStart.y))
-            if r.width > content.bounds.width * 0.04 {
-                session?.placeTextBox(pageId: pageId, at: CGPoint(x: r.minX / k, y: (r.minY + min(r.height, 30)) / k), width: r.width / k)
-                AppController.shared.textActive = false
-            }
-        default:
-            textDragLayer.path = nil
-        }
     }
 
     @objc private func onUndoTap() { if AppController.shared.fingerUndo { session?.undo() } }
@@ -1104,24 +1094,33 @@ final class LaserView: UIView {
         for l in [glow, beam, core, head, headCore] { l.frame = bounds; l.contentsScale = sc }
     }
 
+    /// لون الليزر مشبعًا ساطعًا (يُرى على الورق الأبيض والصفحات الداكنة والصور).
+    private var vivid: UIColor {
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard color.getHue(&h, saturation: &sat, brightness: &b, alpha: &a), sat > 0.05 else { return color }
+        return UIColor(hue: h, saturation: max(sat, 0.9), brightness: max(b, 1), alpha: 1)
+    }
+
     private func styleLayers() {
-        let c = color.cgColor
-        glow.strokeColor = color.withAlphaComponent(0.25).cgColor
-        glow.lineWidth = width * 2.2
-        glow.shadowColor = c
-        glow.shadowOpacity = 0.9
-        glow.shadowRadius = width * 1.2
+        // شعاع رفيع دقيق: خط بلون مشبع، وقلب أبيض ساطع في وسطه، وتوهج قريب خفيف (لا هالة عريضة)
+        let v = vivid
+        let w = max(1.2, width * 0.45)
+        glow.strokeColor = v.withAlphaComponent(0.35).cgColor
+        glow.lineWidth = w * 2.2
+        glow.shadowColor = v.cgColor
+        glow.shadowOpacity = 0.8
+        glow.shadowRadius = w * 0.9
         glow.shadowOffset = .zero
-        beam.strokeColor = color.withAlphaComponent(0.9).cgColor
-        beam.lineWidth = width
-        core.strokeColor = UIColor.white.withAlphaComponent(0.85).cgColor
-        core.lineWidth = max(1, width * 0.32)
-        head.fillColor = c
-        head.shadowColor = c
+        beam.strokeColor = v.cgColor
+        beam.lineWidth = w
+        core.strokeColor = UIColor.white.withAlphaComponent(0.95).cgColor
+        core.lineWidth = max(0.6, w * 0.38)
+        head.fillColor = v.cgColor
+        head.shadowColor = v.cgColor
         head.shadowOpacity = 1
-        head.shadowRadius = width * 1.6
+        head.shadowRadius = w * 1.4
         head.shadowOffset = .zero
-        headCore.fillColor = UIColor.white.withAlphaComponent(0.9).cgColor
+        headCore.fillColor = UIColor.white.cgColor
     }
 
     @objc private func onHover(_ g: UIHoverGestureRecognizer) {
@@ -1209,9 +1208,9 @@ final class LaserView: UIView {
             l.opacity = fade
         }
         if let d = dot {
-            let r = width * 0.95
+            let r = max(2, width * 0.5)
             head.path = CGPath(ellipseIn: CGRect(x: d.x - r, y: d.y - r, width: r * 2, height: r * 2), transform: nil)
-            let rc = width * 0.42
+            let rc = max(1, width * 0.22)
             headCore.path = CGPath(ellipseIn: CGRect(x: d.x - rc, y: d.y - rc, width: rc * 2, height: rc * 2), transform: nil)
         } else {
             head.path = nil
@@ -1235,6 +1234,8 @@ final class ShapeCaptureView: UIView {
     var fillAlpha: CGFloat = 0.2
     /// خطوط الشكل (بنقاط هذه الطبقة): الجسم (مملوء إن كان مغلقًا والملء مفعّلًا) ورؤوس الأسهم.
     var onShape: (([InkStroke]) -> Void)?
+    /// قبل كل شكل: تُقرأ إعداداته الحالية.
+    var onBegin: (() -> Void)?
     private let fillPreview = CAShapeLayer()
     private let headPreview = CAShapeLayer()
     private var start: CGPoint?
@@ -1264,6 +1265,7 @@ final class ShapeCaptureView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let t = touches.first, accept(t) else { return }
+        onBegin?()
         start = t.location(in: self)
         end = start
         update()
@@ -1526,6 +1528,7 @@ final class TextBoxView: UILabel {
             c.center = CGPoint(x: bounds.maxX, y: bounds.maxY)
             c.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
             let rp = UIPanGestureRecognizer(target: self, action: #selector(resize(_:)))
+            rp.delegate = ItemDragPriority.shared
             c.addGestureRecognizer(rp)
             addSubview(c)
             corner = c
@@ -1534,6 +1537,7 @@ final class TextBoxView: UILabel {
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        pan.delegate = ItemDragPriority.shared
         addGestureRecognizer(pan)
     }
 
@@ -1793,13 +1797,16 @@ final class StickyNoteView: UIView {
             let c = CornerDot()
             c.center = CGPoint(x: bounds.maxX, y: bounds.maxY)
             c.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
-            c.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resize(_:))))
+            let rp = UIPanGestureRecognizer(target: self, action: #selector(resize(_:)))
+            rp.delegate = ItemDragPriority.shared
+            c.addGestureRecognizer(rp)
             addSubview(c)
             corner = c
         }
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        pan.delegate = ItemDragPriority.shared
         addGestureRecognizer(pan)
     }
 
@@ -1831,8 +1838,12 @@ final class ImageSelectionView: UIView {
         layer.borderColor = UIColor(Palette.navy).cgColor
         layer.borderWidth = 2
         backgroundColor = .clear
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(dragMove(_:))))
-        addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:))))
+        let move = UIPanGestureRecognizer(target: self, action: #selector(dragMove(_:)))
+        move.delegate = ItemDragPriority.shared
+        addGestureRecognizer(move)
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:)))
+        pinch.delegate = ItemDragPriority.shared
+        addGestureRecognizer(pinch)
         let touch = UIView(frame: CGRect(x: bounds.width - 22, y: bounds.height - 22, width: 44, height: 44))
         touch.autoresizingMask = [.flexibleLeftMargin, .flexibleTopMargin]
         touch.backgroundColor = .clear
@@ -1845,7 +1856,9 @@ final class ImageSelectionView: UIView {
         inner.layer.cornerRadius = 4
         dot.addSubview(inner)
         touch.addSubview(dot)
-        touch.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resize(_:))))
+        let rp = UIPanGestureRecognizer(target: self, action: #selector(resize(_:)))
+        rp.delegate = ItemDragPriority.shared
+        touch.addGestureRecognizer(rp)
         addSubview(touch)
         clipsToBounds = false
     }
@@ -1878,5 +1891,51 @@ final class ImageSelectionView: UIView {
         let w = max(30, startFrame.width + t.x)
         frame = CGRect(x: startFrame.minX, y: startFrame.minY, width: w, height: w * startFrame.height / max(1, startFrame.width))
         if g.state == .ended { onChange?(frame) }
+    }
+}
+
+/// سحب عنصر على الصفحة (صورة، ملصق، نص، ملاحظة) يسبق تمرير الصفحة وتكبيرها: كان التمرير يأخذ السحب
+/// فيتحرك المستند بدل العنصر.
+final class ItemDragPriority: NSObject, UIGestureRecognizerDelegate {
+    static let shared = ItemDragPriority()
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        other.view is UIScrollView
+    }
+}
+
+// ======================================================== الإفلات من الدرج
+
+extension PageOverlayView: UIDropInteractionDelegate {
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        session.canLoadObjects(ofClass: NSString.self) || session.canLoadObjects(ofClass: UIImage.self)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: UIDropSession) { setDropHighlight(true) }
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) { setDropHighlight(false) }
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) { setDropHighlight(false) }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        UIDropProposal(operation: .copy)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop drop: UIDropSession) {
+        setDropHighlight(false)
+        guard let s = session, let idx = s.index(of: pageId) else { return }
+        let p = drop.location(in: content)
+        let at = CGPoint(x: p.x / max(0.0001, k), y: p.y / max(0.0001, k))
+        if drop.canLoadObjects(ofClass: NSString.self) {
+            _ = drop.loadObjects(ofClass: NSString.self) { items in
+                guard let str = (items.first as? NSString) as String?, str.hasPrefix(StickerDragPrefix) else { return }
+                DispatchQueue.main.async { s.insertSticker(String(str.dropFirst(StickerDragPrefix.count)), page: idx, at: at) }
+            }
+        } else {
+            _ = drop.loadObjects(ofClass: UIImage.self) { items in
+                let imgs = items.compactMap { $0 as? UIImage }
+                DispatchQueue.main.async {
+                    for (i, img) in imgs.enumerated() { s.insertImage(img, page: idx, at: at, index: i, select: i == imgs.count - 1) }
+                }
+            }
+        }
     }
 }

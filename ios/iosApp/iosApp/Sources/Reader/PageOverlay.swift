@@ -177,7 +177,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         tapeView.pageW = size.width
         tapeView.onTape = { [weak self] pts, w in
             guard let self = self, let s = self.session else { return }
-            s.addTape(Tape(page: self.pageId, pts: pts, width: w, color: AppController.shared.tapeColor))
+            s.addTape(Tape(page: self.pageId, pts: pts, width: w, color: AppController.shared.tapeColor, style: AppController.shared.tapeStyle))
         }
         content.addSubview(tapeView)
 

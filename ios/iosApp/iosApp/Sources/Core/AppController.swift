@@ -65,6 +65,7 @@ final class AppController: ObservableObject {
     @Published var tapeStraight = true { didSet { prefs.set(tapeStraight, forKey: "tape_straight") } }
     @Published var tapeSize = 1 { didSet { prefs.set(tapeSize, forKey: "tape_size") } }
     @Published var tapeColor: UInt32 = 0xFFF2A65A { didSet { prefs.set(Int(tapeColor), forKey: "tape_color") } }
+    @Published var tapeStyle = TapeStyle.washi { didSet { prefs.set(tapeStyle, forKey: "tape_style") } }
     /// يزيد كلما اختار المستخدم أداة من القسم الأيسر: يُطفئ أداة القسم الأوسط (الدرج، النص، الملاحظة)
     /// فلا يظهر زران مختاران معًا.
     @Published var leftToolPick = 0
@@ -232,6 +233,7 @@ final class AppController: ObservableObject {
         tapeStraight = p.object(forKey: "tape_straight") as? Bool ?? true
         tapeSize = min(2, max(0, p.object(forKey: "tape_size") as? Int ?? 1))
         tapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "tape_color") as? Int ?? 0xFFF2A65A)
+        tapeStyle = min(3, max(0, p.object(forKey: "tape_style") as? Int ?? TapeStyle.washi))
         noteAuthor = p.string(forKey: "note_author") ?? ""
         tipsOn = p.object(forKey: "msg_tips") as? Bool ?? true
         doneOn = p.object(forKey: "msg_done") as? Bool ?? true

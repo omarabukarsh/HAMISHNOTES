@@ -2,6 +2,7 @@ import SwiftUI
 
 /// زر أداة في شريط الأدوات: خلفية عند الاختيار، ومؤشر ذهبي صغير أسفلها، وقفل ذهبي للأدوات المدفوعة.
 struct TBtn<Content: View>: View {
+    @Environment(\.chromeScale) private var chromeScale
     var selected = false
     var enabled = true
     var locked = false
@@ -23,7 +24,7 @@ struct TBtn<Content: View>: View {
                         .transition(.scale(scale: 0.3).combined(with: .opacity))
                 }
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 42 * chromeScale, height: 42 * chromeScale)
             .contentShape(Rectangle())
             .animation(Motion.enter, value: selected)
         }

@@ -11,14 +11,17 @@ struct Tape: Codable, Identifiable, Equatable {
     var width: CGFloat
     var color: UInt32
     var revealed = false
+    /// شكل الشريط (TapeStyle): 0 واشي مخطّط، 1 ورقي ممزّق، 2 منقّط، 3 ناعم بسيط. يُحفظ في ملف أندرويد تحت "st".
+    var style = TapeStyle.soft
 
-    init(id: String = UUID().uuidString, page: String, pts: [CGFloat], width: CGFloat, color: UInt32, revealed: Bool = false) {
+    init(id: String = UUID().uuidString, page: String, pts: [CGFloat], width: CGFloat, color: UInt32, revealed: Bool = false, style: Int = TapeStyle.soft) {
         self.id = id
         self.page = page
         self.pts = pts
         self.width = width
         self.color = color
         self.revealed = revealed
+        self.style = style
     }
 
     init(from decoder: Decoder) throws {
@@ -29,6 +32,8 @@ struct Tape: Codable, Identifiable, Equatable {
         width = try c.decodeIfPresent(CGFloat.self, forKey: .width) ?? 16
         color = try c.decodeIfPresent(UInt32.self, forKey: .color) ?? TapeTool.palette[0]
         revealed = try c.decodeIfPresent(Bool.self, forKey: .revealed) ?? false
+        let st = try c.decodeIfPresent(Int.self, forKey: .style) ?? TapeStyle.soft
+        style = min(3, max(0, st))
     }
 
     /// نقاط المسار.
@@ -69,38 +74,198 @@ struct Tape: Codable, Identifiable, Equatable {
         return path
     }
 
-    /// يرسم الشريط: مغطٍّ بلونه ونقشه، أو مكشوف (شفاف بخط متقطع). forExport = المكشوف لا يُرسم.
+    /// بذرة ثابتة للحواف الممزّقة والملمس: من نقطة البداية (لا تتغير بين المسودة والشريط المحفوظ).
+    private var seed: UInt64 { UInt64(bitPattern: Int64(pts[0] * 1000) &* 31 &+ Int64(pts[1] * 1000)) }
+
+    /// حدود الشريط مضلعًا مغلقًا بمقياس k: جانباه على بعد نصف عرضه من مساره، وطرفاه بشكل نوعه
+    /// (متعرّج للواشي، ممزّق للورقي، مائل للمنقّط، مستدير للناعم). نفس الحساب في أندرويد.
+    func outline(k: CGFloat) -> [CGPoint] {
+        let p = points.map { CGPoint(x: $0.x * k, y: $0.y * k) }
+        let n = p.count
+        guard n >= 2 else { return [] }
+        let h = width * k / 2
+        func dir(_ i: Int) -> CGPoint {
+            let dx = p[i + 1].x - p[i].x, dy = p[i + 1].y - p[i].y
+            let l = max(0.0001, hypot(dx, dy))
+            return CGPoint(x: dx / l, y: dy / l)
+        }
+        var left: [CGPoint] = [], right: [CGPoint] = []
+        for i in 0..<n {
+            let a = dir(max(0, i - 1)), b = dir(min(i, n - 2))
+            var nx = -(a.y + b.y), ny = a.x + b.x
+            let nl = hypot(nx, ny)
+            if nl < 0.001 { nx = -b.y; ny = b.x } else { nx /= nl; ny /= nl }
+            let cosv = min(1, max(0.5, nx * -b.y + ny * b.x))
+            let kk = h / cosv
+            left.append(CGPoint(x: p[i].x + nx * kk, y: p[i].y + ny * kk))
+            right.append(CGPoint(x: p[i].x - nx * kk, y: p[i].y - ny * kk))
+        }
+        var rng = TapeRandom(seed: seed)
+        let tw = 2 * h
+        func cap(_ out: inout [CGPoint], _ a: CGPoint, _ b: CGPoint, _ o: CGPoint) {
+            switch style {
+            case TapeStyle.washi:
+                let teeth = 4
+                for j in 1..<(teeth * 2) {
+                    let f = CGFloat(j) / CGFloat(teeth * 2)
+                    let d: CGFloat = j % 2 == 1 ? -tw * 0.16 : 0
+                    out.append(CGPoint(x: a.x + (b.x - a.x) * f + o.x * d, y: a.y + (b.y - a.y) * f + o.y * d))
+                }
+            case TapeStyle.torn:
+                let steps = 7
+                for j in 1..<steps {
+                    let f = CGFloat(j) / CGFloat(steps)
+                    let d = -rng.next() * tw * 0.24
+                    out.append(CGPoint(x: a.x + (b.x - a.x) * f + o.x * d, y: a.y + (b.y - a.y) * f + o.y * d))
+                }
+            case TapeStyle.soft:
+                let cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2
+                let rx = a.x - cx, ry = a.y - cy
+                for j in 1..<10 {
+                    let th = CGFloat.pi * CGFloat(j) / 10
+                    out.append(CGPoint(x: cx + rx * cos(th) + o.x * h * sin(th), y: cy + ry * cos(th) + o.y * h * sin(th)))
+                }
+            default: break
+            }
+        }
+        let s0 = dir(0), e0 = dir(n - 2)
+        let slant: CGFloat = style == TapeStyle.dots ? h * 0.35 : 0
+        let inset: CGFloat = style == TapeStyle.soft ? h : 0
+        left[0].x += s0.x * (inset - slant); left[0].y += s0.y * (inset - slant)
+        right[0].x += s0.x * (inset + slant); right[0].y += s0.y * (inset + slant)
+        left[n - 1].x -= e0.x * (inset - slant); left[n - 1].y -= e0.y * (inset - slant)
+        right[n - 1].x -= e0.x * (inset + slant); right[n - 1].y -= e0.y * (inset + slant)
+        var out = left
+        cap(&out, left[n - 1], right[n - 1], e0)
+        out += right.reversed()
+        cap(&out, right[0], left[0], CGPoint(x: -s0.x, y: -s0.y))
+        return out
+    }
+
+    /// يرسم الشريط: المغطّي بشكله ونقشه، والمكشوف حوافه فقط بتعبئة شفافة خفيفة جدًا، بدون أي خط في وسطه.
+    /// forExport = المكشوف لا يُرسم.
     func draw(in c: CGContext, k: CGFloat = 1, forExport: Bool = false) {
         guard pts.count >= 4 else { return }
         if revealed && forExport { return }
+        let o = outline(k: k)
+        guard o.count >= 3 else { return }
+        let shape = CGMutablePath()
+        shape.addLines(between: o)
+        shape.closeSubpath()
         let tw = width * k
-        let col = UIColor(argb: color | 0xFF000000)
+        let base = UIColor(argb: color | 0xFF000000)
         c.saveGState()
-        c.setLineCap(.butt)
-        c.setLineJoin(.round)
-        if !revealed {
-            c.addPath(path(k: k))
-            c.setStrokeColor(col.cgColor)
-            c.setLineWidth(tw)
+        defer { c.restoreGState() }
+        if revealed {
+            c.addPath(shape)
+            c.setFillColor(base.withAlphaComponent(0.10).cgColor)
+            c.fillPath()
+            c.addPath(shape)
+            c.setLineJoin(.round)
+            c.setLineWidth(max(1.2, tw * 0.07))
+            c.setStrokeColor(TapeStyle.darker(color, 0.12).cgColor)
             c.strokePath()
-            c.addPath(path(k: k))
-            c.setStrokeColor(UIColor.white.withAlphaComponent(0.22).cgColor)
-            c.setLineWidth(tw * 0.62)
-            c.setLineDash(phase: 0, lengths: [tw * 0.28, tw * 0.28])
-            c.strokePath()
-        } else {
-            c.addPath(path(k: k))
-            c.setStrokeColor(col.withAlphaComponent(0.16).cgColor)
-            c.setLineWidth(tw)
-            c.strokePath()
-            c.addPath(path(k: k))
-            c.setStrokeColor(col.withAlphaComponent(0.7).cgColor)
-            c.setLineWidth(max(1, tw * 0.06))
-            c.setLineCap(.round)
-            c.setLineDash(phase: 0, lengths: [tw * 0.3, tw * 0.22])
-            c.strokePath()
+            return
         }
-        c.restoreGState()
+        if style == TapeStyle.soft {
+            // ظل خفيف جدًا تحت الشريط
+            c.saveGState()
+            c.translateBy(x: 0, y: max(1, tw * 0.06))
+            c.addPath(shape)
+            c.setFillColor(UIColor.black.withAlphaComponent(0.12).cgColor)
+            c.fillPath()
+            c.restoreGState()
+        }
+        c.addPath(shape)
+        c.setFillColor(base.cgColor)
+        c.fillPath()
+        let b = shape.boundingBoxOfPath
+        switch style {
+        case TapeStyle.washi:
+            c.saveGState()
+            c.addPath(shape); c.clip()
+            c.setStrokeColor(TapeStyle.lighter(color, 0.2).cgColor)
+            c.setLineWidth(tw * 0.16)
+            let step = tw * 0.36
+            var x = b.minX - b.height
+            while x < b.maxX + b.height {
+                c.move(to: CGPoint(x: x, y: b.maxY)); c.addLine(to: CGPoint(x: x + b.height, y: b.minY))
+                x += step
+            }
+            c.strokePath()
+            c.restoreGState()
+        case TapeStyle.dots:
+            c.saveGState()
+            c.addPath(shape); c.clip()
+            c.setFillColor(TapeStyle.lighter(color, 0.45).cgColor)
+            let step = tw * 0.32, r = tw * 0.06
+            var row = 0
+            var y = b.minY + step / 2
+            while y < b.maxY + step {
+                var x = b.minX + (row % 2 == 1 ? step / 2 : 0)
+                while x < b.maxX + step { c.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)); x += step }
+                y += step; row += 1
+            }
+            c.restoreGState()
+        case TapeStyle.torn:
+            // ملمس ورق: ألياف قصيرة فاتحة وداكنة قليلًا
+            c.saveGState()
+            c.addPath(shape); c.clip()
+            var rng = TapeRandom(seed: seed &* 31)
+            c.setLineWidth(max(0.6, tw * 0.025))
+            c.setLineCap(.round)
+            let count = min(400, max(6, Int(b.width * b.height / (tw * tw) * 9)))
+            for _ in 0..<count {
+                let x = b.minX + rng.next() * b.width, y = b.minY + rng.next() * b.height
+                let a = rng.next() * 6.283, l = tw * (0.08 + rng.next() * 0.14)
+                c.setStrokeColor(rng.next() < 0.5 ? UIColor.white.withAlphaComponent(0.18).cgColor : UIColor.black.withAlphaComponent(0.06).cgColor)
+                c.move(to: CGPoint(x: x, y: y)); c.addLine(to: CGPoint(x: x + cos(a) * l, y: y + sin(a) * l))
+                c.strokePath()
+            }
+            c.restoreGState()
+        default: break
+        }
+    }
+}
+
+/// أشكال الشريط اللاصق (نفس أرقام أندرويد).
+enum TapeStyle {
+    static let washi = 0
+    static let torn = 1
+    static let dots = 2
+    static let soft = 3
+    static let all = [washi, torn, dots, soft]
+
+    static func name(_ s: Int) -> String {
+        switch s {
+        case washi: return L("واشي مخطّط", "Striped washi")
+        case torn: return L("ورقي ممزّق", "Torn paper")
+        case dots: return L("منقّط", "Dotted")
+        default: return L("ناعم بسيط", "Soft")
+        }
+    }
+
+    private static func rgb(_ c: UInt32) -> (CGFloat, CGFloat, CGFloat) {
+        (CGFloat((c >> 16) & 0xFF) / 255, CGFloat((c >> 8) & 0xFF) / 255, CGFloat(c & 0xFF) / 255)
+    }
+    static func lighter(_ c: UInt32, _ f: CGFloat) -> UIColor {
+        let (r, g, b) = rgb(c)
+        return UIColor(red: r + (1 - r) * f, green: g + (1 - g) * f, blue: b + (1 - b) * f, alpha: 1)
+    }
+    static func darker(_ c: UInt32, _ f: CGFloat) -> UIColor {
+        let (r, g, b) = rgb(c)
+        return UIColor(red: r * (1 - f), green: g * (1 - f), blue: b * (1 - f), alpha: 1)
+    }
+}
+
+/// مولّد عشوائي بسيط ثابت البذرة (لحواف الشريط الممزّق وملمسه).
+struct TapeRandom {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed == 0 ? 0x9E3779B97F4A7C15 : seed }
+    /// رقم بين 0 و1.
+    mutating func next() -> CGFloat {
+        state ^= state << 13; state ^= state >> 7; state ^= state << 17
+        return CGFloat(state % 10_000) / 10_000
     }
 }
 
@@ -230,7 +395,7 @@ final class TapeView: UIView {
         let w = currentWidth
         let pts = TapeTool.pathOf(raw, width: w, straight: AppController.shared.tapeStraight)
         if pts.count >= 4 {
-            draft = Tape(id: "draft", page: "", pts: pts, width: w, color: AppController.shared.tapeColor)
+            draft = Tape(id: "draft", page: "", pts: pts, width: w, color: AppController.shared.tapeColor, style: AppController.shared.tapeStyle)
             setNeedsDisplay()
         }
     }
@@ -267,6 +432,15 @@ struct TapeBar: View {
         let list = session.data.tapes.filter { $0.page == pid }
         let anyHidden = list.contains { !$0.revealed }
         HStack(spacing: 0) {
+            // الأشكال الأربعة، بلون الشريط الحالي
+            ForEach(TapeStyle.all, id: \.self) { st in
+                TBtn(selected: app.tapeStyle == st, action: { app.tapeStyle = st }) {
+                    TapeStylePreview(style: st, color: app.tapeColor)
+                        .frame(width: 30, height: 16)
+                        .accessibilityLabel(TapeStyle.name(st))
+                }
+            }
+            ToolbarSep()
             ForEach(0..<TapeTool.widths.count, id: \.self) { i in
                 let sel = app.tapeSize == i
                 TBtn(selected: sel, action: { app.tapeSize = i }) {
@@ -309,9 +483,20 @@ struct TapeBar: View {
             TBtn(action: { app.tapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق الشريط اللاصق", "Close tape")) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(Capsule().fill(Color.white))
-        .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-        .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
-        .padding(.bottom, 6)
+        .modifier(BarCapsule())
+    }
+}
+
+/// معاينة صغيرة لشكل الشريط.
+struct TapeStylePreview: View {
+    let style: Int
+    let color: UInt32
+
+    var body: some View {
+        Canvas { ctx, size in
+            let t = Tape(id: "preview", page: "", pts: [size.width * 0.1, size.height / 2, size.width * 0.9, size.height / 2],
+                         width: size.height * 0.8, color: color, style: style)
+            ctx.withCGContext { t.draw(in: $0) }
+        }
     }
 }

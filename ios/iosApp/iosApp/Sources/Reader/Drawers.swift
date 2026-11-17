@@ -139,7 +139,7 @@ struct PagesDrawer: View {
         }
         .frame(width: PagesDrawer.width)
         .frame(maxHeight: .infinity)
-        .background(Palette.drawerBg.shadow(color: .black.opacity(0.16), radius: 10))
+        .modifier(ChromeCard(leading: true))
         .alert(L("حذف الصفحة \((confirmDelete ?? 0) + 1)؟", "Delete page \((confirmDelete ?? 0) + 1)?"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
             Button(L("حذف", "Delete"), role: .destructive) { if let i = confirmDelete { s.deletePage(i) }; confirmDelete = nil }
             Button(L("إلغاء", "Cancel"), role: .cancel) { confirmDelete = nil }
@@ -435,7 +435,7 @@ struct PageMenuDrawer: View {
         }
         .frame(width: 380 * Fonts.base)
         .frame(maxHeight: .infinity)
-        .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
+        .modifier(ChromeCard(leading: false))
         .alert(L("مسح الصفحة \(p + 1)؟", "Clear page \(p + 1)?"), isPresented: $confirmClear) {
             Button(L("مسح", "Clear"), role: .destructive) { clear(p, ink: true, hl: true, tx: true, im: true) }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}

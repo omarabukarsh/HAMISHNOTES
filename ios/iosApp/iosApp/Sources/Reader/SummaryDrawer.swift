@@ -130,7 +130,7 @@ struct SummaryDrawer: View {
         }
         .frame(width: 420 * Fonts.base)
         .frame(maxHeight: .infinity)
-        .background(Palette.drawerBg.shadow(color: .black.opacity(0.18), radius: 14))
+        .modifier(ChromeCard(leading: false))
         .sheet(item: $editing) { m in MarkEditSheet(session: s, mark: m) }
         .sheet(item: $editingTable) { t in TableEditorSheet(rows: t.rows, header: t.header) { rows, header in s.saveTable(t.key, rows: rows, header: header) } }
         .dialogSheet(item: $cardDraft) { d in

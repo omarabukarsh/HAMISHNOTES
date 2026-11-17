@@ -113,11 +113,16 @@ private struct TabBar: View {
 
     var body: some View {
         let libraryActive = app.activeId == nil
-        let activeBg = libraryActive ? Palette.spine : Palette.desk
+        // في المستند: التبويب النشط بلون بطاقة الأدوات (أبيض) ويتصل بها، والشريط بلون مكتب القراءة
+        let activeBg = libraryActive ? Palette.spine : Color.white
+        let railBg = libraryActive ? Palette.tabRail : Palette.desk
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .bottom, spacing: 4) {
+            // التبويبات متلاصقة كتبويبات المستندات، وبين كل تبويبين غير نشطين فاصل رفيع
+            HStack(alignment: .bottom, spacing: 0) {
                 TabItem(title: L("المكتبة", "Library"), active: libraryActive, home: true, activeBg: activeBg, onClose: nil) { app.activate(nil) }
                 ForEach(Array(app.tabs.enumerated()), id: \.element.id) { i, s in
+                    let prevActive = i == 0 ? libraryActive : app.activeId == app.tabs[i - 1].id
+                    if !prevActive && app.activeId != s.id { TabSeparator() }
                     TabItem(title: s.title, active: app.activeId == s.id, home: false, activeBg: activeBg, onClose: { app.closeTab(s.id) }) { app.activate(s.id) }
                         .contextMenu {
                             if i > 0 { Button(L("تحريك يمينًا", "Move left")) { app.moveTab(from: i, to: i - 1) } }
@@ -131,13 +136,42 @@ private struct TabBar: View {
                         }
                 }
             }
-            .padding(.horizontal, 10).padding(.top, 8)
+            .padding(.horizontal, 26).padding(.top, 8)
         }
-        .background(Palette.tabRail)
+        .background(railBg)
     }
 }
 
-/// تبويب على شكل لسان ملف بزوايا علوية مستديرة.
+/// فاصل رفيع بين تبويبين غير نشطين.
+private struct TabSeparator: View {
+    var body: some View {
+        Rectangle().fill(Palette.textSecondary.opacity(0.25)).frame(width: 1, height: 16).padding(.bottom, 12)
+    }
+}
+
+/// زاويتان مقعّرتان أسفل التبويب النشط فينساب في البطاقة التي تحته بلا زوايا حادة.
+private struct TabFillets: Shape {
+    let r: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let h = rect.maxY
+        // اليسار
+        p.move(to: CGPoint(x: rect.minX, y: h - r))
+        p.addLine(to: CGPoint(x: rect.minX, y: h))
+        p.addLine(to: CGPoint(x: rect.minX - r, y: h))
+        p.addArc(center: CGPoint(x: rect.minX - r, y: h - r), radius: r, startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
+        p.closeSubpath()
+        // اليمين
+        p.move(to: CGPoint(x: rect.maxX, y: h - r))
+        p.addLine(to: CGPoint(x: rect.maxX, y: h))
+        p.addLine(to: CGPoint(x: rect.maxX + r, y: h))
+        p.addArc(center: CGPoint(x: rect.maxX + r, y: h - r), radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// تبويب كتبويبات المستندات: غير النشط نص فقط بلا خلفية، والنشط بلون ما تحته بزوايا علوية مستديرة.
 private struct TabItem: View {
     @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
     let title: String
@@ -148,8 +182,8 @@ private struct TabItem: View {
     let onTap: () -> Void
 
     var body: some View {
-        let bg = active ? activeBg : Palette.tabIdle
-        let dark = bg.luminance < 0.4
+        let under = active ? activeBg : Palette.desk
+        let dark = under.luminance < 0.4
         let fg = dark ? Color(hex: 0xFFEDE6D4) : Palette.navy
         let muted = dark ? Color(hex: 0xFFB4BFD0) : Palette.textSecondary
         HStack(spacing: 0) {
@@ -161,15 +195,22 @@ private struct TabItem: View {
                 Spacer().frame(width: 8)
             }
             Text(title).font(Fonts.sans(14, active ? .bold : .regular)).foregroundColor(active ? fg : muted).lineLimit(1)
-                .frame(maxWidth: 180, alignment: .leading).fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: 200, alignment: .leading).fixedSize(horizontal: true, vertical: false)
             if let close = onClose {
                 Spacer().frame(width: 2)
                 Button(action: close) { PhIcon("ph_close", muted, 15, L("إغلاق التبويب", "Close tab")).frame(width: 30, height: 30) }
             }
         }
         .padding(.leading, 14).padding(.trailing, onClose == nil ? 16 : 4)
-        .frame(height: active ? 40 : 36)
-        .background(UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 12, style: .continuous).fill(bg))
+        .frame(height: 40)
+        .background(
+            ZStack {
+                if active {
+                    TabFillets(r: 12).fill(activeBg)
+                    UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 12, style: .continuous).fill(activeBg)
+                }
+            }
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
         .animation(Motion.enter, value: active)

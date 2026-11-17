@@ -102,6 +102,7 @@ enum AndroidSchema {
             guard let i = index[t.page] else { continue }
             var o: [String: Any] = ["id": t.id, "page": i, "p": t.pts.map { Double($0 / w(i)) },
                                     "w": Double(t.width / w(i)), "c": AJSON.signed(t.color | 0xFF000000)]
+            o["st"] = t.style
             if t.revealed { o["rv"] = true }
             tapes.append(o)
         }
@@ -236,7 +237,8 @@ enum AndroidSchema {
             let id = (o["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
             data.tapes.append(Tape(id: id, page: pages[i].id, pts: pts,
                                    width: min(0.2, max(0.004, CGFloat(AJSON.double(o["w"] ?? 0.028)))) * w(i),
-                                   color: AJSON.color(o["c"]) ?? TapeTool.palette[0], revealed: AJSON.bool(o["rv"])))
+                                   color: AJSON.color(o["c"]) ?? TapeTool.palette[0], revealed: AJSON.bool(o["rv"]),
+                                   style: min(3, max(0, (o["st"] as? NSNumber)?.intValue ?? TapeStyle.soft))))
         }
 
         if let s = root["summary"] as? [String: Any] {

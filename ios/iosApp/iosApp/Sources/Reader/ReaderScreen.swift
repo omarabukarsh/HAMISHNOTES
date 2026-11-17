@@ -46,21 +46,8 @@ private struct ReaderContent: View {
         ZStack {
             VStack(spacing: 0) {
                 if !app.focusMode {
-                    VStack(spacing: 0) {
-                        ReaderTopBar(session: s, sheet: $sheet)
-                        if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
-                            PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                        if app.shapeActive && !app.lassoActive { ShapeBar().transition(.move(edge: .top).combined(with: .opacity)) }
-                        if app.stickyActive { StickyBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
-                        if app.tapeActive { TapeBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
-                    }
-                    .scaleEffect(app.toolbarScale, anchor: .top)
-                    .frame(height: nil)
-                    .animation(Motion.enter, value: app.penBarOpen)
-                    .animation(Motion.enter, value: app.shapeActive)
-                    .animation(Motion.enter, value: app.stickyActive)
-                    .animation(Motion.enter, value: app.tapeActive)
+                    ReaderTopBar(session: s, sheet: $sheet)
+                        .scaleEffect(app.toolbarScale, anchor: .top)
                     if s.searchOpen { ReaderSearchBar(session: s) }
                     if s.ocrRunning {
                         VStack(spacing: 0) {
@@ -75,7 +62,7 @@ private struct ReaderContent: View {
                 ZStack {
                     // على الشاشة العريضة: المستند ينزاح بجانب درج الصفحات بدل أن يُغطّى
                     PDFReaderView(session: s)
-                        .padding(.leading, s.drawerOpen && UIScreen.main.bounds.width >= 1000 ? PagesDrawer.width : 0)
+                        .padding(.leading, s.drawerOpen && UIScreen.main.bounds.width >= 1000 ? PagesDrawer.width + 24 : 0)
                         .animation(Motion.enter, value: s.drawerOpen)
                     if !s.summaryOpen && !s.pageMenuOpen {
                         PageScrubber(session: s).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -94,6 +81,24 @@ private struct ReaderContent: View {
                     .animation(Motion.enter, value: s.summaryOpen)
                     .animation(Motion.enter, value: s.pageMenuOpen)
                     if let mode = s.trayMode { SideTray(session: s, mode: mode) }
+                    // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
+                    if !app.focusMode {
+                        VStack(spacing: 0) {
+                            if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
+                                PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                            if app.shapeActive && !app.lassoActive { ShapeBar().transition(.move(edge: .top).combined(with: .opacity)) }
+                            if app.stickyActive { StickyBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
+                            if app.tapeActive { TapeBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
+                        }
+                        .padding(.top, 10)
+                        .scaleEffect(app.toolbarScale, anchor: .top)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .animation(Motion.enter, value: app.penBarOpen)
+                        .animation(Motion.enter, value: app.shapeActive)
+                        .animation(Motion.enter, value: app.stickyActive)
+                        .animation(Motion.enter, value: app.tapeActive)
+                    }
                 }
                 if s.zoomBox != nil && !app.focusMode { ZoomPanel(session: s) }
             }
@@ -225,49 +230,46 @@ private struct ReaderTopBar: View {
     @State private var textMenu = false
 
     var body: some View {
-        ZStack {
-            HStack {
-                // زر درج الصفحات
-                circleButton(on: s.drawerOpen, bg: Palette.navySoft) { s.drawerOpen.toggle() } content: {
-                    PhIcon(s.drawerOpen ? "ph_pages_fill" : "ph_pages", tintFor(s.drawerOpen), 22)
-                }
-                Spacer()
-                // زر درج الملخصات مع عدد التمييزات
-                if app.summariesOn {
-                    ZStack(alignment: .topTrailing) {
-                        circleButton(on: s.summaryOpen, bg: Palette.goldSoft) {
-                            if s.summaryOpen || pm.require(.summaries) {
-                                s.summaryOpen.toggle()
-                                if s.summaryOpen { s.pageMenuOpen = false; s.trayMode = nil }
-                            }
-                        } content: {
-                            ZStack(alignment: .topTrailing) {
-                                PhIcon(s.summaryOpen ? "ph_summary_fill" : "ph_summary", s.summaryOpen ? Palette.goldDeep : Palette.textSecondary, 22)
-                                if !pm.active { PremiumBadge(size: 13).offset(x: 8, y: -8) }
-                            }
+        // بطاقة الأدوات (B6): بيضاء بعرض الشاشة وحواف ناعمة، يتصل بها التبويب النشط من الأعلى.
+        // زر درج الصفحات وزر الملخصات داخلها على الطرفين، والأدوات في الوسط بحجم أكبر قليلًا.
+        HStack(spacing: 0) {
+            chromeButton(on: s.drawerOpen, bg: Palette.navySoft) { s.drawerOpen.toggle() } content: {
+                PhIcon(s.drawerOpen ? "ph_pages_fill" : "ph_pages", tintFor(s.drawerOpen), 24)
+            }
+            ToolbarSep()
+            ViewThatFits(in: .horizontal) {
+                toolsRow.fixedSize()
+                ScrollView(.horizontal, showsIndicators: false) { toolsRow }
+            }
+            .environment(\.chromeScale, 1.14)
+            .frame(maxWidth: .infinity)
+            if app.summariesOn {
+                ToolbarSep()
+                ZStack(alignment: .topTrailing) {
+                    chromeButton(on: s.summaryOpen, bg: Palette.goldSoft) {
+                        if s.summaryOpen || pm.require(.summaries) {
+                            s.summaryOpen.toggle()
+                            if s.summaryOpen { s.pageMenuOpen = false; s.trayMode = nil }
                         }
-                        let n = s.data.marks.count
-                        if n > 0 {
-                            Text(n > 99 ? "99" : "\(n)").font(Fonts.sans(9, .bold)).foregroundColor(.white)
-                                .frame(width: 18, height: 18).background(Circle().fill(Palette.goldDeep))
+                    } content: {
+                        ZStack(alignment: .topTrailing) {
+                            PhIcon(s.summaryOpen ? "ph_summary_fill" : "ph_summary", s.summaryOpen ? Palette.goldDeep : Palette.textSecondary, 24)
+                            if !pm.active { PremiumBadge(size: 13).offset(x: 8, y: -8) }
                         }
+                    }
+                    let n = s.data.marks.count
+                    if n > 0 {
+                        Text(n > 99 ? "99" : "\(n)").font(Fonts.sans(9, .bold)).foregroundColor(.white)
+                            .frame(width: 18, height: 18).background(Circle().fill(Palette.goldDeep))
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                            .offset(x: 4, y: -4)
                     }
                 }
             }
-            // الأدوات في المنتصف: كبسولة بقدر محتواها (كما في أندرويد)، وتتمرر فقط إن لم تتسع الشاشة
-            ViewThatFits(in: .horizontal) {
-                toolsCapsule
-                ScrollView(.horizontal, showsIndicators: false) { toolsRow }
-                    .background(Capsule().fill(Color.white))
-                    .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-                    .clipShape(Capsule())
-                    .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 58)
-            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: Chrome.radius, style: .continuous).fill(Color.white))
+        .padding(.horizontal, 12).padding(.bottom, 8)
         // تسجيل المحاضرة: نافذة مثل أندرويد، والعدّاد يبقى في زر الميكروفون بشريط الأدوات
         .appDialog(isPresented: $audioOpen) { close in AudioDialog(session: s, dismiss: close) }
         // أداة من اليسار: الدرج ومربع النص المفتوح يُغلقان (النص والملاحظة أطفأهما AppController)
@@ -287,14 +289,6 @@ private struct ReaderTopBar: View {
             viewGroup
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
-    }
-
-    private var toolsCapsule: some View {
-        toolsRow
-            .fixedSize()
-            .background(Capsule().fill(Color.white))
-            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-            .shadow(color: Palette.ink.opacity(0.18), radius: 8, y: 3)
     }
 
     private var s: DocSession { session }
@@ -521,12 +515,13 @@ private struct ReaderTopBar: View {
                     }) { PhIcon("ph_more", tintFor(s.pageMenuOpen)) }
     }
 
-    private func circleButton<C: View>(on: Bool, bg: Color, action: @escaping () -> Void, @ViewBuilder content: () -> C) -> some View {
+    /// زر على طرف بطاقة الأدوات: مربع بحواف ناعمة بدل الدائرة العائمة.
+    private func chromeButton<C: View>(on: Bool, bg: Color, action: @escaping () -> Void, @ViewBuilder content: () -> C) -> some View {
         Button(action: action) {
             content()
-                .frame(width: 46, height: 46)
-                .background(Circle().fill(on ? bg : Color.white))
-                .shadow(color: .black.opacity(0.14), radius: 5, y: 2)
+                .frame(width: 48, height: 48)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? bg : Color.clear))
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressScale())
     }
@@ -586,7 +581,7 @@ private struct PenBar: View {
             ScrollView(.horizontal, showsIndicators: false) { row }.modifier(BarCapsule())
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 64).padding(.bottom, 6)
+        .padding(.horizontal, 64)
         .frame(maxWidth: .infinity)
     }
 
@@ -627,14 +622,37 @@ private struct PenBar: View {
     }
 }
 
-/// كبسولة بيضاء بإطار وظل للأشرطة العائمة.
+/// مقاسات بطاقات الواجهة (B6).
+enum Chrome {
+    /// حواف بطاقة الأدوات واللوحتين الجانبيتين.
+    static let radius: CGFloat = 22
+    /// حواف الأشرطة العائمة فوق الصفحة.
+    static let barRadius: CGFloat = 18
+}
+
+/// اللوحة الجانبية بطاقة بيضاء بحواف ناعمة، تبعد 12 عن الحافة وتبدأ تحت شريط الأدوات (B6).
+struct ChromeCard: ViewModifier {
+    let leading: Bool
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Chrome.radius, style: .continuous)
+        content
+            .clipShape(shape)
+            .background(shape.fill(Color.white).shadow(color: .black.opacity(0.10), radius: 6, y: 2))
+            .padding(leading ? .leading : .trailing, 12)
+            .padding(.top, 4).padding(.bottom, 12)
+    }
+}
+
+/// شكل الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق): مستطيل بحواف ناعمة وظل خفيف.
 struct BarCapsule: ViewModifier {
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Chrome.barRadius, style: .continuous)
         content
-            .background(Capsule().fill(Color.white))
-            .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-            .clipShape(Capsule())
+            .background(shape.fill(Color.white))
+            .overlay(shape.stroke(Palette.divider, lineWidth: 1))
+            .clipShape(shape)
             .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
+            .contentShape(shape)
     }
 }
 
@@ -802,10 +820,7 @@ private struct ShapeBar: View {
             TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق الأشكال", "Close shapes")) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(Capsule().fill(Color.white))
-        .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-        .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
-        .padding(.bottom, 6)
+        .modifier(BarCapsule())
         .sheet(isPresented: $picker) { ShapeColorPickerSheet().environmentObject(app) }
     }
 }
@@ -1012,10 +1027,7 @@ private struct StickyBar: View {
             TBtn(action: { app.stickyActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(Capsule().fill(Color.white))
-        .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
-        .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
-        .padding(.bottom, 6)
+        .modifier(BarCapsule())
         .dialogSheet(isPresented: $naming) {
             NameSheet(title: L("الاسم على الملاحظات", "Name on notes"), initial: app.noteAuthor) { app.noteAuthor = $0.trimmingCharacters(in: .whitespaces) }
         }

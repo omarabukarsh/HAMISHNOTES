@@ -1,7 +1,17 @@
 import SwiftUI
 
 /// أيقونة Phosphor من مكتبة الأصول (نفس أيقونات تطبيق أندرويد، محوّلة إلى SVG).
+/// تكبير أيقونات وأزرار شريط الأدوات الأساسي (B6) دون غيره.
+private struct ChromeScaleKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+extension EnvironmentValues {
+    var chromeScale: CGFloat {
+        get { self[ChromeScaleKey.self] }
+        set { self[ChromeScaleKey.self] = newValue }
+    }
+}
+
 struct PhIcon: View {
+    @Environment(\.chromeScale) private var chromeScale
     let name: String
     var tint: Color = Palette.textSecondary
     var size: CGFloat = 22
@@ -19,7 +29,7 @@ struct PhIcon: View {
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .frame(width: size, height: size)
+            .frame(width: size * chromeScale, height: size * chromeScale)
             .foregroundColor(tint)
             .accessibilityLabel(label ?? "")
             .accessibilityHidden(label == nil)

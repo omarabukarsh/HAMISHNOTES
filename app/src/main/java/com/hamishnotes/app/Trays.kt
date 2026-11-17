@@ -103,6 +103,11 @@ object TrayDrag {
     var overPage by mutableStateOf(-1)
     /** مكان الدرج في النافذة: الإفلات فوقه يلغي السحب. */
     var trayRect = androidx.compose.ui.geometry.Rect.Zero
+    /** مكان الشريط العائم الذي سُحب منه العنصر (مثل شريط الملاحظات): الإفلات فوقه يلغي السحب أيضًا. */
+    var barRect by mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
+
+    /** الإصبع فوق مكان يلغي السحب عند الإفلات (الدرج أو الشريط الذي خرج منه العنصر). */
+    fun overCancel(): Boolean = trayRect.contains(pos) || barRect.contains(pos)
 
     /**
      * بعد الإفلات: العنصر يبقى ظاهراً حيث أُفلت حتى يُضاف فعلاً إلى الصفحة
@@ -145,7 +150,7 @@ object TrayDrag {
     internal var placer: (DocSession, TrayPayload, Int, Offset, () -> Unit) -> Unit = ::placePayload
 
     /** الصفحة ونقطة الإسقاط تحت الإصبع (null فوق الدرج أو خارج الصفحات). */
-    fun target(s: DocSession): Pair<Int, Offset>? = if (trayRect.contains(pos)) null else s.pageAt(pos)
+    fun target(s: DocSession): Pair<Int, Offset>? = if (overCancel()) null else s.pageAt(pos)
 
     fun cancel() {
         payload = null
@@ -476,14 +481,14 @@ fun BoxScope.TrayDragGhost(s: DocSession) {
     // وفقط ما دام الإصبع عند الحافة والصفحات تستطيع التحرك
     val zone = with(density) { 72.dp.toPx() }
     val maxSpeed = with(density) { 18.dp.toPx() }
-    val speedNow = if (dragging != null && !TrayDrag.trayRect.contains(TrayDrag.pos)) edgeSpeed(TrayDrag.pos, s.pagesViewport, zone, maxSpeed) else 0f
+    val speedNow = if (dragging != null && !TrayDrag.overCancel()) edgeSpeed(TrayDrag.pos, s.pagesViewport, zone, maxSpeed) else 0f
     if (dragging != null && speedNow == 0f && s.pagesViewport.contains(TrayDrag.pos)) TrayDrag.scrollArmed = true
     val scrolling = speedNow != 0f && TrayDrag.scrollArmed
     LaunchedEffect(scrolling) {
         if (!scrolling) return@LaunchedEffect
         while (TrayDrag.payload != null) {
             androidx.compose.runtime.withFrameNanos { }
-            if (TrayDrag.trayRect.contains(TrayDrag.pos)) break
+            if (TrayDrag.overCancel()) break
             val dy = edgeSpeed(TrayDrag.pos, s.pagesViewport, zone, maxSpeed)
             if (dy == 0f) break
             if (dy > 0f && !s.listState.canScrollForward || dy < 0f && !s.listState.canScrollBackward) break

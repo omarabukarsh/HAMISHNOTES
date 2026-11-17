@@ -35,6 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
@@ -149,7 +153,14 @@ fun StickyBar() {
     val pill = BarShape
     var panel by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()) {
+        // الشريط منطقة إلغاء: ملاحظة تُسحب منه ثم تُعاد إليه وتُفلت فوقه لا تُضاف
+        DisposableEffect(Unit) { onDispose { TrayDrag.barRect = androidx.compose.ui.geometry.Rect.Zero } }
+        val cancelHere = TrayDrag.payload != null && TrayDrag.barRect.contains(TrayDrag.pos)
+        Box(
+            Modifier.onGloballyPositioned { TrayDrag.barRect = it.boundsInWindow() }
+                .shadow(6.dp, pill).background(if (cancelHere) Palette.Danger.copy(alpha = 0.08f).compositeOver(Palette.ChromeBg) else Palette.ChromeBg, pill)
+                .border(if (cancelHere) 2.dp else 1.dp, if (cancelHere) Palette.Danger else Palette.ChromeLine, pill).clip(pill).blockTouches()
+        ) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -176,16 +187,16 @@ fun StickyBar() {
                     TBtn(selected = AppController.notePastePending, onClick = {
                         AppController.notePastePending = !AppController.notePastePending
                         if (AppController.notePastePending) AppController.say(MsgKind.TIP, L("انقر مكان لصق الملاحظة", "Tap where to paste the note"))
-                    }) { PhIcon(R.drawable.ph_copy, tintFor(AppController.notePastePending), 20.dp, L("لصق", "Paste")) }
+                    }) { PhIcon(R.drawable.ph_copy, chromeTint(AppController.notePastePending), 20.dp, L("لصق", "Paste")) }
                 }
                 Box {
-                    TBtn(onClick = { panel = true }) { PhIcon(R.drawable.ph_caret_down, Palette.TextSecondary, 20.dp, L("أنماط الملاحظات", "Note styles")) }
+                    TBtn(onClick = { panel = true }) { PhIcon(R.drawable.ph_caret_down, Palette.ChromeMuted, 20.dp, L("أنماط الملاحظات", "Note styles")) }
                     DropdownMenu(
                         expanded = panel, onDismissRequest = { panel = false },
                         shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
                     ) { StickerPanel { panel = false } }
                 }
-                TBtn(onClick = { PenPrefs.stickyActive = false; AppController.notePastePending = false }) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp) }
+                TBtn(onClick = { PenPrefs.stickyActive = false; AppController.notePastePending = false }) { PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp) }
             }
         }
     }

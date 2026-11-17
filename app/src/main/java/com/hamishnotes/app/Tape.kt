@@ -8,6 +8,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -88,6 +91,8 @@ object TapeTool {
     var sizeIndex by mutableStateOf(1); private set
     var color by mutableStateOf(0xFFF2A65A.toInt()); private set
     var style by mutableStateOf(TapeStyle.WASHI); private set
+    /** نافذة إعدادات الشريط مفتوحة (من أيقونة الأداة في شريطها أو نقرة ثانية على الأداة في شريط الأدوات). */
+    var menuOpen by mutableStateOf(false)
 
     val widths = listOf(0.018f, 0.028f, 0.042f)
     val palette = listOf(
@@ -479,23 +484,32 @@ fun drawTapesOn(c: android.graphics.Canvas, tapes: List<Tape>, w: Float) {
 
 // ---------------------------------------------------------------- شريط الأداة
 
-/** شريط أداة الشريط اللاصق: السماكة، اللون، الشريط المستقيم، الكشف والإخفاء، والإزالة من الصفحة. */
+/**
+ * شريط أداة الشريط اللاصق: أيقونة الأداة (تفتح نافذة الإعدادات)، السماكة، اللون، والإغلاق.
+ * نافذة الإعدادات: الأشكال الأربعة، الشريط المستقيم، كشف/إخفاء كل أشرطة الصفحة، وإزالتها.
+ */
 @Composable
 fun TapeBar(s: DocSession) {
     val pill = BarShape
     val page = s.currentPage()
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()) {
+        Box(Modifier.shadow(6.dp, pill).background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // الأشكال الأربعة، بلون الشريط الحالي
-                TapeStyle.all.forEach { st ->
-                    val sel = TapeTool.style == st
-                    TBtn(selected = sel, onClick = { TapeTool.changeStyle(st) }) {
-                        TapeStylePreview(st, TapeTool.color, TapeStyle.name(st))
+                // أيقونة الأداة: تفتح نافذة الإعدادات تحتها
+                Box {
+                    TBtn(selected = true, onClick = { TapeTool.menuOpen = true }) {
+                        PhIcon(R.drawable.ph_tape, Palette.ChromeAccent, description = L("إعدادات الشريط اللاصق", "Tape settings"))
                     }
+                    DropdownMenu(
+                        expanded = TapeTool.menuOpen,
+                        onDismissRequest = { TapeTool.menuOpen = false },
+                        shape = RoundedCornerShape(18.dp),
+                        containerColor = Color.White,
+                        shadowElevation = 12.dp
+                    ) { TapeMenu(s, page) }
                 }
                 ToolbarSep()
                 // السماكات الثلاث
@@ -504,7 +518,7 @@ fun TapeBar(s: DocSession) {
                     TBtn(selected = sel, onClick = { TapeTool.changeSize(i) }) {
                         Box(
                             Modifier.width(22.dp).height((5 + i * 4).dp).clip(RoundedCornerShape(2.dp))
-                                .background(if (sel) Color(TapeTool.color) else Palette.TextSecondary.copy(alpha = 0.55f))
+                                .background(if (sel) Color(TapeTool.color) else Palette.ChromeMuted.copy(alpha = 0.55f))
                         )
                     }
                 }
@@ -517,37 +531,76 @@ fun TapeBar(s: DocSession) {
                     ) {
                         Box(
                             Modifier.size(if (sel) 26.dp else 22.dp).clip(CircleShape).background(Color(col))
-                                .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
+                                .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.ChromeAccent else Palette.ChromeLine, CircleShape)
                         )
                     }
                 }
                 ToolbarSep()
-                TapeChip(L("شريط مستقيم", "Straight tape"), TapeTool.straight) { TapeTool.changeStraight(!TapeTool.straight) }
-                Spacer(Modifier.width(6.dp))
-                val list = s.tapes[page] ?: emptyList()
-                val anyHidden = list.any { !it.revealed }
-                TBtn(onClick = { s.revealAllTapes(page, anyHidden) }) {
-                    PhIcon(R.drawable.ph_eye, Palette.TextSecondary, 20.dp,
-                        if (anyHidden) L("كشف كل أشرطة الصفحة", "Reveal all tape on the page") else L("إخفاء كل أشرطة الصفحة", "Hide all tape on the page"))
-                }
-                TBtn(onClick = { s.removeAllTapes(page) }) {
-                    PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp, L("إزالة كل الأشرطة من الصفحة", "Remove all tape from the page"))
-                }
-                ToolbarSep()
-                TBtn(onClick = { TapeTool.active = false }) {
-                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق الشريط اللاصق", "Close tape"))
+                TBtn(onClick = { TapeTool.active = false; TapeTool.menuOpen = false }) {
+                    PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp, L("إغلاق الشريط اللاصق", "Close tape"))
                 }
             }
         }
     }
 }
 
+/** نافذة إعدادات الشريط اللاصق (بنفس شكل نوافذ إعدادات القلم والممحاة). */
+@Composable
+private fun TapeMenu(s: DocSession, page: Int) {
+    Column(Modifier.width(300.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
+        PanelLabel(L("شكل الشريط", "Tape style"))
+        TapeStyle.all.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { st ->
+                    val sel = TapeTool.style == st
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) Palette.NavySoft else Palette.Background)
+                            .border(1.5.dp, if (sel) Palette.Navy else Color.Transparent, RoundedCornerShape(12.dp))
+                            .clickable { TapeTool.changeStyle(st) }
+                            .padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        TapeStylePreview(st, TapeTool.color, TapeStyle.name(st), Modifier.width(56.dp).height(26.dp))
+                        Spacer(Modifier.height(6.dp))
+                        Text(TapeStyle.name(st), fontSize = 13.sp, color = Palette.TextPrimary, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Palette.Divider))
+        CompactSwitch(L("شريط مستقيم", "Straight tape"), TapeTool.straight) { TapeTool.changeStraight(it) }
+        val list = s.tapes[page] ?: emptyList()
+        val anyHidden = list.any { !it.revealed }
+        TapeMenuRow(
+            R.drawable.ph_eye,
+            if (anyHidden) L("كشف كل أشرطة الصفحة", "Reveal all tape on the page") else L("إخفاء كل أشرطة الصفحة", "Hide all tape on the page"),
+            Palette.TextPrimary, enabled = list.isNotEmpty()
+        ) { s.revealAllTapes(page, anyHidden); TapeTool.menuOpen = false }
+        TapeMenuRow(R.drawable.ph_trash, L("إزالة كل الأشرطة من الصفحة", "Remove all tape from the page"), Palette.Danger, enabled = list.isNotEmpty()) {
+            s.removeAllTapes(page); TapeTool.menuOpen = false
+        }
+    }
+}
+
+@Composable
+private fun TapeMenuRow(icon: Int, label: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PhIcon(icon, if (enabled) color else color.copy(alpha = 0.4f), 20.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(label, fontSize = 14.sp, color = if (enabled) color else color.copy(alpha = 0.4f))
+    }
+}
+
 /** معاينة صغيرة لشكل الشريط. */
 @Composable
-private fun TapeStylePreview(style: Int, color: Int, label: String) {
+private fun TapeStylePreview(style: Int, color: Int, label: String, modifier: Modifier = Modifier.width(30.dp).height(16.dp)) {
     Canvas(
-        Modifier.width(30.dp).height(16.dp)
-            .semantics { contentDescription = label }
+        modifier.semantics { contentDescription = label }
     ) {
         val w = size.width
         val y = size.height / 2f / w

@@ -240,7 +240,7 @@ private fun ReaderContent(s: DocSession) {
         s.listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) s.activePage = -1 }
     }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().background(Palette.Desk)) {
+        Column(Modifier.fillMaxSize().background(Palette.ReaderDesk)) {
             if (!c.focusMode) {
               // حجم أشرطة الأدوات (من الإعدادات): كثافة مكبّرة/مصغّرة لهذه الأشرطة فقط
               val baseDensity = androidx.compose.ui.platform.LocalDensity.current
@@ -251,19 +251,31 @@ private fun ReaderContent(s: DocSession) {
               ) {
                 ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
               }
-                if (s.searchOpen) ReaderSearchBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 PageArea(s, pdf, exportSummary)
                 // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
-                if (!c.focusMode) Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+                // تتوسط المساحة المتبقية للصفحة فقط: لا تظهر فوق لوحة الصفحات أو الملخصات أو خيارات الصفحة
+                val barStart by androidx.compose.animation.core.animateDpAsState(
+                    if (s.drawerOpen) (PAGES_PANEL_W + 12).dp else 0.dp, tween(240), label = "barStart"
+                )
+                val barEnd by androidx.compose.animation.core.animateDpAsState(
+                    when {
+                        s.summaryOpen && UiPrefs.summariesOn -> 432.dp
+                        s.pageMenuOpen -> 392.dp
+                        else -> 0.dp
+                    }, tween(240), label = "barEnd"
+                )
+                if (!c.focusMode) Column(Modifier.fillMaxWidth().padding(start = barStart, end = barEnd).align(Alignment.TopCenter)) {
                     val baseDensity = androidx.compose.ui.platform.LocalDensity.current
                     androidx.compose.runtime.CompositionLocalProvider(
                         androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
                             baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
                         )
                     ) {
+                    // البحث: نافذة صغيرة عائمة بدل شريط بعرض الشاشة
+                    if (s.searchOpen) ReaderSearchBar(s)
                     // شريط الأقلام الثاني (نمط «شريط الأقلام»)
                     AnimatedVisibility(
                         visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
@@ -410,6 +422,9 @@ private fun TextBoxDialog(
 
 internal fun tintFor(selected: Boolean): Color = if (selected) Palette.Navy else Palette.TextSecondary
 
+/** لون أيقونة في واجهة المحرر (تتبع المظهر الداكن). */
+internal fun chromeTint(selected: Boolean): Color = if (selected) Palette.ChromeAccent else Palette.ChromeMuted
+
 @Composable
 internal fun TBtn(
     selected: Boolean = false,
@@ -420,7 +435,7 @@ internal fun TBtn(
 ) {
     // انتقال لوني ناعم عند الاختيار، وانضغاط خفيف عند اللمس
     val bg by androidx.compose.animation.animateColorAsState(
-        if (selected) Palette.NavySoft else Color.Transparent, tween(Motion.ENTER), label = "tbtn"
+        if (selected) Palette.ChromeSel else Color.Transparent, tween(Motion.ENTER), label = "tbtn"
     )
     Box(
         Modifier.size(42.dp).pressScale().clip(RoundedCornerShape(12.dp))
@@ -463,6 +478,35 @@ private fun ChromeBtn(selected: Boolean, selectedBg: Color, onClick: () -> Unit,
     )
 }
 
+/**
+ * يصغّر المحتوى (كل الأدوات) إن كان أعرض من المساحة المتاحة بدل قصّه أو تمريره:
+ * يُقاس بعرضه الطبيعي ثم يُرسم بمقياس يناسب العرض، واللمس يتبع الرسم.
+ */
+internal fun Modifier.fitWidth(): Modifier = this.layout { m, c ->
+    val p = m.measure(c.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+    val f = if (c.hasBoundedWidth && p.width > c.maxWidth) c.maxWidth.toFloat() / p.width else 1f
+    val w = (p.width * f).roundToInt().coerceAtLeast(c.minWidth)
+    val h = (p.height * f).roundToInt()
+    layout(w, h) {
+        p.placeWithLayer(0, 0) {
+            scaleX = f; scaleY = f
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+        }
+    }
+}
+
+/** حافة باهتة على طرفي منطقة تتمرر أفقيًا: تشير إلى وجود أدوات أخرى بالسحب. */
+internal fun Modifier.scrollFade(): Modifier = this
+    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val fade = 18.dp.toPx() / size.width
+        drawRect(
+            Brush.horizontalGradient(0f to Color.Transparent, fade to Color.Black, 1f - fade to Color.Black, 1f to Color.Transparent),
+            blendMode = BlendMode.DstIn
+        )
+    }
+
 /** شكل الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق): مستطيل بحواف ناعمة. */
 internal val BarShape = RoundedCornerShape(18.dp)
 
@@ -476,7 +520,7 @@ internal fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
 @Composable
 internal fun ToolbarSep() {
     Box(
-        Modifier.padding(horizontal = 6.dp).width(1.dp).height(26.dp).background(Palette.Divider)
+        Modifier.padding(horizontal = 6.dp).width(1.dp).height(26.dp).background(Palette.ChromeLine)
     )
 }
 
@@ -509,47 +553,49 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     val markCount = s.marks.values.sumOf { it.size }
     Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
         Row(
-            Modifier.fillMaxWidth().background(Color.White, ChromeShape).padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().background(Palette.ChromeBg, ChromeShape).padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // زر درج الصفحات
-            ChromeBtn(selected = s.drawerOpen, selectedBg = Palette.NavySoft, onClick = { s.drawerOpen = !s.drawerOpen }) {
-                PagesGlyph(tintFor(s.drawerOpen))
+            ChromeBtn(selected = s.drawerOpen, selectedBg = Palette.ChromeSel, onClick = { s.drawerOpen = !s.drawerOpen }) {
+                PagesGlyph(chromeTint(s.drawerOpen))
             }
             ToolbarSep()
+            // الحجم الصغير (الإعدادات ← المظهر): كل الأدوات في سطر واحد بلا تمرير، تصغر لتتسع.
+            // وفي غيره: الأدوات الأساسية يسارًا و«⋮» يمينًا ثابتة، والوسط وحده يتمرر إن لم تتسع الشاشة.
+            val fitAll = UiPrefs.toolbarScale < 0.9f
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
               val d0 = androidx.compose.ui.platform.LocalDensity.current
               androidx.compose.runtime.CompositionLocalProvider(
-                  androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d0.density * 1.14f, d0.fontScale)
+                  androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d0.density * (if (fitAll) 1f else 1.14f), d0.fontScale)
               ) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp),
+                (if (fitAll) Modifier.fitWidth() else Modifier.fillMaxWidth()).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val v: (String) -> Boolean = { c.toolVisible(it) }
-                val dim = Palette.TextSecondary.copy(alpha = 0.35f)
+                val dim = Palette.ChromeMuted.copy(alpha = 0.35f)
 
                 // التنقل بين الصفحات
                 if (v("nav")) {
                     TBtn(onClick = {
                         val t = (cur - 1).coerceAtLeast(0)
                         scope.launch { s.listState.animateScrollToItem(t); s.activePage = t }
-                    }) { ChevronGlyph(Palette.TextPrimary, up = true) }
+                    }) { ChevronGlyph(Palette.ChromeFg, up = true) }
                     Box(
-                        Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Background)
+                        Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.ChromeSel)
                             .clickable { jump = true }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
                         Text(
                             "${cur + 1} / $count", fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium, color = Palette.TextPrimary
+                            fontWeight = FontWeight.Medium, color = Palette.ChromeFg
                         )
                     }
                     TBtn(onClick = {
                         val t = (cur + 1).coerceAtMost(count - 1)
                         scope.launch { s.listState.animateScrollToItem(t); s.activePage = t }
-                    }) { ChevronGlyph(Palette.TextPrimary, up = false) }
+                    }) { ChevronGlyph(Palette.ChromeFg, up = false) }
                 }
                 // علامة مرجعية للصفحة الحالية
                 if (v("bookmark")) {
@@ -557,7 +603,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     TBtn(selected = marked, onClick = { s.toggleBookmark(cur) }) {
                         PhIcon(
                             if (marked) R.drawable.ph_bookmark_fill else R.drawable.ph_bookmark,
-                            if (marked) Palette.GoldDeep else Palette.TextSecondary
+                            if (marked) Palette.GoldDeep else Palette.ChromeMuted
                         )
                     }
                 }
@@ -578,7 +624,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             c.penBarOpen = !c.penBarOpen
                         }
                     }) {
-                        ToolGlyph(shown, tintFor(writing), c.colorFor(shown), filled = writing)
+                        ToolGlyph(shown, chromeTint(writing), c.colorFor(shown), filled = writing)
                     }
                 } else {
                     // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
@@ -599,7 +645,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     // التقاط النص: اختصار سريع يظهر عند اختيار الهايلايتر (وموجود أيضًا في إعداداته)
                     if (c.tool == Tool.HIGHLIGHTER && v("snap")) {
                         TBtn(selected = c.highlightSnap && Premium.active, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.SNAP)) c.toggleHighlightSnap() }) {
-                            SnapGlyph(tintFor(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
+                            SnapGlyph(chromeTint(c.highlightSnap), c.colorFor(Tool.HIGHLIGHTER))
                         }
                     }
                 }
@@ -629,7 +675,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                                 TapeTool.active = false
                                 c.say(MsgKind.TIP, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
-                        }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, tintFor(c.lassoActive)) }
+                        }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, chromeTint(c.lassoActive)) }
                         DropdownMenu(
                             expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
                             shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
@@ -647,25 +693,26 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             TapeTool.active = false
                             PenPrefs.shapeActive = true
                         }
-                    }) { PhIcon(R.drawable.ph_shapes, tintFor(PenPrefs.shapeActive && !c.lassoActive)) }
+                    }) { PhIcon(R.drawable.ph_shapes, chromeTint(PenPrefs.shapeActive && !c.lassoActive)) }
                 }
                 // الشريط اللاصق: سحب القلم يضع شريطًا يخفي ما تحته، ونقرة عليه تكشفه أو تخفيه
                 if (v("tape")) {
                     TBtn(selected = TapeTool.active, onClick = {
                         if (TapeTool.active) {
-                            TapeTool.active = false
+                            // نقرة ثانية على الأداة: تفتح نافذة إعدادات الشريط
+                            TapeTool.menuOpen = true
                         } else {
                             s.finishInlineEdit()
                             TapeTool.turnOn()
                             c.say(MsgKind.TIP, L("اسحب بالقلم فوق الكلمات لتغطيتها، وانقر على الشريط لتكشف ما تحته", "Drag the pen over words to cover them; tap the tape to reveal what is under it"))
                         }
-                    }) { PhIcon(R.drawable.ph_tape, tintFor(TapeTool.active)) }
+                    }) { PhIcon(R.drawable.ph_tape, chromeTint(TapeTool.active)) }
                 }
                 // «Aa تلقائي»: الكتابة اليدوية تتحول إلى الخط المختار بعد إنهاء الجملة
                 if (v("autofont")) {
                     var autoDlg by remember { mutableStateOf(false) }
                     TBtn(selected = AutoFont.on, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) autoDlg = true }) {
-                        Text("Aa", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (AutoFont.on) Palette.GoldDeep else Palette.TextSecondary)
+                        PhIcon(R.drawable.ph_beautify, if (AutoFont.on) Palette.GoldDeep else Palette.ChromeMuted, description = L("تجميل الخط", "Beautify handwriting"))
                     }
                     if (autoDlg) AutoFontDialog { autoDlg = false }
                 }
@@ -681,25 +728,30 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }) {
                         PhIcon(
                             if (PenInput.fingerWrites) R.drawable.ph_hand_pointing_fill else R.drawable.ph_hand_pointing,
-                            if (PenInput.fingerWrites) Palette.GoldDeep else Palette.TextSecondary
+                            if (PenInput.fingerWrites) Palette.GoldDeep else Palette.ChromeMuted
                         )
                     }
                 }
 
-                // صورة / نص / إضافة صفحة / قراءة النص / بحث / حفظ
+                // بقية الأدوات: تتمرر وحدها (الأجزاء الثابتة على الطرفين لا تتحرك)
                 if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
+                Box(if (fitAll) Modifier else Modifier.weight(1f)) {
+                Row(
+                    (if (fitAll) Modifier else Modifier.horizontalScroll(rememberScrollState()).scrollFade()),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 if (v("image")) {
                     // معرض صور الجهاز داخل التطبيق (و«من الملفات» داخله)
                     Box(Modifier.onGloballyPositioned { val r = it.boundsInWindow(); if (s.trayAnchors["photos"] != r) s.trayAnchors["photos"] = r }) {
                         TBtn(selected = s.trayMode == "photos", onClick = { s.trayMode = if (s.trayMode == "photos") null else "photos" }) {
-                            ImageGlyph(tintFor(s.trayMode == "photos"))
+                            ImageGlyph(chromeTint(s.trayMode == "photos"))
                         }
                     }
                 }
                 if (v("stickers")) {
                     Box(Modifier.onGloballyPositioned { val r = it.boundsInWindow(); if (s.trayAnchors["stickers"] != r) s.trayAnchors["stickers"] = r }) {
                         TBtn(selected = s.trayMode == "stickers", onClick = { s.trayMode = if (s.trayMode == "stickers") null else "stickers" }) {
-                            PhIcon(R.drawable.ph_sticker, tintFor(s.trayMode == "stickers"))
+                            PhIcon(R.drawable.ph_sticker, chromeTint(s.trayMode == "stickers"))
                         }
                     }
                 }
@@ -719,7 +771,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                                 PenPrefs.textActive = true
                                 c.say(MsgKind.TIP, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
-                        }) { TextGlyph(tintFor(PenPrefs.textActive || s.inlineEditId != null)) }
+                        }) { TextGlyph(chromeTint(PenPrefs.textActive || s.inlineEditId != null)) }
                         DropdownMenu(
                             expanded = textMenu, onDismissRequest = { textMenu = false },
                             shape = RoundedCornerShape(18.dp), containerColor = SheetBg, shadowElevation = 12.dp
@@ -745,15 +797,15 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             PenPrefs.stickyActive = true
                             c.say(MsgKind.TIP, L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
                         }
-                    }) { PhIcon(R.drawable.ph_sticky_note, tintFor(PenPrefs.stickyActive)) }
+                    }) { PhIcon(R.drawable.ph_sticky_note, chromeTint(PenPrefs.stickyActive)) }
                 }
                 if (v("link")) {
-                    TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.TextSecondary) }
+                    TBtn(onClick = { linkDialog = true }) { PhIcon(R.drawable.ph_link, Palette.ChromeMuted) }
                 }
                 if (v("split")) {
                     val splitOn = c.splitId != null
                     TBtn(selected = splitOn, locked = !Premium.active, onClick = { if (splitOn) c.closeSplit() else if (Premium.require(PremiumFeature.SPLIT)) splitDialog = true }) {
-                        PhIcon(R.drawable.ph_split, tintFor(splitOn))
+                        PhIcon(R.drawable.ph_split, chromeTint(splitOn))
                     }
                 }
                 if (v("record")) {
@@ -761,29 +813,29 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     TBtn(selected = recHere, locked = !Premium.active && !recHere, onClick = { if (recHere || Premium.require(PremiumFeature.RECORD)) audioDialog = true }) {
                         if (recHere) {
                             Text(mmss(AudioNotes.recElapsed), color = Palette.Danger, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        } else PhIcon(R.drawable.ph_mic, Palette.TextSecondary)
+                        } else PhIcon(R.drawable.ph_mic, Palette.ChromeMuted)
                     }
                 }
                 if (v("zoomwin")) {
                     TBtn(selected = s.zoomBox != null, onClick = {
                         s.zoomBox = if (s.zoomBox != null) null else ZoomBox(cur, if (I18n.english) 0.04f else 0.56f, 0.12f, 0.4f)
-                    }) { PhIcon(R.drawable.ph_zoom_write, tintFor(s.zoomBox != null)) }
+                    }) { PhIcon(R.drawable.ph_zoom_write, chromeTint(s.zoomBox != null)) }
                 }
-                if (v("addpage")) TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.TextSecondary) }
+                if (v("addpage")) TBtn(onClick = { addDialog = true }) { AddPageGlyph(Palette.ChromeMuted) }
                 if (v("ocr")) {
                     TBtn(selected = s.ocrRunning, locked = !Premium.active, onClick = {
                         if (s.ocrRunning) s.stopOcr() else if (Premium.require(PremiumFeature.OCR)) s.startOcr()
-                    }) { OcrGlyph(tintFor(s.ocrRunning)) }
+                    }) { OcrGlyph(chromeTint(s.ocrRunning)) }
                 }
                 if (v("search")) {
                     TBtn(selected = s.searchOpen, onClick = {
                         if (s.searchOpen) s.closeSearch() else s.searchOpen = true
-                    }) { SearchGlyph(tintFor(s.searchOpen)) }
+                    }) { SearchGlyph(chromeTint(s.searchOpen)) }
                 }
                 if (v("export")) {
                     // مشاركة مباشرة أو حفظ: نسخة قابلة للتعديل أو نهائية، والملخصات
                     TBtn(enabled = c.exporting == null, onClick = { exportMenu = true }) {
-                        ExportGlyph(Palette.TextSecondary)
+                        ExportGlyph(Palette.ChromeMuted)
                     }
                     if (exportMenu) ShareExportDialog(s.id) { exportMenu = false }
                 }
@@ -794,10 +846,10 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     val canUndo = s.undoStack.isNotEmpty()
                     val canRedo = s.redoStack.isNotEmpty()
                     TBtn(enabled = canUndo, onClick = { s.undo() }) {
-                        UndoGlyph(if (canUndo) Palette.TextPrimary else dim)
+                        UndoGlyph(if (canUndo) Palette.ChromeFg else dim)
                     }
                     TBtn(enabled = canRedo, onClick = { s.redo() }) {
-                        UndoGlyph(if (canRedo) Palette.TextPrimary else dim, redo = true)
+                        UndoGlyph(if (canRedo) Palette.ChromeFg else dim, redo = true)
                     }
                 }
 
@@ -808,25 +860,25 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     val canOut = s.scale > MIN_SCALE + 0.01f
                     val canIn = s.scale < 3.99f
                     TBtn(enabled = canOut, onClick = { s.zoomHook?.invoke(1f / 1.25f) }) {
-                        ZoomGlyph(if (canOut) Palette.TextPrimary else dim, plus = false)
+                        ZoomGlyph(if (canOut) Palette.ChromeFg else dim, plus = false)
                     }
                     Box(
                         Modifier.clip(RoundedCornerShape(8.dp))
                             .clickable { s.zoomHook?.invoke(1f / s.scale) }
                             .padding(horizontal = 8.dp, vertical = 8.dp)
                     ) {
-                        Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.TextPrimary)
+                        Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.ChromeFg)
                     }
                     TBtn(enabled = canIn, onClick = { s.zoomHook?.invoke(1.25f) }) {
-                        ZoomGlyph(if (canIn) Palette.TextPrimary else dim, plus = true)
+                        ZoomGlyph(if (canIn) Palette.ChromeFg else dim, plus = true)
                     }
                 }
                 // ملاءمة الصفحة كاملة (مفيد في الوضع الأفقي)، ونقرة ثانية تعيد ملء العرض
-                if (v("fit")) TBtn(onClick = { s.fitHook?.invoke() }) { FitGlyph(Palette.TextPrimary) }
+                if (v("fit")) TBtn(onClick = { s.fitHook?.invoke() }) { FitGlyph(Palette.ChromeFg) }
                 // القراءة الليلية
                 if (v("night")) {
                     TBtn(selected = c.nightPages, onClick = { c.toggleNightPages() }) {
-                        PhIcon(R.drawable.ph_moon, tintFor(c.nightPages))
+                        PhIcon(R.drawable.ph_moon, chromeTint(c.nightPages))
                     }
                 }
                 // وضع التركيز: إخفاء كل الأشرطة
@@ -836,15 +888,16 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         s.summaryOpen = false
                         c.focusMode = true
                         c.say(MsgKind.TIP, L("وضع التركيز: اضغط زر الرجوع أو أيقونة الخروج للعودة", "Focus mode: press Back or the exit icon to return"))
-                    }) { PhIcon(R.drawable.ph_eye, Palette.TextPrimary) }
+                    }) { PhIcon(R.drawable.ph_eye, Palette.ChromeFg) }
                 }
-                // الإعدادات: ظاهرة دائمًا
-                // زر الإعدادات أُزيل من الشريط: الإعدادات من درج «⋯» ← «كل الإعدادات وتخصيص الأدوات»
-                // خيارات الصفحة (درج على اليمين)
+                }
+                }
+                // «⋮» خيارات الصفحة والإعدادات: ثابت دائمًا في آخر الشريط
+                ToolbarSep()
                 TBtn(selected = s.pageMenuOpen, onClick = {
                     s.pageMenuOpen = !s.pageMenuOpen
                     if (s.pageMenuOpen) s.summaryOpen = false
-                }) { PhIcon(R.drawable.ph_more, tintFor(s.pageMenuOpen)) }
+                }) { PhIcon(R.drawable.ph_more, chromeTint(s.pageMenuOpen)) }
             }
               }
             }
@@ -858,13 +911,13 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             if (s.summaryOpen) { s.pageMenuOpen = false; s.trayMode = null }
                         }
                     }) {
-                        SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold)
+                        SummaryGlyph(chromeTint(s.summaryOpen), Palette.Gold)
                         if (!Premium.active) PremiumBadge(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp), 13.dp)
                     }
                     if (markCount > 0) {
                         Box(
                             Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(18.dp).clip(CircleShape)
-                                .background(Palette.GoldDeep).border(2.dp, Color.White, CircleShape),
+                                .background(Palette.GoldDeep).border(2.dp, Palette.ChromeBg, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -934,7 +987,7 @@ private fun PenBar() {
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier.shadow(6.dp, pill, ambientColor = Palette.Ink, spotColor = Palette.Ink)
-                .background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()
+                .background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()
         ) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
@@ -947,7 +1000,7 @@ private fun PenBar() {
                     val sel = pt == t
                     Box {
                         TBtn(selected = sel, onClick = { if (sel) more = true else c.selectTool(pt) }) {
-                            ToolGlyph(pt, tintFor(sel), c.colorFor(pt), filled = sel)
+                            ToolGlyph(pt, chromeTint(sel), c.colorFor(pt), filled = sel)
                         }
                         DropdownMenu(
                             expanded = more && sel,
@@ -997,7 +1050,7 @@ private fun PenBar() {
                     Box(
                         Modifier.padding(start = 6.dp).size(34.dp).clip(CircleShape).clickable { allColors = true },
                         contentAlignment = Alignment.Center
-                    ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("كل الألوان", "All colors")) }
+                    ) { PhIcon(R.drawable.ph_plus, Palette.ChromeMuted, 18.dp, L("كل الألوان", "All colors")) }
                     DropdownMenu(
                         expanded = allColors,
                         onDismissRequest = { allColors = false },
@@ -1032,7 +1085,7 @@ private fun PenBar() {
                 SizeSlots(t)
                 ToolbarSep()
                 TBtn(onClick = { c.penBarOpen = false }) {
-                    PhIcon(R.drawable.ph_caret_up, Palette.TextSecondary, 20.dp, L("إخفاء شريط الأقلام", "Hide pen bar"))
+                    PhIcon(R.drawable.ph_caret_up, Palette.ChromeMuted, 20.dp, L("إخفاء شريط الأقلام", "Hide pen bar"))
                 }
             }
         }
@@ -1366,25 +1419,30 @@ private fun ReaderSearchBar(s: DocSession) {
         }
     }
     val total = s.pdf?.count ?: 0
-    Column(Modifier.fillMaxWidth().background(Color.White)) {
+    // نافذة صغيرة عائمة في أعلى طرف الصفحة (لا تُنزل الصفحة)، يُكتب فيها مباشرة
+    Box(Modifier.fillMaxWidth().padding(top = 10.dp, end = 20.dp, start = 20.dp), contentAlignment = Alignment.TopEnd) {
+    Column(
+        Modifier.widthIn(max = 460.dp).shadow(8.dp, BarShape).background(Palette.ChromeBg, BarShape)
+            .border(1.dp, Palette.ChromeLine, BarShape).clip(BarShape).blockTouches()
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box(
-                Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(10.dp))
-                    .background(Palette.Background).padding(horizontal = 12.dp),
+                Modifier.width(250.dp).height(40.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Palette.ChromeSel).padding(horizontal = 12.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 if (s.searchQuery.isEmpty()) {
-                    Text(L("ابحث في نص المستند", "Search the document text"), color = Palette.TextSecondary, fontSize = 15.sp, maxLines = 1)
+                    Text(L("ابحث في نص المستند", "Search the document text"), color = Palette.ChromeMuted, fontSize = 15.sp, maxLines = 1)
                 }
                 BasicTextField(
                     value = s.searchQuery,
                     onValueChange = { s.runSearch(it) },
                     singleLine = true,
-                    textStyle = TextStyle(color = Palette.TextPrimary, fontSize = 15.sp),
+                    textStyle = TextStyle(color = Palette.ChromeFg, fontSize = 15.sp),
                     cursorBrush = SolidColor(Palette.Navy),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus)
                 )
@@ -1395,12 +1453,12 @@ private fun ReaderSearchBar(s: DocSession) {
                     s.hits.isEmpty() -> L("لا نتائج", "No results")
                     else -> "${s.hitIndex + 1}/${s.hits.size}"
                 },
-                fontSize = 13.sp, color = Palette.TextSecondary
+                fontSize = 13.sp, color = Palette.ChromeMuted, maxLines = 1
             )
-            TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.TextPrimary, up = true) }
-            TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.TextPrimary, up = false) }
+            TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.ChromeFg, up = true) }
+            TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.ChromeFg, up = false) }
             IconButton(onClick = { s.closeSearch() }, modifier = Modifier.size(40.dp)) {
-                PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق البحث", "Close search"))
+                PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp, L("إغلاق البحث", "Close search"))
             }
         }
         if (!s.ocrRunning && s.ocr.size < total) {
@@ -1410,12 +1468,12 @@ private fun ReaderSearchBar(s: DocSession) {
             ) {
                 Text(
                     L("البحث يشمل ${s.ocr.size} من $total صفحة تمت قراءتها", "Search covers ${s.ocr.size} of $total pages read so far"),
-                    fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
+                    fontSize = 12.sp, color = Palette.ChromeMuted, modifier = Modifier.weight(1f, fill = false)
                 )
-                TextButton(onClick = { s.startOcr() }) { Text(L("قراءة الكل", "Read all"), fontSize = 13.sp) }
+                TextButton(onClick = { s.startOcr() }) { Text(L("قراءة الكل", "Read all"), fontSize = 13.sp, color = Palette.ChromeAccent) }
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+    }
     }
 }
 

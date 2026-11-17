@@ -71,6 +71,18 @@ object Palette {
     val OnInkMuted: Color get() = if (ThemeState.light) Color(0xFF667085) else Color(0xFF9A9A9A)
 
     val Danger = Color(0xFFB3261E)
+
+    // واجهة المحرر (التبويبات، بطاقة الأدوات، الأشرطة العائمة): فاتحة في المظهر الفاتح، وفحمية داكنة في الكحلي
+    val ChromeBg: Color get() = if (ThemeState.light) Color.White else Color(0xFF1C1C1C)
+    val ChromeFg: Color get() = if (ThemeState.light) TextPrimary else Color(0xFFECECEC)
+    val ChromeMuted: Color get() = if (ThemeState.light) TextSecondary else Color(0xFFB4B4B4)
+    /** الأداة المختارة: كحلي في الفاتح، وذهبي فاتح في الداكن. */
+    val ChromeAccent: Color get() = if (ThemeState.light) Navy else Color(0xFFF0D58E)
+    val ChromeSel: Color get() = if (ThemeState.light) NavySoft else Color(0xFF2E2E2E)
+    val ChromeLine: Color get() = if (ThemeState.light) Divider else Color(0xFF333333)
+    /** شريط التبويبات ومكتب القراءة خلف الصفحات. */
+    val ChromeRail: Color get() = if (ThemeState.light) Desk else Color(0xFF000000)
+    val ReaderDesk: Color get() = if (ThemeState.light) Desk else Color(0xFF121212)
 }
 
 /**

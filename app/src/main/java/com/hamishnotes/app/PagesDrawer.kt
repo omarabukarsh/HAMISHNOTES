@@ -367,6 +367,11 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                             val allMarked = picked.all { it in s.bookmarks }
                             picked.toList().forEach { p -> if ((p in s.bookmarks) == allMarked) s.toggleBookmark(p) }
                         }) { PhIcon(R.drawable.ph_bookmark, Palette.Navy, 20.dp) }
+                        // تغيير قالب الصفحات المحددة معًا (صفحات الملاحظات فقط)
+                        TextButton(
+                            enabled = picked.isNotEmpty() && picked.all { isTemplatePage(pdf, it) },
+                            onClick = { TemplateChange.pages = picked.sorted() }
+                        ) { PhIcon(R.drawable.ph_pages, Palette.Navy, 20.dp, L("تغيير القالب", "Change template")) }
                         TextButton(enabled = picked.isNotEmpty() && picked.size < n, onClick = { confirmDelete = true }) {
                             PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp)
                         }
@@ -376,6 +381,8 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
             }
         }
     }
+
+    TemplateChangeDialog(s, pdf)
 
     if (addPage) {
         TemplatePickerDialog(
@@ -572,7 +579,33 @@ private fun PageThumb(
     }
 }
 
-/** قائمة الصفحة: تحريك، نسخ، حذف. */
+/** صفحات يُغيَّر قالبها الآن (من قائمة الصورة المصغّرة أو من التحديد المتعدد). */
+object TemplateChange {
+    var pages by mutableStateOf<List<Int>?>(null)
+}
+
+/** صفحة ملاحظات (قالب) لا صفحة PDF: يمكن تغيير قالبها. */
+internal fun isTemplatePage(pdf: PdfDoc, i: Int): Boolean = pdf.pages.getOrNull(i)?.src?.startsWith("blank:") == true
+
+/** نافذة تغيير القالب لصفحة أو أكثر: كل ما كُتب على الصفحات يبقى، ويتغير الخلفية فقط. */
+@Composable
+private fun TemplateChangeDialog(s: DocSession, pdf: PdfDoc) {
+    val pages = TemplateChange.pages ?: return
+    val first = pdf.pages.getOrNull(pages.first()) ?: run { TemplateChange.pages = null; return }
+    val (kind, color) = Templates.parse(first.src)
+    TemplatePickerDialog(
+        mode = PickerMode.CHANGE,
+        initial = Templates.defaultChoice().copy(kind = kind, color = color, landscape = first.ratio > 1f),
+        sizeLocked = true,
+        onDismiss = { TemplateChange.pages = null },
+        onConfirm = { choice, _, _ ->
+            TemplateChange.pages = null
+            pages.forEach { p -> if (isTemplatePage(pdf, p)) s.setPageSrc(p, Templates.src(choice.kind, choice.color)) }
+        }
+    )
+}
+
+/** قائمة الصفحة: تحريك، نسخ، تغيير القالب، حذف. */
 @Composable
 private fun PageMenu(s: DocSession, pdf: PdfDoc, i: Int, open: Boolean, onClose: () -> Unit, onDelete: () -> Unit) {
     val n = pdf.count
@@ -597,6 +630,11 @@ private fun PageMenu(s: DocSession, pdf: PdfDoc, i: Int, open: Boolean, onClose:
         DropdownMenuItem(text = { Text(L("نسخ الصفحة", "Duplicate page")) }, onClick = {
             onClose()
             s.rearrangePages(order { add(i + 1, i) })
+        })
+        // تغيير القالب: لصفحات الملاحظات (ما كُتب عليها يبقى كما هو)
+        if (isTemplatePage(pdf, i)) DropdownMenuItem(text = { Text(L("تغيير القالب…", "Change template…")) }, onClick = {
+            onClose()
+            TemplateChange.pages = listOf(i)
         })
         if (n > 1) DropdownMenuItem(text = { Text(L("حذف الصفحة", "Delete page"), color = Color(0xFFC62828)) }, onClick = {
             onClose()

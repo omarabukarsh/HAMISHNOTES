@@ -174,7 +174,7 @@ fun SizeSlots(t: Tool) {
                     val thick = (2 + sz * 1.3f).dp
                     Box(
                         Modifier.width(26.dp).height(thick).clip(RoundedCornerShape(50))
-                            .background(if (sel) Palette.Navy else Palette.TextSecondary)
+                            .background(if (sel) Palette.Navy else Palette.ChromeMuted)
                     )
                 }
                 DropdownMenu(
@@ -364,7 +364,7 @@ fun ShapeBar() {
     var strokeMenu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()) {
+        Box(Modifier.shadow(6.dp, pill).background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -372,12 +372,12 @@ fun ShapeBar() {
                 // التعرّف على الأشكال المرسومة بالقلم
                 // «ارسم وأبقِ»: التعرّف على الشكل المرسوم بالقلم عند إبقائه ثابتًا
                 TBtn(selected = PenPrefs.drawAndHold, onClick = { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }) {
-                    PhIcon(R.drawable.ph_shape_detect, tintFor(PenPrefs.drawAndHold))
+                    PhIcon(R.drawable.ph_shape_detect, chromeTint(PenPrefs.drawAndHold))
                 }
                 ToolbarSep()
                 ShapeKind.values().forEach { k ->
                     val sel = PenPrefs.shapeKind == k
-                    TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
+                    TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), chromeTint(sel)) }
                 }
                 ToolbarSep()
                 // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
@@ -407,7 +407,7 @@ fun ShapeBar() {
                 }
                 ToolbarSep()
                 TBtn(onClick = { PenPrefs.shapeActive = false }) {
-                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق الأشكال", "Close shapes"))
+                    PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp, L("إغلاق الأشكال", "Close shapes"))
                 }
             }
         }

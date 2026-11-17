@@ -252,8 +252,8 @@ private fun TabBar() {
     // الشريط أغمق، والتبويبات الأخرى بلون ثالث واضح فيظهر التباين.
     val libraryActive = c.activeId == null
     // في المستند: التبويب النشط بلون بطاقة الأدوات (أبيض) ويتصل بها، والشريط بلون مكتب القراءة
-    val activeBg = if (libraryActive) Palette.Spine else Color.White
-    val railBg = if (libraryActive) Palette.TabRail else Palette.Desk
+    val activeBg = if (libraryActive) Palette.Spine else Palette.ChromeBg
+    val railBg = if (libraryActive) Palette.TabRail else Palette.ChromeRail
     // ترتيب التبويبات: ضغط مطوّل ثم سحب أفقي
     var dragId by remember { mutableStateOf<String?>(null) }
     var dragDx by remember { mutableStateOf(0f) }
@@ -345,7 +345,7 @@ private fun TabItem(
     val shape = RoundedCornerShape(topStart = r, topEnd = r)
     val bg = if (active) activeBg else Color.Transparent
     // لون النص حسب خلفية التبويب (داكنة أو فاتحة)
-    val under = if (active) activeBg else Palette.Desk
+    val under = if (active) activeBg else (if (AppController.activeId == null) Palette.TabRail else Palette.ChromeRail)
     val darkBg = under.luminance() < 0.4f
     val fg = if (darkBg) Color(0xFFEDE6D4) else Palette.Navy
     val fgMuted = if (darkBg) Color(0xFFB4BFD0) else Palette.TextSecondary

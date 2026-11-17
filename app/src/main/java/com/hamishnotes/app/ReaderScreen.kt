@@ -510,10 +510,14 @@ internal fun Modifier.scrollFade(): Modifier = this
 /** شكل الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق): مستطيل بحواف ناعمة. */
 internal val BarShape = RoundedCornerShape(18.dp)
 
-/** الشريط العائم يأخذ لمساته فلا تصل إلى الصفحة تحته (أزراره تعمل قبله كالمعتاد). */
+/**
+ * الشريط العائم يأخذ لمساته فلا تصل إلى الصفحة تحته: وجود مستقبل لمس هنا يكفي، لأن اللمسة
+ * تذهب إلى العنصر الأعلى فقط. لا نستهلك الأحداث، لأن استهلاك حركة صغيرة يلغي نقرة الزر
+ * (نقرة القلم تتحرك دائمًا قليلًا)، فكانت أزرار الشريط لا تستجيب للقلم.
+ */
 internal fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
-        while (true) awaitPointerEvent(PointerEventPass.Main).changes.forEach { it.consume() }
+        while (true) awaitPointerEvent(PointerEventPass.Main)
     }
 }
 

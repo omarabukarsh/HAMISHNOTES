@@ -48,17 +48,19 @@ private struct ReaderContent: View {
                 if !app.focusMode {
                     VStack(spacing: 0) {
                         ReaderTopBar(session: s, sheet: $sheet)
-                        if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && app.tool.isWriting {
+                        if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
                             PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
                         }
                         if app.shapeActive && !app.lassoActive { ShapeBar().transition(.move(edge: .top).combined(with: .opacity)) }
                         if app.stickyActive { StickyBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
+                        if app.tapeActive { TapeBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
                     }
                     .scaleEffect(app.toolbarScale, anchor: .top)
                     .frame(height: nil)
                     .animation(Motion.enter, value: app.penBarOpen)
                     .animation(Motion.enter, value: app.shapeActive)
                     .animation(Motion.enter, value: app.stickyActive)
+                    .animation(Motion.enter, value: app.tapeActive)
                     if s.searchOpen { ReaderSearchBar(session: s) }
                     if s.ocrRunning {
                         VStack(spacing: 0) {
@@ -117,7 +119,7 @@ private struct ReaderContent: View {
                 AutoFontChip(session: s)
             }
             // أداة أخرى: شريط العنصر المحدد (نص، ملاحظة، صورة) يُغلق، فلا تتراكم الأشرطة فوق بعضها
-            .onChange(of: "\(app.tool)|\(app.lassoActive)|\(app.shapeActive)|\(app.stickyActive)") { _, _ in
+            .onChange(of: "\(app.tool)|\(app.lassoActive)|\(app.shapeActive)|\(app.stickyActive)|\(app.tapeActive)") { _, _ in
                 if s.selectedBox != nil { s.selectedBox = nil }
                 if s.selectedNote != nil { s.selectedNote = nil }
                 if s.selectedImage != nil { s.selectedImage = nil }
@@ -304,6 +306,7 @@ private struct ReaderTopBar: View {
         app.lassoActive = false
         s.lassoSel = nil
         app.shapeActive = false
+        app.tapeActive = false
         app.penBarOpen = false
         settingsFor = nil
         lassoMenu = false
@@ -333,13 +336,13 @@ private struct ReaderTopBar: View {
     @ViewBuilder private var coreGroup: some View {
                     // الأدوات الأساسية
                     if app.toolbarStyle == .penBar {
-                        let writing = app.tool.isWriting && !app.lassoActive && !app.shapeActive && !insertOn
+                        let writing = app.tool.isWriting && !app.lassoActive && !app.shapeActive && !app.tapeActive && !insertOn
                         let shown = app.tool.isWriting ? app.tool : app.lastWriting
                         TBtn(selected: writing, action: {
                             if !writing { app.pickLeft(); app.selectTool(shown); app.penBarOpen = true } else { app.penBarOpen.toggle() }
                         }) { ToolGlyph(tool: shown, selected: writing) }
                     } else {
-                        let penSel = app.tool.isPen && !app.lassoActive && !app.shapeActive && !insertOn
+                        let penSel = app.tool.isPen && !app.lassoActive && !app.shapeActive && !app.tapeActive && !insertOn
                         let shownPen = app.tool.isPen ? app.tool : app.lastPen
                         toolSlot(shownPen, id: "pen", selected: penSel)
                         toolSlot(.highlighter, id: "hl", selected: app.tool == .highlighter && !app.lassoActive && !insertOn)
@@ -358,6 +361,7 @@ private struct ReaderTopBar: View {
                                 app.pickLeft()
                                 app.lassoActive = true
                                 app.shapeActive = false
+                                app.tapeActive = false
                                 app.say(.tip, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", tintFor(app.lassoActive)) }
@@ -371,9 +375,27 @@ private struct ReaderTopBar: View {
                                 app.pickLeft()
                                 app.lassoActive = false
                                 if !app.tool.isWriting { app.selectTool(app.lastPen) }
+                                app.tapeActive = false
                                 app.shapeActive = true
                             }
                         }) { PhIcon("ph_shapes", tintFor(app.shapeActive && !app.lassoActive)) }
+                    }
+                    if v("tape") {
+                        // الشريط اللاصق: سحب القلم يضع شريطًا يخفي ما تحته، ونقرة عليه تكشفه أو تخفيه
+                        TBtn(selected: app.tapeActive, action: {
+                            if app.tapeActive { app.tapeActive = false } else {
+                                app.pickLeft()
+                                s.trayMode = nil
+                                if s.inlineEditId != nil { s.finishInlineEdit() }
+                                app.lassoActive = false
+                                s.lassoSel = nil
+                                app.shapeActive = false
+                                app.penBarOpen = false
+                                if !app.tool.isWriting { app.selectTool(app.lastPen) }
+                                app.tapeActive = true
+                                app.say(.tip, L("اسحب بالقلم فوق الكلمات لتغطيتها، وانقر على الشريط لتكشف ما تحته", "Drag the pen over words to cover them; tap the tape to reveal what is under it"))
+                            }
+                        }) { PhIcon("ph_tape", tintFor(app.tapeActive)) }
                     }
                     if v("autofont") {
                         TBtn(selected: af.on, locked: !pm.active, action: { if pm.require(.toText) { sheet = .autoFont } }) {

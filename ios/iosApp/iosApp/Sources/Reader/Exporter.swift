@@ -152,6 +152,8 @@ enum Exporter {
             ink.draw(in: c)
             c.restoreGState()
         }
+        // الأشرطة اللاصقة المغطّية فوق كل شيء (المكشوفة لا تُرسم)
+        for t in data.tapes where t.page == pid { t.draw(in: c, forExport: true) }
     }
 
     /// أجزاء ملخص مستند من ملفه المحفوظ (بلا فتحه في جلسة).

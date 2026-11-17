@@ -367,6 +367,7 @@ final class DocSession: ObservableObject, Identifiable {
         data.notes.removeAll { $0.page == pid }
         data.images.removeAll { $0.page == pid }
         data.fills.removeAll { $0.page == pid }
+        data.tapes.removeAll { $0.page == pid }
         drawings[pid] = InkDrawing()
         dirtyInk.insert(pid)
         applyInkHook?(pid, InkDrawing())
@@ -774,6 +775,7 @@ final class DocSession: ObservableObject, Identifiable {
             d.images.removeAll { $0.page == gone }
             d.notes.removeAll { $0.page == gone }
             d.fills.removeAll { $0.page == gone }
+            d.tapes.removeAll { $0.page == gone }
             d.converted.removeAll { $0.page == gone }
             d.bookmarks.removeAll { $0 == gone }
         }
@@ -794,6 +796,7 @@ final class DocSession: ObservableObject, Identifiable {
             d.boxes += d.boxes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
             d.images += d.images.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
             d.notes += d.notes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
+            d.tapes += d.tapes.filter { $0.page == old }.map { var b = $0; b.id = UUID().uuidString; b.page = nid; return b }
         }
         structureChanged()
     }
@@ -895,6 +898,9 @@ final class DocSession: ObservableObject, Identifiable {
             d.marks[i].strongRects = d.marks[i].strongRects.map(mark)
         }
         for i in d.fills.indices where d.fills[i].page == pid { d.fills[i].pts = d.fills[i].pts.map { $0.applying(t) } }
+        for i in d.tapes.indices where d.tapes[i].page == pid {
+            d.tapes[i].pts = d.tapes[i].points.flatMap { p -> [CGFloat] in let q = p.applying(t); return [q.x, q.y] }
+        }
         for i in d.converted.indices where d.converted[i].page == pid {
             d.converted[i].words = d.converted[i].words.map(word)
             // السطر لم يعد أفقيًا: لا يُكمَل عليه ولا تُبدَّل كلماته، ويبقى نصه للبحث

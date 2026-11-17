@@ -60,6 +60,11 @@ final class AppController: ObservableObject {
     @Published var doneOn = true { didSet { prefs.set(doneOn, forKey: "msg_done") } }
     @Published var errorsOn = true { didSet { prefs.set(errorsOn, forKey: "msg_err") } }
     @Published var stickyActive = false
+    /// أداة الشريط اللاصق (Tape.swift): سحب القلم يضع شريطًا يخفي ما تحته، والنقرة تكشفه أو تخفيه.
+    @Published var tapeActive = false
+    @Published var tapeStraight = true { didSet { prefs.set(tapeStraight, forKey: "tape_straight") } }
+    @Published var tapeSize = 1 { didSet { prefs.set(tapeSize, forKey: "tape_size") } }
+    @Published var tapeColor: UInt32 = 0xFFF2A65A { didSet { prefs.set(Int(tapeColor), forKey: "tape_color") } }
     /// يزيد كلما اختار المستخدم أداة من القسم الأيسر: يُطفئ أداة القسم الأوسط (الدرج، النص، الملاحظة)
     /// فلا يظهر زران مختاران معًا.
     @Published var leftToolPick = 0
@@ -224,6 +229,9 @@ final class AppController: ObservableObject {
         shapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "shape_color") as? Int ?? 0xFF000000)
         drawAndHold = p.object(forKey: "draw_hold") as? Bool ?? true
         stickyStyle = p.integer(forKey: "sticky_style")
+        tapeStraight = p.object(forKey: "tape_straight") as? Bool ?? true
+        tapeSize = min(2, max(0, p.object(forKey: "tape_size") as? Int ?? 1))
+        tapeColor = UInt32(truncatingIfNeeded: p.object(forKey: "tape_color") as? Int ?? 0xFFF2A65A)
         noteAuthor = p.string(forKey: "note_author") ?? ""
         tipsOn = p.object(forKey: "msg_tips") as? Bool ?? true
         doneOn = p.object(forKey: "msg_done") as? Bool ?? true
@@ -718,6 +726,7 @@ final class AppController: ObservableObject {
         if t.isWriting { lastWriting = t }
         if t == .eraser || t == .laser { shapeActive = false }
         lassoActive = false
+        tapeActive = false
         prefs.set(t.rawValue, forKey: "tool")
     }
 

@@ -99,6 +99,8 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
     private let laser = LaserView()
     private let shapes = ShapeCaptureView()
     private let lasso = LassoView()
+    /// الأشرطة اللاصقة فوق الكتابة والملاحظات (Tape.swift).
+    private let tapeView = TapeView()
     private let searchLayer = CAShapeLayer()
     private let searchCurrent = CAShapeLayer()
     private let insertLayer = CAShapeLayer()
@@ -170,8 +172,14 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         // القلم يكتب فوق النصوص والملاحظات والصور مع أدوات الكتابة؛ مع التحديد وأدوات الإدراج يلمس العناصر
         topLayer.pencilPasses = { [weak self] in !AppController.shared.lassoActive && !(self?.insertOn ?? false) }
         hold.onHold = { [weak self] pts in self?.showHoldPreview(pts) }
-        hold.onTrack = { [weak self] p in self?.showEraserCursor(p) }
+        hold.onTrack = { [weak self] p in self?.showEraserCursor(p); self?.trackTapeErase(p) }
         content.addSubview(topLayer)
+        tapeView.pageW = size.width
+        tapeView.onTape = { [weak self] pts, w in
+            guard let self = self, let s = self.session else { return }
+            s.addTape(Tape(page: self.pageId, pts: pts, width: w, color: AppController.shared.tapeColor))
+        }
+        content.addSubview(tapeView)
 
         laser.isHidden = true
         content.addSubview(laser)
@@ -311,6 +319,29 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         CATransaction.commit()
     }
 
+    /// الممحاة على الأشرطة اللاصقة: الشريط الذي تلمسه يختفي، ويُزال عند رفع القلم (خطوة تراجع واحدة).
+    private func trackTapeErase(_ p: CGPoint?) {
+        let c = AppController.shared
+        guard let p = p else {
+            if !tapeView.erasing.isEmpty {
+                let ids = tapeView.erasing
+                tapeView.erasing = []
+                session?.removeTapes(ids)
+                tapeView.setNeedsDisplay()
+            }
+            return
+        }
+        guard c.tool == .eraser, !c.lassoActive, !c.tapeActive, canvas.isUserInteractionEnabled, !tapeView.tapes.isEmpty else { return }
+        let pp = CGPoint(x: p.x / max(0.01, k), y: p.y / max(0.01, k))
+        let r = c.eraserMode == .stroke ? 9 / max(0.01, k) : max(1, Sizes.width(.eraser, c.sizeFor(.eraser)) / 2)
+        var changed = false
+        for t in tapeView.tapes where !tapeView.erasing.contains(t.id) && t.hits(pp, slack: r) {
+            tapeView.erasing.insert(t.id)
+            changed = true
+        }
+        if changed { tapeView.setNeedsDisplay() }
+    }
+
     /// حد أعلى لنسبة الرسم حتى لا تكبر مساحة الحبر عن الذاكرة المعقولة (نحو 20 مليون بكسل للصفحة).
     static func clampScale(_ eff: CGFloat, size: CGSize, screen: CGFloat) -> CGFloat {
         let cap = sqrt(20_000_000 / max(1, size.width * size.height * screen * screen))
@@ -327,7 +358,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         content.bounds = CGRect(origin: .zero, size: size)
         content.center = CGPoint(x: bounds.midX, y: bounds.midY)
         content.transform = CGAffineTransform(scaleX: 1 / s, y: 1 / s)
-        for v in [marksView, imagesLayer, canvas, topLayer, laser, shapes, lasso] as [UIView] { v.frame = content.bounds }
+        for v in [marksView, imagesLayer, canvas, topLayer, tapeView, laser, shapes, lasso] as [UIView] { v.frame = content.bounds }
         // الليزر أثر عابر: دقة محدودة تكفيه
         laser.contentScaleFactor = min(UIScreen.main.scale, 2400 / max(1, max(size.width, size.height)))
         let nk = size.width / max(1, pageSize.width)
@@ -421,12 +452,15 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         shapes.fingerWrites = finger
         let laserOn = c.tool == .laser && !c.lassoActive
         let shapeOn = c.shapeActive && !c.lassoActive && c.tool.isWriting
+        let tapeOn = c.tapeActive && !c.lassoActive
+        tapeView.capturing = tapeOn
+        tapeView.fingerWrites = finger
         laser.isHidden = !laserOn
         laser.color = UIColor(argb: c.colorFor(.laser))
         laser.width = Sizes.width(.laser, c.sizeFor(.laser)) * k
         laser.mode = c.laserMode
         shapes.isHidden = !shapeOn
-        canvas.isUserInteractionEnabled = !laserOn && !shapeOn
+        canvas.isUserInteractionEnabled = !laserOn && !shapeOn && !tapeOn
         // أداة من القسم الأوسط (الدرج، النص، الملاحظة) نشطة: القلم لا يكتب، ونقرته تذهب لها
         canvas.writingEnabled = canvas.isUserInteractionEnabled && !c.lassoActive && !insertOn
 
@@ -617,6 +651,10 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
     func reloadItems() {
         guard let s = session else { return }
         reloadMarks()
+        tapeView.k = k
+        tapeView.tapes = s.data.tapes.filter { $0.page == pageId }
+        tapeView.erasing = tapeView.erasing.filter { id in tapeView.tapes.contains { $0.id == id } }
+        tapeView.setNeedsDisplay()
         imagesLayer.subviews.forEach { $0.removeFromSuperview() }
         let idxNow = s.index(of: pageId)
         ribbon.isHidden = !(idxNow.map { s.isBookmarked($0) } ?? false)
@@ -843,6 +881,8 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         if s.pageMenuOpen { s.pageMenuOpen = false }
         // نقرة تلغي تحديد نص الكتاب
         if s.textSel != nil || s.wordSel != nil { s.textSel = nil; s.wordSel = nil; return }
+        // نقرة على شريط لاصق تكشف ما تحته أو تخفيه: بالإصبع مع أي أداة، وبالقلم مع أداة الشريط
+        if lastTouchType == .direct || c.tapeActive, s.toggleTape(at: pp, page: pageId) { return }
         // عنصر من الدرج: يوضع حيث نقرت
         if let pend = s.pendingPlace, let idx = s.index(of: pageId) {
             s.pendingPlace = nil

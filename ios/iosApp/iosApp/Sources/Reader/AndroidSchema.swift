@@ -96,6 +96,16 @@ enum AndroidSchema {
         root["texts"] = texts
         root["notes"] = notes
         root["bookmarks"] = data.bookmarks.compactMap { index[$0] }.sorted()
+        // الأشرطة اللاصقة: النقاط والعرض نسبية لعرض الصفحة (كما في أندرويد)
+        var tapes: [[String: Any]] = []
+        for t in data.tapes where t.pts.count >= 4 {
+            guard let i = index[t.page] else { continue }
+            var o: [String: Any] = ["id": t.id, "page": i, "p": t.pts.map { Double($0 / w(i)) },
+                                    "w": Double(t.width / w(i)), "c": AJSON.signed(t.color | 0xFF000000)]
+            if t.revealed { o["rv"] = true }
+            tapes.append(o)
+        }
+        if tapes.isEmpty { root.removeValue(forKey: "tapes") } else { root["tapes"] = tapes }
         root["summary"] = summary(data.summaryEdits ?? SummaryEdits())
         if root["cards"] == nil { root["cards"] = [Any]() }
         if root["starred"] == nil { root["starred"] = [Any]() }
@@ -217,6 +227,16 @@ enum AndroidSchema {
 
         for v in root["bookmarks"] as? [Any] ?? [] {
             if let i = page(v) { data.bookmarks.append(pages[i].id) }
+        }
+
+        for o in root["tapes"] as? [[String: Any]] ?? [] {
+            guard let i = page(o["page"]) else { continue }
+            let pts = (o["p"] as? [Any] ?? []).map { CGFloat(AJSON.double($0)) * w(i) }
+            guard pts.count >= 4, pts.count % 2 == 0 else { continue }
+            let id = (o["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
+            data.tapes.append(Tape(id: id, page: pages[i].id, pts: pts,
+                                   width: min(0.2, max(0.004, CGFloat(AJSON.double(o["w"] ?? 0.028)))) * w(i),
+                                   color: AJSON.color(o["c"]) ?? TapeTool.palette[0], revealed: AJSON.bool(o["rv"])))
         }
 
         if let s = root["summary"] as? [String: Any] {

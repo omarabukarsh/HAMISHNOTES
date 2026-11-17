@@ -245,6 +245,8 @@ struct DocData: Codable {
     var fills: [ShapeFill] = []
     /// نصوص الكتابة المجمَّلة إلى حبر: تُقرأ في البحث والتقاط النص والملخصات.
     var converted: [ConvertedLine] = []
+    /// الأشرطة اللاصقة (Tape.swift).
+    var tapes: [Tape] = []
 }
 
 extension DocData {
@@ -263,6 +265,7 @@ extension DocData {
         summaryEdits = try c.decodeIfPresent(SummaryEdits.self, forKey: .summaryEdits)
         fills = try c.decodeIfPresent([ShapeFill].self, forKey: .fills) ?? []
         converted = try c.decodeIfPresent([ConvertedLine].self, forKey: .converted) ?? []
+        tapes = try c.decodeIfPresent([Tape].self, forKey: .tapes) ?? []
     }
 }
 

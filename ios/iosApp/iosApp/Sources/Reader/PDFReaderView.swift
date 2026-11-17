@@ -186,7 +186,7 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         let key = "\(c.tool)|\(c.colorFor(c.tool))|\(c.sizeFor(c.tool))|\(c.lassoActive)|\(c.shapeActive)|\(c.shapeKind)|\(c.textActive)|\(c.stickyActive)|\(c.fingerWrites)|\(c.eraserMode)|\(c.laserMode)"
             + "|\(c.arrowStart)|\(c.arrowEnd)|\(c.shapeStyle)|\(c.shapeSize)|\(c.shapeColor)|\(c.shapeRounded)|\(c.lassoRect)"
             + "|\(session.trayMode ?? "-")|\(session.pendingPlace != nil)"
-            + "|\(c.shapeFill)|\(c.shapeFillAlpha)|\(c.penStyle)|\(c.penPressure)|\(c.penSharpness)|\(c.penStabilize)|\(c.hlStabilize)|\(c.hlStraight)"
+            + "|\(c.shapeFill)|\(c.shapeFillAlpha)|\(c.penStyle)|\(c.penPressure)|\(c.penSharpness)|\(c.penStabilize)|\(c.hlStabilize)|\(c.hlStraight)|\(c.tapeActive)"
         guard key != lastToolKey else { return }
         lastToolKey = key
         overlays.values.forEach { $0.applyTool() }

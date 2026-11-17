@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -250,19 +251,21 @@ private fun TabBar() {
     // التبويب النشط بلون ما تحته تمامًا فيبدو متصلًا به: المكتبة بلون شريطها الجانبي، والمستند بلون مكتب القراءة.
     // الشريط أغمق، والتبويبات الأخرى بلون ثالث واضح فيظهر التباين.
     val libraryActive = c.activeId == null
-    val activeBg = if (libraryActive) Palette.Spine else Palette.Desk
+    // في المستند: التبويب النشط بلون بطاقة الأدوات (أبيض) ويتصل بها، والشريط بلون مكتب القراءة
+    val activeBg = if (libraryActive) Palette.Spine else Color.White
+    val railBg = if (libraryActive) Palette.TabRail else Palette.Desk
     // ترتيب التبويبات: ضغط مطوّل ثم سحب أفقي
     var dragId by remember { mutableStateOf<String?>(null) }
     var dragDx by remember { mutableStateOf(0f) }
     val widths = remember { mutableMapOf<String, Int>() }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Row(
-        Modifier.fillMaxWidth().background(Palette.TabRail)
+        Modifier.fillMaxWidth().background(railBg)
             .horizontalScroll(rememberScrollState())
-            .padding(start = 10.dp, end = 10.dp, top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(start = 26.dp, end = 26.dp, top = 8.dp),
         verticalAlignment = Alignment.Bottom
     ) {
+        // التبويبات متلاصقة كتبويبات المستندات، وبين كل تبويبين غير نشطين فاصل رفيع
         TabItem(
             title = L("المكتبة", "Library"),
             active = libraryActive,
@@ -271,7 +274,9 @@ private fun TabBar() {
             onClick = { c.activate(null) },
             onClose = null
         )
-        c.tabs.forEach { s ->
+        c.tabs.forEachIndexed { i, s ->
+            val prevActive = if (i == 0) libraryActive else c.activeId == c.tabs[i - 1].id
+            if (!prevActive && c.activeId != s.id) TabSeparator()
             key(s.id) {
                 val dragging = dragId == s.id
                 TabItem(
@@ -292,7 +297,7 @@ private fun TabBar() {
                             alpha = if (dragging) 0.92f else 1f
                         }
                         .pointerInput(s.id) {
-                            val gap = 4.dp.toPx()
+                            val gap = 0f
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { dragId = s.id; dragDx = 0f },
                                 onDragEnd = { dragId = null; dragDx = 0f; c.commitTabOrder() },
@@ -316,7 +321,16 @@ private fun TabBar() {
     }
 }
 
-/** تبويب على شكل لسان ملف بزوايا علوية مستديرة. */
+/** فاصل رفيع بين تبويبين غير نشطين. */
+@Composable
+private fun TabSeparator() {
+    Box(Modifier.padding(bottom = 10.dp).width(1.dp).height(16.dp).background(Palette.TextSecondary.copy(alpha = 0.25f)))
+}
+
+/**
+ * تبويب كتبويبات المستندات: غير النشط نص فقط بلا خلفية، والنشط بلون ما تحته
+ * بزوايا علوية مستديرة وزاويتين مقعّرتين أسفله فينساب في البطاقة التي تحته بلا زوايا حادة.
+ */
 @Composable
 private fun TabItem(
     title: String,
@@ -327,15 +341,33 @@ private fun TabItem(
     onClose: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+    val r = 12.dp
+    val shape = RoundedCornerShape(topStart = r, topEnd = r)
+    val bg = if (active) activeBg else Color.Transparent
     // لون النص حسب خلفية التبويب (داكنة أو فاتحة)
-    val bg = if (active) activeBg else Palette.TabIdle
-    val darkBg = bg.luminance() < 0.4f
+    val under = if (active) activeBg else Palette.Desk
+    val darkBg = under.luminance() < 0.4f
     val fg = if (darkBg) Color(0xFFEDE6D4) else Palette.Navy
     val fgMuted = if (darkBg) Color(0xFFB4BFD0) else Palette.TextSecondary
     Column(modifier.width(IntrinsicSize.Max)) {
         Row(
-            Modifier.height(if (active) 40.dp else 36.dp)
+            Modifier.height(40.dp)
+                .drawBehind {
+                    if (!active) return@drawBehind
+                    // زاويتان مقعّرتان عند التقاء التبويب بالبطاقة
+                    val rp = r.toPx(); val h = size.height; val w = size.width
+                    val left = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(0f, h - rp); lineTo(0f, h); lineTo(-rp, h)
+                        arcTo(androidx.compose.ui.geometry.Rect(-2 * rp, h - 2 * rp, 0f, h), 90f, -90f, false)
+                        close()
+                    }
+                    val right = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(w, h - rp); lineTo(w, h); lineTo(w + rp, h)
+                        arcTo(androidx.compose.ui.geometry.Rect(w, h - 2 * rp, w + 2 * rp, h), 90f, 90f, false)
+                        close()
+                    }
+                    drawPath(left, bg); drawPath(right, bg)
+                }
                 .clip(shape)
                 .background(bg)
                 .clickable(onClick = onClick)
@@ -360,7 +392,7 @@ private fun TabItem(
                 color = if (active) fg else fgMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 180.dp)
+                modifier = Modifier.widthIn(max = 200.dp)
             )
             if (onClose != null) {
                 Spacer(Modifier.width(2.dp))

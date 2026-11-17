@@ -146,10 +146,10 @@ fun NotesLayer(s: DocSession, page: Int, night: Boolean) {
 /** شريط ألوان الملاحظة اللاصقة (عند اختيار أداة الملاحظات): اختر لونًا ثم انقر مكان الملاحظة. */
 @Composable
 fun StickyBar() {
-    val pill = RoundedCornerShape(26.dp)
+    val pill = BarShape
     var panel by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)) {
+    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,

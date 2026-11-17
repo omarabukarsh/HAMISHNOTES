@@ -250,36 +250,48 @@ private fun ReaderContent(s: DocSession) {
                   )
               ) {
                 ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
-                // شريط الأقلام الثاني (نمط «شريط الأقلام»)
-                AnimatedVisibility(
-                    visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
-                        (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
-                    enter = Motion.barEnter,
-                    exit = Motion.barExit
-                ) { PenBar() }
-                // شريط الأشكال
-                AnimatedVisibility(
-                    visible = PenPrefs.shapeActive && !c.lassoActive,
-                    enter = Motion.barEnter,
-                    exit = Motion.barExit
-                ) { ShapeBar() }
-                // شريط الملاحظات اللاصقة
-                AnimatedVisibility(
-                    visible = PenPrefs.stickyActive,
-                    enter = Motion.barEnter,
-                    exit = Motion.barExit
-                ) { StickyBar() }
-                // شريط الشريط اللاصق
-                AnimatedVisibility(
-                    visible = TapeTool.active,
-                    enter = Motion.barEnter,
-                    exit = Motion.barExit
-                ) { TapeBar(s) }
               }
                 if (s.searchOpen) ReaderSearchBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) { PageArea(s, pdf, exportSummary) }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                PageArea(s, pdf, exportSummary)
+                // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
+                if (!c.focusMode) Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+                    val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                            baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
+                        )
+                    ) {
+                    // شريط الأقلام الثاني (نمط «شريط الأقلام»)
+                    AnimatedVisibility(
+                        visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
+                            (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { PenBar() }
+                    // شريط الأشكال
+                    AnimatedVisibility(
+                        visible = PenPrefs.shapeActive && !c.lassoActive,
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { ShapeBar() }
+                    // شريط الملاحظات اللاصقة
+                    AnimatedVisibility(
+                        visible = PenPrefs.stickyActive,
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { StickyBar() }
+                    // شريط الشريط اللاصق
+                    AnimatedVisibility(
+                        visible = TapeTool.active,
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { TapeBar(s) }
+                    }
+                }
+            }
             // نافذة الكتابة المكبّرة
             if (s.zoomBox != null && !c.focusMode) ZoomPanel(s, pdf)
         }
@@ -435,6 +447,32 @@ internal fun TBtn(
     }
 }
 
+/** شكل بطاقات الواجهة (شريط الأدوات واللوحتان الجانبيتان). */
+internal val ChromeShape = RoundedCornerShape(22.dp)
+
+/** زر على طرف بطاقة الأدوات (درج الصفحات، الملخصات): مربع بحواف ناعمة بدل الدائرة العائمة. */
+@Composable
+private fun ChromeBtn(selected: Boolean, selectedBg: Color, onClick: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (selected) selectedBg else Color.Transparent, tween(Motion.ENTER), label = "chromeBtn"
+    )
+    Box(
+        Modifier.size(48.dp).pressScale().clip(RoundedCornerShape(14.dp)).background(bg).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+        content = content
+    )
+}
+
+/** شكل الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق): مستطيل بحواف ناعمة. */
+internal val BarShape = RoundedCornerShape(18.dp)
+
+/** الشريط العائم يأخذ لمساته فلا تصل إلى الصفحة تحته (أزراره تعمل قبله كالمعتاد). */
+internal fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent(PointerEventPass.Main).changes.forEach { it.consume() }
+    }
+}
+
 @Composable
 internal fun ToolbarSep() {
     Box(
@@ -466,61 +504,27 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
         if (uri != null) c.addPdfPages(s, uri, pdfAfter)
     }
 
-    Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
-        // زر درج الصفحات في الزاوية اليسرى
-        Box(
-            Modifier.align(Alignment.CenterStart).size(46.dp)
-                .shadow(5.dp, CircleShape)
-                .background(if (s.drawerOpen) Palette.NavySoft else Color.White, CircleShape)
-                .clip(CircleShape)
-                .clickable { s.drawerOpen = !s.drawerOpen },
-            contentAlignment = Alignment.Center
-        ) { PagesGlyph(tintFor(s.drawerOpen)) }
-
-        // زر درج الملخصات في الزاوية المقابلة، مع عدد التمييزات
-        val markCount = s.marks.values.sumOf { it.size }
-        if (UiPrefs.summariesOn) Box(Modifier.align(Alignment.CenterEnd)) {
-            Box(
-                Modifier.size(46.dp)
-                    .shadow(5.dp, CircleShape)
-                    .background(if (s.summaryOpen) Palette.GoldSoft else Color.White, CircleShape)
-                    .clip(CircleShape)
-                    .clickable {
-                        if (s.summaryOpen || Premium.require(PremiumFeature.SUMMARIES)) {
-                            s.summaryOpen = !s.summaryOpen
-                            if (s.summaryOpen) { s.pageMenuOpen = false; s.trayMode = null }
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold)
-                if (!Premium.active) PremiumBadge(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp), 13.dp)
-            }
-            if (markCount > 0) {
-                Box(
-                    Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape)
-                        .background(Palette.GoldDeep),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (markCount > 99) "99" else "$markCount",
-                        fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // شريط الأدوات في المنتصف
-        Box(
-            Modifier.align(Alignment.Center).padding(horizontal = 58.dp)
-                .shadow(8.dp, pill, ambientColor = Palette.Ink, spotColor = Palette.Ink)
-                .background(Color.White, pill)
-                .border(1.dp, Palette.Divider, pill)
-                .clip(pill)
+    // بطاقة الأدوات (B6): بيضاء بعرض الشاشة وحواف ناعمة، يتصل بها التبويب النشط من الأعلى.
+    // زر درج الصفحات وزر الملخصات داخلها على الطرفين، والأدوات في الوسط بحجم أكبر قليلًا.
+    val markCount = s.marks.values.sumOf { it.size }
+    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().background(Color.White, ChromeShape).padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            // زر درج الصفحات
+            ChromeBtn(selected = s.drawerOpen, selectedBg = Palette.NavySoft, onClick = { s.drawerOpen = !s.drawerOpen }) {
+                PagesGlyph(tintFor(s.drawerOpen))
+            }
+            ToolbarSep()
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+              val d0 = androidx.compose.ui.platform.LocalDensity.current
+              androidx.compose.runtime.CompositionLocalProvider(
+                  androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d0.density * 1.14f, d0.fontScale)
+              ) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val v: (String) -> Boolean = { c.toolVisible(it) }
@@ -842,6 +846,35 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     if (s.pageMenuOpen) s.summaryOpen = false
                 }) { PhIcon(R.drawable.ph_more, tintFor(s.pageMenuOpen)) }
             }
+              }
+            }
+            // زر درج الملخصات مع عدد التمييزات
+            if (UiPrefs.summariesOn) {
+                ToolbarSep()
+                Box {
+                    ChromeBtn(selected = s.summaryOpen, selectedBg = Palette.GoldSoft, onClick = {
+                        if (s.summaryOpen || Premium.require(PremiumFeature.SUMMARIES)) {
+                            s.summaryOpen = !s.summaryOpen
+                            if (s.summaryOpen) { s.pageMenuOpen = false; s.trayMode = null }
+                        }
+                    }) {
+                        SummaryGlyph(tintFor(s.summaryOpen), Palette.Gold)
+                        if (!Premium.active) PremiumBadge(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp), 13.dp)
+                    }
+                    if (markCount > 0) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(18.dp).clip(CircleShape)
+                                .background(Palette.GoldDeep).border(2.dp, Color.White, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (markCount > 99) "99" else "$markCount",
+                                fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -894,13 +927,13 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
 private fun PenBar() {
     val c = AppController
     val t = c.tool
-    val pill = RoundedCornerShape(26.dp)
+    val pill = BarShape
     var picker by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier.shadow(6.dp, pill, ambientColor = Palette.Ink, spotColor = Palette.Ink)
-                .background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)
+                .background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()
         ) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1721,7 +1754,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         // على الشاشات العريضة يُزاح المستند بجانب درج الصفحات بدل أن يغطيه
         val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 720
         val sidePad by androidx.compose.animation.core.animateDpAsState(
-            if (s.drawerOpen && wide) PAGES_PANEL_W.dp else 0.dp, tween(240), label = "sidePad"
+            if (s.drawerOpen && wide) (PAGES_PANEL_W + 24).dp else 0.dp, tween(240), label = "sidePad"
         )
         Box(
             Modifier.fillMaxSize().padding(start = sidePad)

@@ -114,9 +114,10 @@ fun SummaryDrawer(
     }
 
     Surface(
-        modifier.fillMaxHeight().width(420.dp),
-        color = Palette.DrawerBg,
-        shadowElevation = 14.dp
+        modifier.fillMaxHeight().padding(end = 12.dp, top = 4.dp, bottom = 12.dp).width(420.dp),
+        shape = ChromeShape,
+        color = Color.White,
+        shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(

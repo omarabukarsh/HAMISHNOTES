@@ -152,9 +152,11 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     }
 
     Surface(
-        modifier.fillMaxHeight().width(PAGES_PANEL_W.dp),
-        color = Palette.DrawerBg,
-        shadowElevation = 10.dp
+        // بطاقة بحواف ناعمة تبعد 12 عن الحواف وتبدأ تحت شريط الأدوات (B6)
+        modifier.fillMaxHeight().padding(start = 12.dp, top = 4.dp, bottom = 12.dp).width(PAGES_PANEL_W.dp),
+        shape = ChromeShape,
+        color = Color.White,
+        shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize()) {
             // ---- الرأس ----

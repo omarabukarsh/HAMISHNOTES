@@ -360,11 +360,11 @@ private fun shapeIcon(k: ShapeKind): Int = when (k) {
 @Composable
 fun ShapeBar() {
     val c = AppController
-    val pill = RoundedCornerShape(26.dp)
+    val pill = BarShape
     var strokeMenu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)) {
+    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill).blockTouches()) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically

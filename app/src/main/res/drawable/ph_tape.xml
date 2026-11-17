@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- أيقونة الشريط اللاصق (مرسومة للتطبيق) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="256" android:viewportHeight="256">
+    <group android:pivotX="128" android:pivotY="128" android:rotation="-24">
+        <path
+            android:fillColor="#FF000000"
+            android:fillType="evenOdd"
+            android:pathData="M24,92L232,92L218,110L232,128L218,146L232,164L24,164L38,146L24,128L38,110Z M56,110L200,110L190,128L200,146L56,146L66,128Z" />
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M96,110L112,110L92,146L76,146Z M140,110L156,110L136,146L120,146Z" />
+    </group>
+</vector>

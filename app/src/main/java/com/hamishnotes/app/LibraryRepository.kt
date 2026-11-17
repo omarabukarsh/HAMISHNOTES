@@ -35,7 +35,9 @@ class DocData(
     /** الصفحات المعلَّمة (أرقام من 0). */
     val bookmarks: Set<Int> = emptySet(),
     /** الملاحظات اللاصقة لكل صفحة. */
-    val notes: Map<Int, List<StickyNote>> = emptyMap()
+    val notes: Map<Int, List<StickyNote>> = emptyMap(),
+    /** الأشرطة اللاصقة لكل صفحة (Tape.kt). */
+    val tapes: Map<Int, List<Tape>> = emptyMap()
 )
 
 /**
@@ -592,7 +594,7 @@ class LibraryRepository(context: Context) {
                 }
                 all.groupBy { it.page }.forEach { (p, l) -> notes[p] = l }
             }
-            return DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes)
+            return DocData(ink, images, marks, texts, parseEdits(root.optJSONObject("summary")), cards, starred, bookmarks, notes, parseTapes(root.optJSONArray("tapes")))
         }
     }
 
@@ -705,6 +707,7 @@ class LibraryRepository(context: Context) {
                     })
                     .put("starred", JSONArray().apply { data.starred.forEach { put(it) } })
                     .put("bookmarks", JSONArray().apply { data.bookmarks.sorted().forEach { put(it) } })
+                    .apply { if (data.tapes.values.any { it.isNotEmpty() }) put("tapes", tapesJson(data.tapes)) }
                     .put("notes", JSONArray().apply {
                         data.notes.values.forEach { list ->
                             list.forEach { n ->

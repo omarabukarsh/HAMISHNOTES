@@ -252,7 +252,7 @@ private fun ReaderContent(s: DocSession) {
                 ReaderTopBar(s, pdf.count, exportDoc, exportSummary)
                 // شريط الأقلام الثاني (نمط «شريط الأقلام»)
                 AnimatedVisibility(
-                    visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive &&
+                    visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
                         (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
                     enter = Motion.barEnter,
                     exit = Motion.barExit
@@ -269,6 +269,12 @@ private fun ReaderContent(s: DocSession) {
                     enter = Motion.barEnter,
                     exit = Motion.barExit
                 ) { StickyBar() }
+                // شريط الشريط اللاصق
+                AnimatedVisibility(
+                    visible = TapeTool.active,
+                    enter = Motion.barEnter,
+                    exit = Motion.barExit
+                ) { TapeBar(s) }
               }
                 if (s.searchOpen) ReaderSearchBar(s)
                 c.exporting?.let { ExportStatusBar(it) }
@@ -558,7 +564,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 // الأدوات الأساسية
                 if (c.toolbarStyle == ToolbarStyle.PEN_BAR) {
                     // زر قلم واحد: يفتح شريط الأقلام والهايلايتر
-                    val writing = (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER) && !c.lassoActive && !PenPrefs.shapeActive
+                    val writing = (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER) && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active
                     val shown = if (writing) c.tool else c.lastWriting
                     TBtn(selected = writing, onClick = {
                         if (!writing) {
@@ -572,7 +578,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 } else {
                     // الأدوات: نقرة تختار الأداة، ونقرة ثانية على الأداة المختارة تفتح إعداداتها
-                    val penSelected = c.tool.isPen() && !c.lassoActive && !PenPrefs.shapeActive
+                    val penSelected = c.tool.isPen() && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active
                     val shownPen = if (c.tool.isPen()) c.tool else c.lastPen
                     ToolSlot(
                         tool = shownPen, selected = penSelected, open = settingsFor == "pen",
@@ -616,6 +622,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             } else {
                                 c.lassoActive = true
                                 PenPrefs.shapeActive = false
+                                TapeTool.active = false
                                 c.say(MsgKind.TIP, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, tintFor(c.lassoActive)) }
@@ -633,9 +640,22 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         } else {
                             c.lassoActive = false
                             if (!(c.tool.isPen() || c.tool == Tool.HIGHLIGHTER)) c.selectTool(c.lastPen)
+                            TapeTool.active = false
                             PenPrefs.shapeActive = true
                         }
                     }) { PhIcon(R.drawable.ph_shapes, tintFor(PenPrefs.shapeActive && !c.lassoActive)) }
+                }
+                // الشريط اللاصق: سحب القلم يضع شريطًا يخفي ما تحته، ونقرة عليه تكشفه أو تخفيه
+                if (v("tape")) {
+                    TBtn(selected = TapeTool.active, onClick = {
+                        if (TapeTool.active) {
+                            TapeTool.active = false
+                        } else {
+                            s.finishInlineEdit()
+                            TapeTool.turnOn()
+                            c.say(MsgKind.TIP, L("اسحب بالقلم فوق الكلمات لتغطيتها، وانقر على الشريط لتكشف ما تحته", "Drag the pen over words to cover them; tap the tape to reveal what is under it"))
+                        }
+                    }) { PhIcon(R.drawable.ph_tape, tintFor(TapeTool.active)) }
                 }
                 // «Aa تلقائي»: الكتابة اليدوية تتحول إلى الخط المختار بعد إنهاء الجملة
                 if (v("autofont")) {
@@ -691,6 +711,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                                 c.lassoActive = false
                                 PenPrefs.shapeActive = false
                                 PenPrefs.stickyActive = false
+                                TapeTool.active = false
                                 PenPrefs.textActive = true
                                 c.say(MsgKind.TIP, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
@@ -716,6 +737,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                             c.lassoActive = false
                             PenPrefs.shapeActive = false
                             PenPrefs.textActive = false
+                            TapeTool.active = false
                             PenPrefs.stickyActive = true
                             c.say(MsgKind.TIP, L("اختر لونًا ثم انقر على الصفحة، أو اضغط مطوّلًا على اللون واسحبه إليها", "Pick a color and tap the page, or long-press a color and drag it there"))
                         }
@@ -926,17 +948,48 @@ private fun PenBar() {
                     PhIcon(R.drawable.ph_star_plus, Palette.GoldDeep, 20.dp, L("حفظ كقلم مفضل", "Save as favorite pen"))
                 }
                 ToolbarSep()
+                // الألوان في شريط بعرض ثابت (7 ألوان) يتمرر جانبيًا، فلا يتغير طول الشريط ولا تتحرك أزراره
                 val current = c.colorFor(t)
-                (c.paletteFor(t) + c.customColors.toList()).forEach { col ->
-                    val sel = col == current
-                    Box(
-                        Modifier.size(34.dp).clip(CircleShape).clickable { c.setColor(col) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            Modifier.size(if (sel) 26.dp else 22.dp).clip(CircleShape).background(col)
-                                .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
-                        )
+                val colors = c.paletteFor(t) + c.customColors.toList()
+                val colorScroll = rememberScrollState()
+                val swatchPx = with(LocalDensity.current) { 34.dp.toPx() }
+                LaunchedEffect(t, current, colors.size) {
+                    val i = colors.indexOf(current)
+                    if (i >= 0) colorScroll.animateScrollTo(((i - 3) * swatchPx).roundToInt().coerceAtLeast(0))
+                }
+                Box(
+                    Modifier.width(34.dp * 7)
+                        .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            val fade = 14.dp.toPx() / size.width
+                            val a = if (colorScroll.value > 0) 0f else 1f
+                            val b = if (colorScroll.value < colorScroll.maxValue) 0f else 1f
+                            val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
+                            val startA = if (rtl) b else a
+                            val endA = if (rtl) a else b
+                            drawRect(
+                                Brush.horizontalGradient(
+                                    0f to Color.Black.copy(alpha = startA), fade to Color.Black,
+                                    1f - fade to Color.Black, 1f to Color.Black.copy(alpha = endA)
+                                ),
+                                blendMode = BlendMode.DstIn
+                            )
+                        }
+                ) {
+                    Row(Modifier.horizontalScroll(colorScroll), verticalAlignment = Alignment.CenterVertically) {
+                        colors.forEach { col ->
+                            val sel = col == current
+                            Box(
+                                Modifier.size(34.dp).clip(CircleShape).clickable { c.setColor(col) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    Modifier.size(if (sel) 26.dp else 22.dp).clip(CircleShape).background(col)
+                                        .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
+                                )
+                            }
+                        }
                     }
                 }
                 Box(
@@ -2122,6 +2175,10 @@ private fun PageView(
     val lassoNow by rememberUpdatedState(AppController.lassoActive)
     /** رسم حلقة التحديد الحر جارٍ (يُرسم الخط الحي متقطعًا). */
     val lassoDrawing = remember { booleanArrayOf(false) }
+    /** نقرة إصبع قد تكون على شريط لاصق: معرّف اللمسة وموضعها ووقتها. */
+    val tapeTapId = remember { arrayOfNulls<PointerId>(1) }
+    val tapeTapAt = remember { arrayOfNulls<Offset>(1) }
+    val tapeTapT = remember { longArrayOf(0L) }
     val live = remember { LiveInk() }
     /** موضع حدود الممحاة (بالبكسل) ونصف قطرها النسبي؛ null = مخفية. */
     val eraserCursor = remember { arrayOfNulls<Offset>(1) }
@@ -2443,6 +2500,8 @@ private fun PageView(
         InkLayer("${session.id}:$index", overInk, night, visRect, Modifier.fillMaxSize()) { settlePending(it, under = false) }
         // الملاحظات اللاصقة فوق الكتابة
         NotesLayer(session, index, night)
+        // الأشرطة اللاصقة فوق كل شيء (Tape.kt)
+        TapeLayer(session, index)
 
         // الخط الحي + الليزر + استقبال القلم والإصبع (طبقة مستقلة: تحديثها لا يعيد رسم الصفحة)
         Canvas(
@@ -2530,6 +2589,35 @@ private fun PageView(
                                 }
                             }
 
+                            // نقرة إصبع على شريط لاصق تكشفه أو تخفيه (بأي أداة)؛ لا تمنع التمرير
+                            run {
+                                val touches = ev.changes.count { it.pressed && it.type == PointerType.Touch }
+                                val press = ev.changes.firstOrNull { it.type == PointerType.Touch && it.changedToDown() }
+                                if (press != null) {
+                                    if (touches == 1 && !fingerInk(ev) && !session.tapes[index].isNullOrEmpty()) {
+                                        tapeTapId[0] = press.id
+                                        tapeTapAt[0] = press.position
+                                        tapeTapT[0] = System.currentTimeMillis()
+                                    } else tapeTapId[0] = null
+                                } else if (touches > 1) tapeTapId[0] = null
+                                val tid = tapeTapId[0]
+                                if (tid != null) {
+                                    val ch = ev.changes.firstOrNull { it.id == tid }
+                                    val start = tapeTapAt[0]
+                                    if (ch == null || start == null) {
+                                        tapeTapId[0] = null
+                                    } else if ((ch.position - start).getDistance() > viewConfiguration.touchSlop) {
+                                        tapeTapId[0] = null
+                                    } else if (!ch.pressed) {
+                                        tapeTapId[0] = null
+                                        val w0 = size.width.toFloat()
+                                        if (w0 > 0f && System.currentTimeMillis() - tapeTapT[0] < 400L &&
+                                            session.toggleTapeAt(index, ch.position.x / w0, ch.position.y / w0)
+                                        ) ch.consume()
+                                    }
+                                }
+                            }
+
                             val down = ev.changes.firstOrNull {
                                 it.changedToDown() && (
                                     it.type == PointerType.Stylus ||
@@ -2585,6 +2673,40 @@ private fun PageView(
                                 } else {
                                     placeOrEditText(session, index, a.x / w, a.y / w, textsNow, textHeights)
                                 }
+                                continue
+                            }
+
+                            // الشريط اللاصق: سحب يضع شريطًا، ونقرة تكشف الشريط أو تخفيه
+                            if (TapeTool.active && down.type != PointerType.Eraser &&
+                                !ev.buttons.isSecondaryPressed && !ev.buttons.isTertiaryPressed
+                            ) {
+                                down.consume()
+                                val a = down.position
+                                val raw = arrayListOf(Offset(a.x / w, a.y / w))
+                                var dragged = false
+                                val tw = TapeTool.width()
+                                try {
+                                    while (true) {
+                                        val e = awaitPointerEvent()
+                                        val ch = e.changes.firstOrNull { it.id == id } ?: break
+                                        ch.consume()
+                                        if (fingerInterrupted(e)) { dragged = false; raw.clear(); break }
+                                        val p = ch.position
+                                        if (!dragged && (p - a).getDistance() > viewConfiguration.touchSlop) dragged = true
+                                        if (dragged) {
+                                            raw.add(Offset(p.x / w, p.y / w))
+                                            val pts = TapeTool.pathOf(raw, tw)
+                                            if (pts.size >= 4) session.tapeDraft = newTape(index, pts).copy(id = "draft")
+                                        }
+                                        if (!ch.pressed) break
+                                    }
+                                } finally {
+                                    session.tapeDraft = null
+                                }
+                                val pts = if (dragged) TapeTool.pathOf(raw, tw) else emptyList()
+                                val made = newTape(index, pts)
+                                if (pts.size >= 4 && made.length() > tw * 0.8f) session.addTape(made)
+                                else if (!dragged) session.toggleTapeAt(index, a.x / w, a.y / w)
                                 continue
                             }
 

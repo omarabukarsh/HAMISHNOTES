@@ -44,7 +44,9 @@ object Exporter {
         val marks: Map<Int, List<TextMark>>,
         val texts: Map<Int, List<TextBox>>,
         val docId: String,
-        val notes: Map<Int, List<StickyNote>> = emptyMap()
+        val notes: Map<Int, List<StickyNote>> = emptyMap(),
+        /** الأشرطة اللاصقة: المغطّية تُرسم فوق كل شيء، والمكشوفة لا تُرسم. */
+        val tapes: Map<Int, List<Tape>> = emptyMap()
     )
 
     fun snapshotOf(s: DocSession): Snapshot? {
@@ -53,7 +55,7 @@ object Exporter {
         val texts = s.texts.mapValues { (_, l) ->
             l.map { if (it.sticky) it.copy(w = 0.3f, x = it.x.coerceAtMost(0.68f)) else it }
         }
-        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id, s.notes)
+        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id, s.notes, s.tapes)
     }
 
     /** يعيد عدد الصفحات المصدَّرة. */
@@ -83,6 +85,8 @@ object Exporter {
                         ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
                         n.textBox()?.let { drawTexts(c, listOf(it), w) }
                     }
+                    // الأشرطة اللاصقة المغطّية فوق كل شيء
+                    drawTapesOn(c, snap.tapes[i] ?: emptyList(), w)
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
                     val page = out.startPage(PdfDocument.PageInfo.Builder(PDF_W, ph, i + 1).create())
@@ -216,7 +220,8 @@ object Exporter {
         val pageNotes = snap.notes[i] ?: emptyList()
         val ink = (snap.ink[i] ?: emptyList()) + pageNotes.flatMap { it.pageInk() }
         val texts = (snap.texts[i] ?: emptyList()) + pageNotes.mapNotNull { it.textBox() }
-        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty()) return
+        val pageTapes = (snap.tapes[i] ?: emptyList()).filter { !it.revealed && it.pts.size >= 4 }
+        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty() && pageTapes.isEmpty()) return
 
         com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
             doc, page, com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND, true, true
@@ -376,6 +381,32 @@ object Exporter {
                 cs.restoreGraphicsState()
             }
             if (textAfter >= ordered.size) drawTextBoxes()
+            // الأشرطة اللاصقة المغطّية: فوق كل شيء، بلونها ونقشها
+            for (t in pageTapes) {
+                val col = androidx.compose.ui.graphics.Color(t.color)
+                val tw = t.width * w
+                fun tapeLine() {
+                    cs.moveTo(px(t.pts[0]), py(t.pts[1]))
+                    var j = 2
+                    while (j + 1 < t.pts.size) { cs.lineTo(px(t.pts[j]), py(t.pts[j + 1])); j += 2 }
+                }
+                cs.saveGraphicsState()
+                cs.setStrokingColor(col.red, col.green, col.blue)
+                cs.setLineCapStyle(0)
+                cs.setLineJoinStyle(1)
+                cs.setLineWidth(tw)
+                tapeLine()
+                cs.stroke()
+                val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                gs.strokingAlphaConstant = 0.22f
+                cs.setGraphicsStateParameters(gs)
+                cs.setStrokingColor(1f, 1f, 1f)
+                cs.setLineWidth(tw * 0.62f)
+                cs.setLineDashPattern(floatArrayOf(tw * 0.28f, tw * 0.28f), 0f)
+                tapeLine()
+                cs.stroke()
+                cs.restoreGraphicsState()
+            }
         }
     }
 

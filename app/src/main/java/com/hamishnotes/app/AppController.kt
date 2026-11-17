@@ -269,6 +269,7 @@ object AppController {
 
     fun selectTool(t: Tool) {
         lassoActive = false
+        TapeTool.active = false
         PenPrefs.shapeActive = false
         PenPrefs.noteInkPen(t)
         tool = t
@@ -1224,7 +1225,7 @@ object AppController {
         val snap = Exporter.snapshotOf(s) ?: throw IllegalStateException("not ready")
         val total = snap.pages.size
         val data = if (editable) repo.docDataJson(
-            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes)
+            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes, s.tapes)
         ) else null
         val imgs = if (editable) s.images.values.flatten().map { repo.imageFile(s.id, it.file) } else emptyList()
         val extras = if (editable) repo.extrasDir(s.id).listFiles()?.toList() ?: emptyList() else emptyList()

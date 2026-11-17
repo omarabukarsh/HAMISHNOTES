@@ -120,7 +120,8 @@ class EditSnapshot(
     val marks: Map<Int, List<TextMark>>,
     val texts: Map<Int, List<TextBox>>,
     val edits: SummaryEdits,
-    val notes: Map<Int, List<StickyNote>> = emptyMap()
+    val notes: Map<Int, List<StickyNote>> = emptyMap(),
+    val tapes: Map<Int, List<Tape>> = emptyMap()
 )
 
 /**
@@ -164,6 +165,10 @@ class DocSession(entry: DocEntry) {
     var selectedNoteId by mutableStateOf<String?>(null)
     /** ملاحظة يُكتب نصها الآن بلوحة المفاتيح. */
     var noteTextEditId by mutableStateOf<String?>(null)
+
+    /** الأشرطة اللاصقة لكل صفحة (Tape.kt)، والشريط الذي يُرسم الآن. */
+    var tapes by mutableStateOf<Map<Int, List<Tape>>>(emptyMap())
+    var tapeDraft by mutableStateOf<Tape?>(null)
 
     var textDialog by mutableStateOf<TextDialogReq?>(null)
 
@@ -489,6 +494,7 @@ class DocSession(entry: DocEntry) {
             }
             annotations = loaded.second.ink
             notes = loaded.second.notes
+            tapes = loaded.second.tapes
             images = loaded.second.images
             marks = loaded.second.marks
             texts = loaded.second.texts
@@ -509,7 +515,7 @@ class DocSession(entry: DocEntry) {
 
     // ---------- التحرير والتراجع ----------
 
-    private fun snap() = EditSnapshot(annotations, images, marks, texts, summaryEdits, notes)
+    private fun snap() = EditSnapshot(annotations, images, marks, texts, summaryEdits, notes, tapes)
 
     private fun restore(s: EditSnapshot) {
         annotations = s.ink
@@ -518,6 +524,7 @@ class DocSession(entry: DocEntry) {
         texts = s.texts
         summaryEdits = s.edits
         notes = s.notes
+        tapes = s.tapes
         selectedNoteId = null
         selectedImageId = null
         selectedTextId = null
@@ -728,6 +735,7 @@ class DocSession(entry: DocEntry) {
             if (next !== cur) annotations = annotations + (page to next)
         }
         eraseNotesAt(page, at, radius)
+        eraseTapesAt(page, at, radius)
         // الممحاة تزيل من التمييز الملتقط الكلمات التي تمرّ عليها فقط، ويبقى باقي التمييز ونصه في الملخص
         val ms = marks[page] ?: return
         val words = ocr[page]?.words
@@ -769,7 +777,7 @@ class DocSession(entry: DocEntry) {
         val s = snapshot ?: return
         snapshot = null
         if (s.ink === annotations && s.images === images && s.marks === marks && s.texts === texts &&
-            s.edits === summaryEdits && s.notes === notes
+            s.edits === summaryEdits && s.notes === notes && s.tapes === tapes
         ) return
         undoStack.add(s)
         if (undoStack.size > 100) undoStack.removeAt(0)
@@ -909,6 +917,7 @@ class DocSession(entry: DocEntry) {
         val nMarks = HashMap<Int, List<TextMark>>()
         val nTexts = HashMap<Int, List<TextBox>>()
         val nNotes = HashMap<Int, List<StickyNote>>()
+        val nTapes = HashMap<Int, List<Tape>>()
         val nBm = HashSet<Int>()
         val nOcr = HashMap<Int, OcrPage>()
         order.forEachIndexed { ni, oi ->
@@ -919,6 +928,7 @@ class DocSession(entry: DocEntry) {
             marks[oi]?.let { l -> nMarks[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
             texts[oi]?.let { l -> nTexts[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
             notes[oi]?.let { l -> nNotes[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
+            tapes[oi]?.let { l -> nTapes[ni] = l.map { it.copy(page = ni, id = newId(it.id)) } }
             if (oi in bookmarks) nBm.add(ni)
             ocr[oi]?.let { nOcr[ni] = it }
         }
@@ -927,6 +937,7 @@ class DocSession(entry: DocEntry) {
         marks = nMarks
         texts = nTexts
         notes = nNotes
+        tapes = nTapes
         bookmarks = nBm
         ocr.clear()
         ocr.putAll(nOcr)
@@ -970,6 +981,7 @@ class DocSession(entry: DocEntry) {
         }
         texts = movedTexts
         notes = notes.entries.associate { (k, l) -> shift(k) to l.map { it.copy(page = shift(k)) } }
+        tapes = tapes.entries.associate { (k, l) -> shift(k) to l.map { it.copy(page = shift(k)) } }
         bookmarks = bookmarks.map { shift(it) }.toSet()
         val shiftedOcr = HashMap<Int, OcrPage>()
         ocr.forEach { (k, v) -> shiftedOcr[shift(k)] = v }
@@ -990,7 +1002,10 @@ class DocSession(entry: DocEntry) {
     /** يمسح عناصر من صفحة: الكتابة اليدوية، التظليل، النصوص والملاحظات، الصور. يمكن التراجع عنه. */
     fun clearPageItems(page: Int, ink: Boolean, highlights: Boolean, texts: Boolean, pics: Boolean) {
         beginEdit()
-        if (ink) annotations = annotations - page
+        if (ink) {
+            annotations = annotations - page
+            tapes = tapes - page
+        }
         if (highlights) marks = marks - page
         if (texts) {
             this.texts = this.texts - page
@@ -1016,7 +1031,7 @@ class DocSession(entry: DocEntry) {
         if (searchOpen && searchQuery.isNotBlank()) runSearch(searchQuery, navigate = false) else hits = emptyList()
 
         val pagesSnap = doc.pages
-        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes, tapes)
         val ocrSnap = ocr.toMap()
         baseWords.clear()
         AppController.onPagesChanged(id, pagesSnap.size)
@@ -1659,7 +1674,7 @@ class DocSession(entry: DocEntry) {
     }
 
     private fun saveNow() {
-        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes)
+        val data = DocData(annotations, images, marks, texts, summaryEdits, customCards, starred, bookmarks, notes, tapes)
         AppController.scope.launch { AppController.repo.saveDocData(id, data) }
     }
 

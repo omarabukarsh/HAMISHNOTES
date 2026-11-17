@@ -118,7 +118,7 @@ object CardDeck {
     }
 
     private fun DocData.with(cards: List<Card> = this.cards, starred: Set<String> = this.starred) =
-        DocData(ink, images, marks, texts, edits, cards, starred, bookmarks, notes)
+        DocData(ink, images, marks, texts, edits, cards, starred, bookmarks, notes, tapes)
 
     private fun openSession(docId: String) =
         AppController.tabs.firstOrNull { it.id == docId && it.status is SessionStatus.Ready }

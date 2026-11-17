@@ -930,6 +930,7 @@ private fun PenBar() {
     val pill = BarShape
     var picker by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
+    var allColors by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier.shadow(6.dp, pill, ambientColor = Palette.Ink, spotColor = Palette.Ink)
@@ -981,54 +982,52 @@ private fun PenBar() {
                     PhIcon(R.drawable.ph_star_plus, Palette.GoldDeep, 20.dp, L("حفظ كقلم مفضل", "Save as favorite pen"))
                 }
                 ToolbarSep()
-                // الألوان في شريط بعرض ثابت (7 ألوان) يتمرر جانبيًا، فلا يتغير طول الشريط ولا تتحرك أزراره
+                // خمسة ألوان فقط بمسافة واسعة (آخر ما استُخدم)، و«+» يفتح بقية الألوان واللون المخصص
                 val current = c.colorFor(t)
-                val colors = c.paletteFor(t) + c.customColors.toList()
-                val colorScroll = rememberScrollState()
-                val swatchPx = with(LocalDensity.current) { 34.dp.toPx() }
-                LaunchedEffect(t, current, colors.size) {
-                    val i = colors.indexOf(current)
-                    if (i >= 0) colorScroll.animateScrollTo(((i - 3) * swatchPx).roundToInt().coerceAtLeast(0))
-                }
-                Box(
-                    Modifier.width(34.dp * 7)
-                        .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
-                        .drawWithContent {
-                            drawContent()
-                            val fade = 14.dp.toPx() / size.width
-                            val a = if (colorScroll.value > 0) 0f else 1f
-                            val b = if (colorScroll.value < colorScroll.maxValue) 0f else 1f
-                            val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
-                            val startA = if (rtl) b else a
-                            val endA = if (rtl) a else b
-                            drawRect(
-                                Brush.horizontalGradient(
-                                    0f to Color.Black.copy(alpha = startA), fade to Color.Black,
-                                    1f - fade to Color.Black, 1f to Color.Black.copy(alpha = endA)
-                                ),
-                                blendMode = BlendMode.DstIn
-                            )
-                        }
+                Row(
+                    Modifier.padding(horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(Modifier.horizontalScroll(colorScroll), verticalAlignment = Alignment.CenterVertically) {
-                        colors.forEach { col ->
-                            val sel = col == current
-                            Box(
-                                Modifier.size(34.dp).clip(CircleShape).clickable { c.setColor(col) },
-                                contentAlignment = Alignment.Center
+                    c.shownColors(t).forEach { col ->
+                        ColorSwatch(col, selected = col == current) { c.setColor(col); c.noteRecentColor(col) }
+                    }
+                }
+                Box {
+                    Box(
+                        Modifier.padding(start = 6.dp).size(34.dp).clip(CircleShape).clickable { allColors = true },
+                        contentAlignment = Alignment.Center
+                    ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("كل الألوان", "All colors")) }
+                    DropdownMenu(
+                        expanded = allColors,
+                        onDismissRequest = { allColors = false },
+                        shape = RoundedCornerShape(18.dp),
+                        containerColor = Color.White,
+                        shadowElevation = 12.dp
+                    ) {
+                        val all = c.paletteFor(t) + c.customColors.filter { it !in c.paletteFor(t) }
+                        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            all.chunked(6).forEach { rowCols ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    rowCols.forEach { col ->
+                                        ColorSwatch(col, selected = col == current) {
+                                            c.setColor(col); c.noteRecentColor(col); allColors = false
+                                        }
+                                    }
+                                }
+                            }
+                            Row(
+                                Modifier.clip(RoundedCornerShape(12.dp)).clickable { allColors = false; picker = true }
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    Modifier.size(if (sel) 26.dp else 22.dp).clip(CircleShape).background(col)
-                                        .border(if (sel) 2.5.dp else 1.dp, if (sel) Palette.Navy else Palette.Divider, CircleShape)
-                                )
+                                PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 16.dp)
+                                Spacer(Modifier.width(6.dp))
+                                Text(L("لون مخصص", "Custom color"), fontSize = 13.sp, color = Palette.TextPrimary)
                             }
                         }
                     }
                 }
-                Box(
-                    Modifier.size(34.dp).clip(CircleShape).clickable { picker = true },
-                    contentAlignment = Alignment.Center
-                ) { PhIcon(R.drawable.ph_plus, Palette.TextSecondary, 18.dp, L("لون مخصص", "Custom color")) }
                 ToolbarSep()
                 SizeSlots(t)
                 ToolbarSep()
@@ -1047,6 +1046,22 @@ private fun PenBar() {
                 picker = false
             },
             onDismiss = { picker = false }
+        )
+    }
+}
+
+/** دائرة لون في شريط القلم: قطر 24، والمختار بحلقة رفيعة كحلية تفصلها عنه مسافة بيضاء. */
+@Composable
+private fun ColorSwatch(col: Color, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(32.dp).clip(CircleShape)
+            .then(if (selected) Modifier.border(2.dp, Palette.Navy, CircleShape) else Modifier)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.size(24.dp).clip(CircleShape).background(col)
+                .border(1.dp, Color.Black.copy(alpha = 0.12f), CircleShape)
         )
     }
 }

@@ -705,6 +705,32 @@ object AppController {
         sizeOf[tool] = i.coerceIn(0, Sizes.COUNT - 1)
     }
 
+    /** آخر الألوان المختارة (الأحدث أولًا): منها تُختار الألوان الخمسة الظاهرة في شريط القلم. */
+    val recentColors = mutableStateListOf<Color>()
+
+    fun noteRecentColor(c: Color) {
+        recentColors.remove(c)
+        recentColors.add(0, c)
+        while (recentColors.size > 12) recentColors.removeAt(recentColors.lastIndex)
+        prefs.edit()
+            .putString("recent_colors", recentColors.joinToString(",") { it.toArgb().toString() })
+            .apply()
+    }
+
+    /**
+     * الألوان الظاهرة في شريط القلم (5): اللون الحالي وآخر ما استُخدم من ألوان هذه الأداة، وتكمّلها ألوان اللوحة.
+     * تُعرض بترتيب لوحة الألوان (لا بترتيب الاستخدام) حتى لا يتحرك اللون تحت الإصبع عند اختياره.
+     */
+    fun shownColors(t: Tool, count: Int = 5): List<Color> {
+        val all = paletteFor(t) + customColors.filter { it !in paletteFor(t) }
+        val current = colorFor(t)
+        val pick = LinkedHashSet<Color>()
+        if (current in all) pick.add(current)
+        recentColors.filter { it in all }.forEach { if (pick.size < count) pick.add(it) }
+        all.forEach { if (pick.size < count) pick.add(it) }
+        return all.filter { it in pick }
+    }
+
     fun addCustomColor(c: Color) {
         customColors.remove(c)
         customColors.add(0, c)
@@ -741,6 +767,10 @@ object AppController {
             .split(",")
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
+        (prefs.getString("recent_colors", "") ?: "")
+            .split(",")
+            .mapNotNull { it.toIntOrNull() }
+            .forEach { recentColors.add(Color(it)) }
         highlightSnap = prefs.getBoolean("hl_snap", false)
         highlightToSummary = prefs.getBoolean("hl_summary", true)
         shapeSnap = prefs.getBoolean("shape_snap", true)

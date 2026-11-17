@@ -422,30 +422,27 @@ final class TapeView: UIView {
 
 // ======================================================== شريط الأداة
 
-/// شريط أداة الشريط اللاصق: السماكة، اللون، الشريط المستقيم، الكشف والإخفاء، والإزالة من الصفحة.
+/// شريط أداة الشريط اللاصق: أيقونة الأداة (تفتح نافذة الإعدادات)، السماكة، اللون، والإغلاق.
 struct TapeBar: View {
     @EnvironmentObject var app: AppController
     @ObservedObject var session: DocSession
 
     var body: some View {
-        let pid = session.pageId(session.currentPage) ?? ""
-        let list = session.data.tapes.filter { $0.page == pid }
-        let anyHidden = list.contains { !$0.revealed }
         HStack(spacing: 0) {
-            // الأشكال الأربعة، بلون الشريط الحالي
-            ForEach(TapeStyle.all, id: \.self) { st in
-                TBtn(selected: app.tapeStyle == st, action: { app.tapeStyle = st }) {
-                    TapeStylePreview(style: st, color: app.tapeColor)
-                        .frame(width: 30, height: 16)
-                        .accessibilityLabel(TapeStyle.name(st))
-                }
+            // أيقونة الأداة: تفتح نافذة الإعدادات تحتها
+            TBtn(selected: true, action: { app.tapeMenuOpen = true }) {
+                PhIcon("ph_tape", Palette.chromeAccent, 22, L("إعدادات الشريط اللاصق", "Tape settings"))
+            }
+            .popover(isPresented: $app.tapeMenuOpen) {
+                TapeMenu(session: session).environmentObject(app)
+                    .presentationCompactAdaptation(.popover)
             }
             ToolbarSep()
             ForEach(0..<TapeTool.widths.count, id: \.self) { i in
                 let sel = app.tapeSize == i
                 TBtn(selected: sel, action: { app.tapeSize = i }) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(sel ? Color(hex: app.tapeColor) : Palette.textSecondary.opacity(0.55))
+                        .fill(sel ? Color(hex: app.tapeColor) : Palette.chromeMuted.opacity(0.55))
                         .frame(width: 22, height: CGFloat(5 + i * 4))
                 }
             }
@@ -455,35 +452,72 @@ struct TapeBar: View {
                 Button { app.tapeColor = col } label: {
                     Circle().fill(Color(hex: col))
                         .frame(width: sel ? 26 : 22, height: sel ? 26 : 22)
-                        .overlay(Circle().stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2.5 : 1))
+                        .overlay(Circle().stroke(sel ? Palette.chromeAccent : Palette.chromeLine, lineWidth: sel ? 2.5 : 1))
                         .frame(width: 34, height: 34)
                         .contentShape(Circle())
                 }
                 .buttonStyle(PressScale(scale: 0.9))
             }
             ToolbarSep()
-            Button { app.tapeStraight.toggle() } label: {
-                HStack(spacing: 4) {
-                    if app.tapeStraight { PhIcon("ph_check", .white, 14) }
-                    Text(L("شريط مستقيم", "Straight tape")).font(Fonts.sans(12)).foregroundColor(app.tapeStraight ? .white : Palette.textPrimary).lineLimit(1)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 14).fill(app.tapeStraight ? Palette.navy : Palette.background))
-            }
-            .buttonStyle(PressScale())
-            .padding(.trailing, 6)
-            TBtn(action: { session.revealAllTapes(page: pid, anyHidden) }) {
-                PhIcon("ph_eye", Palette.textSecondary, 20,
-                       anyHidden ? L("كشف كل أشرطة الصفحة", "Reveal all tape on the page") : L("إخفاء كل أشرطة الصفحة", "Hide all tape on the page"))
-            }
-            TBtn(action: { session.removeAllTapes(page: pid) }) {
-                PhIcon("ph_trash", Palette.danger, 20, L("إزالة كل الأشرطة من الصفحة", "Remove all tape from the page"))
-            }
-            ToolbarSep()
-            TBtn(action: { app.tapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق الشريط اللاصق", "Close tape")) }
+            TBtn(action: { app.tapeActive = false; app.tapeMenuOpen = false }) { PhIcon("ph_close", Palette.chromeMuted, 18, L("إغلاق الشريط اللاصق", "Close tape")) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .modifier(BarCapsule())
+    }
+}
+
+/// نافذة إعدادات الشريط اللاصق (بنفس شكل نوافذ إعدادات القلم والممحاة).
+private struct TapeMenu: View {
+    @EnvironmentObject var app: AppController
+    @ObservedObject var session: DocSession
+
+    var body: some View {
+        let pid = session.pageId(session.currentPage) ?? ""
+        let list = session.data.tapes.filter { $0.page == pid }
+        let anyHidden = list.contains { !$0.revealed }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("شكل الشريط", "Tape style")).font(Fonts.sans(12.5, .semibold)).foregroundColor(Palette.textSecondary)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                ForEach(TapeStyle.all, id: \.self) { st in
+                    let sel = app.tapeStyle == st
+                    Button { app.tapeStyle = st } label: {
+                        VStack(spacing: 6) {
+                            TapeStylePreview(style: st, color: app.tapeColor).frame(width: 56, height: 26)
+                            Text(TapeStyle.name(st)).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(sel ? Palette.navySoft : Palette.background))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(sel ? Palette.navy : Color.clear, lineWidth: 1.5))
+                    }
+                    .buttonStyle(PressScale())
+                }
+            }
+            Rectangle().fill(Palette.divider).frame(height: 1).padding(.vertical, 4)
+            Toggle(isOn: $app.tapeStraight) {
+                Text(L("شريط مستقيم", "Straight tape")).font(Fonts.sans(14)).foregroundColor(Palette.textPrimary)
+            }
+            .tint(Palette.navy)
+            menuRow("ph_eye", anyHidden ? L("كشف كل أشرطة الصفحة", "Reveal all tape on the page") : L("إخفاء كل أشرطة الصفحة", "Hide all tape on the page"),
+                    Palette.textPrimary, enabled: !list.isEmpty) { session.revealAllTapes(page: pid, anyHidden); app.tapeMenuOpen = false }
+            menuRow("ph_trash", L("إزالة كل الأشرطة من الصفحة", "Remove all tape from the page"), Palette.danger, enabled: !list.isEmpty) {
+                session.removeAllTapes(page: pid); app.tapeMenuOpen = false
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    private func menuRow(_ icon: String, _ label: String, _ color: Color, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                PhIcon(icon, color, 20)
+                Text(label).font(Fonts.sans(14)).foregroundColor(color)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 10).contentShape(Rectangle())
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
     }
 }
 

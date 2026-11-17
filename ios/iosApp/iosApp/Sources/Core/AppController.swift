@@ -65,6 +65,8 @@ final class AppController: ObservableObject {
     @Published var tapeStraight = true { didSet { prefs.set(tapeStraight, forKey: "tape_straight") } }
     @Published var tapeSize = 1 { didSet { prefs.set(tapeSize, forKey: "tape_size") } }
     @Published var tapeColor: UInt32 = 0xFFF2A65A { didSet { prefs.set(Int(tapeColor), forKey: "tape_color") } }
+    /// نافذة إعدادات الشريط اللاصق مفتوحة.
+    @Published var tapeMenuOpen = false
     @Published var tapeStyle = TapeStyle.washi { didSet { prefs.set(tapeStyle, forKey: "tape_style") } }
     /// يزيد كلما اختار المستخدم أداة من القسم الأيسر: يُطفئ أداة القسم الأوسط (الدرج، النص، الملاحظة)
     /// فلا يظهر زران مختاران معًا.

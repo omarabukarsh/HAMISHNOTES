@@ -88,6 +88,18 @@ enum Palette {
     static var onInkMuted: Color { ThemeState.light ? Color(hex: 0xFF667085) : Color(hex: 0xFF9A9A9A) }
 
     static let danger = Color(hex: 0xFFB3261E)
+
+    // واجهة المحرر (التبويبات، بطاقة الأدوات، الأشرطة العائمة): فاتحة في المظهر الفاتح، وفحمية داكنة في الكحلي
+    static var chromeBg: Color { ThemeState.light ? .white : Color(hex: 0xFF1C1C1C) }
+    static var chromeFg: Color { ThemeState.light ? textPrimary : Color(hex: 0xFFECECEC) }
+    static var chromeMuted: Color { ThemeState.light ? textSecondary : Color(hex: 0xFFB4B4B4) }
+    /// الأداة المختارة: كحلي في الفاتح، وذهبي فاتح في الداكن.
+    static var chromeAccent: Color { ThemeState.light ? navy : Color(hex: 0xFFF0D58E) }
+    static var chromeSel: Color { ThemeState.light ? navySoft : Color(hex: 0xFF2E2E2E) }
+    static var chromeLine: Color { ThemeState.light ? divider : Color(hex: 0xFF333333) }
+    /// شريط التبويبات ومكتب القراءة خلف الصفحات.
+    static var chromeRail: Color { ThemeState.light ? desk : Color(hex: 0xFF000000) }
+    static var readerDesk: Color { ThemeState.light ? desk : Color(hex: 0xFF121212) }
 }
 
 /// ألوان المكتبة: فاتح كريمي دافئ، أو داكن أسود تمامًا (يوفّر البطارية في شاشات OLED).

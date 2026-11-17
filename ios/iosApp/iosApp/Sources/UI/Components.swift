@@ -13,7 +13,7 @@ struct TBtn<Content: View>: View {
         Button(action: action) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? Palette.navySoft : Color.clear)
+                    .fill(selected ? Palette.chromeSel : Color.clear)
                 content()
                 if locked {
                     PremiumBadge(size: 13).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(3)
@@ -34,9 +34,11 @@ struct TBtn<Content: View>: View {
 }
 
 func tintFor(_ selected: Bool) -> Color { selected ? Palette.navy : Palette.textSecondary }
+/// لون أيقونة في واجهة المحرر (يتبع المظهر الداكن).
+func chromeTint(_ selected: Bool) -> Color { selected ? Palette.chromeAccent : Palette.chromeMuted }
 
 struct ToolbarSep: View {
-    var body: some View { Rectangle().fill(Palette.divider).frame(width: 1, height: 26).padding(.horizontal, 6) }
+    var body: some View { Rectangle().fill(Palette.chromeLine).frame(width: 1, height: 26).padding(.horizontal, 6) }
 }
 
 /// شريحة اختيار.

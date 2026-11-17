@@ -48,7 +48,6 @@ private struct ReaderContent: View {
                 if !app.focusMode {
                     ReaderTopBar(session: s, sheet: $sheet)
                         .scaleEffect(app.toolbarScale, anchor: .top)
-                    if s.searchOpen { ReaderSearchBar(session: s) }
                     if s.ocrRunning {
                         VStack(spacing: 0) {
                             Text(L("جارٍ قراءة النص… \(s.ocrProgress) / \(s.pageCount)", "Reading text… \(s.ocrProgress) / \(s.pageCount)"))
@@ -84,6 +83,8 @@ private struct ReaderContent: View {
                     // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
                     if !app.focusMode {
                         VStack(spacing: 0) {
+                            // البحث: نافذة صغيرة عائمة بدل شريط بعرض الشاشة
+                            if s.searchOpen { ReaderSearchBar(session: s).frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 20) }
                             if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
                                 PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
                             }
@@ -94,6 +95,12 @@ private struct ReaderContent: View {
                         .padding(.top, 10)
                         .scaleEffect(app.toolbarScale, anchor: .top)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        // تتوسط المساحة المتبقية للصفحة فقط: لا تظهر فوق لوحة الصفحات أو الملخصات أو خيارات الصفحة
+                        .padding(.leading, s.drawerOpen ? PagesDrawer.width + 12 : 0)
+                        .padding(.trailing, s.summaryOpen ? 420 * Fonts.base + 12 : (s.pageMenuOpen ? 380 * Fonts.base + 12 : 0))
+                        .animation(Motion.enter, value: s.drawerOpen)
+                        .animation(Motion.enter, value: s.summaryOpen)
+                        .animation(Motion.enter, value: s.pageMenuOpen)
                         .animation(Motion.enter, value: app.penBarOpen)
                         .animation(Motion.enter, value: app.shapeActive)
                         .animation(Motion.enter, value: app.stickyActive)
@@ -154,7 +161,7 @@ private struct ReaderContent: View {
         }
         // القوائم المنسدلة تحت أزرار الأدوات (إعدادات الأداة، الأحجام، التحديد، الأشكال)
         .dropdownHost()
-        .background(Palette.desk)
+        .background(Palette.readerDesk)
         .onChange(of: app.lassoActive) { _, on in if !on { s.lassoSel = nil } }
         // إضافة صفحة: نافذة كبيرة مثل أندرويد
         .bigSheet(isPresented: Binding(get: { sheet?.id == "addPage" }, set: { if !$0 { sheet = nil } }), width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
@@ -233,16 +240,36 @@ private struct ReaderTopBar: View {
         // بطاقة الأدوات (B6): بيضاء بعرض الشاشة وحواف ناعمة، يتصل بها التبويب النشط من الأعلى.
         // زر درج الصفحات وزر الملخصات داخلها على الطرفين، والأدوات في الوسط بحجم أكبر قليلًا.
         HStack(spacing: 0) {
-            chromeButton(on: s.drawerOpen, bg: Palette.navySoft) { s.drawerOpen.toggle() } content: {
-                PhIcon(s.drawerOpen ? "ph_pages_fill" : "ph_pages", tintFor(s.drawerOpen), 24)
+            chromeButton(on: s.drawerOpen, bg: Palette.chromeSel) { s.drawerOpen.toggle() } content: {
+                PhIcon(s.drawerOpen ? "ph_pages_fill" : "ph_pages", chromeTint(s.drawerOpen), 24)
             }
             ToolbarSep()
-            ViewThatFits(in: .horizontal) {
-                toolsRow.fixedSize()
-                ScrollView(.horizontal, showsIndicators: false) { toolsRow }
+            if app.toolbarScale < 0.9 {
+                // الحجم الصغير (الإعدادات ← المظهر): كل الأدوات في سطر واحد بلا تمرير، تصغر لتتسع
+                FitToWidth {
+                    HStack(spacing: 0) { navGroup; coreGroup; insertGroupA; insertGroupB; viewGroup; ToolbarSep(); moreButton }
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                // الأدوات الأساسية يسارًا و«⋮» يمينًا ثابتة، والوسط وحده يتمرر إن لم تتسع الشاشة
+                HStack(spacing: 0) {
+                    navGroup
+                    coreGroup
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }.padding(.horizontal, 6)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .mask(HStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+                    })
+                    ToolbarSep()
+                    moreButton
+                }
+                .environment(\.chromeScale, 1.14)
+                .frame(maxWidth: .infinity)
             }
-            .environment(\.chromeScale, 1.14)
-            .frame(maxWidth: .infinity)
             if app.summariesOn {
                 ToolbarSep()
                 ZStack(alignment: .topTrailing) {
@@ -253,7 +280,7 @@ private struct ReaderTopBar: View {
                         }
                     } content: {
                         ZStack(alignment: .topTrailing) {
-                            PhIcon(s.summaryOpen ? "ph_summary_fill" : "ph_summary", s.summaryOpen ? Palette.goldDeep : Palette.textSecondary, 24)
+                            PhIcon(s.summaryOpen ? "ph_summary_fill" : "ph_summary", s.summaryOpen ? Palette.goldDeep : Palette.chromeMuted, 24)
                             if !pm.active { PremiumBadge(size: 13).offset(x: 8, y: -8) }
                         }
                     }
@@ -261,14 +288,14 @@ private struct ReaderTopBar: View {
                     if n > 0 {
                         Text(n > 99 ? "99" : "\(n)").font(Fonts.sans(9, .bold)).foregroundColor(.white)
                             .frame(width: 18, height: 18).background(Circle().fill(Palette.goldDeep))
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                            .overlay(Circle().stroke(Palette.chromeBg, lineWidth: 2))
                             .offset(x: 4, y: -4)
                     }
                 }
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: Chrome.radius, style: .continuous).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: Chrome.radius, style: .continuous).fill(Palette.chromeBg))
         .padding(.horizontal, 12).padding(.bottom, 8)
         // تسجيل المحاضرة: نافذة مثل أندرويد، والعدّاد يبقى في زر الميكروفون بشريط الأدوات
         .appDialog(isPresented: $audioOpen) { close in AudioDialog(session: s, dismiss: close) }
@@ -278,17 +305,6 @@ private struct ReaderTopBar: View {
             textMenu = false
             if s.inlineEditId != nil { s.finishInlineEdit() }
         }
-    }
-
-    private var toolsRow: some View {
-        HStack(spacing: 0) {
-            navGroup
-            coreGroup
-            insertGroupA
-            insertGroupB
-            viewGroup
-        }
-        .padding(.horizontal, 10).padding(.vertical, 4)
     }
 
     private var s: DocSession { session }
@@ -307,21 +323,21 @@ private struct ReaderTopBar: View {
     }
     private var cur: Int { session.currentPage }
     private func v(_ id: String) -> Bool { app.toolVisible(id) }
-    private var dim: Color { Palette.textSecondary.opacity(0.35) }
+    private var dim: Color { Palette.chromeMuted.opacity(0.35) }
     @ViewBuilder private var navGroup: some View {
                     if v("nav") {
-                        TBtn(action: { s.goTo(page: cur - 1) }) { PhIcon("ph_caret_up", Palette.textPrimary, 20) }
+                        TBtn(action: { s.goTo(page: cur - 1) }) { PhIcon("ph_caret_up", Palette.chromeFg, 20) }
                         Button { sheet = .jump } label: {
-                            Text("\(cur + 1) / \(s.pageCount)").font(Fonts.sans(14, .medium)).foregroundColor(Palette.textPrimary)
+                            Text("\(cur + 1) / \(s.pageCount)").font(Fonts.sans(14, .medium)).foregroundColor(Palette.chromeFg)
                                 .padding(.horizontal, 12).padding(.vertical, 8)
                                 .background(RoundedRectangle(cornerRadius: 10).fill(Palette.background))
                         }
-                        TBtn(action: { s.goTo(page: cur + 1) }) { PhIcon("ph_caret_down", Palette.textPrimary, 20) }
+                        TBtn(action: { s.goTo(page: cur + 1) }) { PhIcon("ph_caret_down", Palette.chromeFg, 20) }
                     }
                     if v("bookmark") {
                         let marked = s.isBookmarked(cur)
                         TBtn(selected: marked, action: { s.toggleBookmark(cur) }) {
-                            PhIcon(marked ? "ph_bookmark_fill" : "ph_bookmark", marked ? Palette.goldDeep : Palette.textSecondary)
+                            PhIcon(marked ? "ph_bookmark_fill" : "ph_bookmark", marked ? Palette.goldDeep : Palette.chromeMuted)
                         }
                     }
                     if v("timer") { PomodoroControl(showStartLabel: false) }
@@ -342,7 +358,7 @@ private struct ReaderTopBar: View {
                         toolSlot(.highlighter, id: "hl", selected: app.tool == .highlighter && !app.lassoActive && !insertOn)
                         if app.tool == .highlighter && v("snap") {
                             TBtn(selected: app.highlightSnap && pm.active, locked: !pm.active, action: { if pm.require(.snap) { app.highlightSnap.toggle() } }) {
-                                PhIcon("ph_snap", tintFor(app.highlightSnap))
+                                PhIcon("ph_snap", chromeTint(app.highlightSnap))
                             }
                         }
                     }
@@ -358,7 +374,7 @@ private struct ReaderTopBar: View {
                                 app.tapeActive = false
                                 app.say(.tip, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
-                        }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", tintFor(app.lassoActive)) }
+                        }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", chromeTint(app.lassoActive)) }
                         .dropdown(isPresented: $lassoMenu) {
                             LassoMenuContent(session: s, sheet: $sheet, onClose: { lassoMenu = false }, onOff: { lassoMenu = false; app.lassoActive = false; s.lassoSel = nil }).environmentObject(app)
                         }
@@ -372,12 +388,13 @@ private struct ReaderTopBar: View {
                                 app.tapeActive = false
                                 app.shapeActive = true
                             }
-                        }) { PhIcon("ph_shapes", tintFor(app.shapeActive && !app.lassoActive)) }
+                        }) { PhIcon("ph_shapes", chromeTint(app.shapeActive && !app.lassoActive)) }
                     }
                     if v("tape") {
                         // الشريط اللاصق: سحب القلم يضع شريطًا يخفي ما تحته، ونقرة عليه تكشفه أو تخفيه
                         TBtn(selected: app.tapeActive, action: {
-                            if app.tapeActive { app.tapeActive = false } else {
+                            // نقرة ثانية على الأداة: تفتح نافذة إعدادات الشريط
+                            if app.tapeActive { app.tapeMenuOpen = true } else {
                                 app.pickLeft()
                                 s.trayMode = nil
                                 if s.inlineEditId != nil { s.finishInlineEdit() }
@@ -389,11 +406,11 @@ private struct ReaderTopBar: View {
                                 app.tapeActive = true
                                 app.say(.tip, L("اسحب بالقلم فوق الكلمات لتغطيتها، وانقر على الشريط لتكشف ما تحته", "Drag the pen over words to cover them; tap the tape to reveal what is under it"))
                             }
-                        }) { PhIcon("ph_tape", tintFor(app.tapeActive)) }
+                        }) { PhIcon("ph_tape", chromeTint(app.tapeActive)) }
                     }
                     if v("autofont") {
                         TBtn(selected: af.on, locked: !pm.active, action: { if pm.require(.toText) { sheet = .autoFont } }) {
-                            Text("Aa").font(Fonts.sans(16, .bold)).foregroundColor(af.on ? Palette.goldDeep : Palette.textSecondary)
+                            PhIcon("ph_beautify", af.on ? Palette.goldDeep : Palette.chromeMuted, 22, L("تجميل الخط", "Beautify handwriting"))
                         }
                     }
                     TBtn(selected: app.fingerWrites, action: {
@@ -401,19 +418,19 @@ private struct ReaderTopBar: View {
                         app.message(app.fingerWrites ? L("صار الإصبع يكتب · اسحب بإصبعين للتمرير", "Your finger now writes · drag with two fingers to scroll")
                                     : L("القلم يكتب، والإصبع للتمرير", "The pen writes; your finger scrolls"))
                     }) {
-                        PhIcon(app.fingerWrites ? "ph_hand_pointing_fill" : "ph_hand_pointing", app.fingerWrites ? Palette.goldDeep : Palette.textSecondary)
+                        PhIcon(app.fingerWrites ? "ph_hand_pointing_fill" : "ph_hand_pointing", app.fingerWrites ? Palette.goldDeep : Palette.chromeMuted)
                     }
     }
     @ViewBuilder private var insertGroupA: some View {
                     if ["image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export"].contains(where: v) { ToolbarSep() }
                     if v("image") {
                         TBtn(selected: s.trayMode == "photos", action: { openTray("photos") }) {
-                            PhIcon("ph_image", tintFor(s.trayMode == "photos"))
+                            PhIcon("ph_image", chromeTint(s.trayMode == "photos"))
                         }
                     }
                     if v("stickers") {
                         TBtn(selected: s.trayMode == "stickers", action: { openTray("stickers") }) {
-                            PhIcon("ph_sticker", tintFor(s.trayMode == "stickers"))
+                            PhIcon("ph_sticker", chromeTint(s.trayMode == "stickers"))
                         }
                     }
                     if v("text") {
@@ -428,7 +445,7 @@ private struct ReaderTopBar: View {
                                 app.textActive = true
                                 app.say(.tip, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
-                        }) { PhIcon("ph_text", tintFor(on)) }
+                        }) { PhIcon("ph_text", chromeTint(on)) }
                         .dropdown(isPresented: $textMenu) {
                             TextToolWindow(session: s, onTurnOff: { textMenu = false; app.textActive = false; s.finishInlineEdit() })
                                 .environmentObject(app)
@@ -445,7 +462,7 @@ private struct ReaderTopBar: View {
                                 app.stickyActive = true
                                 app.say(.tip, L("اختر لونًا ثم انقر على الصفحة", "Pick a color and tap the page"))
                             }
-                        }) { PhIcon("ph_sticky_note", tintFor(app.stickyActive)) }
+                        }) { PhIcon("ph_sticky_note", chromeTint(app.stickyActive)) }
                     }
                     if v("zoomwin") {
                         TBtn(selected: s.zoomBox != nil, action: {
@@ -454,7 +471,7 @@ private struct ReaderTopBar: View {
                                 let w = size.width * 0.4
                                 s.zoomBox = ZoomBox(page: s.currentPage, x: size.width * (I18n.english ? 0.04 : 0.56), y: size.width * 0.12, w: w, h: w * 0.3)
                             }
-                        }) { PhIcon("ph_zoom_write", tintFor(s.zoomBox != nil)) }
+                        }) { PhIcon("ph_zoom_write", chromeTint(s.zoomBox != nil)) }
                     }
     }
     @ViewBuilder private var insertGroupB: some View {
@@ -462,7 +479,7 @@ private struct ReaderTopBar: View {
                     if v("split") {
                         let on = app.splitId != nil
                         TBtn(selected: on, locked: !pm.active, action: { if on { app.closeSplit() } else if pm.require(.split) { sheet = .split } }) {
-                            PhIcon("ph_split", tintFor(on))
+                            PhIcon("ph_split", chromeTint(on))
                         }
                     }
                     if v("record") {
@@ -475,44 +492,47 @@ private struct ReaderTopBar: View {
                     if v("addpage") { TBtn(action: { sheet = .addPage }) { PhIcon("ph_add_page") } }
                     if v("ocr") {
                         TBtn(selected: s.ocrRunning, locked: !pm.active, action: { if s.ocrRunning { s.stopOcr() } else if pm.require(.ocr) { s.startOcr() } }) {
-                            PhIcon("ph_scan", tintFor(s.ocrRunning))
+                            PhIcon("ph_scan", chromeTint(s.ocrRunning))
                         }
                     }
                     if v("search") {
                         TBtn(selected: s.searchOpen, action: {
                             s.searchOpen.toggle()
                             if !s.searchOpen { s.searchHits = []; s.searchQuery = "" }
-                        }) { PhIcon("ph_search", tintFor(s.searchOpen)) }
+                        }) { PhIcon("ph_search", chromeTint(s.searchOpen)) }
                     }
                     if v("export") { TBtn(action: { s.flush(); sheet = .export }) { PhIcon("ph_export") } }
     }
     @ViewBuilder private var viewGroup: some View {
                     if v("undo") {
                         ToolbarSep()
-                        TBtn(enabled: !s.undoStack.isEmpty, action: { s.undo() }) { PhIcon("ph_undo", s.undoStack.isEmpty ? dim : Palette.textPrimary) }
-                        TBtn(enabled: !s.redoStack.isEmpty, action: { s.redo() }) { PhIcon("ph_redo", s.redoStack.isEmpty ? dim : Palette.textPrimary) }
+                        TBtn(enabled: !s.undoStack.isEmpty, action: { s.undo() }) { PhIcon("ph_undo", s.undoStack.isEmpty ? dim : Palette.chromeFg) }
+                        TBtn(enabled: !s.redoStack.isEmpty, action: { s.redo() }) { PhIcon("ph_redo", s.redoStack.isEmpty ? dim : Palette.chromeFg) }
                     }
                     ToolbarSep()
                     if v("zoom") {
-                        TBtn(action: { s.zoomHook?(1 / 1.25) }) { PhIcon("ph_zoom_out", Palette.textPrimary) }
+                        TBtn(action: { s.zoomHook?(1 / 1.25) }) { PhIcon("ph_zoom_out", Palette.chromeFg) }
                         Button { s.fitHook?() } label: {
-                            Text("\(s.scalePercent)%").font(Fonts.sans(14)).foregroundColor(Palette.textPrimary).padding(.horizontal, 8).padding(.vertical, 8)
+                            Text("\(s.scalePercent)%").font(Fonts.sans(14)).foregroundColor(Palette.chromeFg).padding(.horizontal, 8).padding(.vertical, 8)
                         }
-                        TBtn(action: { s.zoomHook?(1.25) }) { PhIcon("ph_zoom_in", Palette.textPrimary) }
+                        TBtn(action: { s.zoomHook?(1.25) }) { PhIcon("ph_zoom_in", Palette.chromeFg) }
                     }
-                    if v("fit") { TBtn(action: { s.fitHook?() }) { PhIcon("ph_fit", Palette.textPrimary) } }
-                    if v("night") { TBtn(selected: app.nightPages, action: { app.nightPages.toggle() }) { PhIcon("ph_moon", tintFor(app.nightPages)) } }
+                    if v("fit") { TBtn(action: { s.fitHook?() }) { PhIcon("ph_fit", Palette.chromeFg) } }
+                    if v("night") { TBtn(selected: app.nightPages, action: { app.nightPages.toggle() }) { PhIcon("ph_moon", chromeTint(app.nightPages)) } }
                     if v("focus") {
                         TBtn(action: {
                             s.drawerOpen = false; s.summaryOpen = false
                             withAnimation(Motion.enter) { app.focusMode = true }
                             app.say(.tip, L("وضع التركيز: اضغط أيقونة الخروج للعودة", "Focus mode: tap the exit icon to return"))
-                        }) { PhIcon("ph_eye", Palette.textPrimary) }
+                        }) { PhIcon("ph_eye", Palette.chromeFg) }
                     }
-                    TBtn(selected: s.pageMenuOpen, action: {
-                        s.pageMenuOpen.toggle()
-                        if s.pageMenuOpen { s.summaryOpen = false }
-                    }) { PhIcon("ph_more", tintFor(s.pageMenuOpen)) }
+    }
+    /// «⋮» خيارات الصفحة والإعدادات: ثابت دائمًا في آخر الشريط.
+    private var moreButton: some View {
+        TBtn(selected: s.pageMenuOpen, action: {
+            s.pageMenuOpen.toggle()
+            if s.pageMenuOpen { s.summaryOpen = false }
+        }) { PhIcon("ph_more", chromeTint(s.pageMenuOpen)) }
     }
 
     /// زر على طرف بطاقة الأدوات: مربع بحواف ناعمة بدل الدائرة العائمة.
@@ -616,9 +636,32 @@ private struct PenBar: View {
             ToolbarSep()
             SizeSlots(tool: t)
             ToolbarSep()
-            TBtn(action: { app.penBarOpen = false }) { PhIcon("ph_caret_up", Palette.textSecondary, 20, L("إخفاء شريط الأقلام", "Hide pen bar")) }
+            TBtn(action: { app.penBarOpen = false }) { PhIcon("ph_caret_up", Palette.chromeMuted, 20, L("إخفاء شريط الأقلام", "Hide pen bar")) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
+    }
+}
+
+/// يصغّر المحتوى إن كان أعرض من المساحة المتاحة (بدل قصّه أو تمريره)، واللمس يتبع الرسم.
+struct FitToWidth<Content: View>: View {
+    let content: Content
+    @State private var natural: CGSize = .zero
+    @State private var avail: CGFloat = 0
+
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        let f = natural.width > 0 && avail > 0 ? min(1, avail / natural.width) : 1
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: max(1, natural.height * f))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { avail = $0 }
+            .overlay {
+                content
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
+                    .scaleEffect(f)
+            }
     }
 }
 
@@ -648,8 +691,8 @@ struct BarCapsule: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Chrome.barRadius, style: .continuous)
         content
-            .background(shape.fill(Color.white))
-            .overlay(shape.stroke(Palette.divider, lineWidth: 1))
+            .background(shape.fill(Palette.chromeBg))
+            .overlay(shape.stroke(Palette.chromeLine, lineWidth: 1))
             .clipShape(shape)
             .shadow(color: Palette.ink.opacity(0.15), radius: 6, y: 2)
             .contentShape(shape)
@@ -675,7 +718,7 @@ struct ColorDots: View {
                 }
             }
             .padding(.horizontal, 6)
-            Button { allOpen = true } label: { PhIcon("ph_plus", Palette.textSecondary, 18, L("كل الألوان", "All colors")).frame(width: 34, height: 34) }
+            Button { allOpen = true } label: { PhIcon("ph_plus", Palette.chromeMuted, 18, L("كل الألوان", "All colors")).frame(width: 34, height: 34) }
                 .padding(.leading, 6)
                 .popover(isPresented: $allOpen) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -809,10 +852,10 @@ private struct ShapeBar: View {
                                             (.circle, "ph_shape_circle"), (.triangle, "ph_shape_triangle"), (.diamond, "ph_shape_diamond"), (.ellipse, "ph_shape_ellipse")]
         HStack(spacing: 0) {
             // «ارسم وأبقِ»: التعرف على الشكل المرسوم بالقلم عند إبقائه ثابتًا
-            TBtn(selected: app.drawAndHold, action: { app.drawAndHold.toggle() }) { PhIcon("ph_shape_detect", tintFor(app.drawAndHold)) }
+            TBtn(selected: app.drawAndHold, action: { app.drawAndHold.toggle() }) { PhIcon("ph_shape_detect", chromeTint(app.drawAndHold)) }
             ToolbarSep()
             ForEach(kinds, id: \.0) { item in
-                TBtn(selected: app.shapeKind == item.0, action: { app.shapeKind = item.0 }) { PhIcon(item.1, tintFor(app.shapeKind == item.0)) }
+                TBtn(selected: app.shapeKind == item.0, action: { app.shapeKind = item.0 }) { PhIcon(item.1, chromeTint(app.shapeKind == item.0)) }
             }
             ToolbarSep()
             // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
@@ -832,7 +875,7 @@ private struct ShapeBar: View {
                 ShapeSettingsWindow(onClose: { settings = false }, onCustom: { settings = false; picker = true }).environmentObject(app)
             }
             ToolbarSep()
-            TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18, L("إغلاق الأشكال", "Close shapes")) }
+            TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.chromeMuted, 18, L("إغلاق الأشكال", "Close shapes")) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .modifier(BarCapsule())
@@ -1016,7 +1059,7 @@ private struct StickyBar: View {
                 Button { app.stickyStyle = st } label: {
                     VStack(spacing: 2) {
                         StickyStyleSample(style: st, color: app.stickyColor).frame(width: 26, height: 22)
-                        Text(name).font(Fonts.sans(10)).foregroundColor(sel ? Palette.navy : Palette.textSecondary)
+                        Text(name).font(Fonts.sans(10)).foregroundColor(sel ? Palette.navy : Palette.chromeMuted)
                     }
                     .padding(.horizontal, 4).padding(.vertical, 3)
                     .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navySoft : Color.clear))
@@ -1039,7 +1082,7 @@ private struct StickyBar: View {
             Button { naming = true } label: {
                 Text(L("الاسم على الملاحظات…", "Name on notes…")).font(Fonts.sans(13)).foregroundColor(Palette.navy).padding(.horizontal, 8)
             }
-            TBtn(action: { app.stickyActive = false }) { PhIcon("ph_close", Palette.textSecondary, 18) }
+            TBtn(action: { app.stickyActive = false }) { PhIcon("ph_close", Palette.chromeMuted, 18) }
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .modifier(BarCapsule())
@@ -1115,52 +1158,55 @@ private struct ReaderSearchBar: View {
     @ObservedObject var session: DocSession
     var body: some View {
         let s = session
-        HStack(spacing: 10) {
-            PhIcon("ph_search", Palette.textSecondary, 18)
-            TextField(L("ابحث في المستند", "Search in document"), text: Binding(get: { s.searchQuery }, set: { s.searchQuery = $0 }))
-                .font(Fonts.sans(15)).onSubmit { s.runSearch() }
-            if !s.searchHits.isEmpty {
-                Text("\(s.searchIndex + 1) / \(s.searchHits.count)").font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-                Button { step(-1) } label: { PhIcon("ph_caret_up", Palette.textPrimary, 18).frame(width: 34, height: 34) }
-                Button { step(1) } label: { PhIcon("ph_caret_down", Palette.textPrimary, 18).frame(width: 34, height: 34) }
-            } else if !s.searchQuery.isEmpty {
-                let o = s.ocrHits(s.searchQuery)
-                if let first = o.first {
-                    Button { s.goTo(page: first.0) } label: {
-                        Text(L("في الصفحة المقروءة \(first.0 + 1)", "On read page \(first.0 + 1)")).font(Fonts.sans(13)).foregroundColor(Palette.navy)
+        // نافذة صغيرة عائمة في أعلى طرف الصفحة (لا تُنزل الصفحة)، يُكتب فيها مباشرة
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    PhIcon("ph_search", Palette.chromeMuted, 16)
+                    TextField(L("ابحث في المستند", "Search in document"), text: Binding(get: { s.searchQuery }, set: { s.searchQuery = $0 }))
+                        .font(Fonts.sans(15)).foregroundColor(Palette.chromeFg).onSubmit { s.runSearch() }
+                        .submitLabel(.search)
+                }
+                .padding(.horizontal, 10).frame(width: 250, height: 40)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Palette.chromeSel))
+                if !s.searchHits.isEmpty {
+                    Text("\(s.searchIndex + 1) / \(s.searchHits.count)").font(Fonts.sans(13)).foregroundColor(Palette.chromeMuted).lineLimit(1)
+                    Button { step(-1) } label: { PhIcon("ph_caret_up", Palette.chromeFg, 18).frame(width: 34, height: 34) }
+                    Button { step(1) } label: { PhIcon("ph_caret_down", Palette.chromeFg, 18).frame(width: 34, height: 34) }
+                } else if !s.searchQuery.isEmpty {
+                    let o = s.ocrHits(s.searchQuery)
+                    if let first = o.first {
+                        Button { s.goTo(page: first.0) } label: {
+                            Text(L("في الصفحة المقروءة \(first.0 + 1)", "On read page \(first.0 + 1)")).font(Fonts.sans(13)).foregroundColor(Palette.chromeAccent).lineLimit(1)
+                        }
+                    } else {
+                        Button { s.runSearch() } label: { PhIcon("ph_caret_down", Palette.chromeFg, 18).frame(width: 34, height: 34) }
                     }
                 }
+                Button {
+                    s.searchOpen = false
+                    s.searchHits = []
+                    s.searchQuery = ""
+                } label: { PhIcon("ph_close", Palette.chromeMuted, 18, L("إغلاق البحث", "Close search")).frame(width: 34, height: 34) }
             }
-            NavyButton(label: L("بحث", "Search")) { s.runSearch() }
-            Button {
-                s.searchOpen = false
-                s.searchHits = []
-                s.searchQuery = ""
-            } label: { PhIcon("ph_close", Palette.textSecondary, 18).frame(width: 34, height: 34) }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 6)
-        .background(Color.white)
-        .overlay(alignment: .bottom) {
             // كما في أندرويد: البحث يشمل الصفحات المقروءة فقط، و«اقرأ الكل» يقرأ الباقي
             let read = s.readPagesCount()
             if read < s.pageCount && !s.searchQuery.isEmpty {
                 HStack(spacing: 8) {
                     Text(L("البحث يشمل \(read) من \(s.pageCount) صفحة مقروءة حتى الآن", "Search covers \(read) of \(s.pageCount) pages read so far"))
-                        .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
+                        .font(Fonts.sans(12)).foregroundColor(Palette.chromeMuted)
                     if !s.ocrRunning {
                         Button { if Premium.shared.require(.ocr) { s.startOcr() } } label: {
-                            Text(L("اقرأ الكل", "Read all")).font(Fonts.sans(12, .bold)).foregroundColor(Palette.navy)
+                            Text(L("اقرأ الكل", "Read all")).font(Fonts.sans(12, .bold)).foregroundColor(Palette.chromeAccent)
                         }
                     }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Palette.goldSoft)
-                .offset(y: 26)
+                .padding(.horizontal, 6)
             }
         }
-        .overlay(Rectangle().fill(Palette.divider).frame(height: 1), alignment: .bottom)
-        .zIndex(1)
+        .padding(6)
+        .fixedSize()
+        .modifier(BarCapsule())
     }
 
     private func step(_ d: Int) {

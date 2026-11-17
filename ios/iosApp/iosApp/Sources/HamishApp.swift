@@ -114,8 +114,8 @@ private struct TabBar: View {
     var body: some View {
         let libraryActive = app.activeId == nil
         // في المستند: التبويب النشط بلون بطاقة الأدوات (أبيض) ويتصل بها، والشريط بلون مكتب القراءة
-        let activeBg = libraryActive ? Palette.spine : Color.white
-        let railBg = libraryActive ? Palette.tabRail : Palette.desk
+        let activeBg = libraryActive ? Palette.spine : Palette.chromeBg
+        let railBg = libraryActive ? Palette.tabRail : Palette.chromeRail
         ScrollView(.horizontal, showsIndicators: false) {
             // التبويبات متلاصقة كتبويبات المستندات، وبين كل تبويبين غير نشطين فاصل رفيع
             HStack(alignment: .bottom, spacing: 0) {
@@ -182,7 +182,7 @@ private struct TabItem: View {
     let onTap: () -> Void
 
     var body: some View {
-        let under = active ? activeBg : Palette.desk
+        let under = active ? activeBg : (activeBg == Palette.spine ? Palette.tabRail : Palette.chromeRail)
         let dark = under.luminance < 0.4
         let fg = dark ? Color(hex: 0xFFEDE6D4) : Palette.navy
         let muted = dark ? Color(hex: 0xFFB4BFD0) : Palette.textSecondary

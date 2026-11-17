@@ -70,6 +70,8 @@ struct PagesDrawer: View {
     @State private var confirmDelete: Int? = nil
     @State private var confirmDeleteMany = false
     @State private var addPage = false
+    /// صفحات يُغيَّر قالبها الآن (من قائمة الصورة المصغّرة أو من التحديد المتعدد).
+    @State private var templatePages: [Int] = []
     @State private var outlineEdit: OutlineEntry? = nil
 
     var body: some View {
@@ -127,6 +129,9 @@ struct PagesDrawer: View {
                             picked.forEach { p in if s.isBookmarked(p) == all { s.toggleBookmark(p) } }
                         } label: { PhIcon("ph_bookmark", Palette.navy, 20).frame(width: 40, height: 40) }
                         .disabled(picked.isEmpty)
+                        // تغيير قالب الصفحات المحددة معًا (صفحات الملاحظات فقط)
+                        Button { templatePages = picked.sorted() } label: { PhIcon("ph_pages", Palette.navy, 20, L("تغيير القالب", "Change template")).frame(width: 40, height: 40) }
+                            .disabled(picked.isEmpty || !picked.allSatisfy { s.isBlank($0) })
                         Button { confirmDeleteMany = true } label: { PhIcon("ph_trash", Palette.danger, 20).frame(width: 40, height: 40) }
                             .disabled(picked.isEmpty || picked.count >= s.pageCount)
                         Button(L("تم", "Done")) { selecting = false; picked.removeAll() }.font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 10)
@@ -152,6 +157,13 @@ struct PagesDrawer: View {
             }
             Button(L("إلغاء", "Cancel"), role: .cancel) {}
         } message: { Text(L("ستُحذف الصفحات المحددة وكل ما كتبته عليها.", "The selected pages and everything written on them will be deleted.")) }
+        .bigSheet(isPresented: Binding(get: { !templatePages.isEmpty }, set: { if !$0 { templatePages = [] } }), width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
+            TemplatePickerSheet(mode: .change, sizeLocked: true) { choice, _, _ in
+                // كل ما كُتب على الصفحات يبقى، وتتغير الخلفية فقط
+                for p in templatePages where s.isBlank(p) { s.changeTemplate(p, kind: choice.kind, color: choice.color) }
+                templatePages = []
+            }
+        }
         .bigSheet(isPresented: $addPage, width: 0.92, height: 0.9, maxHeight: 900, maxWidth: 1040) {
             TemplatePickerSheet(mode: .addPage) { choice, _, atEnd in
                 s.addBlankPage(after: atEnd ? s.pageCount - 1 : s.currentPage, kind: choice.kind, color: choice.color, size: choice.points)
@@ -234,6 +246,8 @@ struct PagesDrawer: View {
         if i > 0 { Button(L("نقل إلى البداية", "Move to start")) { s.movePage(i, to: 0) } }
         if i < n - 1 { Button(L("نقل إلى النهاية", "Move to end")) { s.movePage(i, to: n - 1) } }
         Button(L("نسخ الصفحة", "Duplicate page")) { s.duplicatePage(i) }
+        // تغيير القالب: لصفحات الملاحظات (ما كُتب عليها يبقى كما هو)
+        if s.isBlank(i) { Button(L("تغيير القالب…", "Change template…")) { templatePages = [i] } }
         if n > 1 { Button(role: .destructive) { confirmDelete = i } label: { Text(L("حذف الصفحة", "Delete page")) } }
     }
 

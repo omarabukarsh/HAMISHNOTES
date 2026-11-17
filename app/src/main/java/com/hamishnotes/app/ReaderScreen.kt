@@ -255,54 +255,8 @@ private fun ReaderContent(s: DocSession) {
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 PageArea(s, pdf, exportSummary)
-                // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
-                // تتوسط المساحة المتبقية للصفحة فقط: لا تظهر فوق لوحة الصفحات أو الملخصات أو خيارات الصفحة
-                val barStart by androidx.compose.animation.core.animateDpAsState(
-                    if (s.drawerOpen) (PAGES_PANEL_W + 12).dp else 0.dp, tween(240), label = "barStart"
-                )
-                val barEnd by androidx.compose.animation.core.animateDpAsState(
-                    when {
-                        s.summaryOpen && UiPrefs.summariesOn -> 432.dp
-                        s.pageMenuOpen -> 392.dp
-                        else -> 0.dp
-                    }, tween(240), label = "barEnd"
-                )
-                if (!c.focusMode) Column(Modifier.fillMaxWidth().padding(start = barStart, end = barEnd).align(Alignment.TopCenter)) {
-                    val baseDensity = androidx.compose.ui.platform.LocalDensity.current
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
-                            baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
-                        )
-                    ) {
-                    // البحث: نافذة صغيرة عائمة بدل شريط بعرض الشاشة
-                    if (s.searchOpen) ReaderSearchBar(s)
-                    // شريط الأقلام الثاني (نمط «شريط الأقلام»)
-                    AnimatedVisibility(
-                        visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
-                            (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
-                        enter = Motion.barEnter,
-                        exit = Motion.barExit
-                    ) { PenBar() }
-                    // شريط الأشكال
-                    AnimatedVisibility(
-                        visible = PenPrefs.shapeActive && !c.lassoActive,
-                        enter = Motion.barEnter,
-                        exit = Motion.barExit
-                    ) { ShapeBar() }
-                    // شريط الملاحظات اللاصقة
-                    AnimatedVisibility(
-                        visible = PenPrefs.stickyActive,
-                        enter = Motion.barEnter,
-                        exit = Motion.barExit
-                    ) { StickyBar() }
-                    // شريط الشريط اللاصق
-                    AnimatedVisibility(
-                        visible = TapeTool.active,
-                        enter = Motion.barEnter,
-                        exit = Motion.barExit
-                    ) { TapeBar(s) }
-                    }
-                }
+                // الأشرطة العائمة فوق الصفحة (دالة مستقلة: تحريكها لا يعيد بناء الصفحات)
+                if (!c.focusMode) FloatingBars(s, Modifier.align(Alignment.TopCenter))
             }
             // نافذة الكتابة المكبّرة
             if (s.zoomBox != null && !c.focusMode) ZoomPanel(s, pdf)
@@ -351,6 +305,70 @@ private fun ReaderContent(s: DocSession) {
             onDismiss = { s.textDialog = null }
         )
     }
+}
+
+/**
+ * الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق، البحث): لا تدفع الصفحة للأسفل،
+ * ولا تحجب منها إلا حدودها، وتتوسط المساحة المتبقية للصفحة فقط (لا تظهر فوق اللوحات الجانبية).
+ */
+@Composable
+private fun FloatingBars(s: DocSession, modifier: Modifier = Modifier) {
+                // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
+                // تتوسط المساحة المتبقية للصفحة فقط: لا تظهر فوق لوحة الصفحات أو الملخصات أو خيارات الصفحة
+    val c = AppController
+    val barStart = androidx.compose.animation.core.animateDpAsState(
+                    if (s.drawerOpen) (PAGES_PANEL_W + 12).dp else 0.dp, tween(240), label = "barStart"
+                )
+    val barEnd = androidx.compose.animation.core.animateDpAsState(
+                    when {
+                        s.summaryOpen && UiPrefs.summariesOn -> 432.dp
+                        s.pageMenuOpen -> 392.dp
+                        else -> 0.dp
+                    }, tween(240), label = "barEnd"
+                )
+    // الإزاحة تُقرأ وقت التخطيط فقط (لا تعيد التركيب في كل إطار من حركة فتح اللوحة)
+    Column(modifier.fillMaxWidth().layout { m, cs ->
+        val st = barStart.value.roundToPx()
+        val en = barEnd.value.roundToPx()
+        val w = (cs.maxWidth - st - en).coerceAtLeast(0)
+        val p = m.measure(cs.copy(minWidth = 0, maxWidth = w))
+        layout(cs.maxWidth, p.height) { p.placeRelative(st, 0) }
+    }) {
+                    val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                            baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
+                        )
+                    ) {
+                    // البحث: نافذة صغيرة عائمة بدل شريط بعرض الشاشة
+                    if (s.searchOpen) ReaderSearchBar(s)
+                    // شريط الأقلام الثاني (نمط «شريط الأقلام»)
+                    AnimatedVisibility(
+                        visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
+                            (c.tool.isPen() || c.tool == Tool.HIGHLIGHTER),
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { PenBar() }
+                    // شريط الأشكال
+                    AnimatedVisibility(
+                        visible = PenPrefs.shapeActive && !c.lassoActive,
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { ShapeBar() }
+                    // شريط الملاحظات اللاصقة
+                    AnimatedVisibility(
+                        visible = PenPrefs.stickyActive,
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { StickyBar() }
+                    // شريط الشريط اللاصق
+                    AnimatedVisibility(
+                        visible = TapeTool.active,
+                        enter = Motion.barEnter,
+                        exit = Motion.barExit
+                    ) { TapeBar(s) }
+                    }
+                }
 }
 
 /** أدوات وضع التركيز: مؤقت الدراسة والخروج. */
@@ -495,17 +513,20 @@ internal fun Modifier.fitWidth(): Modifier = this.layout { m, c ->
     }
 }
 
-/** حافة باهتة على طرفي منطقة تتمرر أفقيًا: تشير إلى وجود أدوات أخرى بالسحب. */
-internal fun Modifier.scrollFade(): Modifier = this
-    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
-    .drawWithContent {
-        drawContent()
-        val fade = 18.dp.toPx() / size.width
-        drawRect(
-            Brush.horizontalGradient(0f to Color.Transparent, fade to Color.Black, 1f - fade to Color.Black, 1f to Color.Transparent),
-            blendMode = BlendMode.DstIn
-        )
-    }
+/**
+ * حافة باهتة على طرفي منطقة تتمرر أفقيًا: تشير إلى وجود أدوات أخرى بالسحب.
+ * تُرسم بتدرّج بلون البطاقة فوق المحتوى (بلا طبقة رسم إضافية، فلا تكلّف شيئًا عند التحديث).
+ */
+internal fun Modifier.scrollFade(): Modifier = this.drawWithContent {
+    drawContent()
+    val f = 18.dp.toPx()
+    val bg = Palette.ChromeBg
+    drawRect(Brush.horizontalGradient(listOf(bg, bg.copy(alpha = 0f)), startX = 0f, endX = f), size = androidx.compose.ui.geometry.Size(f, size.height))
+    drawRect(
+        Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg), startX = size.width - f, endX = size.width),
+        topLeft = Offset(size.width - f, 0f), size = androidx.compose.ui.geometry.Size(f, size.height)
+    )
+}
 
 /** شكل الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق): مستطيل بحواف ناعمة. */
 internal val BarShape = RoundedCornerShape(18.dp)
@@ -741,7 +762,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
                 Box(if (fitAll) Modifier else Modifier.weight(1f)) {
                 Row(
-                    (if (fitAll) Modifier else Modifier.horizontalScroll(rememberScrollState()).scrollFade()),
+                    (if (fitAll) Modifier else Modifier.scrollFade().horizontalScroll(rememberScrollState())),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                 if (v("image")) {

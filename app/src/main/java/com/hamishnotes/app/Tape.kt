@@ -380,17 +380,12 @@ private fun darker(c: Int, f: Float): Int {
  * والمكشوف حوافه فقط بتعبئة شفافة خفيفة جدًا، بدون أي خط في وسطه.
  */
 fun drawTapeNative(c: android.graphics.Canvas, t: Tape, w: Float) {
-    val o = tapeOutline(t, w)
-    if (o.size < 6) return
-    val path = android.graphics.Path().apply {
-        moveTo(o[0], o[1])
-        var i = 2
-        while (i + 1 < o.size) { lineTo(o[i], o[i + 1]); i += 2 }
-        close()
-    }
+    val g = TapeGeometry.of(t, w) ?: return
+    val path = g.path
     val base = t.color or (0xFF shl 24)
     val tw = t.width * w
-    val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    val p = TapeGeometry.paint
+    p.reset(); p.isAntiAlias = true
     if (t.revealed) {
         p.style = android.graphics.Paint.Style.FILL
         p.color = (base and 0x00FFFFFF) or (0x1A shl 24)
@@ -411,51 +406,95 @@ fun drawTapeNative(c: android.graphics.Canvas, t: Tape, w: Float) {
     p.style = android.graphics.Paint.Style.FILL
     p.color = base
     c.drawPath(path, p)
-    val b = android.graphics.RectF().also { path.computeBounds(it, true) }
+    val lines = g.lines ?: return
+    c.save(); c.clipPath(path)
     when (t.style) {
         TapeStyle.WASHI -> {
-            c.save(); c.clipPath(path)
-            p.color = lighter(base, 0.2f)
             p.style = android.graphics.Paint.Style.STROKE
+            p.color = lighter(base, 0.2f)
             p.strokeWidth = tw * 0.16f
-            val step = tw * 0.36f
-            var x = b.left - b.height()
-            while (x < b.right + b.height()) {
-                c.drawLine(x, b.bottom, x + b.height(), b.top, p); x += step
-            }
-            c.restore()
+            c.drawLines(lines, p)
         }
         TapeStyle.DOTS -> {
-            c.save(); c.clipPath(path)
+            p.style = android.graphics.Paint.Style.STROKE
             p.color = lighter(base, 0.45f)
-            val step = tw * 0.32f
-            val r = tw * 0.06f
-            var row = 0
-            var y = b.top + step / 2f
-            while (y < b.bottom + step) {
-                var x = b.left + (if (row % 2 == 1) step / 2f else 0f)
-                while (x < b.right + step) { c.drawCircle(x, y, r, p); x += step }
-                y += step; row++
-            }
-            c.restore()
+            p.strokeWidth = tw * 0.12f
+            p.strokeCap = android.graphics.Paint.Cap.ROUND
+            c.drawPoints(lines, p)
         }
         TapeStyle.TORN -> {
-            // ملمس ورق: ألياف قصيرة فاتحة وداكنة قليلًا
-            c.save(); c.clipPath(path)
-            val rnd = java.util.Random(tapeSeed(t) * 31)
             p.style = android.graphics.Paint.Style.STROKE
             p.strokeWidth = maxOf(0.6f, tw * 0.025f)
             p.strokeCap = android.graphics.Paint.Cap.ROUND
-            val count = ((b.width() * b.height()) / (tw * tw) * 9).toInt().coerceIn(6, 400)
-            repeat(count) {
-                val x = b.left + rnd.nextFloat() * b.width(); val y = b.top + rnd.nextFloat() * b.height()
-                val a = rnd.nextFloat() * 6.283f; val l = tw * (0.08f + rnd.nextFloat() * 0.14f)
-                p.color = if (rnd.nextBoolean()) android.graphics.Color.argb(46, 255, 255, 255) else android.graphics.Color.argb(16, 0, 0, 0)
-                c.drawLine(x, y, x + kotlin.math.cos(a) * l, y + kotlin.math.sin(a) * l, p)
-            }
-            c.restore()
+            val half = (lines.size / 8) * 4
+            p.color = android.graphics.Color.argb(46, 255, 255, 255)
+            c.drawLines(lines, 0, half, p)
+            p.color = android.graphics.Color.argb(16, 0, 0, 0)
+            c.drawLines(lines, half, lines.size - half, p)
         }
         else -> {}
+    }
+    c.restore()
+}
+
+/**
+ * حدود الشريط ونقشه محسوبة مرة واحدة لكل شريط وعرض صفحة (لا في كل رسم): الرسم يصبح أوامر جاهزة فقط،
+ * فلا يبطئ التمرير أو الكتابة مهما كثرت الأشرطة.
+ */
+private object TapeGeometry {
+    class Built(val path: android.graphics.Path, val lines: FloatArray?)
+    private val cache = android.util.LruCache<Pair<Tape, Int>, Built>(96)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+    fun of(t: Tape, w: Float): Built? {
+        val key = t to w.toInt()
+        cache.get(key)?.let { return it }
+        val o = tapeOutline(t, w)
+        if (o.size < 6) return null
+        val path = android.graphics.Path().apply {
+            moveTo(o[0], o[1])
+            var i = 2
+            while (i + 1 < o.size) { lineTo(o[i], o[i + 1]); i += 2 }
+            close()
+        }
+        val tw = t.width * w
+        val b = android.graphics.RectF().also { path.computeBounds(it, true) }
+        val lines: FloatArray? = when {
+            t.revealed -> null
+            t.style == TapeStyle.WASHI -> {
+                val out = ArrayList<Float>()
+                val step = tw * 0.36f
+                var x = b.left - b.height()
+                while (x < b.right + b.height()) { out.add(x); out.add(b.bottom); out.add(x + b.height()); out.add(b.top); x += step }
+                out.toFloatArray()
+            }
+            t.style == TapeStyle.DOTS -> {
+                val out = ArrayList<Float>()
+                val step = tw * 0.32f
+                var row = 0
+                var y = b.top + step / 2f
+                while (y < b.bottom + step) {
+                    var x = b.left + (if (row % 2 == 1) step / 2f else 0f)
+                    while (x < b.right + step) { out.add(x); out.add(y); x += step }
+                    y += step; row++
+                }
+                out.toFloatArray()
+            }
+            t.style == TapeStyle.TORN -> {
+                // ملمس ورق: ألياف قصيرة، نصفها فاتح ونصفها داكن قليلًا
+                val rnd = java.util.Random(tapeSeed(t) * 31)
+                val count = ((b.width() * b.height()) / (tw * tw) * 9).toInt().coerceIn(6, 160)
+                FloatArray(count * 4).also { a ->
+                    for (k in 0 until count) {
+                        val x = b.left + rnd.nextFloat() * b.width(); val y = b.top + rnd.nextFloat() * b.height()
+                        val ang = rnd.nextFloat() * 6.283f; val l = tw * (0.08f + rnd.nextFloat() * 0.14f)
+                        a[k * 4] = x; a[k * 4 + 1] = y; a[k * 4 + 2] = x + kotlin.math.cos(ang) * l; a[k * 4 + 3] = y + kotlin.math.sin(ang) * l
+                    }
+                }
+            }
+            else -> null
+        }
+        return Built(path, lines).also { cache.put(key, it) }
     }
 }
 

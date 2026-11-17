@@ -661,45 +661,60 @@ struct BarCapsule: ViewModifier {
 struct ColorDots: View {
     @EnvironmentObject var app: AppController
     let onCustom: () -> Void
-    /// عدد الألوان الظاهرة في المنطقة الثابتة.
-    static let visible: CGFloat = 7
-    static let cell: CGFloat = 34
+    @State private var allOpen = false
 
     var body: some View {
+        // خمسة ألوان فقط بمسافة واسعة (آخر ما استُخدم)، و«+» يفتح بقية الألوان واللون المخصص
         let current = app.colorFor(app.tool)
-        // لون مخصص يطابق لونًا من اللوحة لا يظهر مرتين
         let palette = app.paletteFor(app.tool)
         let all = palette + app.customColors.filter { !palette.contains($0) }
         HStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 0) {
-                        ForEach(all, id: \.self) { col in
-                            let sel = col == current
-                            Button { app.setColor(col) } label: {
-                                Circle().fill(Color(hex: col)).frame(width: sel ? 26 : 22, height: sel ? 26 : 22)
-                                    .overlay(Circle().stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2.5 : 1))
-                                    .frame(width: Self.cell, height: Self.cell)
-                            }
-                            .id(col)
-                        }
-                    }
-                }
-                .frame(width: Self.cell * Self.visible)
-                // حافة باهتة: هناك ألوان أخرى بالسحب
-                .mask(HStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 10)
-                    Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 10)
-                })
-                // اللون المختار يظهر دائمًا: عند فتح الشريط أو تغيير الأداة أو اللون
-                .onAppear { DispatchQueue.main.async { proxy.scrollTo(current, anchor: .center) } }
-                .onChange(of: "\(app.tool)|\(current)") { _, _ in
-                    withAnimation(Motion.enter) { proxy.scrollTo(app.colorFor(app.tool), anchor: .center) }
+            HStack(spacing: 14) {
+                ForEach(app.shownColors(app.tool), id: \.self) { col in
+                    ColorSwatch(color: col, selected: col == current) { app.setColor(col); app.noteRecentColor(col) }
                 }
             }
-            Button(action: onCustom) { PhIcon("ph_plus", Palette.textSecondary, 18, L("لون مخصص", "Custom color")).frame(width: 34, height: 34) }
+            .padding(.horizontal, 6)
+            Button { allOpen = true } label: { PhIcon("ph_plus", Palette.textSecondary, 18, L("كل الألوان", "All colors")).frame(width: 34, height: 34) }
+                .padding(.leading, 6)
+                .popover(isPresented: $allOpen) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 14), count: 6), spacing: 12) {
+                            ForEach(all, id: \.self) { col in
+                                ColorSwatch(color: col, selected: col == current) { app.setColor(col); app.noteRecentColor(col); allOpen = false }
+                            }
+                        }
+                        Button { allOpen = false; onCustom() } label: {
+                            HStack(spacing: 6) {
+                                PhIcon("ph_plus", Palette.textSecondary, 16)
+                                Text(L("لون مخصص", "Custom color")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary)
+                            }
+                            .padding(6)
+                        }
+                    }
+                    .padding(16)
+                    .presentationCompactAdaptation(.popover)
+                }
         }
+    }
+}
+
+/// دائرة لون في شريط القلم: قطر 24، والمختار بحلقة رفيعة كحلية تفصلها عنه مسافة بيضاء.
+struct ColorSwatch: View {
+    let color: UInt32
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Circle().fill(Color(hex: color)).frame(width: 24, height: 24)
+                .overlay(Circle().stroke(Color.black.opacity(0.12), lineWidth: 1))
+                .padding(4)
+                .overlay(Circle().stroke(selected ? Palette.navy : Color.clear, lineWidth: 2))
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressScale(scale: 0.9))
     }
 }
 

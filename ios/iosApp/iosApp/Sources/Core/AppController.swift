@@ -283,6 +283,7 @@ final class AppController: ObservableObject {
         colorOf = p.dictionary(forKey: "tool_colors") as? [String: UInt32] ?? [:]
         sizeOf = p.dictionary(forKey: "tool_sizes") as? [String: Int] ?? [:]
         customColors = (p.array(forKey: "custom_colors") as? [UInt32]) ?? []
+        recentColors = (p.array(forKey: "recent_colors") as? [UInt32]) ?? []
         if let t = Tool(rawValue: p.string(forKey: "tool") ?? "") { tool = t.isWriting ? t : .fountain }
         if let t = Tool(rawValue: p.string(forKey: "last_pen") ?? ""), t.isPen { lastPen = t }
         lastWriting = tool.isWriting ? tool : lastPen
@@ -797,6 +798,29 @@ final class AppController: ObservableObject {
     func setSize(_ i: Int) {
         sizeOf[tool.rawValue] = max(0, min(Sizes.count - 1, i))
         prefs.set(sizeOf, forKey: "tool_sizes")
+    }
+
+    /// آخر الألوان المختارة (الأحدث أولًا): منها تُختار الألوان الخمسة الظاهرة في شريط القلم.
+    @Published var recentColors: [UInt32] = []
+
+    func noteRecentColor(_ c: UInt32) {
+        recentColors.removeAll { $0 == c }
+        recentColors.insert(c, at: 0)
+        if recentColors.count > 12 { recentColors.removeLast(recentColors.count - 12) }
+        prefs.set(recentColors, forKey: "recent_colors")
+    }
+
+    /// الألوان الظاهرة في شريط القلم (5): اللون الحالي وآخر ما استُخدم من ألوان هذه الأداة، وتكمّلها ألوان اللوحة.
+    /// تُعرض بترتيب اللوحة (لا بترتيب الاستخدام) حتى لا يتحرك اللون تحت الإصبع عند اختياره.
+    func shownColors(_ t: Tool, count: Int = 5) -> [UInt32] {
+        let palette = paletteFor(t)
+        let all = palette + customColors.filter { !palette.contains($0) }
+        let current = colorFor(t)
+        var pick: [UInt32] = []
+        if all.contains(current) { pick.append(current) }
+        for c in recentColors where all.contains(c) && pick.count < count && !pick.contains(c) { pick.append(c) }
+        for c in all where pick.count < count && !pick.contains(c) { pick.append(c) }
+        return all.filter { pick.contains($0) }
     }
 
     func addCustomColor(_ c: UInt32) {

@@ -1,4 +1,4 @@
-# موقع هامش (صفحات عامة)
+# موقع Special notes (صفحات عامة)
 
 صفحات يطلبها Google Play، منشورة على GitHub Pages من المستودع العام omarabukarsh/hamishnotes-site (يُنسخ إليه محتوى هذا المجلد فقط، مع index.html و .nojekyll):
 

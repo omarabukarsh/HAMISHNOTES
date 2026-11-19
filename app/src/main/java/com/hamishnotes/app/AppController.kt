@@ -766,6 +766,7 @@ object AppController {
         CardDeck.init(app)
         FontStore.init(app)
         StickerStore.init(app)
+        PhotoLibrary.init(app)
         AutoFont.init(app)
         TextPrefs.init(app)
         try {

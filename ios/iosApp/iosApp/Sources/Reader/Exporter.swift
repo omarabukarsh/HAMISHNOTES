@@ -460,8 +460,8 @@ struct ShareExportSheet: View {
                     }
                     Text(L("نوع النسخة", "Copy type")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).padding(.top, 6)
                     copyOption(L("قابلة للتعديل", "Editable"),
-                               many ? L("تظهر كتابتك في أي تطبيق، وعند فتحها في especial notes تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in especial notes.")
-                                    : L("تظهر كتابتك في أي تطبيق، وعند فتحها في especial notes تعود الكتابة والتمييز والملاحظات قابلة للتعديل.", "Your writing shows in any app, and when opened in especial notes the writing, highlights and notes become editable again."),
+                               many ? L("تظهر كتابتك في أي تطبيق، وعند فتحها في Special notes تعود قابلة للتعديل.", "Your writing shows in any app, and becomes editable again in Special notes.")
+                                    : L("تظهر كتابتك في أي تطبيق، وعند فتحها في Special notes تعود الكتابة والتمييز والملاحظات قابلة للتعديل.", "Your writing shows in any app, and when opened in Special notes the writing, highlights and notes become editable again."),
                                editable) { editable = true }
                     copyOption(L("نهائية", "Final"),
                                many ? L("الكتابة مثبتة في الصفحات؛ مناسبة لإرسالها للآخرين.", "Writing is fixed into the pages; good for sending to others.")

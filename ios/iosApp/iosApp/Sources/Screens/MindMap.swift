@@ -1012,7 +1012,7 @@ struct MindMapView: View {
         let content = MapCanvas(model: model, plan: plan, target: nil, selectedKey: nil)
             .background(Palette.ivory)
             .overlay(alignment: .bottomTrailing) {
-                Text(L("especial notes", "especial notes")).font(Fonts.sans(max(18, min(44, plan.size.width / 90)))).foregroundColor(Palette.goldDeep).padding(20)
+                Text(L("Special notes", "Special notes")).font(Fonts.sans(max(18, min(44, plan.size.width / 90)))).foregroundColor(Palette.goldDeep).padding(20)
             }
         let r = ImageRenderer(content: content)
         r.scale = 2

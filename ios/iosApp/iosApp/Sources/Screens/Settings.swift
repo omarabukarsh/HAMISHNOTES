@@ -19,12 +19,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var lead: String {
         switch self {
-        case .account: return L("حسابك المرتبط بـ especial notes واشتراكك.", "Your account linked to especial notes and your subscription.")
+        case .account: return L("حسابك المرتبط بـ Special notes واشتراكك.", "Your account linked to Special notes and your subscription.")
         case .general: return L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
         case .pen: return L("Apple Pencil، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Apple Pencil, pen or finger writing, and the toolbar.")
         case .highlights: return L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
         case .study: return L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
-        case .appearance: return L("اجعل especial notes يبدو كما تحب.", "Make especial notes look and feel the way you like.")
+        case .appearance: return L("اجعل Special notes يبدو كما تحب.", "Make Special notes look and feel the way you like.")
         case .privacy: return L("قفل المستندات وما يحفظه التطبيق.", "Document lock and what the app stores.")
         case .about: return L("الإصدار والتراخيص والشروط.", "Version, licenses and terms.")
         }
@@ -145,7 +145,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            Text(L("especial notes", "especial notes") + " " + appVersion).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary).padding(.leading, 10).padding(.top, 8)
+            Text(L("Special notes", "Special notes") + " " + appVersion).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary).padding(.leading, 10).padding(.top, 8)
         }
         .padding(.horizontal, 12).padding(.vertical, 16)
         .frame(maxHeight: .infinity)
@@ -308,14 +308,17 @@ struct SettingsView: View {
             GroupLabel(L("السمة", "Theme"))
             SettingsGroup {
                 HStack(spacing: 14) {
-                    ThemeCard(label: L("كحلي", "Navy"), theme: .navy)
+                    ThemeCard(label: L("داكن", "Dark"), theme: .navy)
                     ThemeCard(label: L("فاتح", "Light"), theme: .light)
+                    // تلقائي: يتبع مظهر الجهاز ويتغير وحده معه
+                    ThemeCard(label: L("تلقائي", "System"), theme: nil)
                 }
                 .padding(14)
             }
             GroupLabel(L("الأحجام", "Sizes"))
             SettingsGroup {
-                let bars: [CGFloat] = [0.85, 1, 1.15, 1.3]
+                // صغير، متوسط (جديد بين الصغير والكبير)، كبير (المتوسط السابق)، أكبر
+                let bars: [CGFloat] = [0.85, 0.92, 1, 1.15]
                 GroupRow(icon: "ph_sliders", color: TileGray, title: L("حجم شريط الأدوات", "Toolbar size")) {
                     Segmented(options: [L("صغير", "S"), L("عادي", "M"), L("كبير", "L"), L("أكبر", "XL")],
                               selected: bars.firstIndex { abs($0 - app.toolbarScale) < 0.01 } ?? 1) { app.toolbarScale = bars[$0] }
@@ -349,7 +352,7 @@ struct SettingsView: View {
                 HStack(spacing: 14) {
                     AppLogo(size: 56)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L("especial notes", "especial notes")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
+                        Text(L("Special notes", "Special notes")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
                         Text(L("الإصدار", "Version") + " " + appVersion).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                     }
                     Spacer()
@@ -395,7 +398,7 @@ private struct AccountPane: View {
                             .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0xFFF8E7E6)))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(L("حذف حسابي", "Delete my account")).font(Fonts.sans(15, .bold)).foregroundColor(Lib.exam)
-                            Text(L("يحذف حسابك وبيانات اشتراكك من especial notes", "Deletes your account and subscription data from especial notes"))
+                            Text(L("يحذف حسابك وبيانات اشتراكك من Special notes", "Deletes your account and subscription data from Special notes"))
                                 .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                         }
                         Spacer()
@@ -418,12 +421,12 @@ private struct AccountPane: View {
         GroupLabel(L("الاشتراك", "Subscription"))
         SettingsGroup {
             if pm.active && pm.testMode && pm.product == nil {
-                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("especial notes Premium", "especial notes Premium"), desc: L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")) {
+                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("Special notes Premium", "Special notes Premium"), desc: L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")) {
                     Button(L("إنهاء التجربة", "End test")) { pm.endTest() }.font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
                 }
             } else if pm.active {
                 let end = pm.expires.map { $0.formatted(date: .abbreviated, time: .omitted) }
-                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("especial notes Premium", "especial notes Premium"),
+                GroupRow(icon: "ph_star_fill", color: TileGold, title: L("Special notes Premium", "Special notes Premium"),
                          desc: end == nil ? L("كل المزايا مفتوحة", "Every feature unlocked") : pm.trial ? L("فترة تجربة · تنتهي \(end!)", "Free trial · ends \(end!)") : L("يتجدد في \(end!)", "Renews on \(end!)")) {
                     Button(L("إدارة", "Manage")) {
                         if let u = URL(string: "https://apps.apple.com/account/subscriptions") { UIApplication.shared.open(u) }
@@ -563,15 +566,19 @@ struct Segmented: View {
 private struct ThemeCard: View {
     @EnvironmentObject var app: AppController
     let label: String
-    let theme: AppTheme
+    /// nil = «تلقائي» (يتبع الجهاز).
+    let theme: AppTheme?
     var body: some View {
-        let sel = app.theme == theme
-        Button { app.setTheme(theme) } label: {
+        let sel = theme == nil ? app.themeFollowsSystem : (!app.themeFollowsSystem && app.theme == theme)
+        Button { if let t = theme { app.setTheme(t) } else { app.setThemeSystem() } } label: {
             VStack(spacing: 8) {
                 HStack(spacing: 0) {
-                    Rectangle().fill(theme == .navy ? Color(hex: 0xFF0A0A0A) : Color.white).frame(width: 38)
-                    Rectangle().fill(theme == .navy ? Color.black : Color(hex: 0xFFFAF4E6))
-                        .overlay(RoundedRectangle(cornerRadius: 4).fill(Lib.accent).frame(width: 30, height: 38).padding(10), alignment: .topLeading)
+                    if let t = theme {
+                        preview(t)
+                    } else {
+                        preview(.light)
+                        preview(.navy)
+                    }
                 }
                 .frame(height: 90)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -580,6 +587,14 @@ private struct ThemeCard: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func preview(_ t: AppTheme) -> some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(t == .navy ? Color(hex: 0xFF0A0A0A) : Color.white).frame(width: 38)
+            Rectangle().fill(t == .navy ? Color.black : Color(hex: 0xFFFAF4E6))
+                .overlay(RoundedRectangle(cornerRadius: 4).fill(Lib.accent).frame(width: 30, height: 38).padding(10), alignment: .topLeading)
+        }
     }
 }
 
@@ -595,10 +610,10 @@ private struct DeleteAccountSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             PhIcon("ph_trash", Lib.exam, 26).frame(width: 52, height: 52).background(Circle().fill(Color(hex: 0xFFF8E7E6)))
             Text(L("حذف حسابك نهائيًا؟", "Delete your account for good?")).font(Fonts.display(20)).foregroundColor(Palette.textPrimary)
-            (Text(L("سيُحذف حساب ", "The account ")) + Text(app.accountEmail ?? "").bold() + Text(L(" من especial notes.\nلا يمكن التراجع عن الحذف.", " will be deleted from especial notes.\nThis can’t be undone.")))
+            (Text(L("سيُحذف حساب ", "The account ")) + Text(app.accountEmail ?? "").bold() + Text(L(" من Special notes.\nلا يمكن التراجع عن الحذف.", " will be deleted from Special notes.\nThis can’t be undone.")))
                 .font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
             VStack(alignment: .leading, spacing: 8) {
-                line(false, L("حسابك في especial notes (البريد والاسم)", "Your especial notes account (email and name)"))
+                line(false, L("حسابك في Special notes (البريد والاسم)", "Your Special notes account (email and name)"))
                 line(false, L("ربط تسجيل الدخول بـ Apple في هذا التطبيق", "The Sign in with Apple link in this app"))
                 line(true, L("مستنداتك وملاحظاتك تبقى على هذا الجهاز", "Your documents and notes stay on this device"))
             }
@@ -620,7 +635,7 @@ private struct DeleteAccountSheet: View {
                 }
                 Button {
                     app.deleteAccount()
-                    app.say(.done, L("حُذف حسابك من especial notes. ملاحظاتك باقية على هذا الجهاز", "Your especial notes account was deleted. Your notes stay on this device"))
+                    app.say(.done, L("حُذف حسابك من Special notes. ملاحظاتك باقية على هذا الجهاز", "Your Special notes account was deleted. Your notes stay on this device"))
                     dismiss()
                 } label: {
                     Text(L("حذف الحساب", "Delete account")).font(Fonts.sans(15, .bold)).foregroundColor(.white)

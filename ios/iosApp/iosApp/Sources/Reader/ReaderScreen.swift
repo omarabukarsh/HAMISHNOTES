@@ -83,8 +83,6 @@ private struct ReaderContent: View {
                     // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
                     if !app.focusMode {
                         VStack(spacing: 0) {
-                            // البحث: نافذة صغيرة عائمة بدل شريط بعرض الشاشة
-                            if s.searchOpen { ReaderSearchBar(session: s).frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 20) }
                             if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
                                 PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
                             }
@@ -247,7 +245,11 @@ private struct ReaderTopBar: View {
             if app.toolbarScale < 0.9 {
                 // الحجم الصغير (الإعدادات ← المظهر): كل الأدوات في سطر واحد بلا تمرير، تصغر لتتسع
                 FitToWidth {
-                    HStack(spacing: 0) { navGroup; coreGroup; insertGroupA; insertGroupB; viewGroup; ToolbarSep(); moreButton }
+                    HStack(spacing: 0) {
+                        navGroup; coreGroup
+                        if s.searchOpen { ReaderSearchBar(session: s).frame(width: 520) } else { insertGroupA; insertGroupB; viewGroup }
+                        ToolbarSep(); moreButton
+                    }
                 }
                 .frame(maxWidth: .infinity)
             } else {
@@ -255,6 +257,10 @@ private struct ReaderTopBar: View {
                 HStack(spacing: 0) {
                     navGroup
                     coreGroup
+                    if s.searchOpen {
+                        // البحث يحل محل وسط الشريط (الأدوات الأساسية و«⋮» تبقى)، فلا نافذة فوق الصفحة
+                        ReaderSearchBar(session: s).frame(maxWidth: .infinity)
+                    } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }.padding(.horizontal, 6)
                     }
@@ -264,6 +270,7 @@ private struct ReaderTopBar: View {
                         Color.black
                         LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
                     })
+                    }
                     ToolbarSep()
                     moreButton
                 }
@@ -393,8 +400,8 @@ private struct ReaderTopBar: View {
                     if v("tape") {
                         // الشريط اللاصق: سحب القلم يضع شريطًا يخفي ما تحته، ونقرة عليه تكشفه أو تخفيه
                         TBtn(selected: app.tapeActive, action: {
-                            // نقرة ثانية على الأداة: تفتح نافذة إعدادات الشريط
-                            if app.tapeActive { app.tapeMenuOpen = true } else {
+                            // نقرة ثانية: تطفئ الأداة (نافذة الإعدادات تُفتح من أيقونتها في شريط الشريط اللاصق فقط)
+                            if app.tapeActive { app.tapeActive = false; app.tapeMenuOpen = false } else {
                                 app.pickLeft()
                                 s.trayMode = nil
                                 if s.inlineEditId != nil { s.finishInlineEdit() }
@@ -408,12 +415,13 @@ private struct ReaderTopBar: View {
                             }
                         }) { PhIcon("ph_tape", chromeTint(app.tapeActive)) }
                     }
-                    if v("autofont") {
-                        TBtn(selected: af.on, locked: !pm.active, action: { if pm.require(.toText) { sheet = .autoFont } }) {
+                    // في نمط «شريط الأقلام» ينتقل إلى شريط القلم
+                    if v("autofont") && app.toolbarStyle != .penBar {
+                        TBtn(selected: af.on, toggle: true, locked: !pm.active, action: { if pm.require(.toText) { sheet = .autoFont } }) {
                             PhIcon("ph_beautify", af.on ? Palette.goldDeep : Palette.chromeMuted, 22, L("تجميل الخط", "Beautify handwriting"))
                         }
                     }
-                    TBtn(selected: app.fingerWrites, action: {
+                    TBtn(selected: app.fingerWrites, toggle: true, action: {
                         app.fingerWrites.toggle()
                         app.message(app.fingerWrites ? L("صار الإصبع يكتب · اسحب بإصبعين للتمرير", "Your finger now writes · drag with two fingers to scroll")
                                     : L("القلم يكتب، والإصبع للتمرير", "The pen writes; your finger scrolls"))
@@ -591,6 +599,8 @@ struct ToolGlyph: View {
 
 private struct PenBar: View {
     @EnvironmentObject var app: AppController
+    @ObservedObject var pm = Premium.shared
+    @ObservedObject var af = AutoFont.shared
     @Binding var sheet: ReaderSheet?
     @State private var more = false
 
@@ -631,6 +641,12 @@ private struct PenBar: View {
                 .contextMenu { Button(role: .destructive) { app.presets.removeAll { $0.id == p.id } } label: { Text(L("حذف القلم المفضل", "Remove favorite pen")) } }
             }
             TBtn(action: { app.addPreset() }) { PhIcon("ph_star_plus", Palette.goldDeep, 20, L("حفظ كقلم مفضل", "Save as favorite pen")) }
+            // تجميل الخط: خاصية للكتابة بالقلم (تعمل أو تتوقف)، والنقر يفتح إعداداتها
+            if app.toolVisible("autofont") {
+                TBtn(selected: af.on, toggle: true, locked: !pm.active, action: { if pm.require(.toText) { sheet = .autoFont } }) {
+                    PhIcon("ph_beautify", af.on ? Palette.goldDeep : Palette.chromeMuted, 20, L("تجميل الخط", "Beautify handwriting"))
+                }
+            }
             ToolbarSep()
             ColorDots(onCustom: { sheet = .colorPicker })
             ToolbarSep()
@@ -1167,7 +1183,7 @@ private struct ReaderSearchBar: View {
                         .font(Fonts.sans(15)).foregroundColor(Palette.chromeFg).onSubmit { s.runSearch() }
                         .submitLabel(.search)
                 }
-                .padding(.horizontal, 10).frame(width: 250, height: 40)
+                .padding(.horizontal, 10).frame(maxWidth: .infinity).frame(height: 40)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Palette.chromeSel))
                 if !s.searchHits.isEmpty {
                     Text("\(s.searchIndex + 1) / \(s.searchHits.count)").font(Fonts.sans(13)).foregroundColor(Palette.chromeMuted).lineLimit(1)
@@ -1188,6 +1204,7 @@ private struct ReaderSearchBar: View {
                     s.searchHits = []
                     s.searchQuery = ""
                 } label: { PhIcon("ph_close", Palette.chromeMuted, 18, L("إغلاق البحث", "Close search")).frame(width: 34, height: 34) }
+                .fixedSize()
             }
             // كما في أندرويد: البحث يشمل الصفحات المقروءة فقط، و«اقرأ الكل» يقرأ الباقي
             let read = s.readPagesCount()
@@ -1204,9 +1221,7 @@ private struct ReaderSearchBar: View {
                 .padding(.horizontal, 6)
             }
         }
-        .padding(6)
-        .fixedSize()
-        .modifier(BarCapsule())
+        .padding(.horizontal, 4)
     }
 
     private func step(_ d: Int) {

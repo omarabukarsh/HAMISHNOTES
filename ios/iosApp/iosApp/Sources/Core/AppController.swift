@@ -213,9 +213,11 @@ final class AppController: ObservableObject {
         let p = prefs
         theme = AppTheme(rawValue: p.string(forKey: "theme") ?? "") ?? .navy
         ThemeState.theme = theme
+        themeFollowsSystem = p.bool(forKey: "theme_system")
         english = p.bool(forKey: "english")
         I18n.english = english
         toolbarScale = CGFloat(p.object(forKey: "toolbar_scale") as? Double ?? 1)
+        if toolbarScale > 1.2 { toolbarScale = 1.15 } // الحجم 1.3 أُزيل: يصبح «أكبر»
         textScale = CGFloat(p.object(forKey: "text_scale") as? Double ?? 1)
         Fonts.scale = textScale
         summariesOn = p.object(forKey: "summaries_on") as? Bool ?? true
@@ -379,10 +381,28 @@ final class AppController: ObservableObject {
         prefs.set(true, forKey: "login_seen")
     }
 
+    /// المظهر يتبع مظهر الجهاز (داكن/فاتح) ويتغير وحده معه.
+    @Published var themeFollowsSystem = false
+
     func setTheme(_ t: AppTheme) {
         ThemeState.theme = t
+        themeFollowsSystem = false
         withAnimation(Motion.enter) { theme = t }
         prefs.set(t.rawValue, forKey: "theme")
+        prefs.set(false, forKey: "theme_system")
+    }
+
+    /// يجعل المظهر يتبع الجهاز (يُطبَّق المظهر نفسه من RootView حين يتغير مظهر الجهاز).
+    func setThemeSystem() {
+        themeFollowsSystem = true
+        prefs.set(true, forKey: "theme_system")
+    }
+
+    func applySystemTheme(dark: Bool) {
+        let t: AppTheme = dark ? .navy : .light
+        guard t != theme || ThemeState.theme != t else { return }
+        ThemeState.theme = t
+        withAnimation(Motion.enter) { theme = t }
     }
 
     func setEnglish(_ en: Bool) {
@@ -1124,7 +1144,7 @@ final class AppController: ObservableObject {
                 }
                 let c = UNMutableNotificationContent()
                 c.title = L("وقت المذاكرة", "Study time")
-                c.body = L("افتح especial notes وتابع من حيث توقفت", "Open especial notes and continue where you left off")
+                c.body = L("افتح Special notes وتابع من حيث توقفت", "Open Special notes and continue where you left off")
                 c.sound = .default
                 var dc = DateComponents()
                 dc.hour = self.reminderMinute / 60

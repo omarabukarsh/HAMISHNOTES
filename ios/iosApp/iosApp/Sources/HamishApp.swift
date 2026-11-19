@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct RootView: View {
     @EnvironmentObject var app: AppController
     @ObservedObject var pm = Premium.shared
+    /// مظهر الجهاز (حين يكون المظهر «تلقائي» لا نفرض لونًا، فيصل هنا مظهر الجهاز نفسه).
+    @Environment(\.colorScheme) private var deviceScheme
 
     var body: some View {
         Group {
@@ -59,7 +61,11 @@ struct RootView: View {
                 main
             }
         }
-        .preferredColorScheme(app.theme == .light ? .light : .dark)
+        .preferredColorScheme(app.themeFollowsSystem ? nil : (app.theme == .light ? .light : .dark))
+        // «تلقائي»: يتبع مظهر الجهاز ويتغير وحده معه
+        .onAppear { if app.themeFollowsSystem { app.applySystemTheme(dark: deviceScheme == .dark) } }
+        .onChange(of: deviceScheme) { _, s in if app.themeFollowsSystem { app.applySystemTheme(dark: s == .dark) } }
+        .onChange(of: app.themeFollowsSystem) { _, on in if on { app.applySystemTheme(dark: deviceScheme == .dark) } }
     }
 
     private var main: some View {

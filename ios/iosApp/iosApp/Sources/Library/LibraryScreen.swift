@@ -154,7 +154,6 @@ struct LibraryScreen: View {
             HStack(spacing: 10) {
                 HStack(alignment: .lastTextBaseline, spacing: 12) {
                     UnderlinedTitle(text: title, size: wide ? 40 : 30)
-                    ScriptLabel(text: docsCount(docs.count), color: Lib.muted, size: 15)
                 }
                 Spacer(minLength: 8)
                 PomodoroControl(showStartLabel: false)
@@ -228,11 +227,7 @@ struct LibraryScreen: View {
                         HStack {
                             Text(L("المستندات", "Documents")).font(Fonts.display(22)).foregroundColor(Lib.text)
                             Spacer()
-                            if app.libraryFilter == .recent {
-                                Text(L("حسب آخر فتح", "Sorted by last opened")).font(Fonts.sans(13)).foregroundColor(Lib.muted)
-                            } else {
-                                SortMenu()
-                            }
+                            if app.libraryFilter != .recent { SortMenu() }
                         }
                         .padding(.top, 6)
                     }
@@ -314,13 +309,12 @@ private struct Spine: View {
 
     var body: some View {
         let favCount = app.library.filter { $0.favorite }.count
-        let pages = app.library.reduce(0) { $0 + $1.pageCount }
         let noFolder = app.libraryFolder == nil
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Art(name: "ic_logo", size: 42)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(L("especial notes", "especial notes")).font(Fonts.display(26)).foregroundColor(Lib.text)
+                    Text(L("Special notes", "Special notes")).font(Fonts.display(26)).foregroundColor(Lib.text)
                     Text(L("مكتبة الدراسة", "Study library")).font(Fonts.sans(12)).foregroundColor(Lib.muted)
                 }
             }
@@ -345,16 +339,11 @@ private struct Spine: View {
             ScrollView(showsIndicators: false) { FolderSection(sheet: $sheet) }
 
             if !pm.active {
-                PremiumTeaser(title: L("especial notes Premium", "especial notes Premium"), desc: L("\(Premium.trialDays) أيام مجانًا", "\(Premium.trialDays) days free"))
+                PremiumTeaser(title: L("Special notes Premium", "Special notes Premium"), desc: L("\(Premium.trialDays) أيام مجانًا", "\(Premium.trialDays) days free"))
                 Spacer().frame(height: 10)
             }
-            Group {
+            // إحصاءات الدراسة في أسفل الشريط الجانبي (المظهر انتقل إلى الإعدادات)
             StudyCard()
-            Spacer().frame(height: 14)
-            Text(docsCount(app.library.count) + " · " + pagesCount(pages)).font(Fonts.sans(12)).foregroundColor(Lib.muted)
-            Spacer().frame(height: 10)
-            ThemeSwitch()
-            }
         }
         .padding(.horizontal, 16).padding(.vertical, 22)
         .frame(width: 248 * Fonts.base)
@@ -882,7 +871,7 @@ private struct DocCard: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.name).font(Fonts.sans(15, .bold)).foregroundColor(Lib.text).lineLimit(1)
-                    Text((entry.isMap ? L("خريطة ذهنية", "Mind map") : pagesCount(entry.pageCount)) + " · " +
+                    Text((entry.isMap ? L("خريطة ذهنية", "Mind map") + " · " : "") +
                          (entry.lastOpened > 0 ? L("فُتح ", "Opened ") + formatRelative(entry.lastOpened) : L("أُضيف ", "Added ") + formatRelative(entry.addedAt)))
                         .font(Fonts.sans(12)).foregroundColor(Lib.muted).lineLimit(1)
                 }
@@ -892,7 +881,6 @@ private struct DocCard: View {
                 }
             }
             HStack {
-                Text(formatSize(entry.sizeBytes)).font(Fonts.sans(11)).foregroundColor(Lib.muted.opacity(0.8))
                 Spacer()
                 if entry.readMs >= 60_000 { ReadingTimeBadge(ms: entry.readMs, tint: Lib.accentDeep, size: 11, showIcon: false) }
             }

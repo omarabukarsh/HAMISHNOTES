@@ -4,6 +4,8 @@ import SwiftUI
 struct TBtn<Content: View>: View {
     @Environment(\.chromeScale) private var chromeScale
     var selected = false
+    /// خاصية تعمل أو تتوقف (مثل تجميل الخط) لا أداة: المفعّل بنقطة ذهبية بلا خلفية، فلا يلتصق بأداة مختارة بجانبه.
+    var toggle = false
     var enabled = true
     var locked = false
     let action: () -> Void
@@ -13,12 +15,17 @@ struct TBtn<Content: View>: View {
         Button(action: action) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? Palette.chromeSel : Color.clear)
+                    .fill(selected && !toggle ? Palette.chromeSel : Color.clear)
                 content()
                 if locked {
                     PremiumBadge(size: 13).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(3)
                 }
-                if selected {
+                if selected && toggle && !locked {
+                    Circle().fill(Palette.gold).frame(width: 8, height: 8)
+                        .overlay(Circle().stroke(Palette.chromeBg, lineWidth: 1.5))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(5)
+                }
+                if selected && !toggle {
                     RoundedRectangle(cornerRadius: 2).fill(Palette.gold).frame(width: 14, height: 3)
                         .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 3)
                         .transition(.scale(scale: 0.3).combined(with: .opacity))
@@ -26,6 +33,8 @@ struct TBtn<Content: View>: View {
             }
             .frame(width: 42 * chromeScale, height: 42 * chromeScale)
             .contentShape(Rectangle())
+            // مسافة صغيرة بين كل زرين: الخلفيات المختارة لا تلتصق أبدًا
+            .padding(.horizontal, 2)
             .animation(Motion.enter, value: selected)
         }
         .buttonStyle(PressScale(scale: 0.9))

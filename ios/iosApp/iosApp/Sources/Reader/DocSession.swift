@@ -129,6 +129,13 @@ final class DocSession: ObservableObject, Identifiable {
     var applyInkHook: ((String, InkDrawing) -> Void)?
     /// وسط الجزء الظاهر من الصفحة على الشاشة (بنقاط الصفحة).
     var visibleCenterHook: ((Int) -> CGPoint?)?
+    /// مكان عنصر في النافذة (للأشرطة فوق العنصر المحدد)، ومكان الصفحات الظاهرة في النافذة.
+    var anchorHook: ((BarAnchor) -> CGRect?)?
+    var viewportHook: (() -> CGRect?)?
+    /// يزيد مع كل تمرير أو تكبير (تتابعه الأشرطة فوق العناصر وحدها).
+    let geo = PageGeo()
+    /// مكان الضغط المطوّل على مكان فارغ (فقاعة «لصق» / إضافة سريعة فوقه).
+    @Published var pasteAt: PastePoint? = nil
     /// تمرير مستمر إلى موضع من المستند (0…1) من شريط الصفحات.
     var scrubHook: ((CGFloat) -> Void)?
     /// السحب من الدرج: نقطة في النافذة → الصفحة والنقطة عليها (ويُظهر إطار الصفحة)؛ nil يخفي الإطار، done ينهي السحب.

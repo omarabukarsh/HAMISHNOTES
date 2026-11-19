@@ -860,6 +860,8 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
 
     @objc private func onTap(_ g: UITapGestureRecognizer) {
         guard let s = session else { return }
+        // نقرة في أي مكان تغلق فقاعة «لصق»
+        if s.pasteAt != nil { s.pasteAt = nil; return }
         let c = AppController.shared
         let p = g.location(in: content)
         let pp = CGPoint(x: p.x / k, y: p.y / k)
@@ -967,6 +969,19 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         case .began:
             selAnchor = pt
             wordAnchor = nil
+            // مكان فارغ (لا نص تحت الإصبع): فقاعة «لصق» / إضافة سريعة فوق الإصبع
+            if let idx = s.index(of: pageId) {
+                let onPdfWord = page.selectionForWord(at: pt).map { !($0.string ?? "").trimmingCharacters(in: .whitespaces).isEmpty } ?? false
+                let onReadWord = PageOverlayView.wordAt(s.words(idx), rel) != nil
+                let known = s.ocr[pageId] != nil || (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count > 20
+                if !onPdfWord && !onReadWord && (PageClipboard.shared.clip != nil || known) {
+                    selAnchor = nil
+                    s.textSel = nil; s.wordSel = nil
+                    s.selectedBox = nil; s.selectedImage = nil
+                    s.pasteAt = PastePoint(page: idx, at: CGPoint(x: lp.x / k, y: lp.y / k))
+                    return
+                }
+            }
             if let sel = page.selectionForWord(at: pt), !(sel.string ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
                 s.wordSel = nil
                 s.textSel = sel

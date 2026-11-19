@@ -95,6 +95,16 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         session.reloadHook = { [weak self] in self?.reload() }
         session.applyInkHook = { [weak self] pid, d in self?.overlays[pid]?.setDrawing(d) }
         session.visibleCenterHook = { [weak self] i in self?.visibleCenter(i) }
+        session.anchorHook = { [weak self] a in self?.windowRect(a) }
+        session.viewportHook = { [weak self] in
+            guard let v = self?.pdfView else { return nil }
+            return v.convert(v.bounds, to: nil)
+        }
+        // الأشرطة فوق العناصر تتبعها مع التمرير والتكبير
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let v = self.pdfView, let sv = PDFCoordinator.scrollView(in: v) else { return }
+            sv.publisher(for: \.contentOffset).sink { [weak self] _ in self?.session.geo.tick &+= 1 }.store(in: &self.bag)
+        }
         session.scrubHook = { [weak self] f in self?.scrub(f) }
         session.trayDropHook = { [weak self] wp, done in
             guard let self, let v = self.pdfView else { return nil }
@@ -206,6 +216,21 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
         pan.minimumNumberOfTouches = c.fingerWrites ? 2 : 1
     }
 
+    /// مكان عنصر في النافذة: مستطيل بنقاط الصفحة (الأصل أعلى اليسار)، أو نص محدد.
+    func windowRect(_ a: BarAnchor) -> CGRect? {
+        guard let v = pdfView else { return nil }
+        switch a {
+        case .page(let i, let r):
+            guard let page = v.document?.page(at: i) else { return nil }
+            let pr = v.convert(page.bounds(for: v.displayBox), from: page)
+            let k = pr.width / max(1, session.pageSize(i).width)
+            return v.convert(CGRect(x: pr.minX + r.minX * k, y: pr.minY + r.minY * k, width: r.width * k, height: r.height * k), to: nil)
+        case .selection(let sel):
+            guard let page = sel.pages.first else { return nil }
+            return v.convert(v.convert(sel.bounds(for: page), from: page), to: nil)
+        }
+    }
+
     /// وسط الجزء الظاهر من الصفحة بنقاط الصفحة.
     func visibleCenter(_ i: Int) -> CGPoint? {
         guard let v = pdfView, let page = v.document?.page(at: i) else { return nil }
@@ -237,11 +262,13 @@ final class PDFCoordinator: NSObject, PDFPageOverlayViewProvider {
     // ---------- التنقل والتكبير ----------
 
     private func pageChanged() {
+        session.geo.tick &+= 1
         guard let v = pdfView, let p = v.currentPage, let doc = v.document else { return }
         session.setCurrent(doc.index(for: p))
     }
 
     private func scaleChanged() {
+        session.geo.tick &+= 1
         guard let v = pdfView else { return }
         let base = v.scaleFactorForSizeToFit
         session.scalePercent = Int((v.scaleFactor / max(0.01, base) * 100).rounded())

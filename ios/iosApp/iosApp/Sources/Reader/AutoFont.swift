@@ -647,32 +647,25 @@ struct AutoFontChip: View {
         let manual = af.on && af.delayMs == 0 && af.pendingCount > 0
         let ins = af.insertTarget.flatMap { $0.docId == session.id ? $0 : nil }
         if af.preview != nil || last != nil || manual || ins != nil {
-            HStack(spacing: 6) {
+            CtxBar {
                 if let pv = af.preview {
-                    ProgressView().scaleEffect(0.7).tint(Palette.navy)
-                    Text("«\(pv.1)» ← " + L("يتحول…", "converting…")).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary).lineLimit(1)
-                    Button { af.cancelPreview() } label: {
-                        Text("✕ " + L("إبقاء بخط يدي", "Keep handwriting")).font(Fonts.sans(13)).foregroundColor(Palette.danger)
-                    }
+                    ProgressView().scaleEffect(0.7).tint(Palette.navy).padding(.leading, 8)
+                    Text("«\(pv.1)» ← " + L("يتحول…", "converting…")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
+                        .lineLimit(1).frame(maxWidth: 260).padding(.horizontal, 7)
+                    CtxBtn(label: L("إبقاء بخط يدي", "Keep handwriting"), color: Palette.danger) { af.cancelPreview() }
                 } else if ins != nil {
                     Text("∧ " + L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box")).font(Fonts.sans(13)).foregroundColor(Palette.navy)
-                    Button { af.cancelInsert() } label: { Text(L("إلغاء", "Cancel")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary) }
+                        .padding(.horizontal, 11)
+                    CtxBtn(label: L("إلغاء", "Cancel")) { af.cancelInsert() }
                 } else if manual {
-                    Button { af.flush() } label: {
-                        Text("✓ " + L("حوّل إلى \(af.font)", "Convert to \(af.font)")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
-                    }
-                    Button { af.discard() } label: {
-                        Text(L("إبقاء بخط يدي", "Keep handwriting")).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
-                    }
+                    CtxBtn(label: "✓ " + L("حوّل إلى \(af.font)", "Convert to \(af.font)"), primary: true) { af.flush() }
+                    CtxBtn(label: L("إبقاء بخط يدي", "Keep handwriting")) { af.discard() }
                 } else {
                     Text("✓ " + L("تم التحويل", "Converted")).font(Fonts.sans(13, .bold)).foregroundColor(Color(hex: 0xFF1F7A4D))
-                    Button { af.undoLast(session) } label: {
-                        Text("↶ " + L("رجوع لخط يدي", "Back to handwriting")).font(Fonts.sans(13)).foregroundColor(Palette.navy)
-                    }
+                        .padding(.horizontal, 11)
+                    CtxBtn(label: "↶ " + L("رجوع", "Undo")) { af.undoLast(session) }
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.18), radius: 8, y: 3))
         }
     }
 }
@@ -1018,26 +1011,11 @@ struct AltWordBar: View {
     let popup: AltPopup
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text("«\(popup.text)»").font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(popup.alts, id: \.self) { a in
-                        Button { session.applyAlt(popup, a) } label: {
-                            Text(a).font(Fonts.sans(15, .bold)).foregroundColor(Palette.navy)
-                                .padding(.horizontal, 12).padding(.vertical, 7)
-                                .background(Capsule().fill(Palette.navySoft))
-                        }
-                        .buttonStyle(PressScale())
-                    }
-                }
+        CtxBar {
+            ForEach(Array(popup.alts.prefix(4).enumerated()), id: \.offset) { i, a in
+                CtxBtn(label: a, primary: i == 0) { session.applyAlt(popup, a) }
             }
-            .frame(maxWidth: 420)
-            Button { session.altPopup = nil } label: { PhIcon("ph_close", Palette.textSecondary, 16).frame(width: 34, height: 34) }
+            CtxBtn(label: "✕", color: Palette.textSecondary) { session.altPopup = nil }
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
-        .fixedSize(horizontal: true, vertical: false)
     }
 }

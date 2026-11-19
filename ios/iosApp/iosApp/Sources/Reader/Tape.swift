@@ -453,7 +453,7 @@ struct TapeBar: View {
                     Circle().fill(Color(hex: col))
                         .frame(width: sel ? 26 : 22, height: sel ? 26 : 22)
                         .overlay(Circle().stroke(sel ? Palette.chromeAccent : Palette.chromeLine, lineWidth: sel ? 2.5 : 1))
-                        .frame(width: 34, height: 34)
+                        .barItem()
                         .contentShape(Circle())
                 }
                 .buttonStyle(PressScale(scale: 0.9))
@@ -461,7 +461,7 @@ struct TapeBar: View {
             ToolbarSep()
             TBtn(action: { app.tapeActive = false; app.tapeMenuOpen = false }) { PhIcon("ph_close", Palette.chromeMuted, 18, L("إغلاق الشريط اللاصق", "Close tape")) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 2).padding(.vertical, 4)
         .modifier(BarCapsule())
     }
 }

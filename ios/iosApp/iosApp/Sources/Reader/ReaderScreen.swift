@@ -37,7 +37,7 @@ private struct ReaderContent: View {
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
     @ObservedObject var audio = AudioNotes.shared
-    @ObservedObject var clipboard = PageClipboard.shared
+    @ObservedObject var af = AutoFont.shared
     @State private var sheet: ReaderSheet? = nil
     @State private var pdfPicker = false
     @State private var pdfAfter = 0
@@ -120,15 +120,40 @@ private struct ReaderContent: View {
                 .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
-            VStack(spacing: 8) {
-                if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
-                else if clipboard.clip != nil && s.textSel == nil && s.wordSel == nil { PasteBar(session: s) }
-                if s.textSel != nil || s.wordSel != nil { TextSelectionBar(session: s) }
-                if let ap = s.altPopup { AltWordBar(session: s, popup: ap) }
-                if s.selectedImage != nil { ImageBar(session: s) }
-                if s.selectedBox != nil && s.inlineEditId == nil { TextBoxBar(session: s) }
-                if s.selectedNote != nil { NoteBar(session: s) }
-                AutoFontChip(session: s)
+            // أشرطة العنصر المحدد: فوق العنصر مباشرة (وتحته إن لم يتسع فوقه)، وتتبعه مع التمرير والتكبير
+            ZStack {
+                if let sel = s.lassoSel, let idx = s.index(of: sel.pageId), let r = s.lassoBounds() {
+                    AnchoredBar(session: s, anchor: .page(idx, r)) { LassoBar(session: s, sheet: $sheet) }
+                }
+                if let ts = s.textSel {
+                    AnchoredBar(session: s, anchor: .selection(ts)) { TextSelectionBar(session: s) }
+                } else if let ws = s.wordSel, let r = s.wordSelRect(ws) {
+                    AnchoredBar(session: s, anchor: .page(ws.page, r)) { TextSelectionBar(session: s) }
+                }
+                if let ap = s.altPopup, let ar = s.altRect(ap) {
+                    AnchoredBar(session: s, anchor: .page(ar.0, ar.1)) { AltWordBar(session: s, popup: ap) }
+                }
+                if let pp = s.pasteAt, s.lassoSel == nil {
+                    AnchoredBar(session: s, anchor: .page(pp.page, CGRect(x: pp.at.x, y: pp.at.y - 8, width: 0, height: 8))) { PasteBar(session: s, point: pp) }
+                }
+                if let id = s.selectedImage, let im = s.data.images.first(where: { $0.id == id }), let idx = s.index(of: im.page) {
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect)))) { ImageBar(session: s) }
+                }
+                if s.inlineEditId == nil, let id = s.selectedBox, let b = s.data.boxes.first(where: { $0.id == id }), let idx = s.index(of: b.page) {
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: b.x, y: b.y, width: b.w, height: s.boxHeight(b)))) { TextBoxBar(session: s) }
+                }
+                if let id = s.selectedNote, let n = s.data.notes.first(where: { $0.id == id }), let idx = s.index(of: n.page) {
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: n.x, y: n.y, width: n.w, height: n.h))) { NoteBar(session: s) }
+                }
+                // «تم التحويل»: تحت السطر الذي حُوّل؛ وبقية حالات التحويل صغيرة أسفل الشاشة
+                if AutoFont.shared.preview == nil, let lb = AutoFont.shared.lastBox, lb.0 == s.id,
+                   let b = s.data.boxes.first(where: { $0.id == lb.1 }), let idx = s.index(of: b.page) {
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: b.x, y: b.y, width: b.w, height: s.boxHeight(b))), preferBelow: true) { AutoFontChip(session: s) }
+                } else {
+                    AutoFontChip(session: s)
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
+                        .padding(.bottom, s.zoomBox != nil ? 230 : 0)
+                }
             }
             // أداة أخرى: شريط العنصر المحدد (نص، ملاحظة، صورة) يُغلق، فلا تتراكم الأشرطة فوق بعضها
             .onChange(of: "\(app.tool)|\(app.lassoActive)|\(app.shapeActive)|\(app.stickyActive)|\(app.tapeActive)") { _, _ in
@@ -137,8 +162,6 @@ private struct ReaderContent: View {
                 if s.selectedImage != nil { s.selectedImage = nil }
                 if !app.lassoActive && s.lassoSel != nil { s.lassoSel = nil }
             }
-            .frame(maxHeight: .infinity, alignment: .bottom).padding(12)
-            .padding(.bottom, s.zoomBox != nil ? 230 : 0)
             if let rec = audio.playing, rec.0 == s.id {
                 AudioPlayerBar(docId: s.id, rec: rec.1).frame(maxHeight: .infinity, alignment: .bottom).padding(16)
             }
@@ -262,7 +285,7 @@ private struct ReaderTopBar: View {
                         HStack(spacing: 0) {
                             navGroup
                             coreGroup
-                            HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }.padding(.horizontal, 6)
+                            HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }
                             ToolbarSep()
                             moreButton
                         }
@@ -277,7 +300,7 @@ private struct ReaderTopBar: View {
                         ReaderSearchBar(session: s).frame(maxWidth: .infinity)
                     } else {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }.padding(.horizontal, 6)
+                        HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     .mask(HStack(spacing: 0) {
@@ -317,8 +340,8 @@ private struct ReaderTopBar: View {
                 }
             }
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: Chrome.radius, style: .continuous).fill(Palette.chromeBg))
+        .padding(.horizontal, 2).padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: Chrome.toolbarRadius, style: .continuous).fill(Palette.chromeBg))
         .padding(.horizontal, 12).padding(.bottom, 8)
         // تسجيل المحاضرة: نافذة مثل أندرويد، والعدّاد يبقى في زر الميكروفون بشريط الأدوات
         .appDialog(isPresented: $audioOpen) { close in AudioDialog(session: s, dismiss: close) }
@@ -352,8 +375,9 @@ private struct ReaderTopBar: View {
                         TBtn(action: { s.goTo(page: cur - 1) }) { PhIcon("ph_caret_up", Palette.chromeFg, 20) }
                         Button { sheet = .jump } label: {
                             Text("\(cur + 1) / \(s.pageCount)").font(Fonts.sans(14, .medium)).foregroundColor(Palette.chromeFg)
-                                .padding(.horizontal, 12).padding(.vertical, 8)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Palette.background))
+                                .padding(.horizontal, 12).modifier(BarHeight())
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Palette.chromeSel))
+                                .padding(.horizontal, 2)
                         }
                         TBtn(action: { s.goTo(page: cur + 1) }) { PhIcon("ph_caret_down", Palette.chromeFg, 20) }
                     }
@@ -537,7 +561,7 @@ private struct ReaderTopBar: View {
                     if v("zoom") {
                         TBtn(action: { s.zoomHook?(1 / 1.25) }) { PhIcon("ph_zoom_out", Palette.chromeFg) }
                         Button { s.fitHook?() } label: {
-                            Text("\(s.scalePercent)%").font(Fonts.sans(14)).foregroundColor(Palette.chromeFg).padding(.horizontal, 8).padding(.vertical, 8)
+                            Text("\(s.scalePercent)%").font(Fonts.sans(14)).foregroundColor(Palette.chromeFg).padding(.horizontal, 10).modifier(BarHeight()).padding(.horizontal, 2)
                         }
                         TBtn(action: { s.zoomHook?(1.25) }) { PhIcon("ph_zoom_in", Palette.chromeFg) }
                     }
@@ -566,6 +590,7 @@ private struct ReaderTopBar: View {
                 .frame(width: 48, height: 48)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? bg : Color.clear))
                 .contentShape(Rectangle())
+                .padding(.horizontal, 2)
         }
         .buttonStyle(PressScale())
     }
@@ -649,10 +674,11 @@ private struct PenBar: View {
                 let active = app.tool == p.tool && app.colorFor(p.tool) == p.color && app.sizeFor(p.tool) == p.size
                 Button { app.applyPreset(p) } label: {
                     ZStack(alignment: .bottom) {
-                        PhIcon(filledIcon(p.tool.icon), Color(hex: p.color), 20).frame(width: 40, height: 40)
+                        PhIcon(filledIcon(p.tool.icon), Color(hex: p.color), 20).frame(width: 42, height: 42)
                         RoundedRectangle(cornerRadius: 2).fill(Color(hex: p.color)).frame(width: CGFloat(6 + p.size * 2), height: 3).padding(.bottom, 4)
                     }
                     .background(RoundedRectangle(cornerRadius: 12).fill(active ? Palette.navySoft : Color.clear))
+                    .padding(.horizontal, 2)
                 }
                 .contextMenu { Button(role: .destructive) { app.presets.removeAll { $0.id == p.id } } label: { Text(L("حذف القلم المفضل", "Remove favorite pen")) } }
             }
@@ -670,7 +696,7 @@ private struct PenBar: View {
             ToolbarSep()
             TBtn(action: { app.penBarOpen = false }) { PhIcon("ph_caret_up", Palette.chromeMuted, 20, L("إخفاء شريط الأقلام", "Hide pen bar")) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 2).padding(.vertical, 4)
     }
 }
 
@@ -701,8 +727,10 @@ struct FitToWidth<Content: View>: View {
 enum Chrome {
     /// حواف بطاقة الأدوات واللوحتين الجانبيتين.
     static let radius: CGFloat = 22
-    /// حواف الأشرطة العائمة فوق الصفحة.
-    static let barRadius: CGFloat = 18
+    /// حواف الأشرطة العائمة فوق الصفحة: زاوية الزر (12) + الفراغ 4.
+    static let barRadius: CGFloat = 16
+    /// حواف شريط الأدوات: زاوية زر الطرف (14) + الفراغ 4، فتتوازى الخلفية المختارة مع حافة الشريط.
+    static let toolbarRadius: CGFloat = 18
 }
 
 /// اللوحة الجانبية بطاقة بيضاء بحواف ناعمة، تبعد 12 عن الحافة وتبدأ تحت شريط الأدوات (B6).
@@ -744,14 +772,12 @@ struct ColorDots: View {
         let palette = app.paletteFor(app.tool)
         let all = palette + app.customColors.filter { !palette.contains($0) }
         HStack(spacing: 0) {
-            HStack(spacing: 14) {
-                ForEach(app.shownColors(app.tool), id: \.self) { col in
-                    ColorSwatch(color: col, selected: col == current) { app.setColor(col); app.noteRecentColor(col) }
-                }
+            ForEach(app.shownColors(app.tool), id: \.self) { col in
+                ColorSwatch(color: col, selected: col == current) { app.setColor(col); app.noteRecentColor(col) }
+                    .barItem()
             }
-            .padding(.horizontal, 6)
-            Button { allOpen = true } label: { PhIcon("ph_plus", Palette.chromeMuted, 18, L("كل الألوان", "All colors")).frame(width: 34, height: 34) }
-                .padding(.leading, 6)
+            Button { allOpen = true } label: { PhIcon("ph_plus", Palette.chromeMuted, 18, L("كل الألوان", "All colors")).frame(width: 42, height: 42).contentShape(Rectangle()) }
+                .padding(.horizontal, 2)
                 .popover(isPresented: $allOpen) {
                     VStack(alignment: .leading, spacing: 12) {
                         LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 14), count: 6), spacing: 12) {
@@ -821,8 +847,9 @@ struct SizeSlots: View {
                 Button { if sel { editing = i } else { app.setSize(sz) } } label: {
                     Capsule().fill(sel ? Palette.navy : Palette.textSecondary)
                         .frame(width: 26, height: 2 + CGFloat(sz) * 1.3)
-                        .frame(width: 46, height: 40)
+                        .frame(width: 42, height: 42)
                         .background(RoundedRectangle(cornerRadius: 12).fill(sel ? Palette.navySoft : Color.clear))
+                        .padding(.horizontal, 2)
                 }
                 .dropdown(isPresented: Binding(get: { editing == i }, set: { if !$0 { editing = nil } })) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -897,10 +924,10 @@ private struct ShapeBar: View {
                     Circle().fill(Color(hex: app.shapeColor)).frame(width: 18, height: 18).overlay(Circle().stroke(Palette.divider, lineWidth: 1))
                     PhIcon("ph_caret_down", Palette.navy, 12)
                 }
-                .padding(.leading, 10).padding(.trailing, 8).frame(height: 40)
-                .background(Capsule().fill(Palette.navySoft.opacity(0.5)))
-                .overlay(Capsule().stroke(Palette.navy, lineWidth: 1.5))
-                .padding(.horizontal, 4)
+                .padding(.leading, 10).padding(.trailing, 8).frame(height: 42)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Palette.navySoft.opacity(0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.navy, lineWidth: 1.5))
+                .padding(.horizontal, 2)
             }
             .buttonStyle(PressScale())
             .dropdown(isPresented: $settings) {
@@ -909,7 +936,7 @@ private struct ShapeBar: View {
             ToolbarSep()
             TBtn(action: { app.shapeActive = false }) { PhIcon("ph_close", Palette.chromeMuted, 18, L("إغلاق الأشكال", "Close shapes")) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 2).padding(.vertical, 4)
         .modifier(BarCapsule())
         .sheet(isPresented: $picker) { ShapeColorPickerSheet().environmentObject(app) }
     }
@@ -1100,8 +1127,9 @@ private struct StickyBar: View {
             ToolbarSep()
             ForEach(app.stickyPalette, id: \.self) { c in
                 Button { app.stickyColor = c } label: {
-                    RoundedRectangle(cornerRadius: 6).fill(Color(hex: c)).frame(width: 30, height: 30)
+                    RoundedRectangle(cornerRadius: 6).fill(Color(hex: c)).frame(width: 26, height: 26)
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(app.stickyColor == c ? Palette.navy : Palette.divider, lineWidth: app.stickyColor == c ? 2.5 : 1))
+                        .barItem().contentShape(Rectangle())
                 }
             }
             ToolbarSep()
@@ -1109,14 +1137,14 @@ private struct StickyBar: View {
                 Button {
                     session.pastingNote = true
                     app.say(.tip, L("انقر مكان لصق الملاحظة", "Tap where to paste the note"))
-                } label: { Text(L("لصق", "Paste")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 8) }
+                } label: { Text(L("لصق", "Paste")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 11).frame(height: 42).padding(.horizontal, 2) }
             }
             Button { naming = true } label: {
-                Text(L("الاسم على الملاحظات…", "Name on notes…")).font(Fonts.sans(13)).foregroundColor(Palette.navy).padding(.horizontal, 8)
+                Text(L("الاسم على الملاحظات…", "Name on notes…")).font(Fonts.sans(13)).foregroundColor(Palette.navy).padding(.horizontal, 11).frame(height: 42).padding(.horizontal, 2)
             }
             TBtn(action: { app.stickyActive = false }) { PhIcon("ph_close", Palette.chromeMuted, 18) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 2).padding(.vertical, 4)
         .modifier(BarCapsule())
         .dialogSheet(isPresented: $naming) {
             NameSheet(title: L("الاسم على الملاحظات", "Name on notes"), initial: app.noteAuthor) { app.noteAuthor = $0.trimmingCharacters(in: .whitespaces) }
@@ -1158,28 +1186,31 @@ private struct NoteBar: View {
     @ObservedObject var session: DocSession
     var body: some View {
         if let id = session.selectedNote, let n = session.data.notes.first(where: { $0.id == id }) {
-            HStack(spacing: 0) {
-                DialogButton(label: L("كتابة نص", "Type text")) { session.editingNote = n }
-                DialogButton(label: L("طيّ/فتح", "Collapse/expand")) { var m = n; m.collapsed.toggle(); session.upsertNote(m); session.selectedNote = nil }
-                DialogButton(label: L("قص", "Cut")) {
-                    app.noteClipboard = n
-                    session.deleteNote(id); session.selectedNote = nil
-                    app.say(.done, L("قُصّت الملاحظة؛ الصقها من أداة الملاحظات", "Note cut; paste it from the sticky note tool"))
+            CtxBar {
+                CtxBtn(label: L("كتابة نص", "Type text"), primary: true) { session.editingNote = n }
+                CtxBtn(label: n.collapsed ? L("فتح", "Expand") : L("طيّ", "Collapse")) {
+                    var m = n; m.collapsed.toggle(); session.upsertNote(m); session.selectedNote = nil
                 }
-                DialogButton(label: L("نسخ", "Copy")) { app.noteClipboard = n; app.say(.done, L("نُسخت الملاحظة", "Note copied")) }
-                DialogButton(label: L("تكرار", "Duplicate")) {
-                    var m = n; m.id = UUID().uuidString; m.x += 16; m.y += 16
-                    session.upsertNote(m); session.selectedNote = m.id
+                CtxBtn(label: L("نسخ", "Copy")) { app.noteClipboard = n; app.say(.done, L("نُسخت الملاحظة", "Note copied")) }
+                CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) { session.deleteNote(id); session.selectedNote = nil }
+                CtxMore { close in
+                    CtxItem(label: L("قص", "Cut")) {
+                        close()
+                        app.noteClipboard = n
+                        session.deleteNote(id); session.selectedNote = nil
+                        app.say(.done, L("قُصّت الملاحظة؛ الصقها من أداة الملاحظات", "Note cut; paste it from the sticky note tool"))
+                    }
+                    CtxItem(label: L("تكرار", "Duplicate")) {
+                        close()
+                        var m = n; m.id = UUID().uuidString; m.x += 16; m.y += 16
+                        session.upsertNote(m); session.selectedNote = m.id
+                    }
+                    if n.ink != nil {
+                        CtxItem(label: L("مسح الكتابة داخلها", "Clear its writing")) { close(); var m = n; m.ink = nil; session.upsertNote(m) }
+                    }
+                    CtxItem(label: L("تم", "Done")) { close(); session.selectedNote = nil }
                 }
-                if n.ink != nil {
-                    DialogButton(label: L("مسح الكتابة داخلها", "Clear its writing")) { var m = n; m.ink = nil; session.upsertNote(m) }
-                }
-                DialogButton(label: L("حذف", "Delete"), color: Palette.danger) { session.deleteNote(id); session.selectedNote = nil }
-                DialogButton(label: L("تم", "Done")) { session.selectedNote = nil }
             }
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-            .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
         }
     }
 }
@@ -1458,17 +1489,14 @@ private struct SplitPickerSheet: View {
 private struct ImageBar: View {
     @ObservedObject var session: DocSession
     var body: some View {
-        HStack(spacing: 0) {
-            DialogButton(label: L("حذف الصورة", "Delete image"), color: Palette.danger) {
+        CtxBar {
+            CtxBtn(label: L("تصغير", "Smaller")) { scale(0.87) }
+            CtxBtn(label: L("تكبير", "Larger")) { scale(1.15) }
+            CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) {
                 if let id = session.selectedImage { session.deleteImage(id); session.selectedImage = nil }
             }
-            DialogButton(label: L("تصغير", "Smaller")) { scale(0.87) }
-            DialogButton(label: L("تكبير", "Larger")) { scale(1.15) }
-            DialogButton(label: L("تم", "Done")) { session.selectedImage = nil }
+            CtxBtn(label: L("تم", "Done")) { session.selectedImage = nil }
         }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
     }
 
     /// يغيّر الحجم حول وسط الصورة، داخل حدود الصفحة.

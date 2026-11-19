@@ -56,33 +56,33 @@ struct TextSelectionBar: View {
 
     var body: some View {
         let text = (session.textSel?.string ?? session.wordSel?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        HStack(spacing: 0) {
-            DialogButton(label: L("نسخ", "Copy")) {
+        CtxBar {
+            CtxBtn(label: L("إلى الملخصات", "To summaries"), primary: true) {
+                if let sel = session.textSel { session.markSelection(sel) } else if let ws = session.wordSel { session.markWords(ws) }
+                clear()
+            }
+            CtxBtn(label: L("نسخ", "Copy")) {
                 UIPasteboard.general.string = text
                 app.say(.done, L("تم نسخ النص", "Text copied"))
                 clear()
             }
-            DialogButton(label: L("إلى الملخصات", "To summaries")) {
-                if let sel = session.textSel { session.markSelection(sel) } else if let ws = session.wordSel { session.markWords(ws) }
-                clear()
-            }
-            DialogButton(label: L("اجعله بطاقة", "Make it a card")) {
+            CtxBtn(label: L("بطاقة", "Card")) {
                 if Premium.shared.require(.cards) { card = SummaryDrawer.CardDraft(front: "", back: text) }
             }
-            DialogButton(label: L("ترجمة", "Translate")) { if Premium.shared.require(.translate) { translating = true } }
-            DialogButton(label: L("تحديد كل الصفحة", "Select whole page")) {
-                if let ws = session.wordSel {
-                    session.wordSel = WordSel(page: ws.page, words: session.words(ws.page))
-                } else if let p = session.textSel?.pages.first ?? session.pdf?.page(at: session.currentPage),
-                          let all = p.selection(for: p.bounds(for: .cropBox)) {
-                    session.textSel = all
+            CtxBtn(label: L("ترجمة", "Translate")) { if Premium.shared.require(.translate) { translating = true } }
+            CtxMore { close in
+                CtxItem(label: L("تحديد كل الصفحة", "Select whole page")) {
+                    close()
+                    if let ws = session.wordSel {
+                        session.wordSel = WordSel(page: ws.page, words: session.words(ws.page))
+                    } else if let p = session.textSel?.pages.first ?? session.pdf?.page(at: session.currentPage),
+                              let all = p.selection(for: p.bounds(for: .cropBox)) {
+                        session.textSel = all
+                    }
                 }
+                CtxItem(label: L("إلغاء", "Cancel")) { close(); clear() }
             }
-            DialogButton(label: L("إلغاء", "Cancel"), color: Palette.textSecondary) { clear() }
         }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
         .modifier(TranslateModifier(text: text, isPresented: $translating))
         .dialogSheet(item: $card) { d in
             CardEditorSheet(card: Card(id: UUID().uuidString, front: d.front, back: d.back, folder: app.entry(session.id)?.folder ?? "",

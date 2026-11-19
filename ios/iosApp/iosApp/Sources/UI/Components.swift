@@ -42,12 +42,24 @@ struct TBtn<Content: View>: View {
     }
 }
 
+extension View {
+    /// مقاس موحّد لكل عنصر في الأشرطة: 42×42 مع 2 على كل جانب، فتكون المسافة بين أي عنصرين 4،
+    /// وبين العنصر وطرف الشريط 4 (حشوة الشريط 2 على الجانبين و4 فوق وتحت).
+    func barItem() -> some View { frame(width: 42, height: 42).padding(.horizontal, 2) }
+}
+
+/// ارتفاع زر الشريط نفسه (يتبع تكبير الوسط في شريط الأدوات).
+struct BarHeight: ViewModifier {
+    @Environment(\.chromeScale) private var chromeScale
+    func body(content: Content) -> some View { content.frame(height: 42 * chromeScale) }
+}
+
 func tintFor(_ selected: Bool) -> Color { selected ? Palette.navy : Palette.textSecondary }
 /// لون أيقونة في واجهة المحرر (يتبع المظهر الداكن).
 func chromeTint(_ selected: Bool) -> Color { selected ? Palette.chromeAccent : Palette.chromeMuted }
 
 struct ToolbarSep: View {
-    var body: some View { Rectangle().fill(Palette.chromeLine).frame(width: 1, height: 26).padding(.horizontal, 6) }
+    var body: some View { Rectangle().fill(Palette.chromeLine).frame(width: 1, height: 26).padding(.horizontal, 2) }
 }
 
 /// شريحة اختيار.

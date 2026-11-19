@@ -358,14 +358,19 @@ struct TextBoxBar: View {
 
     var body: some View {
         if let id = session.selectedBox, let b = session.data.boxes.first(where: { $0.id == id }) {
-            HStack(spacing: 0) {
+            CtxBar {
                 if let d = b.linkDoc {
-                    DialogButton(label: L("فتح الرابط", "Open link"), bold: true) { app.followLink(from: session, docId: d, page: b.linkPage, pageId: b.linkPageId) }
-                }
-                DialogButton(label: L("تعديل", "Edit")) { session.beginInlineEdit(id) }
-                DialogButton(label: L("خط أصغر", "Smaller text")) { resize(id, 1 / 1.15) }
-                DialogButton(label: L("خط أكبر", "Larger text")) { resize(id, 1.15) }
-                DialogButton(label: L("لون القلم", "Pen color")) { colors = true }
+                    CtxBtn(label: L("فتح الرابط", "Open link"), primary: true) { app.followLink(from: session, docId: d, page: b.linkPage, pageId: b.linkPageId) }
+                } else {
+                    CtxBtn(label: L("تعديل", "Edit"), primary: true) { session.beginInlineEdit(id) }
+                    CtxBtn(label: "Aa " + L("الخط", "Font")) { fontSheet = true }
+                    CtxBtn(label: "A−") { resize(id, 1 / 1.15) }
+                    CtxBtn(label: "A+") { resize(id, 1.15) }
+                    Button { colors = true } label: {
+                        Circle().fill(Color(hex: b.color)).frame(width: 20, height: 20)
+                            .overlay(Circle().stroke(Palette.divider, lineWidth: 1))
+                            .frame(width: 34, height: 34).contentShape(Rectangle())
+                    }
                     .dropdown(isPresented: $colors) {
                         SwatchGrid(colors: app.penPalette + app.customColors, current: b.color, onPick: { c in
                             session.edit { d in if let i = d.boxes.firstIndex(where: { $0.id == id }) { d.boxes[i].color = c } }
@@ -373,19 +378,20 @@ struct TextBoxBar: View {
                         })
                         .padding(.top, 10).frame(width: 290)
                     }
-                DialogButton(label: L("الخط", "Font")) { fontSheet = true }
-                if b.ink != nil {
-                    DialogButton(label: L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting")) { session.selectedBox = nil; session.textBoxToInk(id) }
                 }
-                DialogButton(label: L("حذف", "Delete"), color: Palette.danger) {
+                CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) {
                     session.selectedBox = nil
                     session.edit { d in d.boxes.removeAll { $0.id == id } }
                 }
-                DialogButton(label: L("تم", "Done")) { session.selectedBox = nil }
+                CtxMore { close in
+                    if b.ink != nil {
+                        CtxItem(label: L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting"), color: Palette.goldDeep) {
+                            close(); session.selectedBox = nil; session.textBoxToInk(id)
+                        }
+                    }
+                    CtxItem(label: L("تم", "Done")) { close(); session.selectedBox = nil }
+                }
             }
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-            .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
             .sheet(isPresented: $fontSheet) {
                 FontLibrarySheet(sample: b.text.isEmpty ? L("الميتوكوندريا", "Mitochondria") : b.text, current: b.font) { f in
                     if !f.isEmpty { session.edit { d in if let i = d.boxes.firstIndex(where: { $0.id == id }) { d.boxes[i].font = f } } }

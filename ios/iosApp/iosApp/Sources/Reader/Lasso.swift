@@ -216,7 +216,7 @@ extension DocSession {
     }
 
     /// يلصق محتوى الحافظة في وسط الجزء الظاهر من الصفحة، ويصبح هو المحدد لتحريكه.
-    func pasteClip(_ page: Int? = nil) {
+    func pasteClip(_ page: Int? = nil, at point: CGPoint? = nil) {
         guard let clip = PageClipboard.shared.clip else { return }
         let p = page ?? currentPage
         guard let pid = pageId(p) else { return }
@@ -227,7 +227,7 @@ extension DocSession {
         for b in clip.boxes { box = box.union(CGRect(x: b.x, y: b.y, width: b.w, height: b.size * 1.4)) }
         for n in clip.notes { box = box.union(CGRect(x: n.x, y: n.y, width: n.w, height: n.h)) }
         guard !box.isNull else { return }
-        let c = visibleCenter(p)
+        let c = point ?? visibleCenter(p)
         let tx = c.x - box.midX * k, ty = c.y - box.midY * k
         let t = CGAffineTransform(a: k, b: 0, c: 0, d: k, tx: tx, ty: ty)
         let old = drawing(for: pid)
@@ -529,42 +529,37 @@ struct LassoBar: View {
     @Binding var sheet: ReaderSheet?
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                Button {
-                    if pm.require(.toText) { sheet = .changeFont }
-                } label: {
-                    Text("Aa " + L("تغيير الخط", "Change font")).font(Fonts.sans(14, .bold)).foregroundColor(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.navy))
-                }
-                .padding(.trailing, 4)
-                barButton(L("إلى نص", "To text")) { if pm.require(.toText) { sheet = .lassoToText } }
-                barButton("☺ " + L("ملصق", "Sticker")) {
+        CtxBar {
+            CtxBtn(label: "Aa " + L("تغيير الخط", "Change font"), primary: true) { if pm.require(.toText) { sheet = .changeFont } }
+            CtxBtn(label: L("إلى نص", "To text")) { if pm.require(.toText) { sheet = .lassoToText } }
+            CtxBtn(label: L("نسخ", "Copy")) { session.lassoCopy() }
+            CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) { session.lassoDelete() }
+            CtxMore { close in
+                CtxItem(label: L("تكرار", "Duplicate")) { close(); session.lassoDuplicate() }
+                CtxItem(label: "☺ " + L("ملصق", "Sticker")) {
+                    close()
                     if let img = session.lassoImage() { StickerStore.shared.add(img) }
-                }
-                barButton(L("نسخ", "Copy")) { session.lassoCopy() }
-                barButton(L("تكرار", "Duplicate")) { session.lassoDuplicate() }
-                ForEach(Array(app.penPalette.prefix(6)), id: \.self) { col in
-                    Button { session.lassoRecolor(col) } label: {
-                        Circle().fill(Color(hex: col)).frame(width: 22, height: 22)
-                            .overlay(Circle().stroke(Palette.divider, lineWidth: 1))
-                            .frame(width: 32, height: 32)
-                    }
                 }
                 if let t = session.lassoFirstTime(),
                    let rec = session.data.recordings.first(where: { t >= $0.start && t <= $0.start + $0.durationMs }) {
-                    barButton(L("▶ الصوت", "▶ Audio"), bold: true) {
+                    CtxItem(label: L("▶ الصوت", "▶ Audio"), color: Palette.navy) {
+                        close()
                         AudioNotes.shared.play(session, rec, at: max(0, TimeInterval(t - rec.start) / 1000 - 2))
                     }
                 }
-                barButton(L("حذف", "Delete"), color: Color(hex: 0xFFC62828)) { session.lassoDelete() }
-                barButton(L("تم", "Done")) { session.lassoSel = nil }
+                HStack(spacing: 4) {
+                    ForEach(Array(app.penPalette.prefix(6)), id: \.self) { col in
+                        Button { session.lassoRecolor(col); close() } label: {
+                            Circle().fill(Color(hex: col)).frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(Palette.divider, lineWidth: 1))
+                                .frame(width: 34, height: 34)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 4)
+                CtxItem(label: L("تم", "Done")) { close(); session.lassoSel = nil }
             }
-            .padding(.horizontal, 8).padding(.vertical, 4)
         }
-        .fixedSize(horizontal: true, vertical: false)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.18), radius: 8, y: 3))
     }
 
     private func barButton(_ label: String, color: Color = Palette.navy, bold: Bool = false, _ action: @escaping () -> Void) -> some View {
@@ -574,24 +569,6 @@ struct LassoBar: View {
     }
 }
 
-/// يظهر ما دام في الحافظة شيء منسوخ بأداة التحديد: لصق في الصفحة الظاهرة.
-struct PasteBar: View {
-    @ObservedObject var session: DocSession
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Button { session.pasteClip() } label: {
-                Text(L("لصق هنا", "Paste here")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
-                    .padding(.horizontal, 12).padding(.vertical, 10)
-            }
-            Button { PageClipboard.shared.clip = nil } label: {
-                Text("✕").font(Fonts.sans(14)).foregroundColor(Palette.textSecondary).padding(.horizontal, 10).padding(.vertical, 10)
-            }
-        }
-        .padding(.horizontal, 6)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.18), radius: 8, y: 3))
-    }
-}
 
 /// قائمة إعدادات التحديد: النوع وما يدخل فيه.
 struct LassoMenuContent: View {

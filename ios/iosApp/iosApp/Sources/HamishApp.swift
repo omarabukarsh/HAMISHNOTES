@@ -12,6 +12,8 @@ struct HamishApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // يسجّل مكان آخر لمسة، فتخرج النوافذ والقوائم من الزر الذي فُتحت منه
+                .background(TouchOriginInstaller())
                 .environmentObject(app)
                 .environment(\.layoutDirection, .leftToRight)
                 .environment(\.locale, Locale(identifier: app.english ? "en" : "ar"))

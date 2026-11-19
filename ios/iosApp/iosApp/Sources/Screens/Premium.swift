@@ -196,8 +196,13 @@ final class Premium: ObservableObject {
 /// نوافذ Premium كلها، تُعرض من جذر التطبيق.
 struct PremiumHost: View {
     @ObservedObject var pm = Premium.shared
+    /// كل نافذة تخرج من الزر الذي فتحها وتنكمش إليه (OriginDialog في أندرويد)
+    @State private var origins = OriginMemo()
 
     var body: some View {
+        let lockedFrom = origins.point("locked", shown: pm.lockedFeature != nil)
+        let limitFrom = origins.point("limit", shown: pm.limitOpen)
+        let paywallFrom = origins.point("paywall", shown: pm.paywallOpen)
         ZStack {
             if let f = pm.lockedFeature {
                 Scrim { pm.lockedFeature = nil }
@@ -216,7 +221,7 @@ struct PremiumHost: View {
                     QuietButton(label: L("ليس الآن", "Not now")) { pm.lockedFeature = nil }
                 }
                 .padding(24)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .transition(.origin(lockedFrom))
             }
             if pm.limitOpen {
                 Scrim { pm.limitOpen = false }
@@ -252,12 +257,12 @@ struct PremiumHost: View {
                     QuietButton(label: L("ليس الآن", "Not now")) { pm.limitOpen = false }
                 }
                 .padding(24)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .transition(.origin(limitFrom))
             }
             if pm.paywallOpen {
                 Scrim { pm.paywallOpen = false }
                 PaywallView { pm.paywallOpen = false }
-                    .transition(.scale(scale: 0.94).combined(with: .opacity))
+                    .transition(.origin(paywallFrom))
             }
         }
         .animation(Motion.enter, value: pm.paywallOpen)

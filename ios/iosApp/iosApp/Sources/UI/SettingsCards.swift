@@ -89,7 +89,7 @@ struct CardSegmented<T: Hashable>: View {
         HStack(spacing: 0) {
             ForEach(options, id: \.0) { v, label in
                 let sel = v == selected
-                Button { withAnimation(.easeOut(duration: 0.2)) { onSelect(v) } } label: {
+                Button { withAnimation(Motion.segment) { onSelect(v) } } label: {
                     Text(label).font(Fonts.sans(14, sel ? .semibold : .regular))
                         .foregroundColor(sel ? Palette.navy : Muted).lineLimit(1)
                         .frame(maxWidth: .infinity).frame(height: 36)

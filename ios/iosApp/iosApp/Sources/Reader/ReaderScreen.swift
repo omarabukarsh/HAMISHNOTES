@@ -41,6 +41,7 @@ private struct ReaderContent: View {
     @State private var sheet: ReaderSheet? = nil
     @State private var pdfPicker = false
     @State private var pdfAfter = 0
+    @State private var trayOrigins = OriginMemo()
 
     var body: some View {
         let s = session
@@ -63,7 +64,7 @@ private struct ReaderContent: View {
                     // على الشاشة العريضة: المستند ينزاح بجانب درج الصفحات بدل أن يُغطّى
                     PDFReaderView(session: s)
                         .padding(.leading, s.drawerOpen && UIScreen.main.bounds.width >= 1000 ? PagesDrawer.width + 24 : 0)
-                        .animation(Motion.enter, value: s.drawerOpen)
+                        .animation(Motion.shift, value: s.drawerOpen)
                     if !s.summaryOpen && !s.pageMenuOpen {
                         PageScrubber(session: s).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     }
@@ -72,24 +73,35 @@ private struct ReaderContent: View {
                     }
                     // الأدراج
                     HStack(spacing: 0) {
-                        if s.drawerOpen { PagesDrawer(session: s).transition(.move(edge: .leading)) }
+                        // تنزلق من حافتها مع تلاشٍ، والإغلاق أسرع (نفس Motion.drawerEnter/drawerExit في أندرويد)
+                        if s.drawerOpen { PagesDrawer(session: s).transition(.drawer(.leading)) }
                         Spacer(minLength: 0)
-                        if s.summaryOpen { SummaryDrawer(session: s).transition(.move(edge: .trailing)) }
-                        if s.pageMenuOpen { PageMenuDrawer(session: s, sheet: $sheet).transition(.move(edge: .trailing)) }
+                        if s.summaryOpen { SummaryDrawer(session: s).transition(.drawer(.trailing)) }
+                        if s.pageMenuOpen { PageMenuDrawer(session: s, sheet: $sheet).transition(.drawer(.trailing)) }
                     }
                     .animation(Motion.enter, value: s.drawerOpen)
                     .animation(Motion.enter, value: s.summaryOpen)
                     .animation(Motion.enter, value: s.pageMenuOpen)
-                    if let mode = s.trayMode { SideTray(session: s, mode: mode) }
+                    // نافذة الصور والملصقات تكبر من زرها وتنكمش إليه
+                    let photosFrom = trayOrigins.point("photos", shown: s.trayMode == "photos")
+                    let stickersFrom = trayOrigins.point("stickers", shown: s.trayMode == "stickers")
+                    ZStack {
+                        if let mode = s.trayMode {
+                            SideTray(session: s, mode: mode).id(mode)
+                                .transition(.tray(mode == "photos" ? photosFrom : stickersFrom))
+                        }
+                    }
+                    .animation(Motion.enter, value: s.trayMode)
                     // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
                     if !app.focusMode {
                         VStack(spacing: 0) {
                             if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
-                                PenBar(sheet: $sheet).transition(.move(edge: .top).combined(with: .opacity))
+                                PenBar(sheet: $sheet).transition(.barExpand)
                             }
-                            if app.shapeActive && !app.lassoActive { ShapeBar().transition(.move(edge: .top).combined(with: .opacity)) }
-                            if app.stickyActive { StickyBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
-                            if app.tapeActive { TapeBar(session: s).transition(.move(edge: .top).combined(with: .opacity)) }
+                            // كل شريط يتمدد من الأعلى ويدفع ما تحته بنعومة (Motion.barEnter/barExit في أندرويد)
+                            if app.shapeActive && !app.lassoActive { ShapeBar().transition(.barExpand) }
+                            if app.stickyActive { StickyBar(session: s).transition(.barExpand) }
+                            if app.tapeActive { TapeBar(session: s).transition(.barExpand) }
                         }
                         .padding(.top, 10)
                         .scaleEffect(app.toolbarScale, anchor: .top)
@@ -97,13 +109,15 @@ private struct ReaderContent: View {
                         // تتوسط المساحة المتبقية للصفحة فقط: لا تظهر فوق لوحة الصفحات أو الملخصات أو خيارات الصفحة
                         .padding(.leading, s.drawerOpen ? PagesDrawer.width + 12 : 0)
                         .padding(.trailing, s.summaryOpen ? 420 * Fonts.base + 12 : (s.pageMenuOpen ? 380 * Fonts.base + 12 : 0))
-                        .animation(Motion.enter, value: s.drawerOpen)
-                        .animation(Motion.enter, value: s.summaryOpen)
-                        .animation(Motion.enter, value: s.pageMenuOpen)
+                        .animation(Motion.shift, value: s.drawerOpen)
+                        .animation(Motion.shift, value: s.summaryOpen)
+                        .animation(Motion.shift, value: s.pageMenuOpen)
                         .animation(Motion.enter, value: app.penBarOpen)
                         .animation(Motion.enter, value: app.shapeActive)
                         .animation(Motion.enter, value: app.stickyActive)
                         .animation(Motion.enter, value: app.tapeActive)
+                        .animation(Motion.enter, value: app.tool)
+                        .animation(Motion.enter, value: app.lassoActive)
                     }
                 }
                 if s.zoomBox != nil && !app.focusMode { ZoomPanel(session: s) }
@@ -591,8 +605,9 @@ private struct ReaderTopBar: View {
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? bg : Color.clear))
                 .contentShape(Rectangle())
                 .padding(.horizontal, 2)
+                .animation(Motion.enter, value: on)
         }
-        .buttonStyle(PressScale())
+        .buttonStyle(PressScale(scale: 0.92))
     }
 
     /// زر الصور أو الملصقات: يفتح الدرج (ويطفئ النص والملاحظة)، ونقرة ثانية تغلقه.

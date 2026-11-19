@@ -47,28 +47,37 @@ struct DialogButton: View {
 }
 
 private struct DialogHost<C: View>: View {
-    let onDismiss: () -> Void
+    /// طلب إغلاق من الخارج (حين تصير isPresented خاطئة): تختفي بحركتها أولًا
+    let leaving: Bool
+    let onClosed: () -> Void
     let content: (@escaping () -> Void) -> C
-    @State private var shown = false
+    /// الظهور: من 86% بنابض grow والشفافية ×2.5 (AlertDialog + popIn في أندرويد)
+    @State private var p: CGFloat = 0
+    /// الإغلاق: تلاشٍ سريع 150ms
+    @State private var k: CGFloat = 1
+    @State private var done = false
 
     var body: some View {
         ZStack {
-            Color.black.opacity(shown ? 0.32 : 0).ignoresSafeArea()
+            Color.black.opacity(0.32).ignoresSafeArea()
+                .modifier(PopReveal(p: p, k: k, scales: false))
                 .onTapGesture { close() }
             content(close)
-                .scaleEffect(shown ? 1 : 0.94)
-                .opacity(shown ? 1 : 0)
+                .modifier(PopReveal(p: p, k: k, from: 0.86))
                 .padding(24)
         }
         .environment(\.layoutDirection, .leftToRight)
         // النوافذ عاجية دائمًا: عناصر النظام (الحقول) بألوان الوضع الفاتح
         .environment(\.colorScheme, .light)
-        .onAppear { withAnimation(Motion.enter) { shown = true } }
+        .onAppear { withAnimation(Motion.grow) { p = 1 } }
+        .onChange(of: leaving) { _, v in if v { close() } }
     }
 
     private func close() {
-        withAnimation(.easeOut(duration: 0.14)) { shown = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { onDismiss() }
+        guard !done else { return }
+        done = true
+        withAnimation(Motion.std(0.15)) { k = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { onClosed() }
     }
 }
 
@@ -76,25 +85,36 @@ private struct AppDialogModifier<C: View>: ViewModifier {
     @Binding var isPresented: Bool
     let content: (@escaping () -> Void) -> C
     @State private var cover = false
+    @State private var leaving = false
 
     func body(content base: Content) -> some View {
         base
             .fullScreenCover(isPresented: $cover) {
-                DialogHost(onDismiss: { isPresented = false }, content: content)
+                DialogHost(leaving: leaving, onClosed: finish, content: content)
                     .environmentObject(AppController.shared)
                     .presentationBackground(.clear)
             }
-            .onChange(of: isPresented) { _, v in show(v) }
+            .onChange(of: isPresented) { _, v in
+                if v { show(true) } else if cover { leaving = true }
+            }
             // أُغلقت من داخلها (dismiss): تُصفَّر الحالة الخارجية أيضًا
             .onChange(of: cover) { _, v in if !v && isPresented { isPresented = false } }
             .onAppear { if isPresented { show(true) } }
     }
 
-    /// النافذة تظهر وتختفي بحركتها الخاصة (تلاشٍ وتكبير)، لا بانزلاق النوافذ الكاملة.
+    /// النافذة تظهر وتختفي بحركتها الخاصة (انبثاق وتلاشٍ)، لا بانزلاق النوافذ الكاملة.
     private func show(_ v: Bool) {
+        if v { leaving = false }
         var t = Transaction()
         t.disablesAnimations = true
         withTransaction(t) { cover = v }
+    }
+
+    /// انتهت حركة الإغلاق: تُزال النافذة وتُصفَّر الحالة.
+    private func finish() {
+        show(false)
+        leaving = false
+        if isPresented { isPresented = false }
     }
 }
 

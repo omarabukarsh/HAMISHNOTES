@@ -262,7 +262,7 @@ private struct FlipCard: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onFlip)
         .onAppear { angle = flipped ? 180 : 0 }
-        .onChange(of: flipped) { _, f in withAnimation(.easeInOut(duration: 0.38)) { angle = f ? 180 : 0 } }
+        .onChange(of: flipped) { _, f in withAnimation(Motion.std(0.38)) { angle = f ? 180 : 0 } }
     }
 }
 

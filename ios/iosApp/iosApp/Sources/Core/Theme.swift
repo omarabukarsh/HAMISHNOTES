@@ -181,12 +181,31 @@ struct PressScale: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? scale : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
+/// حركات التطبيق كلها من هنا، بنفس قيم Motion.kt في أندرويد:
+/// الدخول 300ms بمنحنى FastOutSlowIn، والخروج أسرع (200ms)، والنوابض بنفس الصلابة والتخميد.
+/// (نابض أندرويد stiffness/damping يقابله response = 2π/√stiffness و dampingFraction = damping)
 enum Motion {
-    static let enter = Animation.easeOut(duration: 0.26)
-    static let exit = Animation.easeIn(duration: 0.16)
-    static let grow = Animation.spring(response: 0.34, dampingFraction: 0.78)
+    /// FastOutSlowInEasing
+    static func std(_ d: Double) -> Animation { .timingCurve(0.4, 0, 0.2, 1, duration: d) }
+    /// FastOutLinearInEasing (للإغلاق)
+    static func acc(_ d: Double) -> Animation { .timingCurve(0.4, 0, 1, 1, duration: d) }
+
+    static let enter = std(0.30)
+    static let exit = acc(0.20)
+    /// نابض النمو: damping 0.82، stiffness 420
+    static let grow = Animation.spring(response: 0.307, dampingFraction: 0.82)
+    /// النافذة الخارجة من اللمسة: damping 0.78، stiffness 320
+    static let origin = Animation.spring(response: 0.351, dampingFraction: 0.78)
+    /// ضغط الزر: damping 0.55، stiffness 700
+    static let press = Animation.spring(response: 0.237, dampingFraction: 0.55)
+    /// spring() الافتراضي في أندرويد (stiffness 1500، بلا ارتداد)
+    static let segment = Animation.spring(response: 0.162, dampingFraction: 1)
+    /// AnimatedVisibility الافتراضي (StiffnessMediumLow، بلا ارتداد)
+    static let soft = Animation.spring(response: 0.314, dampingFraction: 1)
+    /// إزاحة المستند والأشرطة بجانب الأدراج
+    static let shift = std(0.24)
 }

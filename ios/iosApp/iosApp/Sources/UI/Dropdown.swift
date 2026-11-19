@@ -41,11 +41,47 @@ extension View {
     func dropdownHost() -> some View {
         overlayPreferenceValue(DropdownKey.self) { items in
             GeometryReader { geo in
-                if let it = items.last {
-                    DropdownPanel(item: it, rect: geo[it.anchor], area: geo.size)
-                }
+                DropdownLayer(item: items.last, rect: items.last.map { geo[$0.anchor] }, area: geo.size)
             }
         }
+    }
+}
+
+/// يُبقي القائمة حيّة أثناء حركة إغلاقها: تخرج من أيقونتها بنابض وتنكمش إليها (DropdownMenu في أندرويد).
+private struct DropdownLayer: View {
+    let item: DropdownItem?
+    let rect: CGRect?
+    let area: CGSize
+    @State private var kept: DropdownItem? = nil
+    @State private var keptRect: CGRect = .zero
+    @State private var p: CGFloat = 0
+    @State private var gen = 0
+
+    var body: some View {
+        ZStack {
+            if let it = item ?? kept {
+                DropdownPanel(item: it, rect: rect ?? keptRect, area: area, p: p)
+                    .allowsHitTesting(item != nil)
+            }
+        }
+        .onAppear { if item != nil { opened() } }
+        .onChange(of: item != nil) { _, v in if v { opened() } else { closed() } }
+        .onChange(of: rect) { _, v in if let v { keptRect = v } }
+    }
+
+    /// تخرج من مركز الأيقونة: 25% ← 100% بنابض grow.
+    private func opened() {
+        gen += 1
+        kept = item
+        keptRect = rect ?? .zero
+        withAnimation(Motion.grow) { p = 1 }
+    }
+
+    /// تنكمش إلى الأيقونة في 160ms ثم تُزال.
+    private func closed() {
+        let g = gen
+        withAnimation(Motion.acc(0.16)) { p = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { if g == gen { kept = nil } }
     }
 }
 
@@ -53,6 +89,7 @@ private struct DropdownPanel: View {
     let item: DropdownItem
     let rect: CGRect
     let area: CGSize
+    let p: CGFloat
     @State private var size: CGSize = .zero
 
     var body: some View {
@@ -65,6 +102,8 @@ private struct DropdownPanel: View {
         let x = min(max(8, rect.midX - w / 2), max(8, area.width - w - 8))
         let h = min(size.height, maxH)
         let y = up ? rect.minY - 6 - h : top
+        // نقطة الانطلاق: مركز الأيقونة نسبةً إلى القائمة
+        let anchor = (w > 0 && h > 0) ? UnitPoint(x: (rect.midX - x) / w, y: (rect.midY - y) / h) : .top
         ZStack(alignment: .topLeading) {
             Color.black.opacity(0.001)
                 .contentShape(Rectangle())
@@ -85,11 +124,11 @@ private struct DropdownPanel: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.divider.opacity(0.6), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
+            .modifier(DropReveal(p: p, anchor: anchor))
             .offset(x: x, y: y)
             .opacity(size == .zero ? 0 : 1)
             .environment(\.layoutDirection, .leftToRight)
         }
         .frame(width: area.width, height: area.height, alignment: .topLeading)
-        .transition(.opacity)
     }
 }

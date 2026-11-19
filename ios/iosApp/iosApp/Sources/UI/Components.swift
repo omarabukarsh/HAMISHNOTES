@@ -28,7 +28,7 @@ struct TBtn<Content: View>: View {
                 if selected && !toggle {
                     RoundedRectangle(cornerRadius: 2).fill(Palette.gold).frame(width: 14, height: 3)
                         .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 3)
-                        .transition(.scale(scale: 0.3).combined(with: .opacity))
+                        .transition(.toolIndicator)
                 }
             }
             .frame(width: 42 * chromeScale, height: 42 * chromeScale)
@@ -37,7 +37,7 @@ struct TBtn<Content: View>: View {
             .padding(.horizontal, 2)
             .animation(Motion.enter, value: selected)
         }
-        .buttonStyle(PressScale(scale: 0.9))
+        .buttonStyle(PressScale(scale: 0.92))
         .disabled(!enabled)
     }
 }
@@ -107,7 +107,7 @@ struct IconCircleButton: View {
                 .background(Circle().fill(selected ? Lib.accentSoft : Lib.card))
                 .overlay(Circle().stroke(Lib.line, lineWidth: 1))
         }
-        .buttonStyle(PressScale())
+        .buttonStyle(PressScale(scale: 0.92))
     }
 }
 
@@ -375,12 +375,19 @@ struct BigSheet<C: View>: ViewModifier {
     let sheet: () -> C
 
     @State private var cover = false
-    @State private var shown = false
+    /// تقدّم الظهور (0 مخفية، 1 ظاهرة)
+    @State private var p: CGFloat = 0
+    /// مكان اللمسة التي فتحتها: تخرج منه وتعود إليه
+    @State private var origin: CGPoint? = nil
+    @State private var closing = false
+    @State private var gen = 0
 
     func body(content: Content) -> some View {
         content.fullScreenCover(isPresented: $cover) {
             ZStack {
-                Color.black.opacity(shown ? 0.32 : 0).ignoresSafeArea().onTapGesture { close() }
+                Color.black.opacity(0.32).ignoresSafeArea()
+                    .modifier(PopReveal(p: p, fade: 2.2, scales: false))
+                    .onTapGesture { close() }
                 GeometryReader { g in
                     Group {
                         if fitContent {
@@ -397,31 +404,46 @@ struct BigSheet<C: View>: ViewModifier {
                     }
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
-                        .scaleEffect(shown ? 1 : 0.96)
-                        .opacity(shown ? 1 : 0)
+                        // تخرج من الزر الذي فُتحت منه وتكبر بنابض (OriginDialog في أندرويد)
+                        .modifier(originReveal(p, origin))
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                 }
             }
             .environment(\.colorScheme, .light)
             .presentationBackground(.clear)
-            .onAppear { withAnimation(Motion.enter) { shown = true } }
-            .onDisappear { shown = false }
+            .onAppear { withAnimation(Motion.origin) { p = 1 } }
+            .onDisappear { p = 0 }
         }
-        // تظهر النافذة بتلاشٍ هادئ في مكانها، لا بانزلاق النوافذ الكاملة من الأسفل
-        .onChange(of: isPresented) { _, v in present(v) }
+        // تظهر النافذة بحركتها الخاصة في مكانها، لا بانزلاق النوافذ الكاملة من الأسفل
+        .onChange(of: isPresented) { _, v in if v { present() } else { close() } }
         .onChange(of: cover) { _, v in if !v && isPresented { isPresented = false } }
-        .onAppear { if isPresented { present(true) } }
+        .onAppear { if isPresented { present() } }
     }
 
-    private func present(_ v: Bool) {
+    private func present() {
+        gen += 1
+        closing = false
+        if !cover { origin = TouchOrigin.recent() }
+        if cover { withAnimation(Motion.origin) { p = 1 } }
         var t = Transaction()
         t.disablesAnimations = true
-        withTransaction(t) { cover = v }
+        withTransaction(t) { cover = true }
     }
 
+    /// الإغلاق (من الخلفية أو من داخل النافذة): تنكمش إلى النقطة التي خرجت منها في 240ms ثم تُزال.
     private func close() {
-        withAnimation(.easeOut(duration: 0.14)) { shown = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { isPresented = false }
+        guard cover, !closing else { return }
+        closing = true
+        let g = gen
+        withAnimation(Motion.acc(0.24)) { p = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+            guard g == gen else { return }
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { cover = false }
+            closing = false
+            if isPresented { isPresented = false }
+        }
     }
 }
 

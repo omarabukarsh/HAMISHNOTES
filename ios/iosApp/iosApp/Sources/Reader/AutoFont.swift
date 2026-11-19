@@ -739,11 +739,15 @@ struct AutoFontSheet: View {
                                               subtitle: L("الكتابة بجانب جملة محوّلة تجلس على سطرها، وتأخذ حجمها إن كانت قريبة منه", "Writing beside a converted sentence sits on its line, and takes its size when close to it"),
                                               isOn: $af.continueLine)
                                 if af.continueLine {
-                                    RowDividerLine()
-                                    Text(L("بداية الكتابة الملحقة", "Joined writing starts")).font(Fonts.sans(14)).foregroundColor(Muted)
-                                        .padding(.horizontal, 16).padding(.top, 10)
-                                    CardSegmented(options: [(false, L("حيث بدأت يدي", "Where I started")), (true, L("بعد آخر كلمة", "After the last word"))],
-                                                  selected: af.contAfter) { af.contAfter = $0 }
+                                    // الصفوف التابعة للمفتاح تتمدد وتتلاشى (AnimatedVisibility في أندرويد)
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        RowDividerLine()
+                                        Text(L("بداية الكتابة الملحقة", "Joined writing starts")).font(Fonts.sans(14)).foregroundColor(Muted)
+                                            .padding(.horizontal, 16).padding(.top, 10)
+                                        CardSegmented(options: [(false, L("حيث بدأت يدي", "Where I started")), (true, L("بعد آخر كلمة", "After the last word"))],
+                                                      selected: af.contAfter) { af.contAfter = $0 }
+                                    }
+                                    .transition(.rowExpand)
                                 }
                                 RowDividerLine()
                                 CardSwitchRow(title: L("قراءات أخرى للكلمة", "Other readings of a word"),
@@ -753,11 +757,14 @@ struct AutoFontSheet: View {
                             }
                             CardSwitchRow(title: L("توحيد حجم الخط والمسافة بين الأسطر", "Unify font size & line spacing"), isOn: $af.unify)
                             if af.unify {
-                                RowDividerLine()
-                                StepperRow(title: L("حجم الخط", "Font size"), value: Double(af.unifySize), range: Double(AutoFont.sizeMin)...Double(AutoFont.sizeMax), step: 1,
-                                           format: { "\(Int($0))" }) { af.unifySize = Int($0) }
-                                StepperRow(title: L("المسافة بين الأسطر", "Line spacing"), value: af.unifySpacing, range: 1...3, step: 0.1,
-                                           format: { String(format: "%.1f", $0) }) { af.unifySpacing = $0 }
+                                VStack(alignment: .leading, spacing: 0) {
+                                    RowDividerLine()
+                                    StepperRow(title: L("حجم الخط", "Font size"), value: Double(af.unifySize), range: Double(AutoFont.sizeMin)...Double(AutoFont.sizeMax), step: 1,
+                                               format: { "\(Int($0))" }) { af.unifySize = Int($0) }
+                                    StepperRow(title: L("المسافة بين الأسطر", "Line spacing"), value: af.unifySpacing, range: 1...3, step: 0.1,
+                                               format: { String(format: "%.1f", $0) }) { af.unifySpacing = $0 }
+                                }
+                                .transition(.rowExpand)
                             }
                             RowDividerLine()
                             VStack(alignment: .leading, spacing: 4) {
@@ -788,6 +795,9 @@ struct AutoFontSheet: View {
                     .opacity(af.on ? 1 : 0.55)
                 }
                 .padding(.horizontal, 16).padding(.bottom, 20)
+                // الصفوف التابعة تتمدد، وما تحتها ينزاح معها بالنابض نفسه
+                .animation(Motion.soft, value: af.continueLine)
+                .animation(Motion.soft, value: af.unify)
             }
         }
         .background(SheetBg)

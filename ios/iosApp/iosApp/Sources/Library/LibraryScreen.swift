@@ -84,10 +84,10 @@ struct LibraryScreen: View {
                                              confirmDelete = !deleteTarget.isEmpty
                                          },
                                          onDone: endSelect)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .transition(.headerSwap)
                         } else {
                             header(wide)
-                                .transition(.opacity)
+                                .transition(.headerSwap)
                         }
                     }
                     .animation(Motion.enter, value: selecting)
@@ -852,10 +852,10 @@ private struct DocCard: View {
                     ZStack {
                         Circle().fill(selected ? Lib.strong : Color.white.opacity(0.9))
                         Circle().stroke(selected ? Lib.accent : Lib.line, lineWidth: 2)
-                        if selected { PhIcon("ph_check", Lib.onStrong, 15).transition(.scale) }
+                        if selected { PhIcon("ph_check", Lib.onStrong, 15).transition(.selectionMark) }
                     }
                     .frame(width: 26, height: 26).padding(8)
-                    .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    .transition(.selectionMark)
                 }
                 if entry.favorite {
                     Button { app.toggleFavorite(entry.id) } label: {

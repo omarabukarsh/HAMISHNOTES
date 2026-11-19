@@ -114,6 +114,13 @@ class LassoSel(
     fun isEmpty() = strokes.isEmpty() && imageIds.isEmpty() && textIds.isEmpty()
 }
 
+/** ما نُسخ بأداة التحديد: يُلصق في أي صفحة أو أي مستند آخر. */
+class PageClip(val docId: String, val strokes: List<Ink>, val images: List<ImageItem>, val texts: List<TextBox>)
+
+object PageClipboard {
+    var clip by mutableStateOf<PageClip?>(null)
+}
+
 class EditSnapshot(
     val ink: Map<Int, List<Ink>>,
     val images: Map<Int, List<ImageItem>>,
@@ -704,6 +711,47 @@ class DocSession(entry: DocEntry) {
         lassoSel = LassoSel(sel.page, sel.strokes)
         lassoReplace { null }
         lassoSel = null
+        endEdit()
+    }
+
+    /** ينسخ التحديد إلى الحافظة ليلصق في صفحة أخرى. */
+    fun lassoCopy() {
+        val sel = lassoSel ?: return
+        PageClipboard.clip = PageClip(
+            id, sel.strokes,
+            (images[sel.page] ?: emptyList()).filter { it.id in sel.imageIds },
+            (texts[sel.page] ?: emptyList()).filter { it.id in sel.textIds }
+        )
+        AppController.say(MsgKind.DONE, L("تم النسخ — افتح أي صفحة واضغط «لصق»", "Copied — open any page and tap Paste"))
+    }
+
+    /** يلصق محتوى الحافظة في وسط الجزء الظاهر من الصفحة، ويصبح هو المحدد لتحريكه. */
+    fun pasteClip(page: Int = currentPage()) {
+        val clip = PageClipboard.clip ?: return
+        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        fun add(x: Float, y: Float) { minX = minOf(minX, x); minY = minOf(minY, y); maxX = maxOf(maxX, x); maxY = maxOf(maxY, y) }
+        clip.strokes.forEach { s -> s.pts.forEach { add(it.x, it.y) } }
+        clip.images.forEach { add(it.x, it.y); add(it.x + it.w, it.y + it.w / it.aspect) }
+        clip.texts.forEach { add(it.x, it.y); add(it.x + it.w, it.y + textHeightOf(it)) }
+        if (minX > maxX) return
+        val c = visibleCenter(page)
+        val dx = c.x - (minX + maxX) / 2f
+        val dy = c.y - (minY + maxY) / 2f
+        beginEdit()
+        val strokes = clip.strokes.map { s -> s.copy(pts = s.pts.map { Pt(it.x + dx, it.y + dy, it.p) }) }
+        if (strokes.isNotEmpty()) annotations = annotations + (page to ((annotations[page] ?: emptyList()) + strokes))
+        val imgs = clip.images.map { im ->
+            if (clip.docId != id) runCatching {
+                val src = AppController.repo.imageFile(clip.docId, im.file)
+                val dst = AppController.repo.imageFile(id, im.file)
+                if (src.exists() && !dst.exists()) { dst.parentFile?.mkdirs(); src.copyTo(dst) }
+            }
+            im.copy(id = UUID.randomUUID().toString(), page = page, x = im.x + dx, y = im.y + dy)
+        }
+        if (imgs.isNotEmpty()) images = images + (page to ((images[page] ?: emptyList()) + imgs))
+        val txts = clip.texts.map { it.copy(id = UUID.randomUUID().toString(), page = page, x = it.x + dx, y = it.y + dy) }
+        if (txts.isNotEmpty()) texts = texts + (page to ((texts[page] ?: emptyList()) + txts))
+        lassoSel = LassoSel(page, strokes, imgs.map { it.id }, txts.map { it.id })
         endEdit()
     }
 

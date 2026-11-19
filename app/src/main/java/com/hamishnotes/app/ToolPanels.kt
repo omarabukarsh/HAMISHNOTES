@@ -309,8 +309,11 @@ fun LassoMenuContent(s: DocSession?, onOff: () -> Unit) {
                 LassoAction(L("إلى نص", "To text"), has, Modifier.weight(1f)) { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LassoAction(L("نسخ", "Copy"), has, Modifier.weight(1f)) { s?.lassoCopy() }
+                LassoAction(L("تكرار", "Duplicate"), has, Modifier.weight(1f)) { s?.lassoDuplicate() }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LassoAction("☺ " + L("ملصق", "Sticker"), has, Modifier.weight(1f)) { s?.let { StickerStore.saveFromLasso(it) } }
-                LassoAction(L("نسخ", "Duplicate"), has, Modifier.weight(1f)) { s?.lassoDuplicate() }
                 LassoAction(L("حذف", "Delete"), has, Modifier.weight(1f), Color(0xFFC62828)) { s?.lassoDelete() }
             }
             // تلوين المحدد

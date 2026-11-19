@@ -1965,6 +1965,7 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         ) {
             if (s.selection != null) SelectionBar(s)
             if (s.lassoSel != null) LassoBar(s)
+            else if (PageClipboard.clip != null && s.selection == null) PasteBar(s)
             if (s.selectedImageId != null) ImageBar(s)
             if (s.selectedTextId != null && s.inlineEditId == null) TextBoxBar(s)
             if (s.selectedNoteId != null) NoteBar(s)
@@ -2046,7 +2047,8 @@ private fun LassoBar(s: DocSession) {
             }
             TextButton(onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }) { Text(L("إلى نص", "To text")) }
             TextButton(onClick = { StickerStore.saveFromLasso(s) }) { Text("☺ " + L("ملصق", "Sticker")) }
-            TextButton(onClick = { s.lassoDuplicate() }) { Text(L("نسخ", "Duplicate")) }
+            TextButton(onClick = { s.lassoCopy() }) { Text(L("نسخ", "Copy")) }
+            TextButton(onClick = { s.lassoDuplicate() }) { Text(L("تكرار", "Duplicate")) }
             c.penPalette.take(6).forEach { col ->
                 Box(
                     Modifier.size(32.dp).clip(CircleShape).clickable { s.lassoRecolor(col) },
@@ -2070,6 +2072,19 @@ private fun LassoBar(s: DocSession) {
     }
     if (toText) InkToTextDialog(s) { toText = false }
     if (changeFont) ChangeFontDialog(s) { changeFont = false }
+}
+
+/** يظهر ما دام في الحافظة شيء منسوخ بأداة التحديد: لصق في الصفحة الظاهرة. */
+@Composable
+private fun PasteBar(s: DocSession) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
+        Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { s.pasteClip() }) {
+                Text(L("لصق هنا", "Paste here"), color = Palette.Navy, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = { PageClipboard.clip = null }) { Text("✕", color = Palette.TextSecondary) }
+        }
+    }
 }
 
 @Composable

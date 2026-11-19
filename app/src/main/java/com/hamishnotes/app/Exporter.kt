@@ -68,25 +68,11 @@ object Exporter {
                 try {
                     val w = base.width.toFloat()
                     val c = Canvas(base)
-                    drawMarks(c, snap.marks[i] ?: emptyList(), w)
-                    drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
-                    val pageInk = snap.ink[i] ?: emptyList()
-                    // الهايلايتر وملء الأشكال تحت النص والكتابة
-                    pageInk.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
-                    drawTexts(c, snap.texts[i] ?: emptyList(), w)
-                    pageInk.forEach { if (it.inOverlay()) drawInk(c, it, w) }
-                    // الملاحظات اللاصقة فوق الصفحة
-                    (snap.notes[i] ?: emptyList()).forEach { n ->
-                        val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
-                        val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
-                        c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
-                        val ni = n.pageInk()
-                        ni.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
-                        ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
-                        n.textBox()?.let { drawTexts(c, listOf(it), w) }
-                    }
-                    // الأشرطة اللاصقة المغطّية فوق كل شيء
-                    drawTapesOn(c, snap.tapes[i] ?: emptyList(), w)
+                    drawPageLayers(
+                        c, w, snap.docId, snap.marks[i] ?: emptyList(), snap.images[i] ?: emptyList(),
+                        snap.ink[i] ?: emptyList(), snap.texts[i] ?: emptyList(), snap.notes[i] ?: emptyList(),
+                        snap.tapes[i] ?: emptyList()
+                    )
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
                     val page = out.startPage(PdfDocument.PageInfo.Builder(PDF_W, ph, i + 1).create())
@@ -264,7 +250,12 @@ object Exporter {
             // الصور
             for (item in images) {
                 val f = AppController.repo.imageFile(snap.docId, item.file)
-                val bmp = BitmapFactory.decodeFile(f.absolutePath) ?: continue
+                val want = (item.w * w).toInt().coerceAtLeast(1)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.absolutePath, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= want) sample *= 2
+            val bmp = BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: continue
                 try {
                     val img = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bmp)
                     val h = item.w / item.aspect
@@ -429,6 +420,31 @@ object Exporter {
         cs.lineTo(x, y + rad)
         cs.curveTo(x, y + rad - k, x + rad - k, y, x + rad, y)
         cs.closePath()
+    }
+
+    /** كل طبقات الصفحة فوق صورتها بالترتيب نفسه الظاهر في القارئ (تُستعمل للتصدير وللصور المصغّرة). */
+    internal fun drawPageLayers(
+        c: Canvas, w: Float, docId: String, marks: List<TextMark>, images: List<ImageItem>,
+        ink: List<Ink>, texts: List<TextBox>, notes: List<StickyNote>, tapes: List<Tape>
+    ) {
+        drawMarks(c, marks, w)
+        drawImages(c, docId, images, w)
+        // الهايلايتر وملء الأشكال تحت النص والكتابة
+        ink.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
+        drawTexts(c, texts, w)
+        ink.forEach { if (it.inOverlay()) drawInk(c, it, w) }
+        // الملاحظات اللاصقة فوق الصفحة
+        notes.forEach { n ->
+            val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+            val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+            c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
+            val ni = n.pageInk()
+            ni.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
+            ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
+            n.textBox()?.let { drawTexts(c, listOf(it), w) }
+        }
+        // الأشرطة اللاصقة المغطّية فوق كل شيء
+        drawTapesOn(c, tapes, w)
     }
 
     private fun drawMarks(c: Canvas, marks: List<TextMark>, w: Float) {

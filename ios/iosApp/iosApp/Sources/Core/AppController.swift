@@ -784,6 +784,8 @@ final class AppController: ObservableObject {
     func selectToolWithHint(_ t: Tool) {
         let was = tool
         pickLeft()
+        // اختيار أداة بيد المستخدم يطفئ الأشكال (كما في أندرويد)، وإلا بقي القلم يرسم أشكالًا
+        shapeActive = false
         selectTool(t)
         if was == t { return }
         if t == .highlighter && highlightSnap {

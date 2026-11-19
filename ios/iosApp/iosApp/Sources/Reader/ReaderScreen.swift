@@ -396,7 +396,7 @@ private struct ReaderTopBar: View {
                         let writing = app.tool.isWriting && !app.lassoActive && !app.shapeActive && !app.tapeActive && !insertOn
                         let shown = app.tool.isWriting ? app.tool : app.lastWriting
                         TBtn(selected: writing, action: {
-                            if !writing { app.pickLeft(); app.selectTool(shown); app.penBarOpen = true } else { app.penBarOpen.toggle() }
+                            if !writing { app.pickLeft(); app.shapeActive = false; app.selectTool(shown); app.penBarOpen = true } else { app.penBarOpen.toggle() }
                         }) { ToolGlyph(tool: shown, selected: writing) }
                     } else {
                         let penSel = app.tool.isPen && !app.lassoActive && !app.shapeActive && !app.tapeActive && !insertOn
@@ -663,7 +663,7 @@ private struct PenBar: View {
             // نقرة ثانية على الأداة المختارة تفتح إعداداتها تحتها مباشرة
             ForEach([inkPen, .pencil, .highlighter], id: \.self) { pt in
                 let sel = pt == t
-                TBtn(selected: sel, action: { if sel { more = true } else { app.pickLeft(); app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
+                TBtn(selected: sel, action: { if sel { more = true } else { app.pickLeft(); app.shapeActive = false; app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
                     .dropdown(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } })) {
                         ToolSettingsPanel(onCustomColor: { more = false; sheet = .colorPicker })
                             .environmentObject(app)

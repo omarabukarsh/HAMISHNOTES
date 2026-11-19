@@ -94,7 +94,7 @@ fun DeleteAccountRow() {
         Column(Modifier.weight(1f)) {
             Text(L("حذف حسابي", "Delete my account"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.exam)
             Text(
-                L("يحذف حسابك وبيانات اشتراكك من خوادم especial notes", "Deletes your account and subscription data from especial notes servers"),
+                L("يحذف حسابك وبيانات اشتراكك من خوادم Special notes", "Deletes your account and subscription data from Special notes servers"),
                 fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
             )
         }
@@ -135,16 +135,16 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
                 buildAnnotatedString {
                     append(L("سيُحذف حساب ", "The account "))
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Palette.TextPrimary)) { append(email) }
-                    append(L(" من especial notes.\nلا يمكن التراجع عن الحذف.", " will be deleted from especial notes.\nThis can’t be undone."))
+                    append(L(" من Special notes.\nلا يمكن التراجع عن الحذف.", " will be deleted from Special notes.\nThis can’t be undone."))
                 },
                 fontSize = 13.5.sp, lineHeight = 21.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(14.dp))
             val listShape = RoundedCornerShape(14.dp)
             Column(Modifier.fillMaxWidth().clip(listShape).border(1.dp, Color(0xFFEFE9DC), listShape)) {
-                DeletionLine(false, L("حسابك في especial notes (البريد والاسم)", "Your especial notes account (email and name)"))
+                DeletionLine(false, L("حسابك في Special notes (البريد والاسم)", "Your Special notes account (email and name)"))
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF3EEE3)))
-                DeletionLine(false, L("سجل اشتراكك وبيانات التحقق في خوادم especial notes", "Your subscription record and verification data on especial notes servers"))
+                DeletionLine(false, L("سجل اشتراكك وبيانات التحقق في خوادم Special notes", "Your subscription record and verification data on Special notes servers"))
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF3EEE3)))
                 DeletionLine(true, L("مستنداتك وملاحظاتك تبقى على هذا الجهاز", "Your documents and notes stay on this device"))
             }
@@ -203,7 +203,7 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
                                 val e = AccountDeletion.delete(activity)
                                 busy = false
                                 if (e == null) {
-                                    AppController.say(MsgKind.DONE, L("حُذف حسابك من especial notes. ملاحظاتك باقية على هذا الجهاز", "Your especial notes account was deleted. Your notes stay on this device"))
+                                    AppController.say(MsgKind.DONE, L("حُذف حسابك من Special notes. ملاحظاتك باقية على هذا الجهاز", "Your Special notes account was deleted. Your notes stay on this device"))
                                     onDismiss()
                                 } else error = e
                             }

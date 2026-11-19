@@ -190,6 +190,12 @@ fun MyNotesApp() {
         c.messages.collect { snackbar.showSnackbar(it) }
     }
 
+    // المظهر «تلقائي»: يتبع مظهر الجهاز ويتغير وحده معه
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    LaunchedEffect(c.themeFollowsSystem, systemDark) {
+        if (c.themeFollowsSystem) ThemeState.theme = if (systemDark) AppTheme.NAVY else AppTheme.LIGHT
+    }
+
     // زر الرجوع من المستند يعيد إلى المكتبة بدل إغلاق التطبيق
     BackHandler(enabled = c.activeId != null) { c.activate(null) }
     // في وضع التركيز: الرجوع يخرج من الوضع أولًا

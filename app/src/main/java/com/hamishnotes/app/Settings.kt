@@ -159,12 +159,12 @@ private fun SettingsPage.title(): String = when (this) {
 }
 
 private fun SettingsPage.lead(): String = when (this) {
-    SettingsPage.ACCOUNT -> L("حساب Google المرتبط بـ especial notes.", "Your Google account linked to especial notes.")
+    SettingsPage.ACCOUNT -> L("حساب Google المرتبط بـ Special notes.", "Your Google account linked to Special notes.")
     SettingsPage.GENERAL -> L("اللغة والمستندات وطريقة فتح التطبيق.", "Language, documents and how the app opens.")
     SettingsPage.PEN -> L("قلمك، والكتابة بالقلم أو الإصبع، وشريط الأدوات.", "Your pen, pen or finger writing, and the toolbar.")
     SettingsPage.HIGHLIGHTS -> L("كيف يعمل الهايلايتر والملخصات.", "How the highlighter and summaries work.")
     SettingsPage.STUDY -> L("مؤقت الدراسة والتذكير اليومي.", "Study timer and your daily reminder.")
-    SettingsPage.APPEARANCE -> L("اجعل especial notes يبدو كما تحب.", "Make especial notes look and feel the way you like.")
+    SettingsPage.APPEARANCE -> L("اجعل Special notes يبدو كما تحب.", "Make Special notes look and feel the way you like.")
     SettingsPage.PRIVACY -> L("قفل المستندات وما يحفظه التطبيق.", "Document lock and what the app stores.")
     SettingsPage.ABOUT -> L("الإصدار والتراخيص والشروط.", "Version, licenses and terms.")
 }
@@ -318,7 +318,7 @@ private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose
             }
         }
         Text(
-            L("especial notes", "especial notes") + " " + BuildConfig.VERSION_NAME,
+            L("Special notes", "Special notes") + " " + BuildConfig.VERSION_NAME,
             fontSize = 11.sp, color = Palette.TextSecondary, modifier = Modifier.padding(start = 10.dp, top = 8.dp)
         )
     }
@@ -367,7 +367,7 @@ private fun SettingsPane(
                         if (Premium.active && Premium.testMode) {
                             GroupRow(
                                 R.drawable.ph_star_fill, TileGold,
-                                L("especial notes Premium", "especial notes Premium"),
+                                L("Special notes Premium", "Special notes Premium"),
                                 L("وضع تجريبي · كل المزايا مفتوحة", "Test mode · every feature unlocked")
                             ) {
                                 Text(
@@ -381,7 +381,7 @@ private fun SettingsPane(
                             val end = g?.let { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale(if (I18n.english) "en" else "ar")).format(java.util.Date(it.exp)) }
                             GroupRow(
                                 R.drawable.ph_star_fill, TileGold,
-                                L("especial notes Premium", "especial notes Premium"),
+                                L("Special notes Premium", "Special notes Premium"),
                                 when {
                                     end == null -> L("كل المزايا مفتوحة", "Every feature unlocked")
                                     g?.trial == true -> L("فترة تجربة · تنتهي $end", "Free trial · ends $end")
@@ -586,13 +586,17 @@ private fun SettingsPane(
                     GroupLabel(L("السمة", "Theme"))
                     SettingsGroup {
                         Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            ThemeCard(L("كحلي", "Navy"), ThemeState.theme == AppTheme.NAVY, AppTheme.NAVY, Modifier.weight(1f)) { c.setTheme(AppTheme.NAVY) }
-                            ThemeCard(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT, AppTheme.LIGHT, Modifier.weight(1f)) { c.setTheme(AppTheme.LIGHT) }
+                            val sysDark = androidx.compose.foundation.isSystemInDarkTheme()
+                            ThemeCard(L("داكن", "Dark"), !c.themeFollowsSystem && ThemeState.theme == AppTheme.NAVY, AppTheme.NAVY, Modifier.weight(1f)) { c.setTheme(AppTheme.NAVY) }
+                            ThemeCard(L("فاتح", "Light"), !c.themeFollowsSystem && ThemeState.theme == AppTheme.LIGHT, AppTheme.LIGHT, Modifier.weight(1f)) { c.setTheme(AppTheme.LIGHT) }
+                            // تلقائي: يتبع مظهر الجهاز ويتغير وحده معه
+                            ThemeCard(L("تلقائي", "System"), c.themeFollowsSystem, null, Modifier.weight(1f)) { c.setThemeSystem(sysDark) }
                         }
                     }
                     GroupLabel(L("الأحجام", "Sizes"))
                     SettingsGroup {
-                        val bars = listOf(0.85f, 1f, 1.15f, 1.3f)
+                        // صغير، متوسط (جديد بين الصغير والكبير)، كبير (المتوسط السابق)، أكبر
+                        val bars = listOf(0.85f, 0.92f, 1f, 1.15f)
                         GroupRow(R.drawable.ph_sliders, TileGray, L("حجم شريط الأدوات", "Toolbar size")) {
                             Segmented(
                                 listOf(L("صغير", "S"), L("عادي", "M"), L("كبير", "L"), L("أكبر", "XL")),
@@ -638,7 +642,7 @@ private fun SettingsPane(
                             Image(painterResource(R.drawable.logo_app), null, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
                             Spacer(Modifier.width(14.dp))
                             Column {
-                                Text(L("especial notes", "especial notes"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
+                                Text(L("Special notes", "Special notes"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.TextPrimary)
                                 Text(L("الإصدار", "Version") + " " + BuildConfig.VERSION_NAME, fontSize = 13.sp, color = Palette.TextSecondary)
                             }
                         }
@@ -770,14 +774,27 @@ private fun Segmented(options: List<String>, selected: Int, sizes: List<Int>? = 
 
 /** بطاقة سمة بمعاينة مصغّرة للشكل. */
 @Composable
-private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme, modifier: Modifier, onClick: () -> Unit) {
+private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme?, modifier: Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
-    val navy = theme == AppTheme.NAVY
     Column(
         modifier.clip(shape).border(2.dp, if (selected) Palette.Gold else Palette.Divider, shape)
             .clickable(onClick = onClick).padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // «تلقائي»: نصف المعاينة فاتح ونصفها داكن
+        if (theme == null) Row(Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(9.dp))) {
+            Box(Modifier.weight(1f).fillMaxHeight()) { ThemePreview(AppTheme.LIGHT) }
+            Box(Modifier.weight(1f).fillMaxHeight()) { ThemePreview(AppTheme.NAVY) }
+        } else ThemePreview(theme)
+        Spacer(Modifier.height(8.dp))
+        Text((if (selected) "✓ " else "") + label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+    }
+}
+
+@Composable
+private fun ThemePreview(theme: AppTheme) {
+    val navy = theme == AppTheme.NAVY
+    run {
         Row(Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(9.dp)).background(if (navy) Color(0xFFF3F5F8) else Color(0xFFFFFDF7))) {
             Box(Modifier.fillMaxHeight().weight(0.28f).background(if (navy) Palette.Navy else Color.White))
             Column(Modifier.weight(0.72f).padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -788,8 +805,6 @@ private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme, modifie
                 Box(Modifier.fillMaxWidth(0.45f).height(6.dp).clip(CircleShape).background(Lib.accent))
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text((if (selected) "✓ " else "") + label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
     }
 }
 
@@ -1204,7 +1219,7 @@ private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, on
             AccountAvatar(name, 52.dp)
             Spacer(Modifier.height(14.dp))
             Text(
-                L("تسجيل الخروج من especial notes؟", "Sign out of especial notes?"),
+                L("تسجيل الخروج من Special notes؟", "Sign out of Special notes?"),
                 fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(10.dp))

@@ -277,9 +277,20 @@ object AppController {
         if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t
     }
 
+    /** المظهر يتبع مظهر الجهاز (داكن/فاتح) ويتغير وحده معه. */
+    var themeFollowsSystem by mutableStateOf(false); private set
+
     fun setTheme(t: AppTheme) {
         ThemeState.theme = t
-        prefs.edit().putString("theme", t.name).apply()
+        themeFollowsSystem = false
+        prefs.edit().putString("theme", t.name).putBoolean("theme_system", false).apply()
+    }
+
+    /** يجعل المظهر يتبع الجهاز؛ dark = مظهر الجهاز الآن. */
+    fun setThemeSystem(dark: Boolean) {
+        themeFollowsSystem = true
+        ThemeState.theme = if (dark) AppTheme.NAVY else AppTheme.LIGHT
+        prefs.edit().putBoolean("theme_system", true).apply()
     }
 
     // ---------- وضع التركيز ومؤقت الدراسة (25 دقيقة دراسة ثم 5 راحة) ----------
@@ -834,6 +845,7 @@ object AppController {
         } catch (e: Throwable) {
             AppTheme.NAVY
         }
+        themeFollowsSystem = prefs.getBoolean("theme_system", false)
         laserMode = try {
             LaserMode.valueOf(prefs.getString("laser_mode", "DOT") ?: "DOT")
         } catch (e: Throwable) {

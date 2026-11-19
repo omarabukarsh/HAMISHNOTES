@@ -177,8 +177,8 @@ fun PresentationConvertDialog() {
                 when {
                     choosing -> {
                         Text(
-                            L("اختر أداة تحوّل العرض إلى PDF (مرة واحدة، ويتذكرها «especial notes»):",
-                                "Choose an app that converts the presentation to PDF (once; especial notes remembers it):"),
+                            L("اختر أداة تحوّل العرض إلى PDF (مرة واحدة، ويتذكرها «Special notes»):",
+                                "Choose an app that converts the presentation to PDF (once; Special notes remembers it):"),
                             fontSize = 14.sp, color = Palette.TextPrimary
                         )
                         Spacer(Modifier.size(8.dp))
@@ -211,8 +211,8 @@ fun PresentationConvertDialog() {
                         }
                     }
                     stage == 1 -> Text(
-                        L("حوّل العرض إلى PDF في الأداة التي فُتحت (في WPS: القائمة ← تصدير إلى PDF)، ثم ارجع إلى «especial notes» وسيفتح لك قائمة ملفات PDF.",
-                            "Convert the presentation to PDF in the app that opened (in WPS: menu → Export to PDF), then return to especial notes and it will show your PDF files."),
+                        L("حوّل العرض إلى PDF في الأداة التي فُتحت (في WPS: القائمة ← تصدير إلى PDF)، ثم ارجع إلى «Special notes» وسيفتح لك قائمة ملفات PDF.",
+                            "Convert the presentation to PDF in the app that opened (in WPS: menu → Export to PDF), then return to Special notes and it will show your PDF files."),
                         fontSize = 14.sp, lineHeight = 21.sp, color = Palette.TextPrimary
                     )
                     else -> Text(

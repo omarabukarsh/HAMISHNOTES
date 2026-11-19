@@ -340,8 +340,6 @@ private fun FloatingBars(s: DocSession, modifier: Modifier = Modifier) {
                             baseDensity.density * UiPrefs.toolbarScale, baseDensity.fontScale
                         )
                     ) {
-                    // البحث: نافذة صغيرة عائمة بدل شريط بعرض الشاشة
-                    if (s.searchOpen) ReaderSearchBar(s)
                     // شريط الأقلام الثاني (نمط «شريط الأقلام»)
                     AnimatedVisibility(
                         visible = c.toolbarStyle == ToolbarStyle.PEN_BAR && c.penBarOpen && !c.lassoActive && !PenPrefs.shapeActive && !TapeTool.active &&
@@ -448,15 +446,18 @@ internal fun TBtn(
     selected: Boolean = false,
     enabled: Boolean = true,
     locked: Boolean = false,
+    /** خاصية تعمل أو تتوقف (مثل تجميل الخط) لا أداة: المفعّل بنقطة ذهبية بلا خلفية، فلا يلتصق بأداة مختارة بجانبه. */
+    toggle: Boolean = false,
     onClick: () -> Unit,
     content: @Composable () -> Unit
 ) {
     // انتقال لوني ناعم عند الاختيار، وانضغاط خفيف عند اللمس
     val bg by androidx.compose.animation.animateColorAsState(
-        if (selected) Palette.ChromeSel else Color.Transparent, tween(Motion.ENTER), label = "tbtn"
+        if (selected && !toggle) Palette.ChromeSel else Color.Transparent, tween(Motion.ENTER), label = "tbtn"
     )
+    // مسافة صغيرة بين كل زرين: الخلفيات المختارة لا تلتصق أبدًا
     Box(
-        Modifier.size(42.dp).pressScale().clip(RoundedCornerShape(12.dp))
+        Modifier.padding(horizontal = 2.dp).size(42.dp).pressScale().clip(RoundedCornerShape(12.dp))
             .background(bg)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -464,9 +465,14 @@ internal fun TBtn(
         content()
         // قفل ذهبي على الأدوات المدفوعة قبل الاشتراك
         if (locked) PremiumBadge(Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 3.dp), 13.dp)
+        // خاصية مفعّلة: نقطة ذهبية صغيرة في الزاوية
+        if (toggle && selected && !locked) Box(
+            Modifier.align(Alignment.TopEnd).padding(top = 5.dp, end = 5.dp).size(8.dp).clip(CircleShape)
+                .background(Palette.Gold).border(1.5.dp, Palette.ChromeBg, CircleShape)
+        )
         // مؤشر ذهبي صغير أسفل الأداة المختارة
         androidx.compose.animation.AnimatedVisibility(
-            visible = selected,
+            visible = selected && !toggle,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(tween(Motion.ENTER)) + androidx.compose.animation.scaleIn(Motion.grow(), initialScale = 0.3f),
             exit = fadeOut(tween(Motion.EXIT))
@@ -724,8 +730,9 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 if (v("tape")) {
                     TBtn(selected = TapeTool.active, onClick = {
                         if (TapeTool.active) {
-                            // نقرة ثانية على الأداة: تفتح نافذة إعدادات الشريط
-                            TapeTool.menuOpen = true
+                            // نقرة ثانية: تطفئ الأداة (نافذة الإعدادات تُفتح من أيقونتها في شريط الشريط اللاصق فقط)
+                            TapeTool.active = false
+                            TapeTool.menuOpen = false
                         } else {
                             s.finishInlineEdit()
                             TapeTool.turnOn()
@@ -734,16 +741,17 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }) { PhIcon(R.drawable.ph_tape, chromeTint(TapeTool.active)) }
                 }
                 // «Aa تلقائي»: الكتابة اليدوية تتحول إلى الخط المختار بعد إنهاء الجملة
-                if (v("autofont")) {
+                // في نمط «شريط الأقلام» ينتقل إلى شريط القلم
+                if (v("autofont") && c.toolbarStyle != ToolbarStyle.PEN_BAR) {
                     var autoDlg by remember { mutableStateOf(false) }
-                    TBtn(selected = AutoFont.on, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) autoDlg = true }) {
+                    TBtn(selected = AutoFont.on, toggle = true, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) autoDlg = true }) {
                         PhIcon(R.drawable.ph_beautify, if (AutoFont.on) Palette.GoldDeep else Palette.ChromeMuted, description = L("تجميل الخط", "Beautify handwriting"))
                     }
                     if (autoDlg) AutoFontDialog { autoDlg = false }
                 }
                 // التبديل بين الكتابة بالقلم فقط، والكتابة بالقلم والإصبع
                 if (PenInput.showToggle) {
-                    TBtn(selected = PenInput.fingerWrites, onClick = {
+                    TBtn(selected = PenInput.fingerWrites, toggle = true, onClick = {
                         val on = !PenInput.fingerWrites
                         PenInput.chooseFingerWrites(on)
                         c.say(MsgKind.TIP, 
@@ -761,6 +769,8 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                 // بقية الأدوات: تتمرر وحدها (الأجزاء الثابتة على الطرفين لا تتحرك)
                 if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
                 Box(if (fitAll) Modifier else Modifier.weight(1f)) {
+                // البحث: يحل محل وسط الشريط (الأدوات الأساسية و«⋮» تبقى)، فلا نافذة فوق الصفحة
+                if (s.searchOpen) ReaderSearchBar(s, if (fitAll) Modifier.width(520.dp) else Modifier.fillMaxWidth()) else
                 Row(
                     (if (fitAll) Modifier else Modifier.scrollFade().horizontalScroll(rememberScrollState())),
                     verticalAlignment = Alignment.CenterVertically
@@ -1058,6 +1068,14 @@ private fun PenBar() {
                 }
                 TBtn(onClick = { c.addPreset() }) {
                     PhIcon(R.drawable.ph_star_plus, Palette.GoldDeep, 20.dp, L("حفظ كقلم مفضل", "Save as favorite pen"))
+                }
+                // تجميل الخط: خاصية للكتابة بالقلم (تعمل أو تتوقف)، والنقر يفتح إعداداتها
+                if (c.toolVisible("autofont")) {
+                    var autoDlg by remember { mutableStateOf(false) }
+                    TBtn(selected = AutoFont.on, toggle = true, locked = !Premium.active, onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) autoDlg = true }) {
+                        PhIcon(R.drawable.ph_beautify, if (AutoFont.on) Palette.GoldDeep else Palette.ChromeMuted, 20.dp, L("تجميل الخط", "Beautify handwriting"))
+                    }
+                    if (autoDlg) AutoFontDialog { autoDlg = false }
                 }
                 ToolbarSep()
                 // خمسة ألوان فقط بمسافة واسعة (آخر ما استُخدم)، و«+» يفتح بقية الألوان واللون المخصص
@@ -1435,7 +1453,7 @@ internal fun PageJumpDialog(count: Int, current: Int, onGo: (Int) -> Unit, onDis
 // ---------------------------------------------------------------- البحث وحالة القراءة
 
 @Composable
-private fun ReaderSearchBar(s: DocSession) {
+private fun ReaderSearchBar(s: DocSession, modifier: Modifier = Modifier) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         try {
@@ -1444,61 +1462,46 @@ private fun ReaderSearchBar(s: DocSession) {
         }
     }
     val total = s.pdf?.count ?: 0
-    // نافذة صغيرة عائمة في أعلى طرف الصفحة (لا تُنزل الصفحة)، يُكتب فيها مباشرة
-    Box(Modifier.fillMaxWidth().padding(top = 10.dp, end = 20.dp, start = 20.dp), contentAlignment = Alignment.TopEnd) {
-    Column(
-        Modifier.widthIn(max = 460.dp).shadow(8.dp, BarShape).background(Palette.ChromeBg, BarShape)
-            .border(1.dp, Palette.ChromeLine, BarShape).clip(BarShape).blockTouches()
+    // البحث داخل شريط الأدوات: خانة كتابة، عدد النتائج، السابق والتالي، والإغلاق
+    Row(
+        modifier.padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
-            Modifier.padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        Box(
+            Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp))
+                .background(Palette.ChromeSel).padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
-            Box(
-                Modifier.width(250.dp).height(40.dp).clip(RoundedCornerShape(12.dp))
-                    .background(Palette.ChromeSel).padding(horizontal = 12.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                if (s.searchQuery.isEmpty()) {
-                    Text(L("ابحث في نص المستند", "Search the document text"), color = Palette.ChromeMuted, fontSize = 15.sp, maxLines = 1)
-                }
-                BasicTextField(
-                    value = s.searchQuery,
-                    onValueChange = { s.runSearch(it) },
-                    singleLine = true,
-                    textStyle = TextStyle(color = Palette.ChromeFg, fontSize = 15.sp),
-                    cursorBrush = SolidColor(Palette.Navy),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus)
-                )
+            if (s.searchQuery.isEmpty()) {
+                Text(L("ابحث في نص المستند", "Search the document text"), color = Palette.ChromeMuted, fontSize = 15.sp, maxLines = 1)
             }
-            Text(
-                when {
-                    s.searchQuery.isBlank() -> ""
-                    s.hits.isEmpty() -> L("لا نتائج", "No results")
-                    else -> "${s.hitIndex + 1}/${s.hits.size}"
-                },
-                fontSize = 13.sp, color = Palette.ChromeMuted, maxLines = 1
+            BasicTextField(
+                value = s.searchQuery,
+                onValueChange = { s.runSearch(it) },
+                singleLine = true,
+                textStyle = TextStyle(color = Palette.ChromeFg, fontSize = 15.sp),
+                cursorBrush = SolidColor(Palette.ChromeAccent),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus)
             )
-            TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.ChromeFg, up = true) }
-            TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.ChromeFg, up = false) }
-            IconButton(onClick = { s.closeSearch() }, modifier = Modifier.size(40.dp)) {
-                PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp, L("إغلاق البحث", "Close search"))
-            }
         }
-        if (!s.ocrRunning && s.ocr.size < total) {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    L("البحث يشمل ${s.ocr.size} من $total صفحة تمت قراءتها", "Search covers ${s.ocr.size} of $total pages read so far"),
-                    fontSize = 12.sp, color = Palette.ChromeMuted, modifier = Modifier.weight(1f, fill = false)
-                )
-                TextButton(onClick = { s.startOcr() }) { Text(L("قراءة الكل", "Read all"), fontSize = 13.sp, color = Palette.ChromeAccent) }
-            }
+        Text(
+            when {
+                s.searchQuery.isBlank() -> ""
+                s.hits.isEmpty() -> L("لا نتائج", "No results")
+                else -> "${s.hitIndex + 1}/${s.hits.size}"
+            },
+            fontSize = 13.sp, color = Palette.ChromeMuted, maxLines = 1
+        )
+        // البحث يشمل الصفحات المقروءة فقط: «قراءة الكل» يقرأ الباقي
+        if (!s.ocrRunning && s.ocr.size < total && s.searchQuery.isNotBlank()) {
+            TextButton(onClick = { s.startOcr() }) { Text(L("قراءة الكل", "Read all"), fontSize = 13.sp, color = Palette.ChromeAccent, maxLines = 1) }
         }
-    }
+        TBtn(onClick = { s.stepHit(-1) }) { ChevronGlyph(Palette.ChromeFg, up = true) }
+        TBtn(onClick = { s.stepHit(1) }) { ChevronGlyph(Palette.ChromeFg, up = false) }
+        TBtn(onClick = { s.closeSearch() }) {
+            PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp, L("إغلاق البحث", "Close search"))
+        }
     }
 }
 
@@ -4041,7 +4044,7 @@ private fun BoxScope.InlineTextEditor(
         InlineChip("✓ " + L("تم", "Done"), bold = true, fg = Color.White, bg = Palette.Navy) { s.finishInlineEdit() }
     }
     if (fontPick) {
-        FontLibraryDialog(tb.text.ifBlank { L("especial notes", "especial notes") }, tb.font, onPick = { f ->
+        FontLibraryDialog(tb.text.ifBlank { L("Special notes", "Special notes") }, tb.font, onPick = { f ->
             s.updateTextBox(tb.id) { it.copy(font = f) }
         }, onDismiss = { fontPick = false })
     }

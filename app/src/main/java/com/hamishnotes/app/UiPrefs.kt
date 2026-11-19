@@ -35,7 +35,7 @@ object UiPrefs {
     fun init(ctx: Context) {
         val p = ctx.getSharedPreferences("mynotes_ui", Context.MODE_PRIVATE)
         sp = p
-        toolbarScale = p.getFloat("toolbar_scale", 1f)
+        toolbarScale = p.getFloat("toolbar_scale", 1f).let { if (it > 1.2f) 1.15f else it } // الحجم 1.3 أُزيل: يصبح «أكبر»
         textScale = p.getFloat("text_scale", 1f)
         summariesOn = p.getBoolean("summaries_on", true)
         tipsOn = p.getBoolean("msg_tips", true)

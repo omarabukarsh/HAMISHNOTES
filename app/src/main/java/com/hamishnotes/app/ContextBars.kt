@@ -19,6 +19,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
@@ -52,13 +54,46 @@ private val CtxBtnShape = RoundedCornerShape(10.dp)
 /** جسم الشريط: الأزرار في صف واحد بمسافات متساوية (يتمرر إن لم يتسع). */
 @Composable
 internal fun CtxBar(content: @Composable RowScope.() -> Unit) {
+    val reveal = LocalCtxReveal.current
     Row(
         Modifier.shadow(8.dp, CtxShape).background(Palette.ChromeBg, CtxShape).clip(CtxShape).blockTouches()
-            .horizontalScroll(rememberScrollState()).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content
-    )
+            .horizontalScroll(rememberScrollState()).padding(4.dp)
+    ) {
+        // الأزرار تظهر بعد أن تتمدد القطرة إلى الشريط
+        Row(
+            Modifier.graphicsLayer { alpha = reveal(); translationY = (1f - reveal()) * 4.dp.toPx() },
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+    }
+}
+
+/** ظهور محتوى الشريط (0..1) أثناء حركة القطرة. */
+internal val LocalCtxReveal = androidx.compose.runtime.staticCompositionLocalOf<() -> Float> { { 1f } }
+
+/**
+ * حركة «قطرة الماء»: تنبع قطرة صغيرة من رأس السهم، ترتفع وتتمدد إلى الشريط مع ارتداد خفيف.
+ * p من 0 إلى 1 → (عرض، ارتفاع، إزاحة رأسية بوحدات dp، شفافية).
+ */
+private val dropKeys = arrayOf(
+    floatArrayOf(0f, 0.04f, 0.30f, 6f, 0f),
+    floatArrayOf(0.35f, 0.07f, 0.60f, 0f, 1f),
+    floatArrayOf(0.72f, 1.06f, 0.86f, 4f, 1f),
+    floatArrayOf(0.88f, 0.98f, 1.04f, -1f, 1f),
+    floatArrayOf(1f, 1f, 1f, 0f, 1f)
+)
+
+internal fun dropAt(p: Float): FloatArray {
+    val q = p.coerceIn(0f, 1f)
+    for (i in 1 until dropKeys.size) {
+        val a = dropKeys[i - 1]; val b = dropKeys[i]
+        if (q <= b[0]) {
+            val t = if (b[0] == a[0]) 1f else (q - a[0]) / (b[0] - a[0])
+            return FloatArray(4) { j -> a[j + 1] + (b[j + 1] - a[j + 1]) * t }
+        }
+    }
+    return floatArrayOf(1f, 1f, 0f, 1f)
 }
 
 /** زر في الشريط: عادي، أو أساسي بخلفية كحلية — بنفس المقاس في الحالتين. */
@@ -92,7 +127,7 @@ internal fun CtxMore(content: @Composable ColumnScope.(close: () -> Unit) -> Uni
         CtxBtn("⋯") { open = true }
         DropdownMenu(
             expanded = open, onDismissRequest = { open = false },
-            shape = RoundedCornerShape(14.dp), containerColor = Color.White, shadowElevation = 12.dp
+            shape = RoundedCornerShape(14.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
         ) { content { open = false } }
     }
 }
@@ -122,15 +157,30 @@ internal fun AnchoredBar(
     page: Int,
     rect: Rect,
     preferBelow: Boolean = false,
+    /** false: الشريط يرجع قطرةً ويختفي (أثناء السحب، أو قبل اكتمال التحديد). */
+    visible: Boolean = true,
     bar: @Composable () -> Unit
 ) {
     var host by remember { mutableStateOf(Offset.Zero) }
+    // تقدّم حركة القطرة: 0 مخفي، 1 ظاهر بالكامل
+    val prog = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            // يظهر بعد اكتمال التحديد بلحظة قصيرة
+            if (prog.value == 0f) kotlinx.coroutines.delay(120)
+            prog.animateTo(1f, androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+        } else {
+            prog.animateTo(0f, androidx.compose.animation.core.tween(200, easing = androidx.compose.animation.core.FastOutLinearInEasing))
+        }
+    }
     val visible = s.listState.layoutInfo.visibleItemsInfo.any { it.index == page }
     var down by remember { mutableStateOf(true) }
+    if (!visible && prog.value == 0f) return
+    val reveal = remember { { ((prog.value - 0.7f) / 0.3f).coerceIn(0f, 1f) } }
     Layout(
         content = {
             Box(Modifier.size(width = 16.dp, height = 8.dp).background(Palette.ChromeBg, arrowShape(down)))
-            bar()
+            androidx.compose.runtime.CompositionLocalProvider(LocalCtxReveal provides reveal) { bar() }
         },
         modifier = Modifier.fillMaxSize().onGloballyPositioned { host = it.localToWindow(Offset.Zero) }
     ) { ms, cons ->
@@ -162,21 +212,28 @@ internal fun AnchoredBar(
             val x = (cx - b.width / 2f).coerceIn(margin.toFloat(), (cons.maxWidth - margin - b.width).toFloat().coerceAtLeast(margin.toFloat()))
             val ax = (cx - a.width / 2f).coerceIn(x + 12.dp.toPx(), x + b.width - 12.dp.toPx() - a.width)
             val ay = if (useBelow) y - a.height + 1f else y + b.height - 1f
-            b.place(x.roundToInt(), y.roundToInt())
-            a.place(ax.roundToInt(), ay.roundToInt(), zIndex = 1f)
+            // القطرة تنبع من رأس السهم
+            val d = dropAt(prog.value)
+            val ox = if (b.width > 0) ((ax + a.width / 2f - x) / b.width).coerceIn(0f, 1f) else 0.5f
+            val dy = d[2] * density * (if (useBelow) -1f else 1f)
+            b.placeWithLayer(x.roundToInt(), y.roundToInt()) {
+                scaleX = d[0]; scaleY = d[1]; translationY = dy; alpha = d[3]
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(ox, if (useBelow) 0f else 1f)
+            }
+            a.placeWithLayer(ax.roundToInt(), ay.roundToInt(), zIndex = 1f) {
+                alpha = reveal()
+                scaleY = 0.4f + 0.6f * reveal()
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, if (useBelow) 1f else 0f)
+            }
         }
     }
 }
 
 /** حدود التحديد الحر (خطوط، صور، مربعات نص) بوحدات عرض الصفحة. */
 internal fun DocSession.lassoRect(): Rect? {
-    val sel = lassoSel ?: return null
-    var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
-    fun add(x: Float, y: Float) { l = minOf(l, x); t = minOf(t, y); r = maxOf(r, x); b = maxOf(b, y) }
-    sel.strokes.forEach { st -> st.pts.forEach { add(it.x, it.y) } }
-    (images[sel.page] ?: emptyList()).filter { it.id in sel.imageIds }.forEach { add(it.x, it.y); add(it.x + it.w, it.y + it.w / it.aspect) }
-    (texts[sel.page] ?: emptyList()).filter { it.id in sel.textIds }.forEach { add(it.x, it.y); add(it.x + it.w, it.y + textHeightOf(it)) }
-    return if (l > r) null else Rect(l, t, r, b)
+    // الحدود محفوظة بعد أول حساب (لا تُعاد على كل النقاط مع كل إطار)
+    val bb = lassoBounds() ?: return null
+    return Rect(bb[0], bb[1], bb[2], bb[3])
 }
 
 /** حدود النص المحدد في صفحة PDF. */

@@ -262,7 +262,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 @Composable
 private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose: (() -> Unit)?, onSelect: (SettingsPage) -> Unit) {
     val c = AppController
-    Column(modifier.background(Color.White).padding(horizontal = 12.dp, vertical = 16.dp)) {
+    Column(modifier.background(Palette.Surface).padding(horizontal = 12.dp, vertical = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 L("الإعدادات", "Settings"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
@@ -698,7 +698,7 @@ private fun GroupLabel(text: String) {
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
-    Column(Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)) { content() }
+    Column(Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)) { content() }
 }
 
 @Composable
@@ -759,7 +759,7 @@ private fun Segmented(options: List<String>, selected: Int, sizes: List<Int>? = 
             val on = i == selected
             Box(
                 Modifier.clip(RoundedCornerShape(9.dp))
-                    .let { if (on) it.shadow(1.dp, RoundedCornerShape(9.dp)).background(Color.White) else it }
+                    .let { if (on) it.shadow(1.dp, RoundedCornerShape(9.dp)).background(Palette.Surface) else it }
                     .clickable { onSelect(i) }.padding(horizontal = 12.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -814,7 +814,7 @@ private fun PenKeyLearnRow() {
     val c = AppController
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -862,7 +862,7 @@ private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
         ) {
             Column(Modifier.fillMaxSize()) {
                 // الرأس: العنوان، الاستعادة، الإغلاق، والتبويبات
-                Column(Modifier.fillMaxWidth().background(Color.White).padding(start = 26.dp, end = 18.dp, top = 20.dp)) {
+                Column(Modifier.fillMaxWidth().background(Palette.Surface).padding(start = 26.dp, end = 18.dp, top = 20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -947,7 +947,7 @@ private fun ToolbarLivePreview() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
-            Modifier.shadow(6.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Color.White)
+            Modifier.shadow(6.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
                 .horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -981,7 +981,7 @@ private fun ToolGrid(tools: List<ToolInfo>, cols: Int, onInfo: (String) -> Unit,
                     val on = essential || c.toolVisible(t.id)
                     val shape = RoundedCornerShape(16.dp)
                     Row(
-                        Modifier.weight(1f).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+                        Modifier.weight(1f).clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
                             .let { if (essential) it else it.clickable { c.setToolVisible(t.id, !on) } }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1027,7 +1027,7 @@ private fun LearnTools(index: Int, wide: Boolean, onSelect: (Int) -> Unit) {
         val shape = RoundedCornerShape(18.dp)
         val state = rememberLazyListState(initialFirstVisibleItemIndex = (index - 2).coerceAtLeast(0))
         LazyColumn(
-            m.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape),
+            m.clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape),
             state = state,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)
         ) {
@@ -1069,7 +1069,7 @@ private fun ToolExplainer(index: Int, modifier: Modifier, onSelect: (Int) -> Uni
     val tools = ToolCatalog.tour
     val t = tools[index]
     val shape = RoundedCornerShape(18.dp)
-    Column(modifier.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).verticalScroll(rememberScrollState()).padding(18.dp)) {
+    Column(modifier.clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape).verticalScroll(rememberScrollState()).padding(18.dp)) {
         ToolDemo(t.demo, Modifier.fillMaxWidth().height(220.dp))
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1141,7 +1141,7 @@ private fun AccountRow() {
     val name = c.accountName ?: email
     val shape = RoundedCornerShape(20.dp)
     Column(
-        Modifier.fillMaxWidth().shadow(3.dp, shape).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().shadow(3.dp, shape).clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
     ) {
         Row(
             Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFFFFFDF7), Color(0xFFFCEBC2))))
@@ -1156,7 +1156,7 @@ private fun AccountRow() {
                 Spacer(Modifier.height(8.dp))
                 val chip = RoundedCornerShape(12.dp)
                 Row(
-                    Modifier.clip(chip).background(Color.White).border(1.dp, Palette.Divider, chip)
+                    Modifier.clip(chip).background(Palette.Surface).border(1.dp, Palette.Divider, chip)
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1196,7 +1196,7 @@ private fun AccountRow() {
 private fun AccountAvatar(name: String, size: androidx.compose.ui.unit.Dp) {
     Box(
         Modifier.size(size).clip(CircleShape).background(Lib.accent).padding(2.dp)
-            .clip(CircleShape).background(Color.White).padding(3.dp)
+            .clip(CircleShape).background(Palette.Surface).padding(3.dp)
             .clip(CircleShape).background(Color(0xFF1E2A44)),
         contentAlignment = Alignment.Center
     ) {
@@ -1212,7 +1212,7 @@ private fun AccountAvatar(name: String, size: androidx.compose.ui.unit.Dp) {
 private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            Modifier.widthIn(max = 400.dp).clip(RoundedCornerShape(24.dp)).background(Color.White)
+            Modifier.widthIn(max = 400.dp).clip(RoundedCornerShape(24.dp)).background(Palette.Surface)
                 .padding(start = 26.dp, end = 26.dp, top = 26.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -1257,7 +1257,7 @@ private fun SignOutDialog(name: String, email: String, onDismiss: () -> Unit, on
 private fun NavRow(title: String, desc: String, icon: Int, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1298,7 +1298,7 @@ private fun StyleOption(modifier: Modifier, style: ToolbarStyle, title: String, 
     val sel = c.toolbarStyle == style
     val shape = RoundedCornerShape(18.dp)
     Box(
-        modifier.clip(shape).background(Color.White)
+        modifier.clip(shape).background(Palette.Surface)
             .border(2.dp, if (sel) Palette.Gold else Palette.Divider, shape)
             .clickable { c.updateToolbarStyle(style) }
     ) {
@@ -1865,7 +1865,7 @@ private fun ReminderRow() {
     fun hhmm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1997,7 +1997,7 @@ private fun PomodoroSettings() {
     var custom by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(14.dp)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).padding(14.dp),
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(

@@ -193,7 +193,7 @@ fun StickyBar() {
                     TBtn(onClick = { panel = true }) { PhIcon(R.drawable.ph_caret_down, Palette.ChromeMuted, 20.dp, L("أنماط الملاحظات", "Note styles")) }
                     DropdownMenu(
                         expanded = panel, onDismissRequest = { panel = false },
-                        shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                        shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                     ) { StickerPanel { panel = false } }
                 }
                 TBtn(onClick = { PenPrefs.stickyActive = false; AppController.notePastePending = false }) { PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp) }
@@ -258,7 +258,7 @@ fun NoteBar(s: DocSession) {
         CtxBtn(if (n.collapsed) L("فتح", "Expand") else L("طيّ", "Collapse")) { s.editNote(id) { it.copy(collapsed = !it.collapsed) } }
         CtxBtn(L("نسخ", "Copy")) {
             c.noteClipboard = n
-            c.say(MsgKind.DONE, L("نُسخت الملاحظة", "Note copied"))
+            s.copyItem(note = n)
         }
         CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteNote(id) }
         CtxMore { close ->

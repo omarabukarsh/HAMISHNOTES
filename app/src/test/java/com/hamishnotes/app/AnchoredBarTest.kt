@@ -61,7 +61,7 @@ class AnchoredBarTest {
             }
         }
         rule.waitForIdle()
-        rule.mainClock.advanceTimeBy(100)
+        rule.mainClock.advanceTimeBy(1000)
         rule.waitForIdle()
         return s
     }

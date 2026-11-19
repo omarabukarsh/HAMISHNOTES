@@ -116,7 +116,7 @@ fun SummaryDrawer(
     Surface(
         modifier.fillMaxHeight().padding(end = 12.dp, top = 4.dp, bottom = 12.dp).width(420.dp),
         shape = ChromeShape,
-        color = Color.White,
+        color = Palette.Surface,
         shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -191,7 +191,7 @@ fun SummaryDrawer(
                         val shape = RoundedCornerShape(18.dp)
                         Row(
                             Modifier.clip(shape)
-                                .background(if (sel) Palette.Navy else Color.White)
+                                .background(if (sel) Palette.Navy else Palette.Surface)
                                 .border(1.dp, if (sel) Palette.Navy else Palette.Divider, shape)
                                 .clickable { colorFilter = if (sel) null else argb }
                                 .padding(horizontal = 12.dp, vertical = 7.dp),

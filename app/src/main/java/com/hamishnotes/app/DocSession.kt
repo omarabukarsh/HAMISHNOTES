@@ -115,7 +115,10 @@ class LassoSel(
 }
 
 /** ما نُسخ بأداة التحديد: يُلصق في أي صفحة أو أي مستند آخر. */
-class PageClip(val docId: String, val strokes: List<Ink>, val images: List<ImageItem>, val texts: List<TextBox>)
+class PageClip(
+    val docId: String, val strokes: List<Ink>, val images: List<ImageItem>, val texts: List<TextBox>,
+    val notes: List<StickyNote> = emptyList()
+)
 
 object PageClipboard {
     var clip by mutableStateOf<PageClip?>(null)
@@ -160,16 +163,33 @@ class DocSession(entry: DocEntry) {
 
     var annotations by mutableStateOf<Map<Int, List<Ink>>>(emptyMap())
     var images by mutableStateOf<Map<Int, List<ImageItem>>>(emptyMap())
-    var selectedImageId by mutableStateOf<String?>(null)
+    private var selImage = mutableStateOf<String?>(null)
+    var selectedImageId: String?
+        get() = selImage.value
+        set(v) { if (v != null && v != selImage.value) barHidden = false; selImage.value = v }
+
+    /**
+     * شريط العنصر المحدد مخفي: يختفي أثناء سحب العنصر ويبقى مخفيًا بعد الإفلات،
+     * ويعود بضغطة مطوّلة على العنصر. تحديد عنصر جديد يُظهره من جديد.
+     */
+    var barHidden by mutableStateOf(false)
+    /** الإصبع ما زال يحدد (نصًا أو بسحب): الشريط لا يظهر إلا بعد اكتمال التحديد. */
+    var selecting by mutableStateOf(false)
 
     /** تمييزات النص الملتقطة (مصدر درج «ملخصات»)، ومربعات النص المكتوب. */
     var marks by mutableStateOf<Map<Int, List<TextMark>>>(emptyMap())
     var texts by mutableStateOf<Map<Int, List<TextBox>>>(emptyMap())
-    var selectedTextId by mutableStateOf<String?>(null)
+    private var selText = mutableStateOf<String?>(null)
+    var selectedTextId: String?
+        get() = selText.value
+        set(v) { if (v != null && v != selText.value) barHidden = false; selText.value = v }
 
     /** الملاحظات اللاصقة والمحددة منها. */
     var notes by mutableStateOf<Map<Int, List<StickyNote>>>(emptyMap())
-    var selectedNoteId by mutableStateOf<String?>(null)
+    private var selNote = mutableStateOf<String?>(null)
+    var selectedNoteId: String?
+        get() = selNote.value
+        set(v) { if (v != null && v != selNote.value) barHidden = false; selNote.value = v }
     /** ملاحظة يُكتب نصها الآن بلوحة المفاتيح. */
     var noteTextEditId by mutableStateOf<String?>(null)
 
@@ -553,6 +573,7 @@ class DocSession(entry: DocEntry) {
 
     /** يحدد الخطوط التي يقع معظمها داخل المضلع (إحداثيات الصفحة). */
     fun lassoSelect(page: Int, poly: List<Pt>) {
+        barHidden = false
         val list = annotations[page] ?: emptyList()
         if (poly.size < 3) {
             lassoSel = null
@@ -730,6 +751,22 @@ class DocSession(entry: DocEntry) {
     /** مكان الضغط المطوّل على الصفحة (لفقاعة «لصق» فوقه)؛ null = لا فقاعة. */
     var pasteAt by mutableStateOf<Pair<Int, Offset>?>(null)
 
+    /** هل النقطة (بوحدات عرض الصفحة) على العنصر المحدد الآن في هذه الصفحة. */
+    fun hitsSelected(page: Int, x: Float, y: Float): Boolean {
+        fun inR(l: Float, t: Float, r: Float, b: Float) = x >= l - 0.01f && x <= r + 0.01f && y >= t - 0.01f && y <= b + 0.01f
+        lassoSel?.takeIf { it.page == page }?.let { lassoRect()?.let { r -> if (inR(r.left, r.top, r.right, r.bottom)) return true } }
+        selectedImageId?.let { id -> images[page]?.firstOrNull { it.id == id }?.let { if (inR(it.x, it.y, it.x + it.w, it.y + it.w / it.aspect)) return true } }
+        selectedTextId?.let { id -> texts[page]?.firstOrNull { it.id == id }?.let { if (inR(it.x, it.y, it.x + it.w, it.y + textHeightOf(it))) return true } }
+        selectedNoteId?.let { id -> notes[page]?.firstOrNull { it.id == id }?.let { if (inR(it.x, it.y, it.x + it.w, it.y + it.h)) return true } }
+        return false
+    }
+
+    /** ينسخ عنصرًا واحدًا (مربع نص، صورة، ملاحظة) ليلصق بضغطة مطوّلة في أي ورقة. */
+    fun copyItem(image: ImageItem? = null, text: TextBox? = null, note: StickyNote? = null) {
+        PageClipboard.clip = PageClip(id, emptyList(), listOfNotNull(image), listOfNotNull(text), listOfNotNull(note))
+        AppController.say(MsgKind.DONE, L("تم النسخ — اضغط مطوّلًا في أي مكان للّصق", "Copied — long-press anywhere to paste"))
+    }
+
     /** يلصق محتوى الحافظة: وسطه عند at (أو وسط الجزء الظاهر من الصفحة)، ويصبح هو المحدد لتحريكه. */
     fun pasteClip(page: Int = currentPage(), at: Offset? = null) {
         val clip = PageClipboard.clip ?: return
@@ -738,6 +775,7 @@ class DocSession(entry: DocEntry) {
         clip.strokes.forEach { s -> s.pts.forEach { add(it.x, it.y) } }
         clip.images.forEach { add(it.x, it.y); add(it.x + it.w, it.y + it.w / it.aspect) }
         clip.texts.forEach { add(it.x, it.y); add(it.x + it.w, it.y + textHeightOf(it)) }
+        clip.notes.forEach { add(it.x, it.y); add(it.x + it.w, it.y + it.h) }
         if (minX > maxX) return
         val c = at ?: visibleCenter(page)
         val dx = c.x - (minX + maxX) / 2f
@@ -756,7 +794,10 @@ class DocSession(entry: DocEntry) {
         if (imgs.isNotEmpty()) images = images + (page to ((images[page] ?: emptyList()) + imgs))
         val txts = clip.texts.map { it.copy(id = UUID.randomUUID().toString(), page = page, x = it.x + dx, y = it.y + dy) }
         if (txts.isNotEmpty()) texts = texts + (page to ((texts[page] ?: emptyList()) + txts))
-        lassoSel = LassoSel(page, strokes, imgs.map { it.id }, txts.map { it.id })
+        val nts = clip.notes.map { it.copy(id = UUID.randomUUID().toString(), page = page, x = it.x + dx, y = it.y + dy) }
+        if (nts.isNotEmpty()) notes = notes + (page to ((notes[page] ?: emptyList()) + nts))
+        lassoSel = if (strokes.isEmpty() && imgs.isEmpty() && txts.isEmpty()) null else LassoSel(page, strokes, imgs.map { it.id }, txts.map { it.id })
+        if (nts.size == 1 && lassoSel == null) selectedNoteId = nts[0].id
         endEdit()
     }
 

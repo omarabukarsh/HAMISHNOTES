@@ -35,25 +35,29 @@ object ThemeState {
  */
 object Palette {
     // الكحلي
-    val Navy = Color(0xFF1B365D)
+    private val D: Boolean get() = !ThemeState.light
+    /** الكحلي: في الداكن أفتح قليلًا كي يُقرأ على الخلفيات الداكنة (والنص الأبيض عليه يبقى واضحًا). */
+    val Navy: Color get() = if (D) Color(0xFF4B6FA8) else Color(0xFF1B365D)
     /** كعب المجلد: شريط التبويبات (وفي الكحلي الشريط الجانبي أيضًا). */
     val Ink: Color get() = if (ThemeState.light) Color(0xFFE4E9F0) else Color(0xFF000000)
     /** الشريط الجانبي للمكتبة. */
     val Spine: Color get() = if (ThemeState.light) Color.White else Color(0xFF0A0A0A)
     val InkRaised: Color get() = if (ThemeState.light) Color(0xFFE8EDF5) else Color(0xFF1C1C1C)
     val InkLine: Color get() = if (ThemeState.light) Color(0xFFE2E6EC) else Color(0xFF262626)
-    val NavySoft = Color(0xFFE8EDF5)
+    val NavySoft: Color get() = if (D) Color(0xFF283245) else Color(0xFFE8EDF5)
 
     // الذهبي
     val Gold = Color(0xFFC9A44C)
-    val GoldDeep = Color(0xFF8C6A1F)
-    val GoldSoft = Color(0xFFF4E9CB)
+    val GoldDeep: Color get() = if (D) Color(0xFFE0B84A) else Color(0xFF8C6A1F)
+    val GoldSoft: Color get() = if (D) Color(0xFF3A3220) else Color(0xFFF4E9CB)
 
     // الورق والأسطح
-    val Background: Color get() = if (ThemeState.light) Color(0xFFF3F5F8) else Color(0xFFF6F4EF)
-    val Ivory = Color(0xFFFFFBF2)
-    val DrawerBg = Color(0xFFF9F6EF)
-    val Divider = Color(0xFFE4DFD3)
+    val Background: Color get() = if (ThemeState.light) Color(0xFFF3F5F8) else Color(0xFF15171C)
+    /** سطح النوافذ والبطاقات (الإعدادات، الأدراج، القوائم المنسدلة): أبيض في الفاتح، فحمي في الداكن. */
+    val Surface: Color get() = if (D) Color(0xFF1E2128) else Color.White
+    val Ivory: Color get() = if (D) Color(0xFF1A1D23) else Color(0xFFFFFBF2)
+    val DrawerBg: Color get() = if (D) Color(0xFF17191E) else Color(0xFFF9F6EF)
+    val Divider: Color get() = if (D) Color(0xFF30343D) else Color(0xFFE4DFD3)
 
     /** مكتب القراءة: رمادي أزرق هادئ يُظهر بياض الصفحات. */
     val Desk: Color get() = if (ThemeState.light) Color(0xFFEBEEF2) else Color(0xFFDCE1E8)
@@ -65,8 +69,8 @@ object Palette {
     val TabIdle: Color get() = if (ThemeState.light) Color(0xFFB9C4D3) else Color(0xFF1F1F1F)
 
     // النص
-    val TextPrimary = Color(0xFF1A2230)
-    val TextSecondary = Color(0xFF667085)
+    val TextPrimary: Color get() = if (D) Color(0xFFE8EAEF) else Color(0xFF1A2230)
+    val TextSecondary: Color get() = if (D) Color(0xFF9AA3B2) else Color(0xFF667085)
     val OnInk: Color get() = if (ThemeState.light) Color(0xFF1A2230) else Color(0xFFF2F2F2)
     val OnInkMuted: Color get() = if (ThemeState.light) Color(0xFF667085) else Color(0xFF9A9A9A)
 
@@ -74,12 +78,12 @@ object Palette {
 
     // واجهة المحرر (التبويبات، بطاقة الأدوات، الأشرطة العائمة): فاتحة في المظهر الفاتح، وفحمية داكنة في الكحلي
     val ChromeBg: Color get() = if (ThemeState.light) Color.White else Color(0xFF1C1C1C)
-    val ChromeFg: Color get() = if (ThemeState.light) TextPrimary else Color(0xFFECECEC)
-    val ChromeMuted: Color get() = if (ThemeState.light) TextSecondary else Color(0xFFB4B4B4)
+    val ChromeFg: Color get() = if (ThemeState.light) Color(0xFF1A2230) else Color(0xFFECECEC)
+    val ChromeMuted: Color get() = if (ThemeState.light) Color(0xFF667085) else Color(0xFFB4B4B4)
     /** الأداة المختارة: كحلي في الفاتح، وذهبي فاتح في الداكن. */
-    val ChromeAccent: Color get() = if (ThemeState.light) Navy else Color(0xFFF0D58E)
-    val ChromeSel: Color get() = if (ThemeState.light) NavySoft else Color(0xFF2E2E2E)
-    val ChromeLine: Color get() = if (ThemeState.light) Divider else Color(0xFF333333)
+    val ChromeAccent: Color get() = if (ThemeState.light) Color(0xFF1B365D) else Color(0xFFF0D58E)
+    val ChromeSel: Color get() = if (ThemeState.light) Color(0xFFE8EDF5) else Color(0xFF2E2E2E)
+    val ChromeLine: Color get() = if (ThemeState.light) Color(0xFFE4DFD3) else Color(0xFF333333)
     /** شريط التبويبات ومكتب القراءة خلف الصفحات. */
     val ChromeRail: Color get() = if (ThemeState.light) Desk else Color(0xFF000000)
     val ReaderDesk: Color get() = if (ThemeState.light) Desk else Color(0xFF121212)
@@ -130,7 +134,7 @@ object Fonts {
     )
 }
 
-private val AppColors = lightColorScheme(
+private fun appColors() = (if (ThemeState.light) lightColorScheme() else androidx.compose.material3.darkColorScheme()).copy(
     primary = Palette.Navy,
     onPrimary = Color.White,
     primaryContainer = Palette.NavySoft,
@@ -141,7 +145,7 @@ private val AppColors = lightColorScheme(
     onSecondaryContainer = Palette.GoldDeep,
     background = Palette.Background,
     onBackground = Palette.TextPrimary,
-    surface = Color.White,
+    surface = Palette.Surface,
     onSurface = Palette.TextPrimary,
     surfaceVariant = Palette.NavySoft,
     onSurfaceVariant = Palette.TextSecondary,
@@ -190,6 +194,7 @@ private val AppShapes = Shapes(
 @Composable
 fun MyNotesTheme(content: @Composable () -> Unit) {
     val theme = ThemeState.theme
-    val scheme = remember(theme) { AppColors.copy(background = Palette.Background) }
+    // كل الألوان (والنوافذ المنسدلة والرسائل) تتبع المظهر: فاتح أو داكن
+    val scheme = remember(theme) { appColors() }
     MaterialTheme(colorScheme = scheme, typography = AppType, shapes = AppShapes, content = content)
 }

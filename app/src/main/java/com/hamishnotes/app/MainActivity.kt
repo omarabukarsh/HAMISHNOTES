@@ -1,5 +1,13 @@
 package com.hamishnotes.app
 
+import androidx.compose.ui.geometry.Offset
+
+import androidx.compose.animation.togetherWith
+
+import androidx.compose.ui.draw.drawWithContent
+
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
@@ -223,9 +231,13 @@ fun MyNotesApp() {
             if (c.tabs.isNotEmpty() && !(c.focusMode && c.activeId != null)) TabBar()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 // انتقال ناعم بين المكتبة والمستندات (وبين التبويبات)
-                androidx.compose.animation.Crossfade(
+                // التنقل بين التبويبات: القديم يختفي بسرعة ثم يظهر الجديد، فلا يتداخل نصّا المستندين
+                androidx.compose.animation.AnimatedContent(
                     targetState = c.activeId,
-                    animationSpec = androidx.compose.animation.core.tween(Motion.ENTER),
+                    transitionSpec = {
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160, delayMillis = 90)) togetherWith
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(90))
+                    },
                     label = "screen"
                 ) { id ->
                     val active = c.tabs.firstOrNull { it.id == id }
@@ -246,6 +258,7 @@ fun MyNotesApp() {
     }
     if (c.settingsOpen) SettingsDialog(onDismiss = { c.settingsOpen = false })
     PremiumHost()
+    ImportProgressDialog()
     // عرض باوربوينت فُتح من تطبيق آخر: تحويله إلى PDF
     PresentationConvertDialog()
     LockDialogs()
@@ -267,11 +280,10 @@ private fun TabBar() {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Row(
         Modifier.fillMaxWidth().background(railBg)
-            .horizontalScroll(rememberScrollState())
             .padding(start = 26.dp, end = 26.dp, top = 8.dp),
         verticalAlignment = Alignment.Bottom
     ) {
-        // التبويبات متلاصقة كتبويبات المستندات، وبين كل تبويبين غير نشطين فاصل رفيع
+        // «المكتبة» ثابتة في البداية؛ تبويبات المستندات بعدها تتقاسم العرض ثم تثبت وتُسحب
         TabItem(
             title = L("المكتبة", "Library"),
             active = libraryActive,
@@ -280,6 +292,27 @@ private fun TabBar() {
             onClick = { c.activate(null) },
             onClose = null
         )
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f)) {
+        val n = c.tabs.size
+        // عرض التبويب: يتقاسم المستندون الشريط (حتى 240)، ويصغر حتى 170 ثم يثبت ويُسحب الباقي
+        val tabW = if (n == 0) 0.dp else ((maxWidth - (n * 1).dp) / n).coerceIn(170.dp, 240.dp)
+        val scroll = rememberScrollState()
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        // التبويب النشط يظهر دائمًا (عند فتحه أو التنقل إليه)
+        LaunchedEffect(c.activeId, n) {
+            val i = c.tabs.indexOfFirst { it.id == c.activeId }
+            if (i < 0) return@LaunchedEffect
+            val wPx = with(density) { (tabW + 1.dp).toPx() }
+            val start = (i * wPx).toInt()
+            val view = with(density) { maxWidth.toPx() }.toInt()
+            val target = when {
+                start < scroll.value -> start
+                start + wPx > scroll.value + view -> (start + wPx - view).toInt()
+                else -> return@LaunchedEffect
+            }
+            scroll.animateScrollTo(target.coerceIn(0, scroll.maxValue.coerceAtLeast(target)))
+        }
+        Row(Modifier.horizontalScroll(scroll).scrollFadeH(scroll, railBg), verticalAlignment = Alignment.Bottom) {
         c.tabs.forEachIndexed { i, s ->
             val prevActive = if (i == 0) libraryActive else c.activeId == c.tabs[i - 1].id
             if (!prevActive && c.activeId != s.id) TabSeparator()
@@ -292,6 +325,7 @@ private fun TabBar() {
                     activeBg = activeBg,
                     onClick = { c.activate(s.id) },
                     onClose = { c.closeTab(s.id) },
+                    fixedWidth = tabW,
                     modifier = Modifier
                         .onSizeChanged { widths[s.id] = it.width }
                         .zIndex(if (dragging) 1f else 0f)
@@ -324,7 +358,23 @@ private fun TabBar() {
                 )
             }
         }
+        }
+        }
     }
+}
+
+/** تلاشٍ على طرف شريط التبويبات الذي فيه تبويبات مخفية (تُسحب لإظهارها). */
+private fun Modifier.scrollFadeH(state: androidx.compose.foundation.ScrollState, bg: Color): Modifier = this.drawWithContent {
+    drawContent()
+    val f = 36.dp.toPx()
+    if (state.canScrollBackward) drawRect(
+        androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg, bg.copy(alpha = 0f)), startX = 0f, endX = f),
+        size = androidx.compose.ui.geometry.Size(f, size.height)
+    )
+    if (state.canScrollForward) drawRect(
+        androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg), startX = size.width - f, endX = size.width),
+        topLeft = Offset(size.width - f, 0f), size = androidx.compose.ui.geometry.Size(f, size.height)
+    )
 }
 
 /** فاصل رفيع بين تبويبين غير نشطين. */
@@ -345,9 +395,16 @@ private fun TabItem(
     activeBg: Color,
     onClick: () -> Unit,
     onClose: (() -> Unit)?,
+    fixedWidth: androidx.compose.ui.unit.Dp? = null,
     modifier: Modifier = Modifier
 ) {
     val r = 12.dp
+    // أثر النقر: إضاءة ناعمة داخل شكل التبويب تتلاشى (بدل التموّج المستطيل الحاد)
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val glow by androidx.compose.animation.core.animateFloatAsState(
+        if (pressed) 1f else 0f, androidx.compose.animation.core.tween(if (pressed) 90 else 220), label = "tabPress"
+    )
     val shape = RoundedCornerShape(topStart = r, topEnd = r)
     val bg = if (active) activeBg else Color.Transparent
     // لون النص حسب خلفية التبويب (داكنة أو فاتحة)
@@ -355,7 +412,7 @@ private fun TabItem(
     val darkBg = under.luminance() < 0.4f
     val fg = if (darkBg) Color(0xFFEDE6D4) else Palette.Navy
     val fgMuted = if (darkBg) Color(0xFFB4BFD0) else Palette.TextSecondary
-    Column(modifier.width(IntrinsicSize.Max)) {
+    Column(if (fixedWidth != null) modifier.width(fixedWidth) else modifier.width(IntrinsicSize.Max)) {
         Row(
             Modifier.height(40.dp)
                 .drawBehind {
@@ -376,7 +433,18 @@ private fun TabItem(
                 }
                 .clip(shape)
                 .background(bg)
-                .clickable(onClick = onClick)
+                .drawBehind {
+                    if (glow > 0f) {
+                        val inset = 3.dp.toPx()
+                        drawRoundRect(
+                            fg.copy(alpha = 0.10f * glow),
+                            topLeft = Offset(inset, inset),
+                            size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())
+                        )
+                    }
+                }
+                .clickable(interactionSource = press, indication = null, onClick = onClick)
                 .padding(start = 14.dp, end = if (onClose == null) 16.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -398,7 +466,7 @@ private fun TabItem(
                 color = if (active) fg else fgMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 200.dp)
+                modifier = if (fixedWidth != null) Modifier.weight(1f) else Modifier.widthIn(max = 200.dp)
             )
             if (onClose != null) {
                 Spacer(Modifier.width(2.dp))
@@ -415,3 +483,47 @@ private fun TabItem(
 
 /** لون شريطي النظام (يُرسم خلفهما): بلون شريط التبويبات، كحلي أو رمادي فاتح. */
 fun systemBarColor(light: Boolean): Color = if (light) Color(0xFFE4E9F0) else Color(0xFF13233B)
+
+
+/** نافذة إضافة ملف: الاسم والنسبة والمرحلة وزر الإلغاء؛ التطبيق يبقى يستجيب أثناءها. */
+@Composable
+private fun ImportProgressDialog() {
+    val c = AppController
+    val p = c.importProgress ?: return
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = {},
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+    ) {
+        val frac by androidx.compose.animation.core.animateFloatAsState(p.fraction, label = "importFrac")
+        Column(
+            Modifier.width(360.dp).clip(RoundedCornerShape(22.dp)).background(Palette.Surface).padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(40.dp), color = Palette.Navy, strokeWidth = 3.5.dp)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                if (p.count > 1) L("جارٍ إضافة الملفات (${p.index + 1} من ${p.count})…", "Adding files (${p.index + 1} of ${p.count})…")
+                else L("جارٍ إضافة الملف…", "Adding the file…"),
+                fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(p.name, fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(14.dp))
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { frac },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                color = Palette.Navy, trackColor = Palette.NavySoft
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth()) {
+                Text("${(frac * 100).toInt()}%", fontSize = 12.5.sp, color = Palette.TextSecondary)
+                Spacer(Modifier.weight(1f))
+                Text(p.phase, fontSize = 12.5.sp, color = Palette.TextSecondary)
+            }
+            Spacer(Modifier.height(10.dp))
+            androidx.compose.material3.TextButton(onClick = { c.importCancel = true }) {
+                Text(L("إلغاء", "Cancel"), color = Palette.Danger, fontSize = 14.sp)
+            }
+        }
+    }
+}

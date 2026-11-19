@@ -58,6 +58,11 @@ object AppController {
     var importing by mutableStateOf(false)
         private set
 
+    /** نافذة إضافة الملف: الاسم والنسبة والمرحلة (null = لا نافذة). */
+    class ImportProgress(val name: String, val fraction: Float, val phase: String, val index: Int, val count: Int)
+    var importProgress by mutableStateOf<ImportProgress?>(null)
+    @Volatile var importCancel = false
+
     var libraryFilter by mutableStateOf(LibraryFilter.RECENT)
 
     // ---------- المواد (مجلدات المكتبة) ----------
@@ -1552,6 +1557,13 @@ object AppController {
             .apply()
     }
 
+    /** اسم الملف كما يظهر للمستخدم (بلا الامتداد). */
+    private fun displayNameOf(u: Uri): String = try {
+        appContext.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (t: Throwable) { null }?.substringBeforeLast('.') ?: L("مستند", "Document")
+
     fun importDocuments(uris: List<Uri>) {
         if (uris.isEmpty()) return
         // الخطة المجانية: نستورد ما يتسع له الحد ونعرض نافذة الحد للباقي
@@ -1561,21 +1573,34 @@ object AppController {
         val uris = uris.take(allowed)
         scope.launch {
             importing = true
+            importCancel = false
             var ok = 0
             var failed = 0
             val added = ArrayList<DocEntry>()
-            for (u in uris) {
+            for ((i, u) in uris.withIndex()) {
+                if (importCancel) break
+                val name = displayNameOf(u)
+                importProgress = ImportProgress(name, 0f, L("بدء الإضافة…", "Starting…"), i, uris.size)
                 try {
-                    val e = withContext(Dispatchers.IO) { repo.importFile(u) }
+                    val e = withContext(Dispatchers.IO) {
+                        repo.importFile(u, { f, ph ->
+                            scope.launch { importProgress = ImportProgress(name, f, ph, i, uris.size) }
+                        }, { importCancel })
+                    }
                     library.add(0, e)
                     added.add(e)
                     ok++
                 } catch (t: Throwable) {
-                    failed++
+                    if (!importCancel) failed++
                 }
             }
+            importProgress = null
             saveLibrary()
             importing = false
+            if (importCancel && ok == 0) {
+                say(MsgKind.TIP, L("أُلغيت إضافة الملف", "Adding the file was cancelled"))
+                return@launch
+            }
             val msg = when {
                 failed == 0 && ok == 1 -> L("تم استيراد المستند، وتبدأ قراءة نصه تلقائيًا", "Document imported; its text is read automatically")
                 failed == 0 -> L("تم استيراد $ok مستندات، وتبدأ قراءة نصوصها تلقائيًا", "Imported $ok documents; their text is read automatically")
@@ -1648,16 +1673,22 @@ object AppController {
             }
             if (!Premium.canAdd()) return@launch
             importing = true
+            importCancel = false
+            val name = displayNameOf(uri)
+            importProgress = ImportProgress(name, 0f, L("بدء الإضافة…", "Starting…"), 0, 1)
             try {
-                val e = withContext(Dispatchers.IO) { repo.importFile(uri) }
+                val e = withContext(Dispatchers.IO) {
+                    repo.importFile(uri, { f, ph -> scope.launch { importProgress = ImportProgress(name, f, ph, 0, 1) } }, { importCancel })
+                }
                 library.add(0, e)
                 saveLibrary()
                 openDocument(e.id)
                 queueOcr(e)
             } catch (t: Throwable) {
-                say(MsgKind.ERROR, L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
+                if (!importCancel) say(MsgKind.ERROR, L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
             } finally {
                 importing = false
+                importProgress = null
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.hamishnotes.app
 
+import android.os.SystemClock
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -722,7 +723,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, chromeTint(c.lassoActive)) }
                         DropdownMenu(
                             expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
-                            shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                            shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                         ) { LassoMenuContent(s, onOff = { lassoMenu = false; c.lassoActive = false }) }
                     }
                 }
@@ -1055,7 +1056,7 @@ private fun PenBar() {
                             expanded = more && sel,
                             onDismissRequest = { more = false },
                             shape = RoundedCornerShape(18.dp),
-                            containerColor = Color.White,
+                            containerColor = Palette.Surface,
                             shadowElevation = 12.dp
                         ) {
                             ToolSettingsPanel(onCustomColor = { more = false; picker = true })
@@ -1108,7 +1109,7 @@ private fun PenBar() {
                         expanded = allColors,
                         onDismissRequest = { allColors = false },
                         shape = RoundedCornerShape(18.dp),
-                        containerColor = Color.White,
+                        containerColor = Palette.Surface,
                         shadowElevation = 12.dp
                     ) {
                         val all = c.paletteFor(t) + c.customColors.filter { it !in c.paletteFor(t) }
@@ -1548,11 +1549,22 @@ private suspend fun AwaitPointerEventScope.dragLasso(
     var dyT = 0f
     var kT = 1f
     session.lassoPreview = DocSession.LassoPreview(0f, 0f, 1f, bb[0], bb[1])
+    var moved = false
     try {
         while (true) {
             val e = awaitPointerEvent()
             val ch = e.changes.firstOrNull { it.id == down.id } ?: break
-            if (!ch.pressed) break
+            if (!ch.pressed) {
+                // ضغطة مطوّلة على التحديد بلا تحريك: يظهر شريطه مرة أخرى
+                if (!moved && ch.uptimeMillis - down.uptimeMillis >= 450L) session.barHidden = false
+                break
+            }
+            if (!moved) {
+                if ((ch.position - down.position).getDistance() < 6f) { ch.consume(); continue }
+                moved = true
+                // أثناء السحب يختفي الشريط، ويبقى مخفيًا بعد الإفلات
+                session.barHidden = true
+            }
             if (onHandle) {
                 // تكبير حول الزاوية العليا: نسبة بُعد القلم الجديد إلى القديم عن الزاوية
                 val px = bb[0] * w
@@ -1969,27 +1981,27 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
         }
 
         // أشرطة العنصر المحدد: فوق العنصر مباشرة (وتحته إن لم يتسع فوقه)
-        s.selection?.let { sel -> s.selectionBounds()?.let { r -> AnchoredBar(s, sel.page, r) { SelectionBar(s) } } }
+        s.selection?.let { sel -> s.selectionBounds()?.let { r -> AnchoredBar(s, sel.page, r, visible = !s.selecting) { SelectionBar(s) } } }
         s.lassoSel?.let { sel ->
             // أثناء سحب التحديد يختفي الشريط، ويعود فوقه عند الإفلات
-            if (s.lassoPreview == null) s.lassoRect()?.let { r -> AnchoredBar(s, sel.page, r) { LassoBar(s) } }
+            s.lassoRect()?.let { r -> AnchoredBar(s, sel.page, r, visible = !s.barHidden) { LassoBar(s) } }
         }
         s.pasteAt?.let { (page, at) ->
             if (s.lassoSel == null) AnchoredBar(s, page, androidx.compose.ui.geometry.Rect(at.x, at.y - 0.012f, at.x, at.y)) { PasteBar(s, page, at) }
         }
         s.selectedImageId?.let { id ->
             s.images.entries.firstNotNullOfOrNull { (p, l) -> l.firstOrNull { it.id == id }?.let { p to it } }?.let { (p, im) ->
-                AnchoredBar(s, p, androidx.compose.ui.geometry.Rect(im.x, im.y, im.x + im.w, im.y + im.w / im.aspect)) { ImageBar(s) }
+                AnchoredBar(s, p, androidx.compose.ui.geometry.Rect(im.x, im.y, im.x + im.w, im.y + im.w / im.aspect), visible = !s.barHidden) { ImageBar(s) }
             }
         }
         if (s.inlineEditId == null) s.selectedTextId?.let { id ->
-            s.textBox(id)?.let { tb -> AnchoredBar(s, tb.page, androidx.compose.ui.geometry.Rect(tb.x, tb.y, tb.x + tb.w, tb.y + s.textHeightOf(tb))) { TextBoxBar(s) } }
+            s.textBox(id)?.let { tb -> AnchoredBar(s, tb.page, androidx.compose.ui.geometry.Rect(tb.x, tb.y, tb.x + tb.w, tb.y + s.textHeightOf(tb)), visible = !s.barHidden) { TextBoxBar(s) } }
         }
         s.selectedNoteId?.let { id ->
             s.note(id)?.let { n ->
                 val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
                 val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
-                AnchoredBar(s, n.page, androidx.compose.ui.geometry.Rect(n.x, n.y, n.x + nw, n.y + nh)) { NoteBar(s) }
+                AnchoredBar(s, n.page, androidx.compose.ui.geometry.Rect(n.x, n.y, n.x + nw, n.y + nh), visible = !s.barHidden) { NoteBar(s) }
             }
         }
         // «تم التحويل»: تحت السطر الذي حُوّل؛ وبقية حالات التحويل صغيرة أسفل الشاشة
@@ -2110,6 +2122,10 @@ private fun ImageBar(s: DocSession) {
     CtxBar {
         CtxBtn(L("تصغير", "Smaller")) { resize(0.87f) }
         CtxBtn(L("تكبير", "Larger")) { resize(1.15f) }
+        CtxBtn(L("نسخ", "Copy")) {
+            val id = s.selectedImageId
+            s.images.values.firstNotNullOfOrNull { l -> l.firstOrNull { it.id == id } }?.let { s.copyItem(image = it) }
+        }
         CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteSelectedImage() }
         CtxBtn(L("تم", "Done")) { s.selectedImageId = null }
     }
@@ -2124,6 +2140,8 @@ private fun ReaderTimer(id: String) {
 @Composable
 private fun TextBoxBar(s: DocSession) {
     var fontPick by remember { mutableStateOf(false) }
+    var colorPick by remember { mutableStateOf(false) }
+    var customColor by remember { mutableStateOf(false) }
     val id = s.selectedTextId ?: return
     val tb = s.textBox(id)
     if (tb == null) {
@@ -2146,17 +2164,55 @@ private fun TextBoxBar(s: DocSession) {
         CtxBtn("Aa " + L("الخط", "Font")) { fontPick = true }
         CtxBtn("A−") { edit { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) } }
         CtxBtn("A+") { edit { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) } }
-        // لون القلم الحالي
-        val pen = AppController.tool.let { if (it.isPen()) it else AppController.lastPen }
-        Box(
-            Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { edit { it.copy(color = AppController.colorFor(pen)) } },
-            contentAlignment = Alignment.Center
-        ) { Box(Modifier.size(20.dp).clip(CircleShape).background(AppController.colorFor(pen)).border(1.dp, Palette.Divider, CircleShape)) }
+        // لون النص: نافذة ألوان تحته
+        Box {
+            Box(
+                Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { colorPick = true },
+                contentAlignment = Alignment.Center
+            ) { Box(Modifier.size(20.dp).clip(CircleShape).background(tb.color).border(1.dp, Palette.Divider, CircleShape)) }
+            DropdownMenu(
+                expanded = colorPick, onDismissRequest = { colorPick = false },
+                shape = RoundedCornerShape(16.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
+            ) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    Text(L("لون النص", "Text color"), fontSize = 13.sp, color = Palette.TextSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    val all = (AppController.penPalette + AppController.customColors).distinct()
+                    all.chunked(6).forEach { rowCols ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                            rowCols.forEach { col ->
+                                Box(
+                                    Modifier.size(34.dp).clip(CircleShape).clickable { edit { it.copy(color = col) }; colorPick = false },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        Modifier.size(26.dp).clip(CircleShape).background(col).border(1.dp, Palette.Divider, CircleShape)
+                                            .then(if (col == tb.color) Modifier.border(2.dp, Palette.Navy, CircleShape) else Modifier)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        "＋ " + L("لون مخصص…", "Custom color…"), fontSize = 13.5.sp, color = Palette.Navy,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { colorPick = false; customColor = true }.padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
+                }
+            }
+        }
+        CtxBtn(L("نسخ", "Copy")) { s.copyItem(text = tb) }
         CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteTextBox(id) }
         CtxMore { close ->
             if (tb.ink.isNotEmpty()) CtxItem(L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting"), Palette.GoldDeep) { close(); s.textBoxToInk(id) }
             CtxItem(L("تم", "Done")) { close(); s.selectedTextId = null }
         }
+    }
+    if (customColor) {
+        ColorPickerDialog(tb.color, onPick = { col ->
+            s.beginEdit(); s.updateTextBox(id) { it.copy(color = col) }; s.endEdit()
+            AppController.addCustomColor(col)
+            customColor = false
+        }, onDismiss = { customColor = false })
     }
     if (fontPick) {
         FontLibraryDialog(tb.text, tb.font, onPick = { f ->
@@ -2179,6 +2235,41 @@ private class LiveInk {
     var predP: Float = 0.5f
     var style: Int = LineStyle.SOLID
     var sharp: Boolean = false
+}
+
+/** صورة الخطوط المحددة أثناء سحبها (تُرسم مرة واحدة). */
+private class DragSnap(val sel: LassoSel, val w: Float, val night: Boolean, val img: ImageBitmap, val left: Float, val top: Float)
+
+private fun makeDragSnap(
+    sel: LassoSel, w: Float, night: Boolean,
+    density: androidx.compose.ui.unit.Density, dir: androidx.compose.ui.unit.LayoutDirection
+): DragSnap? {
+    if (sel.strokes.isEmpty() || w <= 0f) return null
+    var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+    var maxW = 0f
+    for (st in sel.strokes) {
+        if (st.width > maxW) maxW = st.width
+        for (p in st.pts) { if (p.x < l) l = p.x; if (p.x > r) r = p.x; if (p.y < t) t = p.y; if (p.y > b) b = p.y }
+    }
+    if (l > r) return null
+    val pad = (maxW * 2f + 0.01f) * w
+    val left = l * w - pad
+    val top = t * w - pad
+    val iw = ((r - l) * w + pad * 2).toInt().coerceIn(1, 4096)
+    val ih = ((b - t) * w + pad * 2).toInt().coerceIn(1, 4096)
+    return try {
+        val img = ImageBitmap(iw, ih)
+        androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+            density, dir, androidx.compose.ui.graphics.Canvas(img), Size(iw.toFloat(), ih.toFloat())
+        ) {
+            withTransform({ translate(-left, -top) }) {
+                drawStack(sel.strokes, { if (night) nightOf(it.color) else it.color }, w)
+            }
+        }
+        DragSnap(sel, w, night, img, left, top)
+    } catch (t: Throwable) {
+        null
+    }
 }
 
 /** ink = نقطة من «الخط المستمر» (القلم ملامس للشاشة في نمط الخط). */
@@ -2328,6 +2419,7 @@ private fun PageView(
     /** مستطيل مربع النص الذي يُرسم الآن بالقلم (يسار، أعلى، يمين، أسفل بإحداثيات الصفحة). */
     var textDragRect by remember { mutableStateOf<FloatArray?>(null) }
     val layerCache = remember { arrayOfNulls<List<Ink>>(2) }
+    val dragSnap = remember { arrayOfNulls<DragSnap>(1) }
     // أثناء سحب التحديد: خطوطه تُرسم متحركة فوق الصفحة، فتُخفى من صورة الصفحة
     val dragging = session.lassoPreview != null && session.lassoSel?.page == index
     val dragSel = if (dragging) session.lassoSel else null
@@ -2672,8 +2764,12 @@ private fun PageView(
                                         (it.type == PointerType.Touch && it.pressed && fingerInk(ev))
                                 }
                                 if (lc != null && size.width > 0) {
-                                    if (ev.type == PointerEventType.Exit) {
+                                    if (ev.type == PointerEventType.Exit ||
+                                        (ev.type == PointerEventType.Release && laserModeNow == LaserMode.DOT)
+                                    ) {
+                                        // رفع القلم في نمط «نقطة»: تختفي النقطة فورًا
                                         lz.present = false
+                                        if (laserModeNow == LaserMode.DOT) { laser.removeAll { !it.ink }; tick++ }
                                     } else if (ev.type == PointerEventType.Move ||
                                         ev.type == PointerEventType.Press ||
                                         ev.type == PointerEventType.Enter
@@ -2690,6 +2786,8 @@ private fun PageView(
                                         ) {
                                             lz.seg++
                                         }
+                                        // نمط «نقطة»: نقطة واحدة تحت القلم بلا أثر خلفها
+                                        if (laserModeNow == LaserMode.DOT) laser.removeAll { !it.ink }
                                         laser.add(LaserPt(nx, ny, now, lz.seg, ink))
                                         if (ink) lz.lastInkAt = now
                                         if (laser.size > 3000) laser.removeAt(0)
@@ -3243,6 +3341,7 @@ private fun PageView(
                                         if (!moved && (ch.position - down.position).getDistance() < viewConfiguration.touchSlop) {
                                             continue
                                         }
+                                        if (!moved) session.barHidden = true
                                         moved = true
                                         val dx = (ch.position.x - last.x) / w
                                         val dy = (ch.position.y - last.y) / w
@@ -3263,6 +3362,11 @@ private fun PageView(
                                     }
                                 } finally {
                                     session.endEdit()
+                                }
+                                // ضغطة مطوّلة على المربع المحدد (بلا سحب): يظهر شريطه مرة أخرى
+                                if (!moved && inside && session.barHidden && SystemClock.uptimeMillis() - down.uptimeMillis >= 450L) {
+                                    session.barHidden = false
+                                    return@awaitEachGesture
                                 }
                                 // نقرة على المربع المحدد (بلا سحب) تفتح التعديل
                                 if (!moved && inside) {
@@ -3287,11 +3391,22 @@ private fun PageView(
                                 down.consume()
                                 session.beginEdit()
                                 var last = down.position
+                                var imgMoved = false
                                 try {
                                     while (true) {
                                         val e = awaitPointerEvent()
                                         val ch = e.changes.firstOrNull { it.id == down.id } ?: break
-                                        if (!ch.pressed) break
+                                        if (!ch.pressed) {
+                                            // ضغطة مطوّلة على الصورة بلا تحريك: يظهر شريطها مرة أخرى
+                                            if (!imgMoved && ch.uptimeMillis - down.uptimeMillis >= 450L) session.barHidden = false
+                                            break
+                                        }
+                                        if (!imgMoved) {
+                                            if ((ch.position - down.position).getDistance() < viewConfiguration.touchSlop) continue
+                                            imgMoved = true
+                                            last = ch.position
+                                            session.barHidden = true
+                                        }
                                         val dx = (ch.position.x - last.x) / w
                                         val dy = (ch.position.y - last.y) / w
                                         last = ch.position
@@ -3388,6 +3503,11 @@ private fun PageView(
                                 }
                             }
                         } catch (e: PointerEventTimeoutCancellationException) {
+                            // ضغط مطوّل على العنصر المحدد: يُظهر شريطه مرة أخرى
+                            if (session.barHidden && session.hitsSelected(index, nx, ny)) {
+                                session.barHidden = false
+                                return@awaitEachGesture
+                            }
                             // ضغط مطوّل: على نص يحدده، وفي مكان فارغ تظهر فقاعة «لصق» / إضافة سريعة فوق الإصبع
                             val pageWords = session.ocr[index]?.words
                             val onText = pageWords != null && pageWords.isNotEmpty() && nearestWord(pageWords, nx, ny, 0.05f) >= 0
@@ -3403,15 +3523,21 @@ private fun PageView(
                                 if (startIdx >= 0) {
                                     session.selectedImageId = null
                                     session.selection = TextSelection(index, startIdx, startIdx)
-                                    while (true) {
-                                        val ev = awaitPointerEvent()
-                                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                                        if (!ch.pressed) break
-                                        val idx = nearestWord(
-                                            pageWords, ch.position.x / w, ch.position.y / w, 10f
-                                        )
-                                        if (idx >= 0) session.selection = TextSelection(index, startIdx, idx)
-                                        ch.consume()
+                                    // الشريط يظهر بعد رفع الإصبع فقط (اكتمال التحديد)
+                                    session.selecting = true
+                                    try {
+                                        while (true) {
+                                            val ev = awaitPointerEvent()
+                                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                            if (!ch.pressed) break
+                                            val idx = nearestWord(
+                                                pageWords, ch.position.x / w, ch.position.y / w, 10f
+                                            )
+                                            if (idx >= 0) session.selection = TextSelection(index, startIdx, idx)
+                                            ch.consume()
+                                        }
+                                    } finally {
+                                        session.selecting = false
                                     }
                                 } else {
                                     // ضغط مطوّل على مكان ليس فيه نص: لا شيء (دون رسالة)
@@ -3469,13 +3595,18 @@ private fun PageView(
                 val ls = session.lassoSel
                 if (pv != null && ls != null && ls.page == index) {
                     val w = size.width
+                    // الخطوط المحددة تُرسم مرة واحدة في صورة عند بدء السحب، ثم تتحرك الصورة وحدها
+                    // (إعادة رسم آلاف الخطوط في كل إطار كانت تسبب اللاق مع التحديد الكبير)
+                    val snap = dragSnap[0]?.takeIf { it.sel === ls && it.w == w && it.night == night }
+                        ?: makeDragSnap(ls, w, night, this, layoutDirection).also { dragSnap[0] = it }
                     withTransform({
                         translate(pv.dx * w, pv.dy * w)
                         scale(pv.k, pv.k, Offset(pv.px * w, pv.py * w))
                     }) {
-                        drawStack(ls.strokes, { if (night) nightOf(it.color) else it.color })
+                        if (snap != null) drawImage(snap.img, Offset(snap.left, snap.top))
+                        else drawStack(ls.strokes, { if (night) nightOf(it.color) else it.color })
                     }
-                }
+                } else if (dragSnap[0] != null) dragSnap[0] = null
                 // خطوط رُفع عنها القلم ولم تظهر بعد في صورة الخطوط (الهايلايتر وملء الأشكال في الطبقة السفلية)
                 pendingInk.forEach { if (it.inOverlay()) drawStroke(it, if (night) nightOf(it.color) else it.color) }
                 val lc = if (night) nightOf(live.color) else live.color
@@ -3599,7 +3730,7 @@ private fun PageView(
         if (session.pageBusy == index) {
             Row(
                 Modifier.align(Alignment.TopCenter).padding(8.dp)
-                    .clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.92f))
+                    .clip(RoundedCornerShape(10.dp)).background(Palette.Surface.copy(alpha = 0.92f))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -4041,7 +4172,7 @@ private fun BoxScope.InlineTextEditor(
             .onSizeChanged { barW = it.width }
             .height(44.dp)
             .shadow(6.dp, RoundedCornerShape(12.dp))
-            .background(Color.White, RoundedCornerShape(12.dp))
+            .background(Palette.Surface, RoundedCornerShape(12.dp))
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -4129,6 +4260,11 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dra
             val ch = e.changes.firstOrNull { it.id == down.id } ?: break
             if (!ch.pressed) break
             if (!moved && (ch.position - down.position).getDistance() < viewConfiguration.touchSlop) continue
+            if (!moved) {
+                // أثناء السحب يختفي شريط الملاحظة، ويبقى مخفيًا بعد الإفلات
+                session.selectedNoteId = target.id
+                session.barHidden = true
+            }
             moved = true
             val dx = (ch.position.x - last.x) / w
             val dy = (ch.position.y - last.y) / w
@@ -4143,7 +4279,11 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dra
     } finally {
         session.endEdit()
     }
-    if (!moved) {
+    val held = !moved && session.selectedNoteId == target.id && SystemClock.uptimeMillis() - down.uptimeMillis >= 450L
+    if (held) {
+        // ضغطة مطوّلة على الملاحظة المحددة: يظهر شريطها مرة أخرى
+        session.barHidden = false
+    } else if (!moved) {
         if (target.collapsed) session.editNote(target.id) { it.copy(collapsed = false) }
         // نقرة على الملاحظة المحددة تفتح كتابة النص بلوحة المفاتيح
         else if (session.selectedNoteId == target.id) session.noteTextEditId = target.id

@@ -155,7 +155,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
         // بطاقة بحواف ناعمة تبعد 12 عن الحواف وتبدأ تحت شريط الأدوات (B6)
         modifier.fillMaxHeight().padding(start = 12.dp, top = 4.dp, bottom = 12.dp).width(PAGES_PANEL_W.dp),
         shape = ChromeShape,
-        color = Color.White,
+        color = Palette.Surface,
         shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -182,7 +182,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                         val on = tab == k
                         Box(
                             Modifier.size(width = 46.dp, height = 34.dp).clip(RoundedCornerShape(9.dp))
-                                .background(if (on) Color.White else Color.Transparent)
+                                .background(if (on) Palette.Surface else Color.Transparent)
                                 .clickable {
                                     tab = k
                                     tabForFollow = k
@@ -355,7 +355,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                     Row(
                         Modifier.align(Alignment.BottomCenter).padding(12.dp)
                             .shadow(6.dp, RoundedCornerShape(16.dp))
-                            .background(Color.White, RoundedCornerShape(16.dp))
+                            .background(Palette.Surface, RoundedCornerShape(16.dp))
                             .padding(horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

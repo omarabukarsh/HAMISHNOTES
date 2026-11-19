@@ -99,6 +99,15 @@ class LibraryRepository(context: Context) {
             null
         }
 
+    private fun querySize(uri: Uri): Long =
+        try {
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L
+            } ?: -1L
+        } catch (e: Throwable) {
+            -1L
+        }
+
     private fun probePageCount(f: File): Int {
         val pfd = ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
         try {
@@ -246,7 +255,14 @@ class LibraryRepository(context: Context) {
     // ---------- الاستيراد والنسخ والحذف ----------
 
     /** ينسخ الملف إلى مساحة التطبيق ويتحقق أنه سليم. يجب استدعاؤها خارج الخيط الرئيسي. */
-    fun importFile(uri: Uri): DocEntry {
+    /**
+     * progress(نسبة 0..1، المرحلة) يُستدعى أثناء النسخ وقراءة الصفحات؛ cancelled() يوقف الاستيراد.
+     */
+    fun importFile(
+        uri: Uri,
+        progress: (Float, String) -> Unit = { _, _ -> },
+        cancelled: () -> Boolean = { false }
+    ): DocEntry {
         val displayName = queryName(uri) ?: "document.pdf"
         val ext = displayName.substringAfterLast('.', "").lowercase()
         val mime = try {
@@ -265,7 +281,26 @@ class LibraryRepository(context: Context) {
         val dest = File(docsDir, fileName)
         try {
             val input = resolver.openInputStream(uri) ?: throw IOException(L("تعذر قراءة الملف", "Could not read the file"))
-            input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
+            val total = querySize(uri)
+            input.use { ins ->
+                dest.outputStream().use { out ->
+                    val buf = ByteArray(256 * 1024)
+                    var done = 0L
+                    var lastP = -1
+                    while (true) {
+                        if (cancelled()) throw java.util.concurrent.CancellationException()
+                        val n = ins.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        if (total > 0) {
+                            val p = (done * 85 / total).toInt()
+                            if (p != lastP) { lastP = p; progress(p / 100f, L("نسخ الملف…", "Copying the file…")) }
+                        }
+                    }
+                }
+            }
+            progress(0.88f, L("قراءة الصفحات…", "Reading the pages…"))
             // نسخة «قابلة للتعديل» من هامش: تُستعاد تعليقاتها قابلة للتعديل
             if (type == DocType.PDF) {
                 EditablePdf.restore(dest, { json -> atomicWrite(File(annDir, "$id.json"), json) }, File(imgRoot, id), File(extrasRoot, id))
@@ -285,7 +320,9 @@ class LibraryRepository(context: Context) {
                 favorite = false,
                 lastPage = 0
             )
+            progress(0.95f, L("تجهيز الغلاف…", "Preparing the cover…"))
             makeThumbnail(entry)
+            progress(1f, L("تم", "Done"))
             return entry
         } catch (t: Throwable) {
             dest.delete()

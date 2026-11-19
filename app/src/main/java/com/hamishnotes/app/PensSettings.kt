@@ -597,7 +597,7 @@ private fun PenLabel(text: String) {
 @Composable
 private fun PenGroup(content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
-    Column(Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)) { content() }
+    Column(Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)) { content() }
 }
 
 @Composable

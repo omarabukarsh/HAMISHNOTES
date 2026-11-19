@@ -546,7 +546,7 @@ fun TapeBar(s: DocSession) {
                         expanded = TapeTool.menuOpen,
                         onDismissRequest = { TapeTool.menuOpen = false },
                         shape = RoundedCornerShape(18.dp),
-                        containerColor = Color.White,
+                        containerColor = Palette.Surface,
                         shadowElevation = 12.dp
                     ) { TapeMenu(s, page) }
                 }

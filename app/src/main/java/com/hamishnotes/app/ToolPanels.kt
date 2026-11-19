@@ -179,7 +179,7 @@ fun SizeSlots(t: Tool) {
                 }
                 DropdownMenu(
                     expanded = edit, onDismissRequest = { edit = false },
-                    shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                    shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                 ) {
                     Column(Modifier.width(260.dp).padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -400,7 +400,7 @@ fun ShapeBar() {
                     }
                     DropdownMenu(
                         expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
-                        shape = RoundedCornerShape(20.dp), containerColor = Color.White, shadowElevation = 12.dp
+                        shape = RoundedCornerShape(20.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                     ) {
                         ShapeSettingsWindow(
                             onClose = { strokeMenu = false },

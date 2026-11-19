@@ -642,26 +642,26 @@ object Exporter {
         val bold = context.resources.getFont(R.font.almarai_extrabold)
 
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.Navy.toArgb(); textSize = 21f; typeface = bold
+            color = android.graphics.Color.rgb(0x1B, 0x36, 0x5D); textSize = 21f; typeface = bold
         }
         val headPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.Navy.toArgb(); textSize = 15f; typeface = bold
+            color = android.graphics.Color.rgb(0x1B, 0x36, 0x5D); textSize = 15f; typeface = bold
         }
         val sectionPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Palette.GoldDeep.toArgb(); textSize = 17f; typeface = bold
         }
         val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.TextPrimary.toArgb(); textSize = 11.5f; typeface = sans
+            color = android.graphics.Color.rgb(0x1A, 0x22, 0x30); textSize = 11.5f; typeface = sans
         }
         val cellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.TextPrimary.toArgb(); textSize = 10f; typeface = sans
+            color = android.graphics.Color.rgb(0x1A, 0x22, 0x30); textSize = 10f; typeface = sans
         }
         val cellHeadPaint = TextPaint(cellPaint).apply { typeface = bold }
         val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Palette.Gold.toArgb(); strokeWidth = 1.2f }
         val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Palette.Divider.toArgb(); strokeWidth = 0.8f; style = Paint.Style.STROKE
         }
-        val headFill = Paint().apply { color = Palette.NavySoft.toArgb() }
+        val headFill = Paint().apply { color = android.graphics.Color.rgb(0xE8, 0xED, 0xF5) }
         val bg = Palette.Ivory.toArgb()
 
         val out = PdfDocument()

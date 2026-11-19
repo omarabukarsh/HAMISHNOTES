@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -162,9 +163,8 @@ fun StickyBar() {
                 .border(if (cancelHere) 2.dp else 1.dp, if (cancelHere) Palette.Danger else Palette.ChromeLine, pill).clip(pill).blockTouches()
         ) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // اللون: نقرة تختاره (ثم نقرة على الصفحة)، أو ضغطة مطوّلة وسحب إلى المكان على الصفحة
                 val session = AppController.tabs.firstOrNull { it.id == AppController.activeId }
@@ -172,7 +172,7 @@ fun StickyBar() {
                     val sel = PenPrefs.stickyColor == col
                     val payload = remember(col) { TrayPayload.Sticky(col) }
                     Box(
-                        Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
+                        Modifier.barItem().clip(RoundedCornerShape(12.dp))
                             .background(if (sel) Palette.NavySoft else Color.Transparent)
                             .clickable { PenPrefs.changeStickyColor(col) }
                             // اسحب اللون لأسفل نحو الصفحة: تخرج الملاحظة تحت إصبعك
@@ -248,64 +248,48 @@ fun NoteBar(s: DocSession) {
     val c = AppController
     val id = s.selectedNoteId ?: return
     val n = s.note(id) ?: return
-    var colors by remember { mutableStateOf(false) }
-    var more by remember { mutableStateOf(false) }
     var authorDialog by remember { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(18.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                Box(
-                    Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).clickable { colors = true },
-                    contentAlignment = Alignment.Center
-                ) { Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(n.color)).border(1.dp, Palette.Divider, RoundedCornerShape(6.dp))) }
-                DropdownMenu(expanded = colors, onDismissRequest = { colors = false }) {
-                    Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StickyColors.forEach { col ->
-                            Box(
-                                Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).background(Color(col))
-                                    .border(if (col == n.color) 2.dp else 1.dp, if (col == n.color) Palette.Navy else Palette.Divider, RoundedCornerShape(6.dp))
-                                    .clickable { s.editNote(id) { it.copy(color = col) }; colors = false }
-                            )
-                        }
-                    }
-                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(L("سادة", "Plain"), L("شريط", "Strip"), L("أسطر", "Lined"), L("مربعات", "Grid")).forEachIndexed { st, label ->
-                            TextButton(onClick = { s.editNote(id) { it.copy(style = st) }; colors = false }) {
-                                Text(label, color = if (n.style == st) Palette.Navy else Palette.TextSecondary, fontSize = 13.sp)
-                            }
-                        }
+    CtxBar {
+        // كتابة نص بلوحة المفاتيح
+        CtxBtn(L("كتابة نص", "Type text"), primary = s.noteTextEditId != id) {
+            s.noteTextEditId = if (s.noteTextEditId == id) null else id
+        }
+        // طيّ الملاحظة إلى مربع صغير
+        CtxBtn(if (n.collapsed) L("فتح", "Expand") else L("طيّ", "Collapse")) { s.editNote(id) { it.copy(collapsed = !it.collapsed) } }
+        CtxBtn(L("نسخ", "Copy")) {
+            c.noteClipboard = n
+            c.say(MsgKind.DONE, L("نُسخت الملاحظة", "Note copied"))
+        }
+        CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteNote(id) }
+        CtxMore { close ->
+            // اللون وشكل الورقة
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StickyColors.forEach { col ->
+                    Box(
+                        Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).background(Color(col))
+                            .border(if (col == n.color) 2.dp else 1.dp, if (col == n.color) Palette.Navy else Palette.Divider, RoundedCornerShape(6.dp))
+                            .clickable { s.editNote(id) { it.copy(color = col) } }
+                    )
+                }
+            }
+            Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                listOf(L("سادة", "Plain"), L("شريط", "Strip"), L("أسطر", "Lined"), L("مربعات", "Grid")).forEachIndexed { st, label ->
+                    TextButton(onClick = { s.editNote(id) { it.copy(style = st) } }) {
+                        Text(label, color = if (n.style == st) Palette.Navy else Palette.TextSecondary, fontSize = 13.sp,
+                            fontWeight = if (n.style == st) FontWeight.Bold else FontWeight.Normal)
                     }
                 }
             }
-            // كتابة نص بلوحة المفاتيح
-            TBtn(selected = s.noteTextEditId == id, onClick = { s.noteTextEditId = if (s.noteTextEditId == id) null else id }) {
-                PhIcon(R.drawable.ph_text, Palette.TextSecondary, 20.dp, L("كتابة نص", "Type text"))
-            }
-            // طيّ الملاحظة إلى مربع صغير
-            TBtn(onClick = { s.editNote(id) { it.copy(collapsed = !it.collapsed) } }) {
-                PhIcon(if (n.collapsed) R.drawable.ph_zoom_in else R.drawable.ph_zoom_out, Palette.TextSecondary, 20.dp, L("طيّ/فتح", "Collapse/expand"))
-            }
-            TBtn(onClick = {
+            CtxItem(L("قص", "Cut")) {
+                close()
                 c.noteClipboard = n
                 s.deleteNote(id)
                 c.say(MsgKind.DONE, L("قُصّت الملاحظة؛ الصقها من أداة الملاحظات", "Note cut; paste it from the sticky note tool"))
-            }) { PhIcon(R.drawable.ph_scissors, Palette.TextSecondary, 20.dp, L("قص", "Cut")) }
-            TBtn(onClick = { s.duplicateNote(id) }) { PhIcon(R.drawable.ph_copy, Palette.TextSecondary, 20.dp, L("تكرار", "Duplicate")) }
-            TBtn(onClick = { s.deleteNote(id) }) { PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp, L("حذف", "Delete")) }
-            Box {
-                TBtn(onClick = { more = true }) { PhIcon(R.drawable.ph_more, Palette.TextSecondary, 20.dp) }
-                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                    DropdownMenuItem(text = { Text(L("نسخ", "Copy")) }, onClick = {
-                        more = false; c.noteClipboard = n
-                        c.say(MsgKind.DONE, L("نُسخت الملاحظة", "Note copied"))
-                    })
-                    DropdownMenuItem(text = { Text(L("مسح الكتابة داخلها", "Clear its writing")) }, onClick = {
-                        more = false; s.editNote(id) { it.copy(ink = emptyList()) }
-                    })
-                    DropdownMenuItem(text = { Text(L("الاسم على الملاحظات…", "Name on notes…")) }, onClick = { more = false; authorDialog = true })
-                }
             }
-            TextButton(onClick = { s.noteTextEditId = null; s.selectedNoteId = null }) { Text(L("تم", "Done")) }
+            CtxItem(L("تكرار", "Duplicate")) { close(); s.duplicateNote(id) }
+            CtxItem(L("مسح الكتابة داخلها", "Clear its writing")) { close(); s.editNote(id) { it.copy(ink = emptyList()) } }
+            CtxItem(L("الاسم على الملاحظات…", "Name on notes…")) { close(); authorDialog = true }
+            CtxItem(L("تم", "Done")) { close(); s.noteTextEditId = null; s.selectedNoteId = null }
         }
     }
     if (authorDialog) {

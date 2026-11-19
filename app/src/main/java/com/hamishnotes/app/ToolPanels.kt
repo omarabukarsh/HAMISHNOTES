@@ -165,7 +165,7 @@ fun SizeSlots(t: Tool) {
             var edit by remember { mutableStateOf(false) }
             Box {
                 Box(
-                    Modifier.size(width = 46.dp, height = 40.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier.barItem().clip(RoundedCornerShape(12.dp))
                         .background(if (sel) Palette.NavySoft else Color.Transparent)
                         .clickable { if (sel) edit = true else c.setSize(sz) },
                     contentAlignment = Alignment.Center
@@ -369,7 +369,7 @@ fun ShapeBar() {
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.shadow(6.dp, pill).background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // التعرّف على الأشكال المرسومة بالقلم
@@ -386,9 +386,9 @@ fun ShapeBar() {
                 // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
                 Box {
                     Row(
-                        Modifier.padding(horizontal = 4.dp).height(40.dp).clip(RoundedCornerShape(20.dp))
+                        Modifier.padding(horizontal = 2.dp).height(42.dp).clip(RoundedCornerShape(12.dp))
                             .background(Palette.NavySoft.copy(alpha = 0.5f))
-                            .border(1.5.dp, Palette.Navy, RoundedCornerShape(20.dp))
+                            .border(1.5.dp, Palette.Navy, RoundedCornerShape(12.dp))
                             .clickable { strokeMenu = true }
                             .padding(start = 10.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,

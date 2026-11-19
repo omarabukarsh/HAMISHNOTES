@@ -534,7 +534,7 @@ fun TapeBar(s: DocSession) {
     Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.shadow(6.dp, pill).background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // أيقونة الأداة: تفتح نافذة الإعدادات تحتها
@@ -565,7 +565,7 @@ fun TapeBar(s: DocSession) {
                 TapeTool.palette.forEach { col ->
                     val sel = col == TapeTool.color
                     Box(
-                        Modifier.size(34.dp).clip(CircleShape).clickable { TapeTool.changeColor(col) },
+                        Modifier.barItem().clip(RoundedCornerShape(12.dp)).clickable { TapeTool.changeColor(col) },
                         contentAlignment = Alignment.Center
                     ) {
                         Box(

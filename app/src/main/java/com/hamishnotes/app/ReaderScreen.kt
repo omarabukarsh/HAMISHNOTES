@@ -496,7 +496,7 @@ private fun ChromeBtn(selected: Boolean, selectedBg: Color, onClick: () -> Unit,
         if (selected) selectedBg else Color.Transparent, tween(Motion.ENTER), label = "chromeBtn"
     )
     Box(
-        Modifier.size(48.dp).pressScale().clip(RoundedCornerShape(14.dp)).background(bg).clickable(onClick = onClick),
+        Modifier.padding(horizontal = 2.dp).size(48.dp).pressScale().clip(RoundedCornerShape(14.dp)).background(bg).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
         content = content
     )
@@ -536,7 +536,16 @@ internal fun Modifier.scrollFade(state: androidx.compose.foundation.ScrollState)
 }
 
 /** شكل الأشرطة العائمة فوق الصفحة (القلم، الأشكال، الملاحظات، الشريط اللاصق): مستطيل بحواف ناعمة. */
-internal val BarShape = RoundedCornerShape(18.dp)
+internal val BarShape = RoundedCornerShape(16.dp)
+
+/** شريط الأدوات: زاوية زر الطرف (14) + الفراغ 4، فتتوازى الخلفية المختارة مع حافة الشريط. */
+internal val ToolbarShape = RoundedCornerShape(18.dp)
+
+/**
+ * مقاس موحّد لكل عنصر في الأشرطة: 42×42 مع 2 على كل جانب، فتكون المسافة بين أي عنصرين 4،
+ * وبين العنصر وطرف الشريط 4 (الشريط نفسه حشوته 2 على الجانبين و4 فوق وتحت).
+ */
+internal fun Modifier.barItem(): Modifier = this.padding(horizontal = 2.dp).size(42.dp)
 
 /**
  * الشريط العائم يأخذ لمساته فلا تصل إلى الصفحة تحته: وجود مستقبل لمس هنا يكفي، لأن اللمسة
@@ -552,7 +561,7 @@ internal fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
 @Composable
 internal fun ToolbarSep() {
     Box(
-        Modifier.padding(horizontal = 6.dp).width(1.dp).height(26.dp).background(Palette.ChromeLine)
+        Modifier.padding(horizontal = 2.dp).width(1.dp).height(26.dp).background(Palette.ChromeLine)
     )
 }
 
@@ -585,7 +594,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
     val markCount = s.marks.values.sumOf { it.size }
     Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
         Row(
-            Modifier.fillMaxWidth().background(Palette.ChromeBg, ChromeShape).padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().background(Palette.ChromeBg, ToolbarShape).padding(horizontal = 2.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // زر درج الصفحات
@@ -603,7 +612,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
               ) {
             // إن اتسعت الأدوات كلها: في منتصف الشريط؛ وإلا يتمرر الوسط وحده
             Row(
-                (if (fitAll) Modifier.fitWidth() else Modifier.fillMaxWidth()).padding(horizontal = 4.dp),
+                (if (fitAll) Modifier.fitWidth() else Modifier.fillMaxWidth()),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -617,9 +626,10 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         scope.launch { s.listState.animateScrollToItem(t); s.activePage = t }
                     }) { ChevronGlyph(Palette.ChromeFg, up = true) }
                     Box(
-                        Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.ChromeSel)
+                        Modifier.padding(horizontal = 2.dp).height(42.dp).clip(RoundedCornerShape(12.dp)).background(Palette.ChromeSel)
                             .clickable { jump = true }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
                             "${cur + 1} / $count", fontSize = 14.sp,
@@ -642,7 +652,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                     }
                 }
                 // مؤقت الدراسة: يعمل ويتوقف مؤقتًا هنا وفي وضع التركيز
-                if (v("timer")) PomodoroControl(showStartLabel = false)
+                if (v("timer")) Box(Modifier.padding(horizontal = 2.dp)) { PomodoroControl(showStartLabel = false) }
                 if (v("nav") || v("bookmark") || v("timer")) ToolbarSep()
 
                 // الأدوات الأساسية
@@ -901,9 +911,10 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                         ZoomGlyph(if (canOut) Palette.ChromeFg else dim, plus = false)
                     }
                     Box(
-                        Modifier.clip(RoundedCornerShape(8.dp))
+                        Modifier.padding(horizontal = 2.dp).height(42.dp).clip(RoundedCornerShape(12.dp))
                             .clickable { s.zoomHook?.invoke(1f / s.scale) }
-                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text("${(s.scale * 100).roundToInt()}%", fontSize = 14.sp, color = Palette.ChromeFg)
                     }
@@ -1028,7 +1039,7 @@ private fun PenBar() {
                 .background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()
         ) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // قلم واحد (حبر/جاف/فرشاة يُبدَّل بينها من إعداداته)، ثم الرصاص والهايلايتر.
@@ -1057,7 +1068,7 @@ private fun PenBar() {
                     val col = Color(p.color)
                     val active = c.tool == p.tool && c.colorFor(p.tool) == col && c.sizeFor(p.tool) == p.size
                     Box(
-                        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        Modifier.barItem().clip(RoundedCornerShape(12.dp))
                             .background(if (active) Palette.NavySoft else Color.Transparent)
                             .combinedClickable(onClick = { c.applyPreset(p) }, onLongClick = { c.removePreset(p) }),
                         contentAlignment = Alignment.Center
@@ -1083,18 +1094,14 @@ private fun PenBar() {
                 ToolbarSep()
                 // خمسة ألوان فقط بمسافة واسعة (آخر ما استُخدم)، و«+» يفتح بقية الألوان واللون المخصص
                 val current = c.colorFor(t)
-                Row(
-                    Modifier.padding(horizontal = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    c.shownColors(t).forEach { col ->
+                c.shownColors(t).forEach { col ->
+                    Box(Modifier.barItem(), contentAlignment = Alignment.Center) {
                         ColorSwatch(col, selected = col == current) { c.setColor(col); c.noteRecentColor(col) }
                     }
                 }
                 Box {
                     Box(
-                        Modifier.padding(start = 6.dp).size(34.dp).clip(CircleShape).clickable { allColors = true },
+                        Modifier.barItem().clip(RoundedCornerShape(12.dp)).clickable { allColors = true },
                         contentAlignment = Alignment.Center
                     ) { PhIcon(R.drawable.ph_plus, Palette.ChromeMuted, 18.dp, L("كل الألوان", "All colors")) }
                     DropdownMenu(
@@ -1961,18 +1968,36 @@ private fun PageArea(s: DocSession, pdf: PdfDoc, onExportSummary: () -> Unit) {
             }
         }
 
-        Column(
-            Modifier.align(Alignment.BottomCenter).padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (s.selection != null) SelectionBar(s)
-            if (s.lassoSel != null) LassoBar(s)
-            else if (PageClipboard.clip != null && s.selection == null) PasteBar(s)
-            if (s.selectedImageId != null) ImageBar(s)
-            if (s.selectedTextId != null && s.inlineEditId == null) TextBoxBar(s)
-            if (s.selectedNoteId != null) NoteBar(s)
-            AutoFontChip(s)
+        // أشرطة العنصر المحدد: فوق العنصر مباشرة (وتحته إن لم يتسع فوقه)
+        s.selection?.let { sel -> s.selectionBounds()?.let { r -> AnchoredBar(s, sel.page, r) { SelectionBar(s) } } }
+        s.lassoSel?.let { sel ->
+            // أثناء سحب التحديد يختفي الشريط، ويعود فوقه عند الإفلات
+            if (s.lassoPreview == null) s.lassoRect()?.let { r -> AnchoredBar(s, sel.page, r) { LassoBar(s) } }
+        }
+        s.pasteAt?.let { (page, at) ->
+            if (s.lassoSel == null) AnchoredBar(s, page, androidx.compose.ui.geometry.Rect(at.x, at.y - 0.012f, at.x, at.y)) { PasteBar(s, page, at) }
+        }
+        s.selectedImageId?.let { id ->
+            s.images.entries.firstNotNullOfOrNull { (p, l) -> l.firstOrNull { it.id == id }?.let { p to it } }?.let { (p, im) ->
+                AnchoredBar(s, p, androidx.compose.ui.geometry.Rect(im.x, im.y, im.x + im.w, im.y + im.w / im.aspect)) { ImageBar(s) }
+            }
+        }
+        if (s.inlineEditId == null) s.selectedTextId?.let { id ->
+            s.textBox(id)?.let { tb -> AnchoredBar(s, tb.page, androidx.compose.ui.geometry.Rect(tb.x, tb.y, tb.x + tb.w, tb.y + s.textHeightOf(tb))) { TextBoxBar(s) } }
+        }
+        s.selectedNoteId?.let { id ->
+            s.note(id)?.let { n ->
+                val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+                val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+                AnchoredBar(s, n.page, androidx.compose.ui.geometry.Rect(n.x, n.y, n.x + nw, n.y + nh)) { NoteBar(s) }
+            }
+        }
+        // «تم التحويل»: تحت السطر الذي حُوّل؛ وبقية حالات التحويل صغيرة أسفل الشاشة
+        val converted = AutoFont.lastBox?.takeIf { it.first === s && AutoFont.preview == null }?.second?.let { s.textBox(it) }
+        if (converted != null) {
+            AnchoredBar(s, converted.page, androidx.compose.ui.geometry.Rect(converted.x, converted.y, converted.x + converted.w, converted.y + s.textHeightOf(converted)), preferBelow = true) { AutoFontChip(s) }
+        } else {
+            Box(Modifier.align(Alignment.BottomCenter).padding(12.dp)) { AutoFontChip(s) }
         }
     }
 }
@@ -1996,35 +2021,31 @@ private fun SelectionBar(s: DocSession) {
             onDismiss = { cardBack = null }
         )
     }
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(
-            Modifier.padding(horizontal = 6.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = {
-                val text = s.selectionText()
-                if (text.isNotEmpty()) {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
-                    AppController.say(MsgKind.DONE, L("تم نسخ النص", "Text copied"))
-                }
-            }) { Text(L("نسخ", "Copy")) }
-            TextButton(onClick = { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }) {
-                Text(L("إلى الملخصات", "To summaries"), color = Palette.GoldDeep)
+    CtxBar {
+        CtxBtn(L("إلى الملخصات", "To summaries"), primary = true) { s.markSelection(AppController.colorFor(Tool.HIGHLIGHTER)) }
+        CtxBtn(L("نسخ", "Copy")) {
+            val text = s.selectionText()
+            if (text.isNotEmpty()) {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("MyNotes", text))
+                AppController.say(MsgKind.DONE, L("تم نسخ النص", "Text copied"))
             }
-            TextButton(onClick = {
-                val text = s.selectionText()
-                if (text.isNotEmpty() && Premium.require(PremiumFeature.CARDS) && Premium.confirm()) cardBack = TextTidy.clean(text)
-            }) { Text(L("اجعله بطاقة", "Make it a card")) }
-            TextButton(onClick = {
-                val text = s.selectionText()
-                if (text.isNotEmpty() && Premium.require(PremiumFeature.TRANSLATE)) translateText = TextTidy.clean(text)
-            }) { Text(L("ترجمة", "Translate")) }
-            TextButton(onClick = {
+        }
+        CtxBtn(L("بطاقة", "Card")) {
+            val text = s.selectionText()
+            if (text.isNotEmpty() && Premium.require(PremiumFeature.CARDS) && Premium.confirm()) cardBack = TextTidy.clean(text)
+        }
+        CtxBtn(L("ترجمة", "Translate")) {
+            val text = s.selectionText()
+            if (text.isNotEmpty() && Premium.require(PremiumFeature.TRANSLATE)) translateText = TextTidy.clean(text)
+        }
+        CtxMore { close ->
+            CtxItem(L("تحديد كل الصفحة", "Select whole page")) {
+                close()
                 val n = s.ocr[sel.page]?.words?.size ?: 0
                 if (n > 0) s.selection = TextSelection(sel.page, 0, n - 1)
-            }) { Text(L("تحديد كل الصفحة", "Select whole page")) }
-            TextButton(onClick = { s.selection = null }) { Text(L("إلغاء", "Cancel")) }
+            }
+            CtxItem(L("إلغاء", "Cancel")) { close(); s.selection = null }
         }
     }
 }
@@ -2035,89 +2056,62 @@ private fun LassoBar(s: DocSession) {
     val c = AppController
     var toText by remember { mutableStateOf(false) }
     var changeFont by remember { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(
-            Modifier.padding(horizontal = 8.dp, vertical = 4.dp).horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // «تغيير الخط» أولاً وبارزاً كي يُرى مباشرة
-            Box(
-                Modifier.padding(end = 4.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Navy)
-                    .clickable { if (Premium.require(PremiumFeature.TO_TEXT)) changeFont = true }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Text("Aa " + L("تغيير الخط", "Change font"), color = Color.White, fontWeight = FontWeight.Bold)
-            }
-            TextButton(onClick = { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }) { Text(L("إلى نص", "To text")) }
-            TextButton(onClick = { StickerStore.saveFromLasso(s) }) { Text("☺ " + L("ملصق", "Sticker")) }
-            TextButton(onClick = { s.lassoCopy() }) { Text(L("نسخ", "Copy")) }
-            TextButton(onClick = { s.lassoDuplicate() }) { Text(L("تكرار", "Duplicate")) }
-            c.penPalette.take(6).forEach { col ->
-                Box(
-                    Modifier.size(32.dp).clip(CircleShape).clickable { s.lassoRecolor(col) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(Modifier.size(22.dp).clip(CircleShape).background(col).border(1.dp, Palette.Divider, CircleShape))
-                }
-            }
+    val sel = s.lassoSel
+    val firstT = sel?.strokes?.filter { it.t > 0 }?.minOfOrNull { it.t } ?: 0L
+    val rec = if (firstT > 0) AudioNotes.recAt(s.id, firstT) else null
+    CtxBar {
+        CtxBtn("Aa " + L("تغيير الخط", "Change font"), primary = true) { if (Premium.require(PremiumFeature.TO_TEXT)) changeFont = true }
+        CtxBtn(L("إلى نص", "To text")) { if (Premium.require(PremiumFeature.TO_TEXT)) toText = true }
+        CtxBtn(L("نسخ", "Copy")) { s.lassoCopy() }
+        CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.lassoDelete() }
+        CtxMore { close ->
+            CtxItem(L("تكرار", "Duplicate")) { close(); s.lassoDuplicate() }
+            CtxItem("☺ " + L("ملصق", "Sticker")) { close(); StickerStore.saveFromLasso(s) }
             // تشغيل التسجيل الصوتي من لحظة كتابة أول خط محدد
-            val sel = s.lassoSel
-            val firstT = sel?.strokes?.filter { it.t > 0 }?.minOfOrNull { it.t } ?: 0L
-            val rec = if (firstT > 0) AudioNotes.recAt(s.id, firstT) else null
-            if (rec != null) {
-                TextButton(onClick = { AudioNotes.play(rec, firstT - rec.start - 2000L) }) {
-                    Text(L("▶ الصوت", "▶ Audio"), color = Palette.Navy, fontWeight = FontWeight.Bold)
+            if (rec != null) CtxItem(L("▶ الصوت", "▶ Audio"), Palette.Navy) { close(); AudioNotes.play(rec, firstT - rec.start - 2000L) }
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                c.penPalette.take(6).forEach { col ->
+                    Box(
+                        Modifier.size(34.dp).clip(CircleShape).clickable { s.lassoRecolor(col); close() },
+                        contentAlignment = Alignment.Center
+                    ) { Box(Modifier.size(22.dp).clip(CircleShape).background(col).border(1.dp, Palette.Divider, CircleShape)) }
                 }
             }
-            TextButton(onClick = { s.lassoDelete() }) { Text(L("حذف", "Delete"), color = Color(0xFFC62828)) }
-            TextButton(onClick = { s.lassoSel = null }) { Text(L("تم", "Done")) }
+            CtxItem(L("تم", "Done")) { close(); s.lassoSel = null }
         }
     }
     if (toText) InkToTextDialog(s) { toText = false }
     if (changeFont) ChangeFontDialog(s) { changeFont = false }
 }
 
-/** يظهر ما دام في الحافظة شيء منسوخ بأداة التحديد: لصق في الصفحة الظاهرة. */
+/** بعد الضغط المطوّل على مكان فارغ في الصفحة: لصق المنسوخ هنا، أو إضافة سريعة في المكان نفسه. */
 @Composable
-private fun PasteBar(s: DocSession) {
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { s.pasteClip() }) {
-                Text(L("لصق هنا", "Paste here"), color = Palette.Navy, fontWeight = FontWeight.Bold)
-            }
-            TextButton(onClick = { PageClipboard.clip = null }) { Text("✕", color = Palette.TextSecondary) }
+private fun PasteBar(s: DocSession, page: Int, at: Offset) {
+    CtxBar {
+        if (PageClipboard.clip != null) CtxBtn(L("لصق", "Paste"), primary = true) { s.pasteAt = null; s.pasteClip(page, at) }
+        CtxBtn(L("صورة", "Image")) { s.pasteAt = null; s.trayMode = "photos" }
+        CtxBtn(L("مربع نص", "Text box")) {
+            s.pasteAt = null
+            val id = java.util.UUID.randomUUID().toString()
+            s.addTextBox(TextBox(id, page, (at.x - 0.02f).coerceIn(0f, 0.6f), at.y, 0.4f, "", Palette.Navy, 0.022f))
+            s.startInlineEdit(id)
         }
     }
 }
 
 @Composable
 private fun ImageBar(s: DocSession) {
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(
-            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = { s.deleteSelectedImage() }) {
-                Text(L("حذف الصورة", "Delete image"), color = Palette.Danger)
-            }
-            TextButton(onClick = {
-                val id = s.selectedImageId
-                if (id != null) {
-                    s.beginEdit()
-                    s.updateImage(id) { it.copy(w = (it.w * 0.87f).coerceAtLeast(0.05f)) }
-                    s.endEdit()
-                }
-            }) { Text(L("تصغير", "Smaller")) }
-            TextButton(onClick = {
-                val id = s.selectedImageId
-                if (id != null) {
-                    s.beginEdit()
-                    s.updateImage(id) { it.copy(w = (it.w * 1.15f).coerceAtMost(1.5f)) }
-                    s.endEdit()
-                }
-            }) { Text(L("تكبير", "Larger")) }
-            TextButton(onClick = { s.selectedImageId = null }) { Text(L("تم", "Done")) }
-        }
+    fun resize(k: Float) {
+        val id = s.selectedImageId ?: return
+        s.beginEdit()
+        s.updateImage(id) { it.copy(w = (it.w * k).coerceIn(0.05f, 1.5f)) }
+        s.endEdit()
+    }
+    CtxBar {
+        CtxBtn(L("تصغير", "Smaller")) { resize(0.87f) }
+        CtxBtn(L("تكبير", "Larger")) { resize(1.15f) }
+        CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteSelectedImage() }
+        CtxBtn(L("تم", "Done")) { s.selectedImageId = null }
     }
 }
 
@@ -2137,47 +2131,31 @@ private fun TextBoxBar(s: DocSession) {
         return
     }
     if (tb.linkDoc != null) {
-        Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-            Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { s.selectedTextId = null; AppController.followLink(s, tb.linkDoc, tb.linkPage) }) {
-                    Text(L("فتح الرابط", "Open link"), fontWeight = FontWeight.Bold, color = Palette.Navy)
-                }
-                TextButton(onClick = { s.deleteTextBox(id) }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
-                TextButton(onClick = { s.selectedTextId = null }) { Text(L("تم", "Done")) }
-            }
+        CtxBar {
+            CtxBtn(L("فتح الرابط", "Open link"), primary = true) { s.selectedTextId = null; AppController.followLink(s, tb.linkDoc, tb.linkPage) }
+            CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteTextBox(id) }
+            CtxBtn(L("تم", "Done")) { s.selectedTextId = null }
         }
         return
     }
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(
-            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = {
-                if (tb.sticky) s.textDialog = TextDialogReq(id, tb.page, sticky = true) else s.startInlineEdit(id)
-            }) { Text(L("تعديل", "Edit")) }
-            TextButton(onClick = {
-                s.beginEdit()
-                s.updateTextBox(id) { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) }
-                s.endEdit()
-            }) { Text(L("خط أصغر", "Smaller text")) }
-            TextButton(onClick = {
-                s.beginEdit()
-                s.updateTextBox(id) { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) }
-                s.endEdit()
-            }) { Text(L("خط أكبر", "Larger text")) }
-            TextButton(onClick = {
-                val pen = AppController.tool.let { if (it.isPen()) it else AppController.lastPen }
-                s.beginEdit()
-                s.updateTextBox(id) { it.copy(color = AppController.colorFor(pen)) }
-                s.endEdit()
-            }) { Text(L("لون القلم", "Pen color")) }
-            TextButton(onClick = { fontPick = true }) { Text("Aa " + L("الخط", "Font"), fontWeight = FontWeight.Bold) }
-            if (tb.ink.isNotEmpty()) {
-                TextButton(onClick = { s.textBoxToInk(id) }) { Text(L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting"), color = Palette.GoldDeep) }
-            }
-            TextButton(onClick = { s.deleteTextBox(id) }) { Text(L("حذف", "Delete"), color = Palette.Danger) }
-            TextButton(onClick = { s.selectedTextId = null }) { Text(L("تم", "Done")) }
+    fun edit(f: (TextBox) -> TextBox) { s.beginEdit(); s.updateTextBox(id, f); s.endEdit() }
+    CtxBar {
+        CtxBtn(L("تعديل", "Edit"), primary = true) {
+            if (tb.sticky) s.textDialog = TextDialogReq(id, tb.page, sticky = true) else s.startInlineEdit(id)
+        }
+        CtxBtn("Aa " + L("الخط", "Font")) { fontPick = true }
+        CtxBtn("A−") { edit { it.copy(size = (it.size / 1.15f).coerceAtLeast(0.010f)) } }
+        CtxBtn("A+") { edit { it.copy(size = (it.size * 1.15f).coerceAtMost(0.09f)) } }
+        // لون القلم الحالي
+        val pen = AppController.tool.let { if (it.isPen()) it else AppController.lastPen }
+        Box(
+            Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { edit { it.copy(color = AppController.colorFor(pen)) } },
+            contentAlignment = Alignment.Center
+        ) { Box(Modifier.size(20.dp).clip(CircleShape).background(AppController.colorFor(pen)).border(1.dp, Palette.Divider, CircleShape)) }
+        CtxBtn(L("حذف", "Delete"), color = Palette.Danger) { s.deleteTextBox(id) }
+        CtxMore { close ->
+            if (tb.ink.isNotEmpty()) CtxItem(L("↶ رجوع إلى الكتابة اليدوية", "↶ Back to handwriting"), Palette.GoldDeep) { close(); s.textBoxToInk(id) }
+            CtxItem(L("تم", "Done")) { close(); s.selectedTextId = null }
         }
     }
     if (fontPick) {
@@ -2430,10 +2408,11 @@ private fun PageView(
         Modifier.fillMaxWidth().aspectRatio(ratio)
             .onSizeChanged { wPx = it.width }
             .onGloballyPositioned { co ->
-                session.pageWindowRects[index] = androidx.compose.ui.geometry.Rect(
+                val nr = androidx.compose.ui.geometry.Rect(
                     co.localToWindow(Offset.Zero),
                     co.localToWindow(Offset(co.size.width.toFloat(), co.size.height.toFloat()))
                 )
+                if (session.pageWindowRects.put(index, nr) != nr) session.pageRectsVersion++
                 val b = co.boundsInWindow()
                 visRect.value = if (b.isEmpty) androidx.compose.ui.geometry.Rect.Zero
                 else androidx.compose.ui.geometry.Rect(co.windowToLocal(b.topLeft), co.windowToLocal(b.bottomRight))
@@ -3343,6 +3322,10 @@ private fun PageView(
                                 waitForUpOrCancellation()
                             }
                             if (up != null) {
+                                if (session.pasteAt != null) {
+                                    session.pasteAt = null
+                                    return@awaitEachGesture
+                                }
                                 // نافذة الكتابة المكبّرة مفتوحة: النقر ينقل منطقتها إلى هنا
                                 val zb = session.zoomBox
                                 if (zb != null) {
@@ -3405,8 +3388,16 @@ private fun PageView(
                                 }
                             }
                         } catch (e: PointerEventTimeoutCancellationException) {
-                            // ضغط مطوّل: تحديد نص
+                            // ضغط مطوّل: على نص يحدده، وفي مكان فارغ تظهر فقاعة «لصق» / إضافة سريعة فوق الإصبع
                             val pageWords = session.ocr[index]?.words
+                            val onText = pageWords != null && pageWords.isNotEmpty() && nearestWord(pageWords, nx, ny, 0.05f) >= 0
+                            if (!onText && (PageClipboard.clip != null || pageWords != null)) {
+                                session.selection = null
+                                session.selectedImageId = null
+                                session.selectedTextId = null
+                                session.pasteAt = index to Offset(nx, ny)
+                                return@awaitEachGesture
+                            }
                             if (pageWords != null && pageWords.isNotEmpty()) {
                                 val startIdx = nearestWord(pageWords, nx, ny, 0.05f)
                                 if (startIdx >= 0) {

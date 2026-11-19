@@ -298,6 +298,8 @@ class DocSession(entry: DocEntry) {
 
     /** مواضع الصفحات الظاهرة في النافذة (لإسقاط الصور والملصقات المسحوبة عليها). */
     val pageWindowRects = HashMap<Int, androidx.compose.ui.geometry.Rect>()
+    /** يزيد كلما تحركت صفحة في النافذة (تمرير، تكبير): الأشرطة فوق العناصر تعيد تموضعها فقط حينها. */
+    var pageRectsVersion by androidx.compose.runtime.mutableIntStateOf(0)
     /** الجزء الظاهر من قائمة الصفحات في النافذة (للتمرير التلقائي أثناء سحب عنصر إليها). */
     var pagesViewport = androidx.compose.ui.geometry.Rect.Zero
 
@@ -725,8 +727,11 @@ class DocSession(entry: DocEntry) {
         AppController.say(MsgKind.DONE, L("تم النسخ — افتح أي صفحة واضغط «لصق»", "Copied — open any page and tap Paste"))
     }
 
-    /** يلصق محتوى الحافظة في وسط الجزء الظاهر من الصفحة، ويصبح هو المحدد لتحريكه. */
-    fun pasteClip(page: Int = currentPage()) {
+    /** مكان الضغط المطوّل على الصفحة (لفقاعة «لصق» فوقه)؛ null = لا فقاعة. */
+    var pasteAt by mutableStateOf<Pair<Int, Offset>?>(null)
+
+    /** يلصق محتوى الحافظة: وسطه عند at (أو وسط الجزء الظاهر من الصفحة)، ويصبح هو المحدد لتحريكه. */
+    fun pasteClip(page: Int = currentPage(), at: Offset? = null) {
         val clip = PageClipboard.clip ?: return
         var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         fun add(x: Float, y: Float) { minX = minOf(minX, x); minY = minOf(minY, y); maxX = maxOf(maxX, x); maxY = maxOf(maxY, y) }
@@ -734,7 +739,7 @@ class DocSession(entry: DocEntry) {
         clip.images.forEach { add(it.x, it.y); add(it.x + it.w, it.y + it.w / it.aspect) }
         clip.texts.forEach { add(it.x, it.y); add(it.x + it.w, it.y + textHeightOf(it)) }
         if (minX > maxX) return
-        val c = visibleCenter(page)
+        val c = at ?: visibleCenter(page)
         val dx = c.x - (minX + maxX) / 2f
         val dy = c.y - (minY + maxY) / 2f
         beginEdit()

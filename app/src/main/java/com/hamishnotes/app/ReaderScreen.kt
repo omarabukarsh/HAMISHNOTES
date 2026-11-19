@@ -523,12 +523,13 @@ internal fun Modifier.fitWidth(): Modifier = this.layout { m, c ->
  * حافة باهتة على طرفي منطقة تتمرر أفقيًا: تشير إلى وجود أدوات أخرى بالسحب.
  * تُرسم بتدرّج بلون البطاقة فوق المحتوى (بلا طبقة رسم إضافية، فلا تكلّف شيئًا عند التحديث).
  */
-internal fun Modifier.scrollFade(): Modifier = this.drawWithContent {
+internal fun Modifier.scrollFade(state: androidx.compose.foundation.ScrollState): Modifier = this.drawWithContent {
     drawContent()
+    // التلاشي فقط على الطرف الذي فيه أدوات مخفية (لا يغطي أطراف الأدوات حين تتسع كلها)
     val f = 18.dp.toPx()
     val bg = Palette.ChromeBg
-    drawRect(Brush.horizontalGradient(listOf(bg, bg.copy(alpha = 0f)), startX = 0f, endX = f), size = androidx.compose.ui.geometry.Size(f, size.height))
-    drawRect(
+    if (state.canScrollBackward) drawRect(Brush.horizontalGradient(listOf(bg, bg.copy(alpha = 0f)), startX = 0f, endX = f), size = androidx.compose.ui.geometry.Size(f, size.height))
+    if (state.canScrollForward) drawRect(
         Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg), startX = size.width - f, endX = size.width),
         topLeft = Offset(size.width - f, 0f), size = androidx.compose.ui.geometry.Size(f, size.height)
     )
@@ -600,8 +601,10 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
               androidx.compose.runtime.CompositionLocalProvider(
                   androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d0.density * (if (fitAll) 1f else 1.14f), d0.fontScale)
               ) {
+            // إن اتسعت الأدوات كلها: في منتصف الشريط؛ وإلا يتمرر الوسط وحده
             Row(
                 (if (fitAll) Modifier.fitWidth() else Modifier.fillMaxWidth()).padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val v: (String) -> Boolean = { c.toolVisible(it) }
@@ -768,11 +771,11 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
 
                 // بقية الأدوات: تتمرر وحدها (الأجزاء الثابتة على الطرفين لا تتحرك)
                 if (listOf("image", "stickers", "text", "sticky", "zoomwin", "addpage", "ocr", "search", "export").any(v)) ToolbarSep()
-                Box(if (fitAll) Modifier else Modifier.weight(1f)) {
+                Box(if (fitAll) Modifier else Modifier.weight(1f, fill = s.searchOpen)) {
                 // البحث: يحل محل وسط الشريط (الأدوات الأساسية و«⋮» تبقى)، فلا نافذة فوق الصفحة
                 if (s.searchOpen) ReaderSearchBar(s, if (fitAll) Modifier.width(520.dp) else Modifier.fillMaxWidth()) else
                 Row(
-                    (if (fitAll) Modifier else Modifier.scrollFade().horizontalScroll(rememberScrollState())),
+                    (if (fitAll) Modifier else { val sc = rememberScrollState(); Modifier.scrollFade(sc).horizontalScroll(sc) }),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                 if (v("image")) {

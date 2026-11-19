@@ -255,7 +255,20 @@ private struct ReaderTopBar: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                // الأدوات الأساسية يسارًا و«⋮» يمينًا ثابتة، والوسط وحده يتمرر إن لم تتسع الشاشة
+                // إن اتسعت الأدوات كلها: في منتصف الشريط بين زر الصفحات وزر الملخصات.
+                // وإلا: الأدوات الأساسية يسارًا و«⋮» يمينًا ثابتة، والوسط وحده يتمرر.
+                ViewThatFits(in: .horizontal) {
+                    if !s.searchOpen {
+                        HStack(spacing: 0) {
+                            navGroup
+                            coreGroup
+                            HStack(spacing: 0) { insertGroupA; insertGroupB; viewGroup }.padding(.horizontal, 6)
+                            ToolbarSep()
+                            moreButton
+                        }
+                        .fixedSize()
+                        .frame(maxWidth: .infinity)
+                    }
                 HStack(spacing: 0) {
                     navGroup
                     coreGroup
@@ -275,6 +288,7 @@ private struct ReaderTopBar: View {
                     }
                     ToolbarSep()
                     moreButton
+                }
                 }
                 .environment(\.chromeScale, 1.14)
                 .frame(maxWidth: .infinity)

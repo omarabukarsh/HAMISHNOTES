@@ -965,6 +965,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         let lp = g.location(in: content)
         let W = max(1, pageSize.width * k)
         let rel = RelPt(x: lp.x / W, y: lp.y / W)
+        if g.state == .began { s.selecting = true } else if g.state != .changed { s.selecting = false }
         switch g.state {
         case .began:
             selAnchor = pt
@@ -1214,11 +1215,13 @@ final class LaserView: UIView {
         render()
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil; render() }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil; if mode == .dot { trail.removeAll() }; render() }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { dot = nil; render() }
 
     private func add(_ p: CGPoint, render now: Bool = true) {
         dot = p
+        // نمط «نقطة»: نقطة واحدة تحت القلم بلا أثر خلفها
+        if mode == .dot { trail.removeAll(); if now { render() }; return }
         // نقاط متقاربة جدًا لا تضيف شيئًا (وتثقل المسار)
         if let last = trail.last?.0, hypot(p.x - last.x, p.y - last.y) < 0.8 { trail[trail.count - 1].1 = CACurrentMediaTime() } else {
             trail.append((p, CACurrentMediaTime()))
@@ -1238,7 +1241,7 @@ final class LaserView: UIView {
         let life: CFTimeInterval = mode == .line ? 1.5 : 0.35
         trail.removeAll { now - $0.1 > life }
         render()
-        if trail.isEmpty && dot == nil { link?.invalidate(); link = nil }
+        if (trail.isEmpty && dot == nil) || mode == .dot { link?.invalidate(); link = nil }
     }
 
     /// مسار ناعم عبر نقاط الأثر.
@@ -1596,6 +1599,7 @@ final class TextBoxView: UILabel {
         }
         isUserInteractionEnabled = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
+        addGestureRecognizer(ItemHold.make())
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pan.delegate = ItemDragPriority.shared
@@ -1630,6 +1634,7 @@ final class TextBoxView: UILabel {
 
     @objc private func pan(_ g: UIPanGestureRecognizer) {
         let t = g.translation(in: superview)
+        if g.state == .began { NotificationCenter.default.post(name: .itemDragBegan, object: nil) }
         switch g.state {
         case .changed: transform = CGAffineTransform(translationX: t.x, y: t.y)
         case .ended:
@@ -1865,6 +1870,7 @@ final class StickyNoteView: UIView {
             corner = c
         }
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
+        if gestureRecognizers?.contains(where: { $0 is UILongPressGestureRecognizer }) != true { addGestureRecognizer(ItemHold.make()) }
         let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pan.delegate = ItemDragPriority.shared
@@ -1877,6 +1883,7 @@ final class StickyNoteView: UIView {
 
     @objc private func pan(_ g: UIPanGestureRecognizer) {
         let t = g.translation(in: superview)
+        if g.state == .began { NotificationCenter.default.post(name: .itemDragBegan, object: nil) }
         switch g.state {
         case .changed: transform = CGAffineTransform(translationX: t.x, y: t.y)
         case .ended:
@@ -1902,6 +1909,7 @@ final class ImageSelectionView: UIView {
         let move = UIPanGestureRecognizer(target: self, action: #selector(dragMove(_:)))
         move.delegate = ItemDragPriority.shared
         addGestureRecognizer(move)
+        addGestureRecognizer(ItemHold.make())
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:)))
         pinch.delegate = ItemDragPriority.shared
         addGestureRecognizer(pinch)
@@ -1933,7 +1941,7 @@ final class ImageSelectionView: UIView {
     }
 
     @objc private func dragMove(_ g: UIPanGestureRecognizer) {
-        if g.state == .began { startFrame = frame }
+        if g.state == .began { startFrame = frame; NotificationCenter.default.post(name: .itemDragBegan, object: nil) }
         let t = g.translation(in: superview)
         frame = startFrame.offsetBy(dx: t.x, dy: t.y)
         if g.state == .ended { onChange?(frame) }
@@ -1999,4 +2007,28 @@ extension PageOverlayView: UIDropInteractionDelegate {
             }
         }
     }
+}
+
+
+extension Notification.Name {
+    /// بدأ سحب عنصر (مربع نص، ملاحظة، صورة): يختفي شريطه.
+    static let itemDragBegan = Notification.Name("itemDragBegan")
+    /// ضغطة مطوّلة على العنصر المحدد: يظهر شريطه مرة أخرى.
+    static let itemHold = Notification.Name("itemHold")
+}
+
+/// ضغطة مطوّلة على عنصر محدد تُظهر شريطه (تعمل مع السحب والنقر دون أن تمنعهما).
+final class ItemHold: NSObject, UIGestureRecognizerDelegate {
+    static let shared = ItemHold()
+    static func make() -> UILongPressGestureRecognizer {
+        let g = UILongPressGestureRecognizer(target: shared, action: #selector(hold(_:)))
+        g.minimumPressDuration = 0.45
+        g.cancelsTouchesInView = false
+        g.delegate = shared
+        return g
+    }
+    @objc private func hold(_ g: UILongPressGestureRecognizer) {
+        if g.state == .began { NotificationCenter.default.post(name: .itemHold, object: nil) }
+    }
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
 }

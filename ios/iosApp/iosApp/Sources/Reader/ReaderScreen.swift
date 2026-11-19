@@ -128,7 +128,7 @@ private struct ReaderContent: View {
                     Button { app.focusMode = false } label: { PhIcon("ph_focus_exit", Palette.textPrimary, 20, L("الخروج من وضع التركيز", "Exit focus mode")).frame(width: 40, height: 40) }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Capsule().fill(Color.white))
+                .background(Capsule().fill(Palette.surface))
                 .overlay(Capsule().stroke(Palette.divider, lineWidth: 1))
                 .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
                 .padding(14)
@@ -137,12 +137,12 @@ private struct ReaderContent: View {
             // أشرطة العنصر المحدد: فوق العنصر مباشرة (وتحته إن لم يتسع فوقه)، وتتبعه مع التمرير والتكبير
             ZStack {
                 if let sel = s.lassoSel, let idx = s.index(of: sel.pageId), let r = s.lassoBounds() {
-                    AnchoredBar(session: s, anchor: .page(idx, r)) { LassoBar(session: s, sheet: $sheet) }
+                    AnchoredBar(session: s, anchor: .page(idx, r), visible: !s.barHidden) { LassoBar(session: s, sheet: $sheet) }
                 }
                 if let ts = s.textSel {
-                    AnchoredBar(session: s, anchor: .selection(ts)) { TextSelectionBar(session: s) }
+                    AnchoredBar(session: s, anchor: .selection(ts), visible: !s.selecting) { TextSelectionBar(session: s) }
                 } else if let ws = s.wordSel, let r = s.wordSelRect(ws) {
-                    AnchoredBar(session: s, anchor: .page(ws.page, r)) { TextSelectionBar(session: s) }
+                    AnchoredBar(session: s, anchor: .page(ws.page, r), visible: !s.selecting) { TextSelectionBar(session: s) }
                 }
                 if let ap = s.altPopup, let ar = s.altRect(ap) {
                     AnchoredBar(session: s, anchor: .page(ar.0, ar.1)) { AltWordBar(session: s, popup: ap) }
@@ -151,13 +151,13 @@ private struct ReaderContent: View {
                     AnchoredBar(session: s, anchor: .page(pp.page, CGRect(x: pp.at.x, y: pp.at.y - 8, width: 0, height: 8))) { PasteBar(session: s, point: pp) }
                 }
                 if let id = s.selectedImage, let im = s.data.images.first(where: { $0.id == id }), let idx = s.index(of: im.page) {
-                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect)))) { ImageBar(session: s) }
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect))), visible: !s.barHidden) { ImageBar(session: s) }
                 }
                 if s.inlineEditId == nil, let id = s.selectedBox, let b = s.data.boxes.first(where: { $0.id == id }), let idx = s.index(of: b.page) {
-                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: b.x, y: b.y, width: b.w, height: s.boxHeight(b)))) { TextBoxBar(session: s) }
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: b.x, y: b.y, width: b.w, height: s.boxHeight(b))), visible: !s.barHidden) { TextBoxBar(session: s) }
                 }
                 if let id = s.selectedNote, let n = s.data.notes.first(where: { $0.id == id }), let idx = s.index(of: n.page) {
-                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: n.x, y: n.y, width: n.w, height: n.h))) { NoteBar(session: s) }
+                    AnchoredBar(session: s, anchor: .page(idx, CGRect(x: n.x, y: n.y, width: n.w, height: n.h)), visible: !s.barHidden) { NoteBar(session: s) }
                 }
                 // «تم التحويل»: تحت السطر الذي حُوّل؛ وبقية حالات التحويل صغيرة أسفل الشاشة
                 if AutoFont.shared.preview == nil, let lb = AutoFont.shared.lastBox, lb.0 == s.id,
@@ -169,6 +169,9 @@ private struct ReaderContent: View {
                         .padding(.bottom, s.zoomBox != nil ? 230 : 0)
                 }
             }
+            // سحب عنصر يخفي شريطه، وضغطة مطوّلة عليه تُظهره مرة أخرى
+            .onReceive(NotificationCenter.default.publisher(for: .itemDragBegan)) { _ in if !s.barHidden { s.barHidden = true } }
+            .onReceive(NotificationCenter.default.publisher(for: .itemHold)) { _ in if s.barHidden { s.barHidden = false } }
             // أداة أخرى: شريط العنصر المحدد (نص، ملاحظة، صورة) يُغلق، فلا تتراكم الأشرطة فوق بعضها
             .onChange(of: "\(app.tool)|\(app.lassoActive)|\(app.shapeActive)|\(app.stickyActive)|\(app.tapeActive)") { _, _ in
                 if s.selectedBox != nil { s.selectedBox = nil }
@@ -190,7 +193,7 @@ private struct ReaderContent: View {
                     }
                     Button { app.linkBack = nil } label: { PhIcon("ph_close", Palette.textSecondary, 16).frame(width: 36, height: 36) }
                 }
-                .background(Capsule().fill(Color.white))
+                .background(Capsule().fill(Palette.surface))
                 .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -755,7 +758,7 @@ struct ChromeCard: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: Chrome.radius, style: .continuous)
         content
             .clipShape(shape)
-            .background(shape.fill(Color.white).shadow(color: .black.opacity(0.10), radius: 6, y: 2))
+            .background(shape.fill(Palette.surface).shadow(color: .black.opacity(0.10), radius: 6, y: 2))
             .padding(leading ? .leading : .trailing, 12)
             .padding(.top, 4).padding(.bottom, 12)
     }
@@ -1206,7 +1209,7 @@ private struct NoteBar: View {
                 CtxBtn(label: n.collapsed ? L("فتح", "Expand") : L("طيّ", "Collapse")) {
                     var m = n; m.collapsed.toggle(); session.upsertNote(m); session.selectedNote = nil
                 }
-                CtxBtn(label: L("نسخ", "Copy")) { app.noteClipboard = n; app.say(.done, L("نُسخت الملاحظة", "Note copied")) }
+                CtxBtn(label: L("نسخ", "Copy")) { app.noteClipboard = n; session.copyItem(note: n) }
                 CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) { session.deleteNote(id); session.selectedNote = nil }
                 CtxMore { close in
                     CtxItem(label: L("قص", "Cut")) {
@@ -1507,6 +1510,9 @@ private struct ImageBar: View {
         CtxBar {
             CtxBtn(label: L("تصغير", "Smaller")) { scale(0.87) }
             CtxBtn(label: L("تكبير", "Larger")) { scale(1.15) }
+            CtxBtn(label: L("نسخ", "Copy")) {
+                if let id = session.selectedImage, let im = session.data.images.first(where: { $0.id == id }) { session.copyItem(image: im) }
+            }
             CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) {
                 if let id = session.selectedImage { session.deleteImage(id); session.selectedImage = nil }
             }

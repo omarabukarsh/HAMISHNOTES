@@ -149,7 +149,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 16)
         .frame(maxHeight: .infinity)
-        .background(Color.white)
+        .background(Palette.surface)
     }
 
     private func pane(_ p: SettingsPage, back: (() -> Void)?) -> some View {
@@ -480,7 +480,7 @@ private struct SettingsGroup<C: View>: View {
     @ViewBuilder let content: () -> C
     var body: some View {
         VStack(spacing: 0) { content() }
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.surface))
             .roundedBorder(Color(hex: 0xFFF1EEE7), radius: 16)
     }
 }
@@ -647,7 +647,7 @@ private struct DeleteAccountSheet: View {
         }
         .padding(24)
         .frame(maxWidth: 420)
-        .background(Color.white)
+        .background(Palette.surface)
         .presentationDetents([.medium, .large])
         .environment(\.layoutDirection, .leftToRight)
     }

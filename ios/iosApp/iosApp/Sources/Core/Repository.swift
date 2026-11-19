@@ -257,15 +257,46 @@ final class Repository {
     // ---------- الإنشاء ----------
 
     /// يستورد ملف PDF إلى المكتبة.
-    func importPDF(from url: URL, name: String? = nil, folder: String = "") -> DocEntry? {
+    /// progress(نسبة 0..1، المرحلة) أثناء النسخ وقراءة الصفحات؛ cancelled() يوقف الإضافة.
+    func importPDF(from url: URL, name: String? = nil, folder: String = "",
+                   progress: ((Double, String) -> Void)? = nil, cancelled: (() -> Bool)? = nil) -> DocEntry? {
         let id = UUID().uuidString
         try? fm.createDirectory(at: dir(id), withIntermediateDirectories: true)
-        do {
-            try fm.copyItem(at: url, to: pdfURL(id))
-        } catch {
-            guard let d = try? Data(contentsOf: url) else { return nil }
-            try? d.write(to: pdfURL(id))
+        // نسخ على دفعات حتى تظهر نسبة التقدم (والإلغاء ممكن)
+        let total = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        var copied = false
+        if let ins = InputStream(url: url), fm.createFile(atPath: pdfURL(id).path, contents: nil), let out = try? FileHandle(forWritingTo: pdfURL(id)) {
+            ins.open()
+            var buf = [UInt8](repeating: 0, count: 256 * 1024)
+            var done = 0
+            var lastP = -1
+            copied = true
+            while true {
+                if cancelled?() == true { copied = false; break }
+                let n = ins.read(&buf, maxLength: buf.count)
+                if n < 0 { copied = false; break }
+                if n == 0 { break }
+                out.write(Data(buf[0..<n]))
+                done += n
+                if total > 0 {
+                    let p = done * 85 / total
+                    if p != lastP { lastP = p; progress?(Double(p) / 100, L("نسخ الملف…", "Copying the file…")) }
+                }
+            }
+            ins.close()
+            try? out.close()
         }
+        if cancelled?() == true { try? fm.removeItem(at: dir(id)); return nil }
+        if !copied {
+            try? fm.removeItem(at: pdfURL(id))
+            do {
+                try fm.copyItem(at: url, to: pdfURL(id))
+            } catch {
+                guard let d = try? Data(contentsOf: url) else { return nil }
+                try? d.write(to: pdfURL(id))
+            }
+        }
+        progress?(0.9, L("قراءة الصفحات…", "Reading the pages…"))
         guard let pdf = PDFDocument(url: pdfURL(id)) else {
             try? fm.removeItem(at: dir(id))
             return nil

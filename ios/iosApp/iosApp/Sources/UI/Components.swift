@@ -220,7 +220,7 @@ struct SheetCard<Content: View>: View {
         VStack(spacing: 0) { content() }
             .padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 14)
             .frame(maxWidth: 420)
-            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Palette.surface))
     }
 }
 
@@ -265,7 +265,7 @@ struct FieldBox: View {
         .font(Fonts.sans(15))
         .foregroundColor(Palette.textPrimary)
         .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
     }
 }

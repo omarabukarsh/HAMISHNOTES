@@ -236,7 +236,7 @@ struct AudioPlayerBar: View {
             Button { audio.stopPlayback() } label: { PhIcon("ph_close", Palette.textSecondary, 16).frame(width: 32, height: 32) }
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(Capsule().fill(Color.white))
+        .background(Capsule().fill(Palette.surface))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
 }
@@ -261,7 +261,7 @@ struct HandwritingSheet: View {
                     Text(L("لم يُعثر على كتابة واضحة في هذه الصفحة.", "No clear handwriting was found on this page.")).font(Fonts.sans(14)).foregroundColor(Palette.textSecondary)
                 } else {
                     TextEditor(text: $text).font(Fonts.sans(16)).frame(minHeight: 200).scrollContentBackground(.hidden)
-                        .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Color.white)).roundedBorder(Palette.divider, radius: 12)
+                        .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface)).roundedBorder(Palette.divider, radius: 12)
                     // كما في أندرويد: «إدراج كنص» في مكان الكتابة، مع حذف الكتابة اليدوية بعد الإدراج
                     Toggle(isOn: $removeInk) { Text(L("حذف الكتابة اليدوية بعد الإدراج", "Remove the handwriting after inserting")).font(Fonts.sans(13)) }
                         .tint(Palette.navy)

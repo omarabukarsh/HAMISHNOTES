@@ -137,7 +137,7 @@ struct PagesDrawer: View {
                         Button(L("تم", "Done")) { selecting = false; picked.removeAll() }.font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy).padding(.horizontal, 10)
                     }
                     .padding(.horizontal, 6)
-                    .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.15), radius: 6, y: 2))
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Palette.surface).shadow(color: .black.opacity(0.15), radius: 6, y: 2))
                     .padding(12)
                 }
             }
@@ -485,7 +485,7 @@ struct PageMenuDrawer: View {
 
     private func group<C: View>(@ViewBuilder _ content: () -> C) -> some View {
         VStack(spacing: 0) { content() }
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 16).fill(Palette.surface))
             .roundedBorder(Palette.divider, radius: 16)
             .padding(.horizontal, 14).padding(.top, 12)
     }
@@ -599,7 +599,7 @@ struct SideTray: View {
                                             }
                                         }
                                         .frame(width: 48, height: 48).frame(width: 56, height: 56)
-                                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                                        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                                     }
                                     .trayDraggable("mine:" + f, .sticker("mine:" + f))
                                     .contextMenu { Button(role: .destructive) { deleteSticker = f } label: { Text(L("حذف", "Delete")) } }
@@ -613,7 +613,7 @@ struct SideTray: View {
                                 ForEach(cat.1, id: \.self) { k in
                                     Button { place(.sticker(k)) } label: {
                                         StickerIcon(key: k, size: 40).frame(width: 56, height: 56)
-                                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                                            .background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                                     }
                                     .trayDraggable("c\(ci):" + k, .sticker(k))
                                 }
@@ -700,7 +700,7 @@ struct SideTray: View {
             Spacer()
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
     }
 }
 

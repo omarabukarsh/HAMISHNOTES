@@ -120,7 +120,7 @@ private struct DropdownPanel: View {
             }
             .scrollDisabled(size.height <= maxH)
             .frame(width: w > 0 ? w : nil, height: size.height > 0 ? h : nil)
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.surface))
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.divider.opacity(0.6), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.16), radius: 14, y: 6)

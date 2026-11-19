@@ -209,7 +209,7 @@ struct FontLibrarySheet: View {
             .font(Fonts.sans(14))
             TextField(L("ابحث عن خط… (\(store.catalog.count))", "Search fonts… (\(store.catalog.count))"), text: $query)
                 .font(Fonts.sans(15)).padding(10)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                .background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {

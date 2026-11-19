@@ -87,7 +87,7 @@ struct ToolbarCustomizeSheet: View {
                 }
             }
             .padding(.leading, 26).padding(.trailing, 18).padding(.top, 20)
-            .background(Color.white)
+            .background(Palette.surface)
             Rectangle().fill(Palette.divider).frame(height: 1)
             GeometryReader { g in
                 let wide = g.size.width >= 640
@@ -143,7 +143,7 @@ struct ToolbarCustomizeSheet: View {
                     }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.12), radius: 6, y: 2))
+                .background(RoundedRectangle(cornerRadius: 16).fill(Palette.surface).shadow(color: .black.opacity(0.12), radius: 6, y: 2))
             }
             Text(L("معاينة حية · \(shown.count) أداة في شريطك", "Live preview · \(shown.count) tools in your toolbar")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
         }
@@ -166,7 +166,7 @@ struct ToolbarCustomizeSheet: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 16).fill(Palette.surface))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(sel ? Palette.navy : Palette.divider, lineWidth: sel ? 2 : 1))
         }
     }
@@ -196,7 +196,7 @@ struct ToolbarCustomizeSheet: View {
                     }
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+                .background(RoundedRectangle(cornerRadius: 16).fill(Palette.surface))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.divider, lineWidth: 1))
                 .contentShape(Rectangle())
                 .onTapGesture { if !essential { app.setToolVisible(t.id, !on) } }
@@ -215,12 +215,12 @@ private struct StylePreview: View {
                     RoundedRectangle(cornerRadius: 6).fill(i == 0 ? Palette.navy : Color(hex: 0xFFE3E6EC)).frame(width: 22, height: 22)
                 }
             }
-            .padding(6).background(Capsule().fill(Color.white).shadow(color: .black.opacity(0.1), radius: 3, y: 1))
+            .padding(6).background(Capsule().fill(Palette.surface).shadow(color: .black.opacity(0.1), radius: 3, y: 1))
             if style == .penBar {
                 HStack(spacing: 5) {
                     ForEach([0xFF000000, 0xFF1565C0, 0xFFC62828, 0xFF2E7D32, 0xFFFFEB3B] as [UInt32], id: \.self) { c in Circle().fill(Color(hex: c)).frame(width: 14, height: 14) }
                 }
-                .padding(5).background(Capsule().fill(Color.white).shadow(color: .black.opacity(0.1), radius: 3, y: 1))
+                .padding(5).background(Capsule().fill(Palette.surface).shadow(color: .black.opacity(0.1), radius: 3, y: 1))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -272,7 +272,7 @@ private struct LearnTools: View {
                 }
                 .padding(8)
             }
-            .background(RoundedRectangle(cornerRadius: 18).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 18).fill(Palette.surface))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.divider, lineWidth: 1))
             .onAppear { proxy.scrollTo(max(0, index - 2), anchor: .top) }
         }
@@ -308,7 +308,7 @@ private struct LearnTools: View {
             }
             .padding(18)
         }
-        .background(RoundedRectangle(cornerRadius: 18).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: 18).fill(Palette.surface))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.divider, lineWidth: 1))
     }
 

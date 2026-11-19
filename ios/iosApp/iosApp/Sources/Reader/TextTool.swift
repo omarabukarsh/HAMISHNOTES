@@ -314,7 +314,7 @@ struct TextToolWindow: View {
             content().foregroundColor(on ? Palette.navy : Muted)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
-                    if on { RoundedRectangle(cornerRadius: 9).fill(Color.white).shadow(color: .black.opacity(0.12), radius: 2, y: 1) }
+                    if on { RoundedRectangle(cornerRadius: 9).fill(Palette.surface).shadow(color: .black.opacity(0.12), radius: 2, y: 1) }
                 }
                 .contentShape(Rectangle())
         }
@@ -379,6 +379,7 @@ struct TextBoxBar: View {
                         .padding(.top, 10).frame(width: 290)
                     }
                 }
+                CtxBtn(label: L("نسخ", "Copy")) { session.copyItem(box: b) }
                 CtxBtn(label: L("حذف", "Delete"), color: Palette.danger) {
                     session.selectedBox = nil
                     session.edit { d in d.boxes.removeAll { $0.id == id } }

@@ -27,14 +27,62 @@ struct PastePoint: Equatable {
 /// جسم الشريط: الأزرار في صف واحد بمسافات متساوية.
 struct CtxBar<Content: View>: View {
     @ViewBuilder let content: () -> Content
+    @Environment(\.ctxReveal) private var reveal
     var body: some View {
+        // الأزرار تظهر بعد أن تتمدد القطرة إلى الشريط
         HStack(spacing: 4) { content() }
+            .opacity(reveal).offset(y: (1 - reveal) * 4)
             .padding(4)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.chromeBg)
                     .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
             )
             .fixedSize()
+    }
+}
+
+private struct CtxRevealKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+extension EnvironmentValues {
+    /// ظهور محتوى الشريط (0..1) أثناء حركة القطرة.
+    var ctxReveal: CGFloat {
+        get { self[CtxRevealKey.self] }
+        set { self[CtxRevealKey.self] = newValue }
+    }
+}
+
+/// حركة «قطرة الماء»: تنبع قطرة صغيرة من رأس السهم، ترتفع وتتمدد إلى الشريط مع ارتداد خفيف.
+/// p من 0 إلى 1 → (عرض، ارتفاع، إزاحة رأسية، شفافية).
+func dropAt(_ p: CGFloat) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
+    let keys: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+        (0, 0.04, 0.30, 6, 0), (0.35, 0.07, 0.60, 0, 1), (0.72, 1.06, 0.86, 4, 1), (0.88, 0.98, 1.04, -1, 1), (1, 1, 1, 0, 1)
+    ]
+    let q = min(max(p, 0), 1)
+    for i in 1..<keys.count {
+        let a = keys[i - 1], b = keys[i]
+        if q <= b.0 {
+            let t = b.0 == a.0 ? 1 : (q - a.0) / (b.0 - a.0)
+            return (a.1 + (b.1 - a.1) * t, a.2 + (b.2 - a.2) * t, a.3 + (b.3 - a.3) * t, a.4 + (b.4 - a.4) * t)
+        }
+    }
+    return (1, 1, 0, 1)
+}
+
+/// يطبّق شكل القطرة في كل إطار من الحركة (p قابل للتحريك).
+private struct DropEffect: ViewModifier, Animatable {
+    var p: CGFloat
+    let anchor: UnitPoint
+    let below: Bool
+    var animatableData: CGFloat {
+        get { p }
+        set { p = newValue }
+    }
+    func body(content: Content) -> some View {
+        let d = dropAt(p)
+        content
+            .environment(\.ctxReveal, min(max((p - 0.7) / 0.3, 0), 1))
+            .scaleEffect(x: d.0, y: d.1, anchor: anchor)
+            .offset(y: below ? -d.2 : d.2)
+            .opacity(d.3)
     }
 }
 
@@ -110,10 +158,14 @@ struct AnchoredBar<Bar: View>: View {
     @ObservedObject var geo: PageGeo
     let anchor: BarAnchor
     var preferBelow = false
+    /// false: الشريط يرجع قطرةً ويختفي (أثناء السحب، أو قبل اكتمال التحديد).
+    var visible = true
     @ViewBuilder let bar: () -> Bar
     @State private var size: CGSize = .zero
+    @State private var prog: CGFloat = 0
 
-    init(session: DocSession, anchor: BarAnchor, preferBelow: Bool = false, @ViewBuilder bar: @escaping () -> Bar) {
+    init(session: DocSession, anchor: BarAnchor, preferBelow: Bool = false, visible: Bool = true, @ViewBuilder bar: @escaping () -> Bar) {
+        self.visible = visible
         _session = ObservedObject(wrappedValue: session)
         _geo = ObservedObject(wrappedValue: session.geo)
         self.anchor = anchor
@@ -130,16 +182,32 @@ struct AnchoredBar<Bar: View>: View {
             if let el = session.anchorHook?(anchor), let spot = place(el.offsetBy(dx: -origin.x, dy: -origin.y),
                                                                        session.viewportHook?()?.offsetBy(dx: -origin.x, dy: -origin.y),
                                                                        g.size) {
+                let ox = size.width > 0 ? min(max((spot.ax + 8 - spot.x) / size.width, 0), 1) : 0.5
                 ZStack(alignment: .topLeading) {
                     bar()
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+                        .modifier(DropEffect(p: prog, anchor: UnitPoint(x: ox, y: spot.down ? 1 : 0), below: !spot.down))
                         .offset(x: spot.x, y: spot.y)
+                        .allowsHitTesting(prog > 0.5)
                     BarArrow(down: spot.down).fill(Palette.chromeBg)
                         .frame(width: 16, height: 8)
+                        .scaleEffect(x: 1, y: 0.4 + 0.6 * min(max((prog - 0.7) / 0.3, 0), 1), anchor: spot.down ? .top : .bottom)
+                        .opacity(min(max((prog - 0.7) / 0.3, 0), 1))
                         .offset(x: spot.ax, y: spot.ay)
                         .allowsHitTesting(false)
                 }
             }
+        }
+        .onAppear { show(visible) }
+        .onChange(of: visible) { _, v in show(v) }
+    }
+
+    /// يظهر بعد اكتمال التحديد بلحظة قصيرة كقطرة، ويرجع قطرةً عند الإخفاء.
+    private func show(_ v: Bool) {
+        if v {
+            withAnimation(.timingCurve(0.25, 0.8, 0.3, 1, duration: 0.52).delay(prog == 0 ? 0.12 : 0)) { prog = 1 }
+        } else {
+            withAnimation(.timingCurve(0.5, 0, 0.75, 0, duration: 0.2)) { prog = 0 }
         }
     }
 

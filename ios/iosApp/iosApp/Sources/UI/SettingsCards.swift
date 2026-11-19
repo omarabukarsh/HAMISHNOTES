@@ -95,7 +95,7 @@ struct CardSegmented<T: Hashable>: View {
                         .frame(maxWidth: .infinity).frame(height: 36)
                         .background {
                             if sel {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.surface)
                                     .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                                     .matchedGeometryEffect(id: "seg", in: ns)
                             }

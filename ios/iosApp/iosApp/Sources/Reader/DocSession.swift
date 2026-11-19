@@ -91,7 +91,11 @@ final class DocSession: ObservableObject, Identifiable {
     @Published var pendingPlace: PendingPlace? = nil
     /// نص محدد في الكتاب (ضغط مطوّل بالإصبع).
     @Published var textSel: PDFSelection? = nil
-    @Published var selectedBox: String? = nil
+    @Published var selectedBox: String? = nil { didSet { if selectedBox != nil && selectedBox != oldValue { barHidden = false } } }
+    /// شريط العنصر المحدد مخفي: يختفي أثناء سحب العنصر ويبقى مخفيًا بعد الإفلات، ويعود بضغطة مطوّلة عليه.
+    @Published var barHidden = false
+    /// الإصبع ما زال يحدد نصًا: الشريط لا يظهر إلا بعد اكتمال التحديد.
+    @Published var selecting = false
     /// كلمات محددة في صفحة بلا نص رقمي (مقروءة ضوئيًا أو بخط اليد).
     @Published var wordSel: WordSel? = nil
     /// طلب نافذة اختيار الخط من الشريط الصغير فوق مربع الكتابة.
@@ -99,12 +103,12 @@ final class DocSession: ObservableObject, Identifiable {
     /// قراءات أخرى لكلمة محوّلة (نقرة عليها).
     @Published var altPopup: AltPopup? = nil
     /// الملاحظة اللاصقة المحددة (شريطها أسفل الشاشة)، واللصق ينتظر نقرة على الصفحة.
-    @Published var selectedNote: String? = nil
+    @Published var selectedNote: String? = nil { didSet { if selectedNote != nil && selectedNote != oldValue { barHidden = false } } }
     @Published var pastingNote = false
     /// نص المربع أثناء الكتابة (يُحفظ عند الانتهاء).
     var inlineText = ""
     @Published var editingNote: StickyNote? = nil
-    @Published var selectedImage: String? = nil
+    @Published var selectedImage: String? = nil { didSet { if selectedImage != nil && selectedImage != oldValue { barHidden = false } } }
     /// نافذة الكتابة المكبّرة: المنطقة المعروضة من الصفحة (بنقاط الصفحة).
     @Published var zoomBox: ZoomBox? = nil
     /// ما حدده التحديد الحر في صفحة.

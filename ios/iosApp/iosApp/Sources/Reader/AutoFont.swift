@@ -951,7 +951,7 @@ struct ChangeFontSheet: View {
                 } else {
                     Text(L("النص المقروء (صحّحه إن لزم)", "Recognized text (fix it if needed)")).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                     TextEditor(text: $text).font(Fonts.sans(16)).frame(minHeight: 70, maxHeight: 140)
-                        .padding(6).background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                        .padding(6).background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
                     Text(text.isEmpty ? "…" : text)
                         .font(store.font(font, size: 24) ?? Fonts.sans(24))

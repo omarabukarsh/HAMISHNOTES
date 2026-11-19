@@ -18,6 +18,10 @@ final class AppController: ObservableObject {
     @Published var library: [DocEntry] = []
     @Published var libraryLoaded = false
     @Published var importing = false
+    /// نافذة إضافة الملف: الاسم والنسبة والمرحلة (nil = لا نافذة).
+    struct ImportProgress: Equatable { var name: String; var fraction: Double; var phase: String; var index: Int; var count: Int }
+    @Published var importProgress: ImportProgress? = nil
+    var importCancel = false
     @Published var libraryFilter: LibraryFilter = .recent
     @Published var libraryFolder: String? = nil
     @Published var folders: [String] = []
@@ -558,16 +562,29 @@ final class AppController: ObservableObject {
         }
         guard Premium.shared.canAdd(pdfs.count) else { return }
         importing = true
+        importCancel = false
         let folder = libraryFolder ?? ""
+        importProgress = ImportProgress(name: pdfs[0].deletingPathExtension().lastPathComponent, fraction: 0,
+                                        phase: L("بدء الإضافة…", "Starting…"), index: 0, count: pdfs.count)
         DispatchQueue.global(qos: .userInitiated).async {
             var added: [DocEntry] = []
-            for u in pdfs {
+            for (i, u) in pdfs.enumerated() {
+                if self.importCancel { break }
                 let scoped = u.startAccessingSecurityScopedResource()
                 defer { if scoped { u.stopAccessingSecurityScopedResource() } }
-                if let e = self.repo.importPDF(from: u, folder: folder) { added.append(e) }
+                let name = u.deletingPathExtension().lastPathComponent
+                let e = self.repo.importPDF(from: u, folder: folder, progress: { f, ph in
+                    DispatchQueue.main.async { self.importProgress = ImportProgress(name: name, fraction: f, phase: ph, index: i, count: pdfs.count) }
+                }, cancelled: { self.importCancel })
+                if let e { added.append(e) }
             }
             DispatchQueue.main.async {
                 self.importing = false
+                self.importProgress = nil
+                if self.importCancel && added.isEmpty {
+                    self.say(.tip, L("أُلغيت إضافة الملف", "Adding the file was cancelled"))
+                    return
+                }
                 self.library.append(contentsOf: added)
                 self.saveLibrary()
                 let failed = pdfs.count - added.count

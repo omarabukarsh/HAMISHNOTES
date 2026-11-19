@@ -375,7 +375,7 @@ struct SummaryDrawer: View {
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white).shadow(color: .black.opacity(0.12), radius: 2, y: 1))
+        .background(RoundedRectangle(cornerRadius: 9).fill(Palette.surface).shadow(color: .black.opacity(0.12), radius: 2, y: 1))
     }
 
     @ViewBuilder
@@ -583,7 +583,7 @@ struct MarkEditSheet: View {
                 Text(L("سطر يبدأ بـ # يصبح عنوانًا. خلايا الجدول يفصلها |. سطر فارغ يبدأ فقرة جديدة.", "A line starting with # becomes a heading. Table cells are separated by |. A blank line starts a new paragraph."))
                     .font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                 TextEditor(text: $text).font(Fonts.sans(15)).frame(minHeight: 200)
-                    .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Color.white)).roundedBorder(Palette.divider, radius: 12)
+                    .padding(8).background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface)).roundedBorder(Palette.divider, radius: 12)
                 HStack {
                     NavyButton(label: L("ترتيب النص", "Tidy text"), filled: false) { text = TextTidy.tidyEditable(text) }
                     Spacer()

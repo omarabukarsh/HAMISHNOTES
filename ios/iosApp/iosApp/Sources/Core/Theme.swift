@@ -61,29 +61,33 @@ func markColor(_ argb: UInt32, strong: Bool = false) -> UIColor {
 
 /// هوية هامش: مجلد دراسة فاخر. كحلي داكن، ذهبي كختم رقيق، وورق عاجي.
 enum Palette {
-    static let navy = Color(hex: 0xFF1B365D)
+    private static var dk: Bool { !ThemeState.light }
+    /// الكحلي: في الداكن أفتح قليلًا كي يُقرأ على الخلفيات الداكنة.
+    static var navy: Color { dk ? Color(hex: 0xFF4B6FA8) : Color(hex: 0xFF1B365D) }
     static var ink: Color { ThemeState.light ? Color(hex: 0xFFE4E9F0) : Color(hex: 0xFF000000) }
     static var spine: Color { ThemeState.light ? .white : Color(hex: 0xFF0A0A0A) }
     static var inkRaised: Color { ThemeState.light ? Color(hex: 0xFFE8EDF5) : Color(hex: 0xFF1C1C1C) }
     static var inkLine: Color { ThemeState.light ? Color(hex: 0xFFE2E6EC) : Color(hex: 0xFF262626) }
-    static let navySoft = Color(hex: 0xFFE8EDF5)
+    static var navySoft: Color { dk ? Color(hex: 0xFF283245) : Color(hex: 0xFFE8EDF5) }
 
     static let gold = Color(hex: 0xFFC9A44C)
-    static let goldDeep = Color(hex: 0xFF8C6A1F)
-    static let goldSoft = Color(hex: 0xFFF4E9CB)
+    static var goldDeep: Color { dk ? Color(hex: 0xFFE0B84A) : Color(hex: 0xFF8C6A1F) }
+    static var goldSoft: Color { dk ? Color(hex: 0xFF3A3220) : Color(hex: 0xFFF4E9CB) }
 
-    static var background: Color { ThemeState.light ? Color(hex: 0xFFF3F5F8) : Color(hex: 0xFFF6F4EF) }
-    static let ivory = Color(hex: 0xFFFFFBF2)
-    static let drawerBg = Color(hex: 0xFFF9F6EF)
-    static let divider = Color(hex: 0xFFE4DFD3)
+    static var background: Color { ThemeState.light ? Color(hex: 0xFFF3F5F8) : Color(hex: 0xFF15171C) }
+    /// سطح النوافذ والبطاقات (الإعدادات، الأدراج، القوائم): أبيض في الفاتح، فحمي في الداكن.
+    static var surface: Color { dk ? Color(hex: 0xFF1E2128) : .white }
+    static var ivory: Color { dk ? Color(hex: 0xFF1A1D23) : Color(hex: 0xFFFFFBF2) }
+    static var drawerBg: Color { dk ? Color(hex: 0xFF17191E) : Color(hex: 0xFFF9F6EF) }
+    static var divider: Color { dk ? Color(hex: 0xFF30343D) : Color(hex: 0xFFE4DFD3) }
 
     /// مكتب القراءة: رمادي أزرق هادئ يُظهر بياض الصفحات.
     static var desk: Color { ThemeState.light ? Color(hex: 0xFFEBEEF2) : Color(hex: 0xFFDCE1E8) }
     static var tabRail: Color { ThemeState.light ? Color(hex: 0xFFD3DAE4) : Color(hex: 0xFF000000) }
     static var tabIdle: Color { ThemeState.light ? Color(hex: 0xFFB9C4D3) : Color(hex: 0xFF1F1F1F) }
 
-    static let textPrimary = Color(hex: 0xFF1A2230)
-    static let textSecondary = Color(hex: 0xFF667085)
+    static var textPrimary: Color { dk ? Color(hex: 0xFFE8EAEF) : Color(hex: 0xFF1A2230) }
+    static var textSecondary: Color { dk ? Color(hex: 0xFF9AA3B2) : Color(hex: 0xFF667085) }
     static var onInk: Color { ThemeState.light ? Color(hex: 0xFF1A2230) : Color(hex: 0xFFF2F2F2) }
     static var onInkMuted: Color { ThemeState.light ? Color(hex: 0xFF667085) : Color(hex: 0xFF9A9A9A) }
 
@@ -91,8 +95,8 @@ enum Palette {
 
     // واجهة المحرر (التبويبات، بطاقة الأدوات، الأشرطة العائمة): فاتحة في المظهر الفاتح، وفحمية داكنة في الكحلي
     static var chromeBg: Color { ThemeState.light ? .white : Color(hex: 0xFF1C1C1C) }
-    static var chromeFg: Color { ThemeState.light ? textPrimary : Color(hex: 0xFFECECEC) }
-    static var chromeMuted: Color { ThemeState.light ? textSecondary : Color(hex: 0xFFB4B4B4) }
+    static var chromeFg: Color { ThemeState.light ? Color(hex: 0xFF1A2230) : Color(hex: 0xFFECECEC) }
+    static var chromeMuted: Color { ThemeState.light ? Color(hex: 0xFF667085) : Color(hex: 0xFFB4B4B4) }
     /// الأداة المختارة: كحلي في الفاتح، وذهبي فاتح في الداكن.
     static var chromeAccent: Color { ThemeState.light ? navy : Color(hex: 0xFFF0D58E) }
     static var chromeSel: Color { ThemeState.light ? navySoft : Color(hex: 0xFF2E2E2E) }

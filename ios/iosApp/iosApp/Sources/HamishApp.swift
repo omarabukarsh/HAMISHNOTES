@@ -50,6 +50,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 }
 
 struct RootView: View {
+    /// التنقل بين التبويبات: القديم يختفي بسرعة ثم يظهر الجديد، فلا يتداخل نصّا المستندين.
+    static let tabSwitch = AnyTransition.asymmetric(
+        insertion: .opacity.animation(.easeOut(duration: 0.16).delay(0.09)),
+        removal: .opacity.animation(.easeIn(duration: 0.09))
+    )
     @EnvironmentObject var app: AppController
     @ObservedObject var pm = Premium.shared
     /// مظهر الجهاز (حين يكون المظهر «تلقائي» لا نفرض لونًا، فيصل هنا مظهر الجهاز نفسه).
@@ -72,6 +77,8 @@ struct RootView: View {
 
     private var main: some View {
         ZStack(alignment: .bottom) {
+            ImportProgressOverlay()
+                .zIndex(10)
             VStack(spacing: 0) {
                 if !app.tabs.isEmpty && !(app.focusMode && app.activeId != nil) { TabBar() }
                 ZStack {
@@ -79,14 +86,13 @@ struct RootView: View {
                         if let sid = app.splitId, sid != id, let second = app.tabs.first(where: { $0.id == sid }), !app.focusMode {
                             SplitReaders(first: active, second: second)
                         } else {
-                            ReaderScreen(session: active).id(active.id)
+                            ReaderScreen(session: active).id(active.id).transition(Self.tabSwitch)
                         }
                     } else {
-                        LibraryScreen()
+                        LibraryScreen().transition(Self.tabSwitch)
                     }
                 }
-                .transition(.opacity)
-                .animation(Motion.enter, value: app.activeId)
+                .animation(.easeOut(duration: 0.16), value: app.activeId)
             }
             .background((app.tabs.isEmpty ? Lib.bg : Palette.tabRail).ignoresSafeArea())
             .simultaneousGesture(TapGesture().onEnded { app.noteInteraction() })
@@ -118,34 +124,58 @@ struct RootView: View {
 
 private struct TabBar: View {
     @EnvironmentObject var app: AppController
+    @State private var avail: CGFloat = 800
+    @State private var content: CGFloat = 0
 
     var body: some View {
         let libraryActive = app.activeId == nil
         // في المستند: التبويب النشط بلون بطاقة الأدوات (أبيض) ويتصل بها، والشريط بلون مكتب القراءة
         let activeBg = libraryActive ? Palette.spine : Palette.chromeBg
         let railBg = libraryActive ? Palette.tabRail : Palette.chromeRail
-        ScrollView(.horizontal, showsIndicators: false) {
-            // التبويبات متلاصقة كتبويبات المستندات، وبين كل تبويبين غير نشطين فاصل رفيع
-            HStack(alignment: .bottom, spacing: 0) {
-                TabItem(title: L("المكتبة", "Library"), active: libraryActive, home: true, activeBg: activeBg, onClose: nil) { app.activate(nil) }
-                ForEach(Array(app.tabs.enumerated()), id: \.element.id) { i, s in
-                    let prevActive = i == 0 ? libraryActive : app.activeId == app.tabs[i - 1].id
-                    if !prevActive && app.activeId != s.id { TabSeparator() }
-                    TabItem(title: s.title, active: app.activeId == s.id, home: false, activeBg: activeBg, onClose: { app.closeTab(s.id) }) { app.activate(s.id) }
-                        .contextMenu {
-                            if i > 0 { Button(L("تحريك يمينًا", "Move left")) { app.moveTab(from: i, to: i - 1) } }
-                            if i < app.tabs.count - 1 { Button(L("تحريك يسارًا", "Move right")) { app.moveTab(from: i, to: i + 1) } }
-                            if app.splitId == nil, app.activeId != s.id, app.activeId != nil {
-                                Button(L("عرضه بجانب المستند الحالي", "Show beside the current document")) {
-                                    if Premium.shared.require(.split) { app.openSplit(s.id) }
+        // «المكتبة» ثابتة في البداية؛ تبويبات المستندات بعدها تتقاسم العرض (حتى 240)،
+        // وتصغر حتى 170 ثم يثبت عرضها ويُسحب الباقي لإظهاره
+        let n = app.tabs.count
+        let tabW = n == 0 ? 0 : min(240, max(170, (avail - CGFloat(n)) / CGFloat(n)))
+        HStack(alignment: .bottom, spacing: 0) {
+            TabItem(title: L("المكتبة", "Library"), active: libraryActive, home: true, activeBg: activeBg, onClose: nil) { app.activate(nil) }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        ForEach(Array(app.tabs.enumerated()), id: \.element.id) { i, s in
+                            let prevActive = i == 0 ? libraryActive : app.activeId == app.tabs[i - 1].id
+                            if !prevActive && app.activeId != s.id { TabSeparator() }
+                            TabItem(title: s.title, active: app.activeId == s.id, home: false, activeBg: activeBg, fixedWidth: tabW, onClose: { app.closeTab(s.id) }) { app.activate(s.id) }
+                                .id(s.id)
+                                .contextMenu {
+                                    if i > 0 { Button(L("تحريك يمينًا", "Move left")) { app.moveTab(from: i, to: i - 1) } }
+                                    if i < app.tabs.count - 1 { Button(L("تحريك يسارًا", "Move right")) { app.moveTab(from: i, to: i + 1) } }
+                                    if app.splitId == nil, app.activeId != s.id, app.activeId != nil {
+                                        Button(L("عرضه بجانب المستند الحالي", "Show beside the current document")) {
+                                            if Premium.shared.require(.split) { app.openSplit(s.id) }
+                                        }
+                                    }
+                                    Button(role: .destructive) { app.closeTab(s.id) } label: { Text(L("إغلاق التبويب", "Close tab")) }
                                 }
-                            }
-                            Button(role: .destructive) { app.closeTab(s.id) } label: { Text(L("إغلاق التبويب", "Close tab")) }
                         }
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { content = $0 }
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                // التبويب النشط يظهر دائمًا (عند فتحه أو التنقل إليه)
+                .onChange(of: app.activeId) { _, id in
+                    if let id { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(id) } }
+                }
+                // تلاشٍ على الطرف إن كانت هناك تبويبات مخفية
+                .mask(HStack(spacing: 0) {
+                    LinearGradient(colors: [.black.opacity(content > avail + 1 ? 0 : 1), .black], startPoint: .leading, endPoint: .trailing).frame(width: 30)
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(content > avail + 1 ? 0 : 1)], startPoint: .leading, endPoint: .trailing).frame(width: 30)
+                })
             }
-            .padding(.horizontal, 26).padding(.top, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { avail = $0 }
         }
+        .padding(.horizontal, 26).padding(.top, 8)
         .background(railBg)
     }
 }
@@ -186,6 +216,7 @@ private struct TabItem: View {
     let active: Bool
     let home: Bool
     let activeBg: Color
+    var fixedWidth: CGFloat? = nil
     let onClose: (() -> Void)?
     let onTap: () -> Void
 
@@ -194,23 +225,37 @@ private struct TabItem: View {
         let dark = under.luminance < 0.4
         let fg = dark ? Color(hex: 0xFFEDE6D4) : Palette.navy
         let muted = dark ? Color(hex: 0xFFB4BFD0) : Palette.textSecondary
-        HStack(spacing: 0) {
-            if home {
-                PhIcon(active ? "ph_books_fill" : "ph_books", active ? Palette.gold : muted, 18)
-                Spacer().frame(width: 7)
-            } else if active {
-                Circle().fill(Palette.gold).frame(width: 6, height: 6)
-                Spacer().frame(width: 8)
+        Button(action: onTap) {
+            HStack(spacing: 0) {
+                if home {
+                    PhIcon(active ? "ph_books_fill" : "ph_books", active ? Palette.gold : muted, 18)
+                    Spacer().frame(width: 7)
+                } else if active {
+                    Circle().fill(Palette.gold).frame(width: 6, height: 6)
+                    Spacer().frame(width: 8)
+                }
+                if fixedWidth != nil {
+                    Text(title).font(Fonts.sans(14, active ? .bold : .regular)).foregroundColor(active ? fg : muted).lineLimit(1)
+                        .truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(title).font(Fonts.sans(14, active ? .bold : .regular)).foregroundColor(active ? fg : muted).lineLimit(1)
+                        .frame(maxWidth: 200, alignment: .leading).fixedSize(horizontal: true, vertical: false)
+                }
+                // مكان زر الإغلاق (يوضع فوقه خارج زر التبويب)
+                if onClose != nil { Spacer().frame(width: 32) }
             }
-            Text(title).font(Fonts.sans(14, active ? .bold : .regular)).foregroundColor(active ? fg : muted).lineLimit(1)
-                .frame(maxWidth: 200, alignment: .leading).fixedSize(horizontal: true, vertical: false)
+            .padding(.leading, 14).padding(.trailing, onClose == nil ? 16 : 4)
+            .frame(width: fixedWidth, height: 40)
+            .contentShape(Rectangle())
+        }
+        // أثر النقر: إضاءة ناعمة داخل شكل التبويب تتلاشى (بدل حدود حادة)
+        .buttonStyle(TabPressStyle(tint: fg))
+        .overlay(alignment: .trailing) {
             if let close = onClose {
-                Spacer().frame(width: 2)
                 Button(action: close) { PhIcon("ph_close", muted, 15, L("إغلاق التبويب", "Close tab")).frame(width: 30, height: 30) }
+                    .padding(.trailing, 4)
             }
         }
-        .padding(.leading, 14).padding(.trailing, onClose == nil ? 16 : 4)
-        .frame(height: 40)
         .background(
             ZStack {
                 if active {
@@ -219,9 +264,21 @@ private struct TabItem: View {
                 }
             }
         )
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
         .animation(Motion.enter, value: active)
+    }
+}
+
+/// ضغط التبويب: إضاءة خفيفة بزوايا مستديرة داخله، تظهر بسرعة وتتلاشى بهدوء.
+private struct TabPressStyle: ButtonStyle {
+    let tint: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(tint.opacity(configuration.isPressed ? 0.10 : 0))
+                    .padding(3)
+                    .animation(.easeOut(duration: configuration.isPressed ? 0.09 : 0.22), value: configuration.isPressed)
+            )
     }
 }
 
@@ -272,9 +329,9 @@ private struct SetPinSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L("يُستخدم الرمز إن لم ينجح Face ID أو Touch ID.", "The PIN is used if Face ID or Touch ID doesn’t work.")).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary)
                 SecureField(L("الرمز (4 أرقام أو أكثر)", "PIN (4+ digits)"), text: $pin).keyboardType(.numberPad).font(Fonts.sans(16))
-                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                 SecureField(L("أعد كتابة الرمز", "Repeat the PIN"), text: $again).keyboardType(.numberPad).font(Fonts.sans(16))
-                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                 HStack {
                     Spacer()
                     NavyButton(label: L("إلغاء", "Cancel"), filled: false) { dismiss() }
@@ -306,7 +363,7 @@ private struct PinPromptSheet: View {
         SheetScaffold(title: prompt.reason) {
             VStack(alignment: .leading, spacing: 12) {
                 SecureField(L("الرمز", "PIN"), text: $pin).keyboardType(.numberPad).font(Fonts.sans(18))
-                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
                     .onSubmit(check)
                 HStack {
                     Spacer()
@@ -329,6 +386,43 @@ private struct PinPromptSheet: View {
         } else {
             pin = ""
             app.say(.error, L("الرمز غير صحيح", "Wrong PIN"))
+        }
+    }
+}
+
+
+/// نافذة إضافة ملف: الاسم والنسبة والمرحلة وزر الإلغاء؛ التطبيق يبقى يستجيب أثناءها.
+private struct ImportProgressOverlay: View {
+    @EnvironmentObject var app: AppController
+    var body: some View {
+        if let p = app.importProgress {
+            ZStack {
+                Color.black.opacity(0.25).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    ProgressView().controlSize(.large).tint(Palette.navy)
+                    Text(p.count > 1 ? L("جارٍ إضافة الملفات (\(p.index + 1) من \(p.count))…", "Adding files (\(p.index + 1) of \(p.count))…")
+                                     : L("جارٍ إضافة الملف…", "Adding the file…"))
+                        .font(Fonts.sans(17, .bold)).foregroundColor(Palette.textPrimary).padding(.top, 12)
+                    Text(p.name).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).lineLimit(1).padding(.top, 4)
+                    ProgressView(value: p.fraction).tint(Palette.navy).padding(.top, 14)
+                        .animation(.easeOut(duration: 0.2), value: p.fraction)
+                    HStack {
+                        Text("\(Int(p.fraction * 100))%")
+                        Spacer()
+                        Text(p.phase)
+                    }
+                    .font(Fonts.sans(12.5)).foregroundColor(Palette.textSecondary).padding(.top, 8)
+                    Button { app.importCancel = true } label: {
+                        Text(L("إلغاء", "Cancel")).font(Fonts.sans(14)).foregroundColor(Palette.danger).padding(.vertical, 8).padding(.horizontal, 16)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(22)
+                .frame(width: 360)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.surface))
+                .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
+            }
+            .transition(.opacity)
         }
     }
 }

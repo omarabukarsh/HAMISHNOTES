@@ -52,6 +52,7 @@ extension DocSession {
 
     /// يختار ما داخل المضلع (بنقاط الصفحة).
     func lassoSelect(pageId: String, poly: [CGPoint]) {
+        barHidden = false
         guard poly.count >= 3 else { lassoSel = nil; return }
         func inside(_ p: CGPoint) -> Bool { InkErase.inside(p, polygon: poly) }
         let app = AppController.shared
@@ -198,6 +199,16 @@ extension DocSession {
         }, newSel: { _, _ in nil })
         wordCache.removeValue(forKey: lassoSel?.pageId ?? "")
         lassoSel = nil
+    }
+
+    /// ينسخ عنصرًا واحدًا (مربع نص، صورة، ملاحظة) ليلصق بضغطة مطوّلة في أي ورقة.
+    func copyItem(image: ImageItem? = nil, box: TextBox? = nil, note: StickyNote? = nil) {
+        let pid = image?.page ?? box?.page ?? note?.page ?? ""
+        PageClipboard.shared.clip = PageClip(
+            docId: id, pageWidth: pageSize(index(of: pid) ?? 0).width, strokes: [],
+            images: image.map { [$0] } ?? [], boxes: box.map { [$0] } ?? [], notes: note.map { [$0] } ?? []
+        )
+        AppController.shared.say(.done, L("تم النسخ — اضغط مطوّلًا في أي مكان للّصق", "Copied — long-press anywhere to paste"))
     }
 
     /// ينسخ التحديد إلى الحافظة ليلصق في صفحة أخرى.
@@ -447,9 +458,12 @@ final class LassoView: UIView {
         return max(0.2, min(5, d1 / max(1, d0)))
     }
 
+    private var downTime: TimeInterval = 0
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let t = touches.first else { return }
         let p = t.location(in: self)
+        downTime = t.timestamp
         startPt = p
         livePt = p
         if let b = selBounds() {
@@ -467,6 +481,8 @@ final class LassoView: UIView {
         guard let t = touches.first, mode >= 0 else { return }
         let p = t.location(in: self)
         livePt = p
+        // أثناء سحب التحديد يختفي شريطه، ويبقى مخفيًا بعد الإفلات
+        if mode >= 1, hypot(p.x - startPt.x, p.y - startPt.y) > 6, session?.barHidden == false { session?.barHidden = true }
         if mode == 0 {
             path.append(p)
             let bp = UIBezierPath()
@@ -505,6 +521,8 @@ final class LassoView: UIView {
         case 1:
             let dx = (livePt.x - startPt.x) / k, dy = (livePt.y - startPt.y) / k
             if abs(dx) + abs(dy) > 0.5 { s.lassoTransform(dx: dx, dy: dy) }
+            // ضغطة مطوّلة على التحديد بلا تحريك: يظهر شريطه مرة أخرى
+            else if let t = touches.first, t.timestamp - downTime >= 0.45 { s.barHidden = false }
         case 2:
             if let b = selBounds() {
                 let sc = scaleFactor(b)

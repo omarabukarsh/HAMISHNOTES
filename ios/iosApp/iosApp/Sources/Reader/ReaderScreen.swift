@@ -37,6 +37,7 @@ private struct ReaderContent: View {
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
     @ObservedObject var audio = AudioNotes.shared
+    @ObservedObject var clipboard = PageClipboard.shared
     @State private var sheet: ReaderSheet? = nil
     @State private var pdfPicker = false
     @State private var pdfAfter = 0
@@ -121,6 +122,7 @@ private struct ReaderContent: View {
             }
             VStack(spacing: 8) {
                 if s.lassoSel != nil { LassoBar(session: s, sheet: $sheet) }
+                else if clipboard.clip != nil && s.textSel == nil && s.wordSel == nil { PasteBar(session: s) }
                 if s.textSel != nil || s.wordSel != nil { TextSelectionBar(session: s) }
                 if let ap = s.altPopup { AltWordBar(session: s, popup: ap) }
                 if s.selectedImage != nil { ImageBar(session: s) }

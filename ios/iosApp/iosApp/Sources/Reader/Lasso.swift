@@ -14,6 +14,21 @@ struct LassoSel: Equatable {
     var isEmpty: Bool { strokes.isEmpty && images.isEmpty && boxes.isEmpty && notes.isEmpty }
 }
 
+/// ما نُسخ بأداة التحديد: يُلصق في أي صفحة أو أي مستند آخر (المواضع بنقاط صفحة المصدر).
+struct PageClip {
+    var docId: String
+    var pageWidth: CGFloat
+    var strokes: [InkStroke]
+    var images: [ImageItem]
+    var boxes: [TextBox]
+    var notes: [StickyNote]
+}
+
+final class PageClipboard: ObservableObject {
+    static let shared = PageClipboard()
+    @Published var clip: PageClip? = nil
+}
+
 extension DocSession {
     /// هل يدخل هذا الخط في التحديد حسب الإعدادات.
     func lassoable(_ st: InkStroke) -> Bool {
@@ -183,6 +198,90 @@ extension DocSession {
         }, newSel: { _, _ in nil })
         wordCache.removeValue(forKey: lassoSel?.pageId ?? "")
         lassoSel = nil
+    }
+
+    /// ينسخ التحديد إلى الحافظة ليلصق في صفحة أخرى.
+    func lassoCopy() {
+        guard let sel = lassoSel else { return }
+        let d = drawing(for: sel.pageId)
+        PageClipboard.shared.clip = PageClip(
+            docId: id,
+            pageWidth: pageSize(index(of: sel.pageId) ?? 0).width,
+            strokes: sel.strokes.filter { d.strokes.indices.contains($0) }.map { d.strokes[$0] },
+            images: data.images.filter { sel.images.contains($0.id) },
+            boxes: data.boxes.filter { sel.boxes.contains($0.id) },
+            notes: data.notes.filter { sel.notes.contains($0.id) }
+        )
+        AppController.shared.say(.done, L("تم النسخ — افتح أي صفحة واضغط «لصق»", "Copied — open any page and tap Paste"))
+    }
+
+    /// يلصق محتوى الحافظة في وسط الجزء الظاهر من الصفحة، ويصبح هو المحدد لتحريكه.
+    func pasteClip(_ page: Int? = nil) {
+        guard let clip = PageClipboard.shared.clip else { return }
+        let p = page ?? currentPage
+        guard let pid = pageId(p) else { return }
+        let size = pageSize(p)
+        let k = size.width / max(1, clip.pageWidth)
+        var box = clip.strokes.reduce(CGRect.null) { $0.union($1.renderBounds) }
+        for im in clip.images { box = box.union(CGRect(x: im.x, y: im.y, width: im.w, height: im.w / max(0.01, im.aspect))) }
+        for b in clip.boxes { box = box.union(CGRect(x: b.x, y: b.y, width: b.w, height: b.size * 1.4)) }
+        for n in clip.notes { box = box.union(CGRect(x: n.x, y: n.y, width: n.w, height: n.h)) }
+        guard !box.isNull else { return }
+        let c = visibleCenter(p)
+        let tx = c.x - box.midX * k, ty = c.y - box.midY * k
+        let t = CGAffineTransform(a: k, b: 0, c: 0, d: k, tx: tx, ty: ty)
+        let old = drawing(for: pid)
+        var nd = old
+        var copies: [Int] = []
+        // أوقات جديدة: فلا يشارك المنسوخ الأصل سطره المجمَّل
+        var newT: [Int64: Int64] = [:]
+        var taken = Set(old.strokes.map { $0.t })
+        func fresh(_ t: Int64) -> Int64 {
+            if let n = newT[t] { return n }
+            var x = max(t, InkKey.now())
+            while taken.contains(x) { x += 1 }
+            taken.insert(x)
+            newT[t] = x
+            return x
+        }
+        for st in clip.strokes {
+            var s = st.transformed(t)
+            s.t = fresh(s.t)
+            if s.wid != 0 { s.wid = s.t &* 1024 &+ (s.wid & 1023) }
+            copies.append(nd.strokes.count)
+            nd.strokes.append(s)
+        }
+        let before = data
+        var newImgs: [String] = [], newBoxes: [String] = [], newNotes: [String] = []
+        for im in clip.images {
+            if clip.docId != id && !im.file.hasPrefix("sticker:") && Repository.safeName(im.file) {
+                let src = repo.mediaDir(clip.docId).appendingPathComponent(im.file)
+                let dst = repo.mediaDir(id).appendingPathComponent(im.file)
+                if !FileManager.default.fileExists(atPath: dst.path) { try? FileManager.default.copyItem(at: src, to: dst) }
+            }
+            var c = im; c.id = UUID().uuidString; c.page = pid
+            c.x = im.x * k + tx; c.y = im.y * k + ty; c.w = im.w * k
+            data.images.append(c); newImgs.append(c.id)
+        }
+        for b in clip.boxes {
+            var c = b; c.id = UUID().uuidString; c.page = pid
+            c.x = b.x * k + tx; c.y = b.y * k + ty; c.w = b.w * k; c.size = b.size * k
+            data.boxes.append(c); newBoxes.append(c.id)
+        }
+        for n in clip.notes {
+            var c = n; c.id = UUID().uuidString; c.page = pid
+            c.x = n.x * k + tx; c.y = n.y * k + ty; c.w = n.w * k; c.h = n.h * k
+            data.notes.append(c); newNotes.append(c.id)
+        }
+        drawings[pid] = nd
+        dirtyInk.insert(pid)
+        dataDirty = true
+        applyInkHook?(pid, nd)
+        inkVersion += 1
+        wordCache.removeValue(forKey: pid)
+        push(.both(.ink(page: pid, before: old, after: nd), .data(before: before, after: data)))
+        scheduleSave()
+        lassoSel = LassoSel(pageId: pid, strokes: copies, images: newImgs, boxes: newBoxes, notes: newNotes)
     }
 
     /// نسخة مزاحة قليلًا من التحديد، وتصبح هي المحددة.
@@ -444,7 +543,8 @@ struct LassoBar: View {
                 barButton("☺ " + L("ملصق", "Sticker")) {
                     if let img = session.lassoImage() { StickerStore.shared.add(img) }
                 }
-                barButton(L("نسخ", "Duplicate")) { session.lassoDuplicate() }
+                barButton(L("نسخ", "Copy")) { session.lassoCopy() }
+                barButton(L("تكرار", "Duplicate")) { session.lassoDuplicate() }
                 ForEach(Array(app.penPalette.prefix(6)), id: \.self) { col in
                     Button { session.lassoRecolor(col) } label: {
                         Circle().fill(Color(hex: col)).frame(width: 22, height: 22)
@@ -471,6 +571,25 @@ struct LassoBar: View {
         Button(action: action) {
             Text(label).font(Fonts.sans(14, bold ? .bold : .regular)).foregroundColor(color).padding(.horizontal, 10).padding(.vertical, 10)
         }
+    }
+}
+
+/// يظهر ما دام في الحافظة شيء منسوخ بأداة التحديد: لصق في الصفحة الظاهرة.
+struct PasteBar: View {
+    @ObservedObject var session: DocSession
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { session.pasteClip() } label: {
+                Text(L("لصق هنا", "Paste here")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+            }
+            Button { PageClipboard.shared.clip = nil } label: {
+                Text("✕").font(Fonts.sans(14)).foregroundColor(Palette.textSecondary).padding(.horizontal, 10).padding(.vertical, 10)
+            }
+        }
+        .padding(.horizontal, 6)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white).shadow(color: .black.opacity(0.18), radius: 8, y: 3))
     }
 }
 
@@ -517,7 +636,10 @@ struct LassoMenuContent: View {
                             app.say(.done, L("حُفظ في «ملصقاتي» — تجده في أداة الملصقات", "Saved to “My stickers” — find it in the stickers tool"))
                         }
                     }
-                    action(L("نسخ", "Duplicate"), has) { session?.lassoDuplicate() }
+                    action(L("نسخ", "Copy"), has) { session?.lassoCopy() }
+                    action(L("تكرار", "Duplicate"), has) { session?.lassoDuplicate() }
+                }
+                HStack(spacing: 6) {
                     action(L("حذف", "Delete"), has, color: Color(hex: 0xFFC62828)) { session?.lassoDelete() }
                 }
                 HStack(spacing: 0) {

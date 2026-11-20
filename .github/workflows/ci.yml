@@ -1,7 +1,10 @@
 name: CI tests
 # بناء + اختبارات JVM + Lint، ثم اختبارات الجهاز على محاكي Android (منفصل عن build.yml الذي يبني APK للتثبيت)
+# المستودع الخاص له دقائق محدودة في GitHub Actions (نحو 2000 دقيقة شهريًا في الخطة المجانية)، واختبارات المحاكي طويلة،
+# لذلك لا تعمل مع كل push: مرة أسبوعيًا (ليلة الجمعة)، أو يدويًا من تبويب Actions ← CI tests ← Run workflow.
 on:
-  push:
+  schedule:
+    - cron: "23 2 * * 5"
   workflow_dispatch:
 
 concurrency:

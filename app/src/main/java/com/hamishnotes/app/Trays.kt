@@ -2,8 +2,6 @@ package com.hamishnotes.app
 
 import android.content.Context
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,9 +36,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -687,109 +682,84 @@ private fun StickerTrayContent(s: DocSession) {
     }
 }
 
-/** درج الصور: «من الملفات» في الأعلى، ثم صور الجهاز (الأحدث أولًا) مع اختيار الألبوم. */
+/**
+ * درج الصور: زر يفتح أداة اختيار الصور في Android، ثم «صور استخدمتها» لتُسحب إلى الصفحة مرة أخرى.
+ * لا يطلب أي إذن للوصول إلى صور الجهاز. forSticker = اختيار صورة لصنع ملصق منها.
+ */
 @Composable
 private fun PhotoTrayContent(s: DocSession, forSticker: Boolean) {
     val ctx = LocalContext.current
-    var access by remember { mutableStateOf(PhotoLibrary.access(ctx)) }
-    var refresh by remember { mutableStateOf(0) }
-    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        access = PhotoLibrary.access(ctx)
-        refresh++
+    var removing by remember { mutableStateOf<File?>(null) }
+    val toSticker: (Uri) -> Unit = { u ->
+        StickerStore.addFromUri(u)
+        s.trayMode = "stickers"
     }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        if (forSticker) {
-            StickerStore.addFromUri(uris.first())
-            s.trayMode = "stickers"
-        } else {
+    val pick = rememberPhotoPicker(multi = !forSticker) { uris ->
+        if (forSticker) uris.firstOrNull()?.let(toSticker)
+        else {
             val page = s.currentPage()
             val at = s.visibleCenter(page)
             uris.forEachIndexed { i, u -> AppController.insertImage(s, u, page, index = i, quiet = i > 0, at = at) }
         }
     }
-    LaunchedEffect(Unit) { if (access == 0) permLauncher.launch(PhotoLibrary.permissions()) }
-    val photos by produceState<List<GalleryPhoto>?>(null, access, refresh) {
-        value = if (access == 0) emptyList() else withContext(Dispatchers.IO) { PhotoLibrary.query(ctx) }
-    }
-    var album by remember { mutableStateOf<String?>(null) }
-    var albumsOpen by remember { mutableStateOf(false) }
-    val all = photos ?: emptyList()
-    val shown = when (album) {
-        null -> all
-        "cam" -> all.filter { it.bucket.equals("Camera", true) || it.bucket.contains("DCIM", true) }
-        "shot" -> all.filter { it.bucket.contains("screenshot", true) }
-        else -> all.filter { it.bucket == album }
-    }
 
-    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(Palette.Navy)
-                .clickable { filePicker.launch(arrayOf("image/*")) }
-                .padding(vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) { Text(L("من الملفات", "From files"), fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1) }
-        if (access != 0) {
-            Box {
-                val label = when (album) {
-                    null -> L("الأحدث", "Recent")
-                    "cam" -> L("الكاميرا", "Camera")
-                    "shot" -> L("لقطات", "Screens")
-                    else -> album ?: ""
-                }
-                ChoiceChip("$label ▾", album != null) { albumsOpen = true }
-                DropdownMenu(expanded = albumsOpen, onDismissRequest = { albumsOpen = false }) {
-                    DropdownMenuItem(text = { Text(L("الأحدث", "Recent")) }, onClick = { album = null; albumsOpen = false })
-                    DropdownMenuItem(text = { Text(L("الكاميرا", "Camera")) }, onClick = { album = "cam"; albumsOpen = false })
-                    DropdownMenuItem(text = { Text(L("لقطات الشاشة", "Screenshots")) }, onClick = { album = "shot"; albumsOpen = false })
-                    all.groupBy { it.bucket }.filterKeys { it.isNotBlank() }.toList().sortedByDescending { it.second.size }.forEach { (b, l) ->
-                        DropdownMenuItem(text = { Text("$b (${l.size})") }, onClick = { album = b; albumsOpen = false })
-                    }
-                }
-            }
-        }
-    }
-    if (access == 1) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.Navy)
+            .clickable { pick() }.padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
-            L("بعض الصور فقط · المس للمزيد", "Some photos only · tap for more"),
-            fontSize = 11.sp, color = Palette.GoldDeep, fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(8.dp)).background(Palette.GoldSoft)
-                .clickable { permLauncher.launch(PhotoLibrary.permissions()) }.padding(6.dp)
+            "＋  " + if (forSticker) L("اختر صورة من الجهاز", "Choose a photo") else L("اختر صورًا من الجهاز", "Choose photos"),
+            fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1
         )
     }
-    when {
-        access == 0 -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    val recent = PhotoLibrary.recent
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(L("صور استخدمتها", "Recently used"), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Palette.TextSecondary, modifier = Modifier.weight(1f))
+        if (recent.isNotEmpty()) {
             Text(
-                L("اسمح لـ Special notes بعرض صورك لتسحبها مباشرة.", "Allow Special notes to show your photos so you can drag them in."),
-                fontSize = 12.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center
+                "${recent.size}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Palette.NavySoft).padding(horizontal = 7.dp, vertical = 1.dp)
             )
-            TextButton(onClick = { permLauncher.launch(PhotoLibrary.permissions()) }) {
-                Text(L("السماح بعرض الصور", "Allow photos"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
         }
-        photos == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Palette.Navy) }
-        shown.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(L("لا توجد صور هنا", "No photos here"), fontSize = 12.sp, color = Palette.TextSecondary)
+    }
+    if (recent.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                L("الصور التي تضيفها تظهر هنا، لتسحبها إلى أي صفحة مرة أخرى.", "Photos you add appear here, so you can drag them onto any page again."),
+                fontSize = 12.sp, color = Palette.TextSecondary, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 12.dp)
+            )
         }
-        else -> LazyVerticalGrid(
+    } else {
+        LazyVerticalGrid(
             columns = GridCells.Adaptive(66.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             contentPadding = PaddingValues(bottom = 8.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(shown, key = { it.uri.toString() }) { p ->
-                val img by produceState<ImageBitmap?>(null, p.uri) { value = PhotoLibrary.thumbnail(ctx, p.uri) }
-                val payload = remember(p.uri) { TrayPayload.Photo(p.uri) }
+            items(recent.toList(), key = { it.name }) { f ->
+                val uri = remember(f) { PhotoLibrary.uriOf(f) }
+                val img by produceState<ImageBitmap?>(null, uri) { value = PhotoLibrary.thumbnail(ctx, uri) }
                 if (forSticker) {
                     Box(
                         Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)).background(Color(0xFFEEF0F4))
-                            .clickable { StickerStore.addFromUri(p.uri); s.trayMode = "stickers" }
+                            .clickable { PhotoLibrary.used(f); toSticker(uri) }
                     ) { img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } }
                 } else {
-                    TrayTile(s, payload, img, photo = true)
+                    val payload = remember(f) { TrayPayload.Photo(uri) }
+                    TrayTile(s, payload, img, photo = true, onLongStill = { removing = f })
                 }
             }
         }
+    }
+    removing?.let { f ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text(L("إزالة من «صور استخدمتها»؟", "Remove from “Recently used”?")) },
+            text = { Text(L("تُزال من هذه القائمة فقط. الصورة الأصلية في جهازك وما وضعته منها على الصفحات يبقيان.", "It is removed from this list only. The original on your device and copies already on pages stay.")) },
+            confirmButton = { TextButton(onClick = { PhotoLibrary.delete(f); removing = null }) { Text(L("إزالة", "Remove"), color = Palette.Danger) } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text(L("إلغاء", "Cancel")) } }
+        )
     }
 }

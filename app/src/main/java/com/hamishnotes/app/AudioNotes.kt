@@ -265,6 +265,13 @@ fun AudioDialog(s: DocSession, onDismiss: () -> Unit) {
                         "Record audio while you write. Later, lasso any writing and tap “▶ Audio” to hear what was said when you wrote it."),
                     fontSize = 13.sp, lineHeight = 19.sp, color = Palette.TextSecondary
                 )
+                // تنبيه قانوني: التسجيل قد يحتاج إذن المحاضر أو الجامعة (انظر شروط الاستخدام، البند 3)
+                androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.size(6.dp))
+                androidx.compose.material3.Text(
+                    L("تأكد أن لديك إذنًا بالتسجيل من المحاضر أو وفق أنظمة جامعتك.",
+                        "Make sure you have permission to record from the lecturer or under your university's rules."),
+                    fontSize = 12.sp, lineHeight = 17.sp, color = Palette.GoldDeep, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
                 if (busyElsewhere) {
                     androidx.compose.material3.Text(L("يوجد تسجيل يعمل في مستند آخر", "A recording is running in another document"), fontSize = 13.sp, color = Palette.Danger)
                 }

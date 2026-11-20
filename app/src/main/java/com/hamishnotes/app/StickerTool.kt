@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -306,8 +307,13 @@ fun StickerDialog(s: DocSession, onDismiss: () -> Unit) {
             }
         }
     }
-    if (fromPhoto) {
-        PhotoGalleryDialog(multi = false, title = L("اختر صورة للملصق", "Choose a photo for the sticker"), onPicked = { it.firstOrNull()?.let { u -> StickerStore.addFromUri(u) } }, onDismiss = { fromPhoto = false })
+    // أداة اختيار الصور في Android (دون إذن للوصول إلى صور الجهاز)
+    val pickPhoto = rememberPhotoPicker(multi = false) { it.firstOrNull()?.let { u -> StickerStore.addFromUri(u) } }
+    LaunchedEffect(fromPhoto) {
+        if (fromPhoto) {
+            fromPhoto = false
+            pickPhoto()
+        }
     }
     deleting?.let { f ->
         AlertDialog(

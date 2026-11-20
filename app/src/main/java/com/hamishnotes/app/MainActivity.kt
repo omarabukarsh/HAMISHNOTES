@@ -214,6 +214,8 @@ fun MyNotesApp() {
         SignInScreen()
         return
     }
+    // تنبيه مرة واحدة عند تحديث سياسة الخصوصية أو الشروط
+    PolicyUpdateNotice()
 
     Box(
         Modifier.fillMaxSize().background(systemBarColor(ThemeState.light)).systemBarsPadding().background(Palette.Background)

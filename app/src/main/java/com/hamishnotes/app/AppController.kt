@@ -767,6 +767,7 @@ object AppController {
         FontStore.init(app)
         StickerStore.init(app)
         PhotoLibrary.init(app)
+        PolicyNotice.init(app)
         AutoFont.init(app)
         TextPrefs.init(app)
         try {

@@ -312,3 +312,52 @@ fun TermsDialog(onDismiss: () -> Unit) {
         confirmButton = { TextButton(onClick = onDismiss) { Text(L("إغلاق", "Close")) } }
     )
 }
+
+/**
+ * تنبيه «حدّثنا سياسة الخصوصية وشروط الاستخدام» (وعد في السياسة والشروط: نبلغك داخل التطبيق بالتغييرات الجوهرية).
+ * عند أي تغيير جوهري في privacyText أو termsText: غيّر VERSION إلى تاريخ التحديث، فيظهر التنبيه مرة واحدة لمن ثبّت نسخة أقدم.
+ * التثبيت الجديد يحفظ النسخة الحالية دون تنبيه.
+ */
+object PolicyNotice {
+    const val VERSION = "2026-11-19"
+    var pending by mutableStateOf(false); private set
+    private var sp: android.content.SharedPreferences? = null
+
+    fun init(ctx: android.content.Context) {
+        val p = ctx.getSharedPreferences("policy_notice", android.content.Context.MODE_PRIVATE)
+        sp = p
+        val seen = p.getString("seen", null)
+        if (seen == null) p.edit().putString("seen", VERSION).apply() else pending = seen != VERSION
+    }
+
+    fun ack() {
+        sp?.edit()?.putString("seen", VERSION)?.apply()
+        pending = false
+    }
+}
+
+@Composable
+fun PolicyUpdateNotice() {
+    if (!PolicyNotice.pending) return
+    var privacyOpen by remember { mutableStateOf(false) }
+    var termsOpen by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(L("حدّثنا سياسة الخصوصية وشروط الاستخدام", "We updated our Privacy Policy and Terms")) },
+        text = {
+            Column {
+                Text(
+                    L("اطّلع على ما تغيّر. استمرارك في استخدام التطبيق بعد هذا التحديث يعني قبولك له.",
+                        "Please review what changed. Continuing to use the app after this update means you accept it."),
+                    fontSize = 14.sp, lineHeight = 21.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { privacyOpen = true }) { Text(L("سياسة الخصوصية", "Privacy policy"), fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { termsOpen = true }) { Text(L("شروط الاستخدام", "Terms of use"), fontWeight = FontWeight.Bold) }
+            }
+        },
+        confirmButton = { TextButton(onClick = { PolicyNotice.ack() }) { Text(L("حسنًا", "OK")) } }
+    )
+    if (privacyOpen) PrivacyDialog { privacyOpen = false }
+    if (termsOpen) TermsDialog { termsOpen = false }
+}

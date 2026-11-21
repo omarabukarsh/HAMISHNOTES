@@ -1,0 +1,482 @@
+import SwiftUI
+
+/// زر أداة في شريط الأدوات: خلفية عند الاختيار، ومؤشر ذهبي صغير أسفلها، وقفل ذهبي للأدوات المدفوعة.
+struct TBtn<Content: View>: View {
+    @Environment(\.chromeScale) private var chromeScale
+    var selected = false
+    /// خاصية تعمل أو تتوقف (مثل تجميل الخط) لا أداة: المفعّل بنقطة ذهبية بلا خلفية، فلا يلتصق بأداة مختارة بجانبه.
+    var toggle = false
+    var enabled = true
+    var locked = false
+    let action: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected && !toggle ? Palette.chromeSel : Color.clear)
+                content()
+                if locked {
+                    PremiumBadge(size: 13).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(3)
+                }
+                if selected && toggle && !locked {
+                    Circle().fill(Palette.gold).frame(width: 8, height: 8)
+                        .overlay(Circle().stroke(Palette.chromeBg, lineWidth: 1.5))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(5)
+                }
+                if selected && !toggle {
+                    RoundedRectangle(cornerRadius: 2).fill(Palette.gold).frame(width: 14, height: 3)
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 3)
+                        .transition(.toolIndicator)
+                }
+            }
+            .frame(width: 42 * chromeScale, height: 42 * chromeScale)
+            .contentShape(Rectangle())
+            // مسافة صغيرة بين كل زرين: الخلفيات المختارة لا تلتصق أبدًا
+            .padding(.horizontal, 2)
+            .animation(Motion.enter, value: selected)
+        }
+        .buttonStyle(PressScale(scale: 0.92))
+        .disabled(!enabled)
+    }
+}
+
+extension View {
+    /// مقاس موحّد لكل عنصر في الأشرطة: 42×42 مع 2 على كل جانب، فتكون المسافة بين أي عنصرين 4،
+    /// وبين العنصر وطرف الشريط 4 (حشوة الشريط 2 على الجانبين و4 فوق وتحت).
+    func barItem() -> some View { frame(width: 42, height: 42).padding(.horizontal, 2) }
+}
+
+/// ارتفاع زر الشريط نفسه (يتبع تكبير الوسط في شريط الأدوات).
+struct BarHeight: ViewModifier {
+    @Environment(\.chromeScale) private var chromeScale
+    func body(content: Content) -> some View { content.frame(height: 42 * chromeScale) }
+}
+
+func tintFor(_ selected: Bool) -> Color { selected ? Palette.navy : Palette.textSecondary }
+/// لون أيقونة في واجهة المحرر (يتبع المظهر الداكن).
+func chromeTint(_ selected: Bool) -> Color { selected ? Palette.chromeAccent : Palette.chromeMuted }
+
+struct ToolbarSep: View {
+    var body: some View { Rectangle().fill(Palette.chromeLine).frame(width: 1, height: 26).padding(.horizontal, 2) }
+}
+
+/// شريحة اختيار.
+struct ChoiceChip: View {
+    let label: String
+    let selected: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(Fonts.sans(14, selected ? .medium : .regular))
+                .foregroundColor(selected ? .white : Palette.textPrimary)
+                .lineLimit(1).fixedSize()
+                .padding(.horizontal, 15).padding(.vertical, 7)
+                .background(Capsule().fill(selected ? Palette.navy : CardBg))
+                .overlay(Capsule().stroke(selected ? Palette.navy : Palette.divider, lineWidth: 1))
+        }
+        .buttonStyle(PressScale())
+    }
+}
+
+/// قفل ذهبي صغير على زاوية زر أداة مدفوعة.
+struct PremiumBadge: View {
+    var size: CGFloat = 14
+    var body: some View {
+        ZStack {
+            Circle().fill(Pw.gold)
+            PhIcon("ph_lock", Pw.ink, size * 0.62)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// زر دائري بأيقونة فقط.
+struct IconCircleButton: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
+    let icon: String
+    let label: String
+    var selected = false
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            PhIcon(icon, Lib.text, 20, label)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(selected ? Lib.accentSoft : Lib.card))
+                .overlay(Circle().stroke(Lib.line, lineWidth: 1))
+        }
+        .buttonStyle(PressScale(scale: 0.92))
+    }
+}
+
+/// زر الإغلاق الدائري للنوافذ.
+struct CloseButton: View {
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            PhIcon("ph_close", Palette.textSecondary, 16, L("إغلاق", "Close"))
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(ThemeState.light ? Color(hex: 0xFFE8EBF0) : TrackBg))
+        }
+        .buttonStyle(PressScale())
+    }
+}
+
+/// زر ذهبي عريض (نوافذ Premium).
+struct GoldButton: View {
+    let label: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(label).font(Fonts.sans(16, .bold)).foregroundColor(Pw.ink)
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(Capsule().fill(Pw.goldButton))
+                .shadow(color: Pw.goldDeep.opacity(0.35), radius: 6, y: 3)
+        }
+        .buttonStyle(PressScale(scale: 0.97))
+    }
+}
+
+struct QuietButton: View {
+    let label: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(label).font(Fonts.sans(14, .bold)).foregroundColor(Pw.muted)
+                .frame(maxWidth: .infinity).frame(height: 46)
+        }
+    }
+}
+
+/// زر نصي بلون الكحلي (لنوافذ الحوار).
+struct NavyButton: View {
+    let label: String
+    var filled = true
+    var danger = false
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(label).font(Fonts.sans(15, .bold))
+                .foregroundColor(filled ? .white : (danger ? Palette.danger : Palette.navy))
+                .padding(.horizontal, 18).padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 12).fill(filled ? (danger ? Palette.danger : Palette.navy) : Color.clear))
+        }
+        .buttonStyle(PressScale())
+    }
+}
+
+/// عنوان كبير بخط أصفر منحنٍ تحته.
+struct UnderlinedTitle: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
+    let text: String
+    var size: CGFloat = 40
+    var body: some View {
+        Text(text)
+            .font(Fonts.display(size))
+            .foregroundColor(Lib.text)
+            .lineLimit(1)
+            .background(alignment: .bottom) {
+                GeometryReader { g in
+                    Path { p in
+                        let y = g.size.height - 2
+                        p.move(to: CGPoint(x: 0, y: y))
+                        p.addQuadCurve(to: CGPoint(x: g.size.width, y: y - 3), control: CGPoint(x: g.size.width * 0.5, y: y + 8))
+                    }
+                    .stroke(Lib.accent, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                }
+            }
+    }
+}
+
+/// نص بخط يدوي (Caveat) مثل «تابع من حيث توقفت».
+struct ScriptLabel: View {
+    @Environment(\.colorScheme) private var themeTick // يعيد الرسم عند تغيير الثيم
+    let text: String
+    var color: Color = Lib.accentDeep
+    var size: CGFloat = 16
+    var body: some View { Text(text).font(Fonts.script(size + 4)).foregroundColor(color) }
+}
+
+/// شارة صغيرة: أيقونة المؤقت + الوقت.
+struct ReadingTimeBadge: View {
+    let ms: Int64
+    var tint: Color = Palette.textSecondary
+    var size: CGFloat = 12
+    var showIcon = true
+    var body: some View {
+        HStack(spacing: 4) {
+            if showIcon { PhIcon("ph_timer", tint, size + 3) }
+            Text(formatReading(ms)).font(Fonts.sans(size)).foregroundColor(tint)
+        }
+    }
+}
+
+/// بطاقة نافذة بيضاء مستديرة.
+struct SheetCard<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        VStack(spacing: 0) { content() }
+            .padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 14)
+            .frame(maxWidth: 420)
+            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Palette.surface))
+    }
+}
+
+/// نافذة حوار بسيطة: عنوان، محتوى، وأزرار.
+struct DialogCard<Content: View>: View {
+    let title: String
+    var width: CGFloat = 460
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(Fonts.display(20)).foregroundColor(Palette.navy)
+            content()
+        }
+        .padding(22)
+        .frame(maxWidth: width)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.ivory))
+        .shadow(color: .black.opacity(0.18), radius: 24, y: 8)
+    }
+}
+
+/// خلفية معتمة تغلق النافذة عند النقر.
+struct Scrim: View {
+    let onTap: () -> Void
+    var body: some View {
+        Color.black.opacity(0.32).ignoresSafeArea().onTapGesture(perform: onTap).transition(.opacity)
+    }
+}
+
+/// حقل نص بإطار ناعم.
+struct FieldBox: View {
+    let placeholder: String
+    @Binding var text: String
+    var multiline = false
+    var body: some View {
+        Group {
+            if multiline {
+                TextField(placeholder, text: $text, axis: .vertical).lineLimit(4...12)
+            } else {
+                TextField(placeholder, text: $text)
+            }
+        }
+        .font(Fonts.sans(15))
+        .foregroundColor(Palette.textPrimary)
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
+    }
+}
+
+/// صف ألوان الورقة.
+struct PaperColorRow: View {
+    let selected: UInt32
+    let onSelect: (UInt32) -> Void
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Templates.paperColors, id: \.0) { item in
+                    let argb = item.0
+                    let name = item.1
+                    let sel = argb == selected
+                    Button { onSelect(argb) } label: {
+                        Circle().fill(Color(hex: argb)).frame(width: 36, height: 36)
+                            .overlay(Circle().stroke(sel ? Palette.gold : Palette.divider, lineWidth: sel ? 3 : 1))
+                    }
+                    .accessibilityLabel(name)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// المادة: شرائح المواد للاختيار.
+struct SubjectChips: View {
+    @EnvironmentObject var app: AppController
+    let selected: String
+    let onSelect: (String) -> Void
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ChoiceChip(label: L("بدون مادة", "No subject"), selected: selected.isEmpty) { onSelect("") }
+                ForEach(app.folders, id: \.self) { f in
+                    ChoiceChip(label: f, selected: selected == f) { onSelect(f) }
+                }
+            }
+        }
+    }
+}
+
+/// حلقة هدف اليوم.
+struct GoalRing: View {
+    @EnvironmentObject var app: AppController
+    var size: CGFloat = 40
+    var line: CGFloat = 4
+    var track: Color = Lib.line
+    var flame = true
+    var body: some View {
+        let today = app.stats[app.todayKey()] ?? 0
+        let frac = min(1, Double(today) / Double(max(1, app.goalMinutes * 60_000)))
+        ZStack {
+            Circle().stroke(track, lineWidth: line)
+            Circle().trim(from: 0, to: frac).stroke(Palette.gold, style: StrokeStyle(lineWidth: line, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if flame {
+                ZStack {
+                    FlameShape().fill(Color(hex: 0xFFE8864A))
+                    FlameShape().stroke(Color(hex: 0xFFC45F2A), style: StrokeStyle(lineWidth: 1, lineJoin: .round))
+                }
+                .frame(width: size * 0.46, height: size * 0.46)
+            }
+        }
+        .padding(line / 2)
+        .frame(width: size, height: size)
+    }
+}
+
+/// تنبيه صغير أسفل الشاشة (وزر اختياري مثل «↶ تراجع»).
+struct ToastView: View {
+    let text: String
+    var action: (String, () -> Void)? = nil
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(text)
+                .font(Fonts.sans(14, .medium))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+            if let a = action {
+                Button { a.1(); AppController.shared.toast = nil; AppController.shared.toastAction = nil } label: {
+                    Text(a.0).font(Fonts.sans(14, .bold)).foregroundColor(Palette.gold)
+                }
+            }
+        }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .background(Capsule().fill(Color(hex: 0xFF1E2A44).opacity(0.94)))
+            .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+            .padding(.bottom, 24)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+}
+
+/// نافذة كبيرة في وسط الشاشة (مثل نوافذ أندرويد: 94% من العرض حتى 900 نقطة).
+/// ظل النافذة الكبيرة: يظهر في آخر الفتح فقط، ويختفي فور بدء الإغلاق.
+private struct RestShadow: ViewModifier, Animatable {
+    var p: CGFloat
+
+    var animatableData: CGFloat {
+        get { p }
+        set { p = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.shadow(color: .black.opacity(0.25 * Double(min(1, max(0, (p - 0.92) / 0.08)))), radius: 30, y: 10)
+    }
+}
+
+struct BigSheet<C: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    /// نسبة العرض والارتفاع من الشاشة (كما في نوافذ أندرويد: fillMaxWidth / fillMaxHeight).
+    var widthFraction: CGFloat = 0.94
+    var heightFraction: CGFloat = 0.92
+    var maxHeight: CGFloat = .infinity
+    var minHeight: CGFloat = 0
+    var maxWidth: CGFloat = .infinity
+    /// الارتفاع على قدر المحتوى (بين minHeight وmaxHeight) كما في نوافذ أندرويد heightIn.
+    var fitContent = false
+    let sheet: () -> C
+
+    @State private var cover = false
+    /// تقدّم الظهور (0 مخفية، 1 ظاهرة)
+    @State private var p: CGFloat = 0
+    /// مكان اللمسة التي فتحتها: تخرج منه وتعود إليه
+    @State private var origin: CGPoint? = nil
+    @State private var closing = false
+    @State private var gen = 0
+
+    func body(content: Content) -> some View {
+        content.fullScreenCover(isPresented: $cover) {
+            ZStack {
+                Color.black.opacity(0.32).ignoresSafeArea()
+                    .modifier(PopReveal(p: p, fade: 2.2, scales: false))
+                    .onTapGesture { close() }
+                GeometryReader { g in
+                    Group {
+                        if fitContent {
+                            sheet()
+                                .frame(width: min(maxWidth, g.size.width * widthFraction))
+                                .frame(minHeight: minHeight)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxHeight: min(maxHeight, g.size.height * 0.96))
+                        } else {
+                            sheet()
+                                .frame(width: min(maxWidth, g.size.width * widthFraction),
+                                       height: min(g.size.height * 0.96, max(minHeight, min(maxHeight, g.size.height * heightFraction))))
+                        }
+                    }
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        // الظل الكبير يُرسم عند الاستقرار فقط: ظل نافذة تكبر يُعاد حسابه في كل إطار وهو مكلف
+                        .modifier(RestShadow(p: p))
+                        // تخرج من الزر الذي فُتحت منه وتكبر بنابض (OriginDialog في أندرويد)
+                        .modifier(originReveal(p, origin))
+                        .position(x: g.size.width / 2, y: g.size.height / 2)
+                }
+            }
+            .environment(\.colorScheme, .light)
+            .presentationBackground(.clear)
+            // الإطار الأول يبني محتوى النافذة الثقيل (مثل الإعدادات) ثم تبدأ الحركة: لا تسقط أول إطاراتها
+            .onAppear { DispatchQueue.main.async { withAnimation(Motion.origin) { p = 1 } } }
+            .onDisappear { p = 0 }
+        }
+        // تظهر النافذة بحركتها الخاصة في مكانها، لا بانزلاق النوافذ الكاملة من الأسفل
+        .onChange(of: isPresented) { _, v in if v { present() } else { close() } }
+        .onChange(of: cover) { _, v in if !v && isPresented { isPresented = false } }
+        .onAppear { if isPresented { present() } }
+    }
+
+    private func present() {
+        gen += 1
+        closing = false
+        if !cover { origin = TouchOrigin.recent() }
+        if cover { withAnimation(Motion.origin) { p = 1 } }
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { cover = true }
+    }
+
+    /// الإغلاق (من الخلفية أو من داخل النافذة): تنكمش إلى النقطة التي خرجت منها في 240ms ثم تُزال.
+    private func close() {
+        guard cover, !closing else { return }
+        closing = true
+        let g = gen
+        withAnimation(Motion.acc(0.24)) { p = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+            guard g == gen else { return }
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { cover = false }
+            closing = false
+            if isPresented { isPresented = false }
+        }
+    }
+}
+
+extension View {
+    func bigSheet<C: View>(isPresented: Binding<Bool>, width: CGFloat = 0.94, height: CGFloat = 0.92, maxHeight: CGFloat = .infinity,
+                           minHeight: CGFloat = 0, maxWidth: CGFloat = .infinity, fitContent: Bool = false,
+                           @ViewBuilder _ sheet: @escaping () -> C) -> some View {
+        modifier(BigSheet(isPresented: isPresented, widthFraction: width, heightFraction: height, maxHeight: maxHeight, minHeight: minHeight,
+                          maxWidth: maxWidth, fitContent: fitContent, sheet: sheet))
+    }
+
+    /// إطار مستدير بخط رفيع.
+    func roundedBorder(_ color: Color, radius: CGFloat, width: CGFloat = 1) -> some View {
+        overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(color, lineWidth: width))
+    }
+
+    func card(_ fill: Color, radius: CGFloat) -> some View {
+        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(fill))
+    }
+}

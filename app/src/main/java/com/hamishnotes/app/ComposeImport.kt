@@ -10,6 +10,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -129,34 +131,36 @@ private fun ComposeReviewDialog(pdf: Boolean, uris: List<Uri>, initialFolder: St
 
     OriginDialog(onDismiss = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) { close ->
         Surface(
-            Modifier.fillMaxWidth(0.94f).widthIn(max = 560.dp).fillMaxHeight(0.9f),
-            shape = RoundedCornerShape(24.dp),
-            color = Palette.Background
+            Modifier.fillMaxWidth(0.94f).widthIn(max = 640.dp).fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(28.dp),
+            color = Lib.side,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Lib.line)
         ) {
             Column(Modifier.fillMaxSize()) {
-                // العنوان وزر الإغلاق كما في الإعدادات
+                // العنوان وزر الإغلاق كما في نوافذ المكتبة
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 14.dp, top = 14.dp),
+                    Modifier.fillMaxWidth().padding(start = 28.dp, end = 20.dp, top = 22.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         if (pdf) L("استيراد ملفات PDF", "Import PDF files") else L("ملاحظة من الصور", "Note from photos"),
                         fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f)
+                        fontSize = 26.sp, color = Lib.text, maxLines = 1, modifier = Modifier.weight(1f)
                     )
-                    ReviewCloseButton(close)
+                    Spacer(Modifier.width(12.dp))
+                    IconCircleButton(R.drawable.ph_close, L("إغلاق", "Close"), onClick = close)
                 }
                 Text(
                     if (pdf) L("اخترت ${items.size} من الملفات. اجمعها في مستند واحد، أو استورد كل ملف وحده.", "You picked ${items.size} files. Combine them into one document, or import each one on its own.")
                     else L("كل صورة تصبح صفحة على مقاسها، بالترتيب الظاهر هنا.", "Each photo becomes a page in its own shape, in the order shown here."),
-                    fontSize = 13.sp, color = Palette.TextSecondary,
-                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 4.dp)
+                    fontSize = 14.sp, lineHeight = 20.sp, color = Lib.muted,
+                    modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 4.dp, bottom = 6.dp)
                 )
 
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    contentPadding = PaddingValues(start = 28.dp, end = 28.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (pdf) item(key = "mode") {
                         Column {
@@ -175,15 +179,17 @@ private fun ComposeReviewDialog(pdf: Boolean, uris: List<Uri>, initialFolder: St
                                     value = name,
                                     onValueChange = { name = it; nameEdited = true },
                                     singleLine = true,
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Palette.Navy,
-                                        unfocusedBorderColor = Palette.Divider,
-                                        focusedContainerColor = Palette.Surface,
-                                        unfocusedContainerColor = Palette.Surface,
-                                        focusedTextColor = Palette.TextPrimary,
-                                        unfocusedTextColor = Palette.TextPrimary,
-                                        cursorColor = Palette.Navy
+                                        focusedBorderColor = Lib.accent,
+                                        unfocusedBorderColor = Lib.line,
+                                        focusedContainerColor = Lib.card,
+                                        unfocusedContainerColor = Lib.card,
+                                        focusedTextColor = Lib.text,
+                                        unfocusedTextColor = Lib.text,
+                                        cursorColor = Lib.accentDeep,
+                                        selectionColors = androidx.compose.foundation.text.selection.TextSelectionColors(Lib.accentDeep, Lib.accent.copy(alpha = 0.4f))
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -217,15 +223,15 @@ private fun ComposeReviewDialog(pdf: Boolean, uris: List<Uri>, initialFolder: St
                     item(key = "subject") {
                         Column {
                             ReviewLabel(L("المادة", "Subject"))
-                            SubjectChips(folder) { folder = it }
+                            ReviewSubjects(folder) { folder = it }
                         }
                     }
                 }
 
                 // الزر الرئيسي في أسفل النافذة
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Lib.line))
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp),
+                    Modifier.fillMaxWidth().padding(start = 28.dp, end = 20.dp, top = 14.dp, bottom = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val unreadable = pdf && items.isNotEmpty() && items.all { info[it]?.pages == -1 }
@@ -237,11 +243,12 @@ private fun ComposeReviewDialog(pdf: Boolean, uris: List<Uri>, initialFolder: St
                             merge -> ""
                             else -> L("${items.size} مستندات منفصلة", "${items.size} separate documents")
                         },
-                        fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.weight(1f)
+                        fontSize = 14.sp, color = Lib.muted, modifier = Modifier.weight(1f)
                     )
-                    Box(
-                        Modifier.pressScale(0.95f).clip(RoundedCornerShape(14.dp))
-                            .background(Palette.Navy.copy(alpha = if (enabled) 1f else 0.35f))
+                    // زر رئيسي أصفر كزر «جديد» في المكتبة
+                    Row(
+                        Modifier.height(46.dp).pressScale(0.95f).alpha(if (enabled) 1f else 0.45f).clip(RoundedCornerShape(23.dp))
+                            .background(Lib.accent)
                             .clickable(enabled = enabled) {
                                 val list = items.toList()
                                 val n = name.trim()
@@ -252,12 +259,14 @@ private fun ComposeReviewDialog(pdf: Boolean, uris: List<Uri>, initialFolder: St
                                     else -> c.importDocuments(list, folder)
                                 }
                             }
-                            .padding(horizontal = 26.dp, vertical = 12.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 22.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        PhIcon(if (pdf) R.drawable.ph_export else R.drawable.ph_plus, OnAccent, 18.dp, modifier = if (pdf) Modifier.rotate(180f) else Modifier)
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            if (pdf) L("استيراد", "Import") else L("إنشاء", "Create"),
-                            fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White
+                            if (pdf) L("استيراد", "Import") else L("إنشاء الملاحظة", "Create note"),
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold, color = OnAccent
                         )
                     }
                 }
@@ -291,15 +300,15 @@ private fun ReviewRow(
     }
     val shape = RoundedCornerShape(16.dp)
     Row(
-        modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
-            .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        modifier.fillMaxWidth().clip(shape).background(Lib.card).border(1.dp, Lib.line, shape)
+            .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (showOrder) {
             Box(
-                Modifier.size(24.dp).clip(CircleShape).background(Palette.GoldSoft),
+                Modifier.size(26.dp).clip(CircleShape).background(Lib.accentSoft),
                 contentAlignment = Alignment.Center
-            ) { Text("${index + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep) }
+            ) { Text("${index + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LabelGold) }
             Spacer(Modifier.width(10.dp))
         }
         // المصغّرة: الصورة بشكلها، أو أول صفحة من الملف
@@ -307,18 +316,18 @@ private fun ReviewRow(
         val tw = if (thumb != null && thumb.width > thumb.height) 52.dp else 40.dp
         val th = if (thumb != null && thumb.width > thumb.height) 38.dp else 52.dp
         Box(
-            Modifier.size(tw, th).clip(RoundedCornerShape(6.dp)).background(Color(0xFFEEF0F4))
-                .border(1.dp, Palette.Divider, RoundedCornerShape(6.dp)),
+            Modifier.size(tw, th).clip(RoundedCornerShape(6.dp)).background(Lib.bg)
+                .border(1.dp, Lib.line, RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (thumb != null) Image(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else if (pdf) Text("PDF", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Palette.Danger)
+            else if (pdf) Text("PDF", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Lib.exam)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 if (pdf) info?.name ?: "…" else L("صفحة ${index + 1}", "Page ${index + 1}"),
-                fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary,
+                fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Lib.text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
             val sub = when {
@@ -331,7 +340,7 @@ private fun ReviewRow(
             if (sub.isNotEmpty()) {
                 Text(
                     sub, fontSize = 12.sp, lineHeight = 17.sp,
-                    color = if (info != null && info.pages < 0) Palette.Danger else Palette.TextSecondary,
+                    color = if (info != null && info.pages < 0) Lib.exam else Lib.muted,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
@@ -341,7 +350,7 @@ private fun ReviewRow(
             ReviewIconButton(R.drawable.ph_caret_up, L("تقديم", "Move up"), index > 0, onUp)
             ReviewIconButton(R.drawable.ph_caret_down, L("تأخير", "Move down"), index < count - 1, onDown)
         }
-        ReviewIconButton(R.drawable.ph_close, L("حذف", "Remove"), true, onRemove, Palette.Danger)
+        ReviewIconButton(R.drawable.ph_trash, L("حذف", "Remove"), true, onRemove, Lib.exam)
     }
 }
 
@@ -390,51 +399,81 @@ private fun pdfInfo(ctx: Context, uri: Uri): ItemInfo {
     return ItemInfo(name, pages, size, thumb)
 }
 
+/** لون العناوين الصغيرة: ذهبي غامق في الفاتح، وأصفر المكتبة في الداكن كي يُقرأ على الأسود. */
+private val LabelGold: Color get() = if (ThemeState.light) Lib.accentDeep else Lib.accent
+
+/** النص على الأصفر (كزر «جديد»). */
+private val OnAccent = Color(0xFF1E2A44)
+
 @Composable
 private fun ReviewLabel(text: String) {
     Text(
-        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Palette.GoldDeep,
-        modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 6.dp)
+        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LabelGold,
+        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 4.dp)
     )
 }
 
 @Composable
-private fun ReviewCloseButton(onClick: () -> Unit) {
+private fun ReviewIconButton(icon: Int, description: String, enabled: Boolean, onClick: () -> Unit, tint: Color = Lib.muted) {
     Box(
-        Modifier.size(34.dp).clip(CircleShape).background(Color(0xFFE8EBF0)).clickable(onClick = onClick),
+        Modifier.size(38.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick).alpha(if (enabled) 1f else 0.3f),
         contentAlignment = Alignment.Center
-    ) { PhIcon(R.drawable.ph_close, Palette.TextSecondary, 18.dp, L("إغلاق", "Close")) }
+    ) { PhIcon(icon, tint, 19.dp, description) }
 }
 
-@Composable
-private fun ReviewIconButton(icon: Int, description: String, enabled: Boolean, onClick: () -> Unit, tint: Color = Palette.TextSecondary) {
-    Box(
-        Modifier.size(34.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick).alpha(if (enabled) 1f else 0.3f),
-        contentAlignment = Alignment.Center
-    ) { PhIcon(icon, tint, 18.dp, description) }
-}
-
-/** شريط اختيار متلاصق بنفس شكل أزرار الإعدادات، يملأ عرض النافذة. */
+/** اختيار من اثنين بألوان المكتبة: المختار أصفر كزر «جديد». */
 @Composable
 private fun ReviewSegmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val outer = RoundedCornerShape(16.dp)
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEF0F4)).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        Modifier.fillMaxWidth().clip(outer).background(Lib.bg).border(1.dp, Lib.line, outer).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         options.forEachIndexed { i, label ->
             val on = i == selected
+            val bg by androidx.compose.animation.animateColorAsState(if (on) Lib.accent else Color.Transparent, label = "segBg")
             Box(
-                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                    .let { if (on) it.shadow(1.dp, RoundedCornerShape(10.dp)).background(Palette.Surface) else it }
-                    .clickable { onSelect(i) }.padding(vertical = 9.dp),
+                Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(12.dp)).background(bg)
+                    .clickable { onSelect(i) },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     label, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    color = if (on) Palette.Navy else Palette.TextSecondary, maxLines = 1
+                    color = if (on) OnAccent else Lib.muted, maxLines = 1
                 )
             }
         }
+    }
+}
+
+/** المادة: «بلا مادة» ثم مواد المكتبة، بشكل أزرار المكتبة. */
+@Composable
+private fun ReviewSubjects(selected: String, onSelect: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ReviewChip(L("بلا مادة", "No subject"), selected.isEmpty()) { onSelect("") }
+        AppController.folders.toList().forEach { f -> ReviewChip(f, selected == f) { onSelect(f) } }
+    }
+}
+
+@Composable
+private fun ReviewChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        Modifier.height(40.dp).clip(shape)
+            .background(if (selected) Lib.accent else Lib.card)
+            .border(1.dp, if (selected) Lib.accent else Lib.line, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label, fontSize = 14.sp, maxLines = 1,
+            color = if (selected) OnAccent else Lib.text,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

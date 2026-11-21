@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -542,7 +541,7 @@ fun TapeBar(s: DocSession) {
                     TBtn(selected = true, onClick = { TapeTool.menuOpen = true }) {
                         PhIcon(R.drawable.ph_tape, Palette.ChromeAccent, description = L("إعدادات الشريط اللاصق", "Tape settings"))
                     }
-                    DropdownMenu(
+                    DropdownMenu(fromEdge = true,
                         expanded = TapeTool.menuOpen,
                         onDismissRequest = { TapeTool.menuOpen = false },
                         shape = RoundedCornerShape(18.dp),

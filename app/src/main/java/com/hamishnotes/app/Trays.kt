@@ -50,6 +50,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
@@ -367,14 +369,18 @@ fun BoxScope.SideTray(s: DocSession) {
     val pivot = place.pivot
     val origin = androidx.compose.ui.graphics.TransformOrigin(pivot, 0f)
 
-    androidx.compose.animation.AnimatedVisibility(
-        visible = visible,
-        modifier = Modifier.align(AbsoluteAlignment.TopLeft).absoluteOffset { IntOffset(x.roundToInt(), ay.roundToInt()) },
-        enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(240), initialScale = 0.08f, transformOrigin = origin) +
-            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)),
-        exit = androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(200), targetScale = 0.08f, transformOrigin = origin) +
-            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160))
+    // تخرج النافذة من فتحة في حافة الزر وتعود إليها بالانثناء، كنوافذ شريط الأدوات
+    val fx = remember { EdgeFx() }
+    fx.anchor = anchorWin
+    val slit = slitEdge(pivot * wPx, anchorWin?.width ?: with(density) { 46.dp.toPx() }, wPx)
+    if (fx.edge.let { it == null || it.left != slit.left || it.right != slit.right }) fx.edge = slit
+    if (!fx.ready) fx.ready = true
+    LaunchedEffect(visible) { if (visible) fx.show() else fx.hide() }
+    val alive by remember { derivedStateOf { fx.open.value > 0.001f } }
+    if (visible || alive) Box(
+        Modifier.align(AbsoluteAlignment.TopLeft).absoluteOffset { IntOffset(x.roundToInt(), ay.roundToInt()) }
     ) {
+        Box(Modifier.edgeWindow(fx, RoundedCornerShape(18.dp), 0.dp)) {
         Box(Modifier.width(widthDp.dp).height((hDp + 8f).dp)) {
             // سهم صغير يشير إلى الزر
             Box(
@@ -437,6 +443,7 @@ fun BoxScope.SideTray(s: DocSession) {
                 }
             }
         }
+            }
     }
 }
 
@@ -591,7 +598,7 @@ private fun TrayTile(
     Box(
         Modifier.fillMaxWidth().aspectRatio(1f)
             .clip(shape)
-            .background(if (photo) Color(0xFFEEF0F4) else Color.White)
+            .background(if (!ThemeState.light) CardBg else if (photo) Color(0xFFEEF0F4) else Color.White)
             .then(
                 when {
                     armed -> Modifier.border(2.5.dp, Palette.Navy, shape)
@@ -783,7 +790,7 @@ private fun PhotoTrayContent(s: DocSession, forSticker: Boolean) {
                 val payload = remember(p.uri) { TrayPayload.Photo(p.uri) }
                 if (forSticker) {
                     Box(
-                        Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)).background(Color(0xFFEEF0F4))
+                        Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)).background(if (ThemeState.light) Color(0xFFEEF0F4) else CardBg)
                             .clickable { StickerStore.addFromUri(p.uri); s.trayMode = "stickers" }
                     ) { img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } }
                 } else {

@@ -80,6 +80,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     /** نحفظ مكان كل لمسة لتخرج النافذة التي تفتحها منه. */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) TouchOrigin.record(ev.rawX, ev.rawY)
+        // راحة اليد أثناء الكتابة: نقيس مساحة اللمس وعدد الأصابع لكل لمسة
+        PalmGuard.observe(ev, resources.displayMetrics)
         // التعرّف على القلم ومعايرته قبل أن يصل الحدث إلى الواجهة
         PenInput.observe(ev)
         return super.dispatchTouchEvent(ev)
@@ -136,6 +138,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             lp.preferredDisplayModeId = best.modeId
             lp.preferredRefreshRate = best.refreshRate
             window.attributes = lp
+            // النوافذ المنبثقة (نوافذ الأدوات) تطلب المعدل نفسه
+            HighRefresh.modeId = best.modeId
+            HighRefresh.rate = best.refreshRate
         } catch (t: Throwable) {
         }
     }

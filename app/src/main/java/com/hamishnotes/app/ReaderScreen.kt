@@ -721,7 +721,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                                 c.say(MsgKind.TIP, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(if (PenPrefs.lassoRect) R.drawable.ph_select_rect else R.drawable.ph_lasso, chromeTint(c.lassoActive)) }
-                        DropdownMenu(
+                        DropdownMenu(fromEdge = true,
                             expanded = lassoMenu, onDismissRequest = { lassoMenu = false },
                             shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                         ) { LassoMenuContent(s, onOff = { lassoMenu = false; c.lassoActive = false }) }
@@ -821,7 +821,7 @@ private fun ReaderTopBar(s: DocSession, count: Int, onExportDoc: () -> Unit, onE
                                 c.say(MsgKind.TIP, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
                         }) { TextGlyph(chromeTint(PenPrefs.textActive || s.inlineEditId != null)) }
-                        DropdownMenu(
+                        DropdownMenu(fromEdge = true,
                             expanded = textMenu, onDismissRequest = { textMenu = false },
                             shape = RoundedCornerShape(18.dp), containerColor = SheetBg, shadowElevation = 12.dp
                         ) {
@@ -1052,7 +1052,7 @@ private fun PenBar() {
                         TBtn(selected = sel, onClick = { if (sel) more = true else c.selectTool(pt) }) {
                             ToolGlyph(pt, chromeTint(sel), c.colorFor(pt), filled = sel)
                         }
-                        DropdownMenu(
+                        DropdownMenu(fromEdge = true,
                             expanded = more && sel,
                             onDismissRequest = { more = false },
                             shape = RoundedCornerShape(18.dp),
@@ -1105,7 +1105,7 @@ private fun PenBar() {
                         Modifier.barItem().clip(RoundedCornerShape(12.dp)).clickable { allColors = true },
                         contentAlignment = Alignment.Center
                     ) { PhIcon(R.drawable.ph_plus, Palette.ChromeMuted, 18.dp, L("كل الألوان", "All colors")) }
-                    DropdownMenu(
+                    DropdownMenu(fromEdge = true,
                         expanded = allColors,
                         onDismissRequest = { allColors = false },
                         shape = RoundedCornerShape(18.dp),
@@ -1230,11 +1230,11 @@ private fun ToolSlot(
                 filled = selected
             )
         }
-        DropdownMenu(
+        DropdownMenu(fromEdge = true,
             expanded = open && selected,
             onDismissRequest = onDismiss,
             shape = RoundedCornerShape(18.dp),
-            containerColor = if (tool == Tool.LASER) SheetBg else Color.White,
+            containerColor = if (tool == Tool.LASER) SheetBg else Palette.Surface,
             shadowElevation = 12.dp
         ) {
             ToolSettingsPanel(onCustomColor)
@@ -3503,6 +3503,9 @@ private fun PageView(
                                 }
                             }
                         } catch (e: PointerEventTimeoutCancellationException) {
+                            // راحة اليد أثناء الكتابة بالقلم: القلم يلمس الشاشة أو يحوم فوقها أو استُخدم للتو،
+                            // أو اللمسة واسعة أو بعدة نقاط. لا تحديد ولا نافذة لصق دون قصد.
+                            if (PenInput.stylusActiveRecently(1500L) || PalmGuard.palmLike()) return@awaitEachGesture
                             // ضغط مطوّل على العنصر المحدد: يُظهر شريطه مرة أخرى
                             if (session.barHidden && session.hitsSelected(index, nx, ny)) {
                                 session.barHidden = false

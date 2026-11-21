@@ -89,7 +89,7 @@ internal fun SizeSliderRow(title: String, index: Int, valueText: String, onChang
             value = index.toFloat(), onValueChange = { onChange(kotlin.math.round(it).toInt().coerceIn(0, Sizes.COUNT - 1)) },
             valueRange = 0f..(Sizes.COUNT - 1).toFloat(), steps = Sizes.COUNT - 2,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White, activeTrackColor = Palette.Navy, inactiveTrackColor = Color(0xFFE3E6EB),
+                thumbColor = Color.White, activeTrackColor = Palette.Navy, inactiveTrackColor = if (ThemeState.light) Color(0xFFE3E6EB) else Palette.Divider,
                 activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent
             ),
             modifier = Modifier.height(34.dp)

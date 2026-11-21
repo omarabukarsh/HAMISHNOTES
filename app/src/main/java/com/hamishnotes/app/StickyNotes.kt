@@ -191,7 +191,7 @@ fun StickyBar() {
                 }
                 Box {
                     TBtn(onClick = { panel = true }) { PhIcon(R.drawable.ph_caret_down, Palette.ChromeMuted, 20.dp, L("أنماط الملاحظات", "Note styles")) }
-                    DropdownMenu(
+                    DropdownMenu(fromEdge = true,
                         expanded = panel, onDismissRequest = { panel = false },
                         shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                     ) { StickerPanel { panel = false } }

@@ -7,5 +7,17 @@
         <item name="android:navigationBarColor">@color/mn_ink</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:colorAccent">@color/mn_ink</item>
+        <!-- النوافذ (الإعدادات وغيرها) تكبر من مكان اللمسة بحركة الواجهة نفسها؛
+             حركة النظام تلاشٍ قصير فقط، فلا تعمل حركتان معًا ويظهر التعتيم بنعومة -->
+        <item name="android:dialogTheme">@style/Theme.MyNotes.Dialog</item>
+    </style>
+
+    <style name="Theme.MyNotes.Dialog" parent="@android:style/ThemeOverlay.Material.Dialog">
+        <item name="android:windowAnimationStyle">@style/DialogFade</item>
+    </style>
+
+    <style name="DialogFade">
+        <item name="android:windowEnterAnimation">@anim/dialog_fade_in</item>
+        <item name="android:windowExitAnimation">@anim/dialog_fade_out</item>
     </style>
 </resources>

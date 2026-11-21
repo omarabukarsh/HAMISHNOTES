@@ -476,3 +476,32 @@ fun PenWindowObserver() {
         onDispose { if (window.callback === wrapper) window.callback = orig }
     }
 }
+
+/**
+ * راحة اليد على الشاشة أثناء الكتابة بالقلم: لمسة واسعة (أعرض من 18 مم) أو عدة نقاط معًا.
+ * تُقاس لكل لمسة من بدايتها، فلا يفتح الضغط المطوّل نافذة دون قصد.
+ */
+object PalmGuard {
+    @Volatile private var maxMajorPx = 0f
+    @Volatile private var maxFingers = 0
+    @Volatile private var palmPx = Float.MAX_VALUE
+
+    fun observe(ev: MotionEvent, dm: android.util.DisplayMetrics) {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            maxMajorPx = 0f
+            maxFingers = 0
+            palmPx = dm.xdpi / 25.4f * 18f
+        }
+        var fingers = 0
+        for (i in 0 until ev.pointerCount) {
+            if (ev.getToolType(i) != MotionEvent.TOOL_TYPE_FINGER) continue
+            fingers++
+            val m = ev.getTouchMajor(i)
+            if (m > maxMajorPx) maxMajorPx = m
+        }
+        if (fingers > maxFingers) maxFingers = fingers
+    }
+
+    /** اللمسة الحالية تبدو راحة يد (واسعة أو بعدة نقاط). */
+    fun palmLike(): Boolean = maxFingers > 1 || maxMajorPx > palmPx
+}

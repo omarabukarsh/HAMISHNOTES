@@ -177,7 +177,7 @@ fun SizeSlots(t: Tool) {
                             .background(if (sel) Palette.Navy else Palette.ChromeMuted)
                     )
                 }
-                DropdownMenu(
+                DropdownMenu(fromEdge = true,
                     expanded = edit, onDismissRequest = { edit = false },
                     shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                 ) {
@@ -398,7 +398,7 @@ fun ShapeBar() {
                         Box(Modifier.size(18.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
                         PhIcon(R.drawable.ph_caret_down, Palette.Navy, 12.dp)
                     }
-                    DropdownMenu(
+                    DropdownMenu(fromEdge = true,
                         expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
                         shape = RoundedCornerShape(20.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                     ) {

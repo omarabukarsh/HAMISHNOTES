@@ -137,9 +137,9 @@ fun SummaryDrawer(
                 }
                 Row(
                     Modifier.clip(RoundedCornerShape(16.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFFFFF6DD), Palette.GoldSoft)))
+                        .background(Brush.linearGradient(listOf(if (ThemeState.light) Color(0xFFFFF6DD) else Palette.GoldSoft, Palette.GoldSoft)))
                         .border(1.dp, Palette.Gold, RoundedCornerShape(16.dp))
-                        .clickable(enabled = all.isNotEmpty()) { mapOpen = true }.padding(horizontal = 11.dp, vertical = 6.dp),
+                        .clickable { mapOpen = true }.padding(horizontal = 11.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PhIcon(R.drawable.ph_mindmap, Palette.GoldDeep, 16.dp)

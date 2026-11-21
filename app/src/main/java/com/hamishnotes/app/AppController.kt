@@ -59,7 +59,8 @@ object AppController {
         private set
 
     /** نافذة إضافة الملف: الاسم والنسبة والمرحلة (null = لا نافذة). */
-    class ImportProgress(val name: String, val fraction: Float, val phase: String, val index: Int, val count: Int)
+    /** title: عنوان النافذة بدل «جارٍ إضافة الملفات» (مثل إنشاء ملاحظة من الصور). */
+    class ImportProgress(val name: String, val fraction: Float, val phase: String, val index: Int, val count: Int, val title: String? = null)
     var importProgress by mutableStateOf<ImportProgress?>(null)
     @Volatile var importCancel = false
 
@@ -1564,7 +1565,8 @@ object AppController {
         }
     } catch (t: Throwable) { null }?.substringBeforeLast('.') ?: L("مستند", "Document")
 
-    fun importDocuments(uris: List<Uri>) {
+    /** folder: مادة المستندات المستوردة (null = بلا تغيير، أي بلا مادة). */
+    fun importDocuments(uris: List<Uri>, folder: String? = null) {
         if (uris.isEmpty()) return
         // الخطة المجانية: نستورد ما يتسع له الحد ونعرض نافذة الحد للباقي
         val allowed = if (Premium.active) uris.size else minOf(uris.size, Premium.freeSlots())
@@ -1587,8 +1589,9 @@ object AppController {
                             scope.launch { importProgress = ImportProgress(name, f, ph, i, uris.size) }
                         }, { importCancel })
                     }
-                    library.add(0, e)
-                    added.add(e)
+                    val placed = if (folder != null) e.copy(folder = folder) else e
+                    library.add(0, placed)
+                    added.add(placed)
                     ok++
                 } catch (t: Throwable) {
                     if (!importCancel) failed++
@@ -1609,6 +1612,76 @@ object AppController {
             }
             say(MsgKind.DONE, msg)
             added.forEach { queueOcr(it) }
+        }
+    }
+
+    /** يجمع عدة ملفات PDF في مستند واحد بالترتيب المعطى، ثم يفتحه. */
+    fun importMerged(uris: List<Uri>, name: String, folder: String) {
+        if (uris.isEmpty()) return
+        if (!Premium.canAdd()) return
+        scope.launch {
+            importing = true
+            importCancel = false
+            val names = withContext(Dispatchers.IO) { uris.map { displayNameOf(it) } }
+            importProgress = ImportProgress(names[0], 0f, L("بدء الإضافة…", "Starting…"), 0, uris.size)
+            try {
+                val (e, pages, failed) = withContext(Dispatchers.IO) {
+                    repo.importMerged(uris, name, folder, { i, f, ph ->
+                        scope.launch { importProgress = ImportProgress(names[i], f, ph, i, uris.size) }
+                    }, { importCancel })
+                }
+                repo.savePages(e.id, pages)
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+                val joined = uris.size - failed
+                say(
+                    MsgKind.DONE,
+                    if (failed == 0) L("جُمعت الملفات في مستند واحد (${pages.size} صفحة)", "Combined the files into one document (${pages.size} pages)")
+                    else L("جُمعت الملفات (${pages.size} صفحة)، وتعذرت إضافة $failed من ${uris.size}", "Combined $joined files (${pages.size} pages); $failed could not be added")
+                )
+            } catch (t: Throwable) {
+                if (importCancel) say(MsgKind.TIP, L("أُلغيت إضافة الملفات", "Adding the files was cancelled"))
+                else say(MsgKind.ERROR, L("تعذر الاستيراد. تأكد أن الملفات PDF سليمة.", "Import failed. Make sure the files are valid PDFs."))
+            } finally {
+                importing = false
+                importProgress = null
+            }
+        }
+    }
+
+    /** ملاحظة جديدة من صور: كل صورة صفحة بالترتيب المعطى، ثم تُفتح. */
+    fun createImageNote(uris: List<Uri>, name: String, folder: String) {
+        if (uris.isEmpty()) return
+        if (!Premium.canAdd()) return
+        scope.launch {
+            importing = true
+            importCancel = false
+            val title = L("جارٍ إنشاء الملاحظة…", "Creating the note…")
+            fun step(i: Int) = ImportProgress(
+                name, i.toFloat() / uris.size,
+                L("الصورة ${i + 1} من ${uris.size}", "Photo ${i + 1} of ${uris.size}"), 0, 1, title
+            )
+            importProgress = step(0)
+            try {
+                val (e, failed) = withContext(Dispatchers.IO) {
+                    repo.createNoteFromImages(name, uris, folder, { i -> scope.launch { importProgress = step(i) } }, { importCancel })
+                }
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+                say(
+                    MsgKind.DONE,
+                    if (failed == 0) L("أُنشئت الملاحظة من الصور (${e.pageCount} صفحة)", "Created the note from your photos (${e.pageCount} pages)")
+                    else L("أُنشئت الملاحظة (${e.pageCount} صفحة)، وتعذرت قراءة $failed من ${uris.size}", "Created the note (${e.pageCount} pages); $failed photos could not be read")
+                )
+            } catch (t: Throwable) {
+                if (importCancel) say(MsgKind.TIP, L("أُلغي إنشاء الملاحظة", "Creating the note was cancelled"))
+                else say(MsgKind.ERROR, L("تعذر إنشاء الملاحظة من الصور", "Could not create the note from the photos"))
+            } finally {
+                importing = false
+                importProgress = null
+            }
         }
     }
 

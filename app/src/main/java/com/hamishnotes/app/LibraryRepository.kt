@@ -40,6 +40,9 @@ class DocData(
     val tapes: Map<Int, List<Tape>> = emptyMap()
 )
 
+/** أطول ضلع لصورة تصبح صفحة (بكسل): واضحة للقراءة والكتابة عليها دون ملف ضخم. */
+private const val IMAGE_PAGE_MAX = 2200
+
 /**
  * كل الملفات داخل مساحة التطبيق الخاصة:
  *  files/docs/<id>.pdf          نسخة المستند المستورد
@@ -933,22 +936,7 @@ class LibraryRepository(context: Context) {
         var bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
             ?: throw IOException(L("تعذر قراءة الصورة", "Could not read the image"))
 
-        val orientation = try {
-            resolver.openInputStream(uri)?.use {
-                ExifInterface(it).getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL
-                )
-            } ?: ExifInterface.ORIENTATION_NORMAL
-        } catch (e: Throwable) {
-            ExifInterface.ORIENTATION_NORMAL
-        }
-        val degrees = when (orientation) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
+        val degrees = exifDegrees(uri)
         if (degrees != 0f) {
             val m = Matrix().apply { postRotate(degrees) }
             val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
@@ -971,7 +959,66 @@ class LibraryRepository(context: Context) {
         return Pair(name, aspect)
     }
 
-    // ---------- القراءة الضوئية ----------
+    /** زاوية تدوير الصورة كما تحفظها الكاميرا (EXIF). */
+    private fun exifDegrees(uri: Uri): Float {
+        val orientation = try {
+            resolver.openInputStream(uri)?.use {
+                ExifInterface(it).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        } catch (e: Throwable) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+        return when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+    }
+
+    /**
+     * يقرأ صورة لتصبح صفحة: أطول ضلع لها maxSide على الأكثر، باتجاهها الصحيح،
+     * ومضغوطة JPEG (الشفافية تصير بيضاء). يعيد (البايتات، العرض، الارتفاع).
+     */
+    private fun pageJpeg(uri: Uri, maxSide: Int): Triple<ByteArray, Int, Int> {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException(L("صورة غير صالحة", "Invalid image"))
+        var sample = 1
+        // نصغّر عند القراءة ما دامت النتيجة تبقى قريبة من الحد، ثم نصغّر بدقة إلى الحد
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide * 3 / 4) sample *= 2
+        var bmp = resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: throw IOException(L("تعذر قراءة الصورة", "Could not read the image"))
+        try {
+            val k = minOf(1f, maxSide.toFloat() / maxOf(bmp.width, bmp.height))
+            val degrees = exifDegrees(uri)
+            if (k < 1f || degrees != 0f) {
+                val m = Matrix().apply {
+                    postScale(k, k)
+                    postRotate(degrees)
+                }
+                val t = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+                if (t !== bmp) bmp.recycle()
+                bmp = t
+            }
+            if (bmp.hasAlpha()) {
+                val flat = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+                flat.eraseColor(android.graphics.Color.WHITE)
+                android.graphics.Canvas(flat).drawBitmap(bmp, 0f, 0f, null)
+                bmp.recycle()
+                bmp = flat
+            }
+            val out = java.io.ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            return Triple(out.toByteArray(), bmp.width, bmp.height)
+        } finally {
+            bmp.recycle()
+        }
+    }
 
     // ---------- بنية الصفحات (إضافة صفحات وملفات) ----------
 
@@ -1060,6 +1107,149 @@ class LibraryRepository(context: Context) {
         )
         makeThumbnail(entry)
         return entry
+    }
+
+    /**
+     * ملاحظة من صور: كل صورة صفحة على مقاسها (العرض عرض A4 والارتفاع حسب الصورة).
+     * progress(رقم الصورة) قبل كل صورة؛ cancelled() يوقف الإنشاء. يعيد (المستند، عدد الصور التي تعذرت قراءتها).
+     * خارج الخيط الرئيسي.
+     */
+    fun createNoteFromImages(
+        name: String,
+        uris: List<Uri>,
+        folder: String,
+        progress: (Int) -> Unit,
+        cancelled: () -> Boolean
+    ): Pair<DocEntry, Int> {
+        val id = UUID.randomUUID().toString()
+        val fileName = "$id.pdf"
+        val dest = File(docsDir, fileName)
+        var pages = 0
+        var failed = 0
+        try {
+            dest.outputStream().use { os ->
+                val w = ImagePdfWriter(os)
+                for ((i, u) in uris.withIndex()) {
+                    if (cancelled()) throw java.util.concurrent.CancellationException()
+                    progress(i)
+                    val img = try {
+                        pageJpeg(u, IMAGE_PAGE_MAX)
+                    } catch (t: Throwable) {
+                        failed++
+                        null
+                    } ?: continue
+                    val (jpeg, iw, ih) = img
+                    val pw = 595f
+                    // صورة بانورامية أو طويلة جدًا: نحد شكل الصفحة ونضع الصورة في وسطها
+                    val ph = (pw * ih / iw).coerceIn(pw / 4f, pw * 4f)
+                    val k = minOf(pw / iw, ph / ih)
+                    val dw = iw * k
+                    val dh = ih * k
+                    w.addPage(jpeg, iw, ih, pw, ph, (pw - dw) / 2f, (ph - dh) / 2f, dw, dh)
+                    pages++
+                }
+                if (pages == 0) throw IOException(L("تعذرت قراءة الصور", "Could not read the images"))
+                w.finish()
+            }
+            if (probePageCount(dest) != pages) throw IOException(L("تعذر إنشاء الملاحظة", "Could not create the note"))
+            val entry = DocEntry(
+                id = id,
+                name = name.trim().ifBlank { L("ملاحظة من الصور", "Photo note") },
+                type = DocType.PDF,
+                fileName = fileName,
+                sizeBytes = dest.length(),
+                pageCount = pages,
+                addedAt = System.currentTimeMillis(),
+                lastOpened = 0L,
+                favorite = false,
+                lastPage = 0,
+                isNote = true,
+                folder = folder
+            )
+            makeThumbnail(entry)
+            return Pair(entry, failed)
+        } catch (t: Throwable) {
+            dest.delete()
+            throw t
+        }
+    }
+
+    /** نسبة عرض كل صفحة إلى ارتفاعها في ملف PDF. */
+    private fun pageRatios(f: File): List<Float> {
+        val pfd = ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
+        try {
+            val r = PdfRenderer(pfd)
+            try {
+                return (0 until r.pageCount).map { i ->
+                    val p = r.openPage(i)
+                    try {
+                        if (p.height > 0) p.width.toFloat() / p.height.toFloat() else 0.707f
+                    } finally {
+                        p.close()
+                    }
+                }
+            } finally {
+                r.close()
+            }
+        } finally {
+            pfd.close()
+        }
+    }
+
+    /**
+     * يجمع عدة ملفات PDF في مستند واحد بترتيبها: أول ملف سليم هو ملف المستند الأساسي،
+     * والباقي أجزاء مضافة (part:) كما في «إضافة صفحات من ملف».
+     * progress(رقم الملف، النسبة، المرحلة). يعيد (المستند، صفحاته بالترتيب، عدد الملفات التي تعذرت).
+     * على المستدعي حفظ الصفحات (savePages) قبل فتح المستند. خارج الخيط الرئيسي.
+     */
+    fun importMerged(
+        uris: List<Uri>,
+        name: String,
+        folder: String,
+        progress: (Int, Float, String) -> Unit,
+        cancelled: () -> Boolean
+    ): Triple<DocEntry, List<PageRef>, Int> {
+        var main: DocEntry? = null
+        val pages = ArrayList<PageRef>()
+        var failed = 0
+        var size = 0L
+        try {
+            for ((i, u) in uris.withIndex()) {
+                if (cancelled()) throw java.util.concurrent.CancellationException()
+                try {
+                    val m = main
+                    if (m == null) {
+                        val e = importFile(u, { f, ph -> progress(i, f, ph) }, cancelled)
+                        main = e
+                        pages += pageRatios(file(e)).mapIndexed { k, r -> PageRef("main", k, r) }
+                        size += e.sizeBytes
+                    } else {
+                        progress(i, 0.2f, L("نسخ الملف…", "Copying the file…"))
+                        val part = importPart(m.id, u)
+                        val f = File(partsDir(m.id), part.first)
+                        progress(i, 0.85f, L("قراءة الصفحات…", "Reading the pages…"))
+                        pages += pageRatios(f).mapIndexed { k, r -> PageRef("part:" + part.first, k, r) }
+                        size += f.length()
+                        progress(i, 1f, L("تم", "Done"))
+                    }
+                } catch (c: java.util.concurrent.CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    failed++
+                }
+            }
+            val m = main ?: throw IOException(L("تعذر الاستيراد. تأكد أن الملفات PDF سليمة.", "Import failed. Make sure the files are valid PDFs."))
+            val entry = m.copy(
+                name = name.trim().ifBlank { m.name },
+                pageCount = pages.size,
+                sizeBytes = size,
+                folder = folder
+            )
+            return Triple(entry, pages, failed)
+        } catch (t: Throwable) {
+            main?.let { delete(it) }
+            throw t
+        }
     }
 
     /** يعيد كتابة نتائج القراءة الضوئية كلها (بعد إزاحة أرقام الصفحات). خارج الخيط الرئيسي. */

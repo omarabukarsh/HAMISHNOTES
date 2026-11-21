@@ -507,7 +507,7 @@ private fun ImportProgressDialog() {
             androidx.compose.material3.CircularProgressIndicator(Modifier.size(40.dp), color = Palette.Navy, strokeWidth = 3.5.dp)
             Spacer(Modifier.height(12.dp))
             Text(
-                if (p.count > 1) L("جارٍ إضافة الملفات (${p.index + 1} من ${p.count})…", "Adding files (${p.index + 1} of ${p.count})…")
+                p.title ?: if (p.count > 1) L("جارٍ إضافة الملفات (${p.index + 1} من ${p.count})…", "Adding files (${p.index + 1} of ${p.count})…")
                 else L("جارٍ إضافة الملف…", "Adding the file…"),
                 fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary
             )

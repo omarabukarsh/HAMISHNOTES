@@ -102,7 +102,13 @@ fun LibraryScreen() {
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris: List<Uri> -> c.importDocuments(uris) }
+    ) { uris: List<Uri> ->
+        // ملف واحد يُستورد مباشرة؛ عدة ملفات تفتح نافذة: مستند واحد أم كل ملف وحده
+        when {
+            uris.size > 1 -> ComposeImport.pdfs = uris
+            uris.isNotEmpty() -> c.importDocuments(uris)
+        }
+    }
     val mimes = remember {
         DocType.values().filter { it.supported }.map { it.mime }.toTypedArray()
     }
@@ -270,6 +276,7 @@ fun LibraryScreen() {
         )
     }
 
+    ComposeImportHost(initialFolder = c.libraryFolder.orEmpty())
     if (showNewMap) NewMapDialog(initialFolder = c.libraryFolder.orEmpty()) { showNewMap = false }
     if (showNewCard) NewLooseCardDialog(initialFolder = c.libraryFolder.orEmpty()) { showNewCard = false }
     CardDeck.openDeck?.let { d -> DeckDialog(if (d == CardDeck.ALL) null else d) { CardDeck.openDeck = null } }

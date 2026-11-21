@@ -91,7 +91,7 @@ struct PagesDrawer: View {
                         } label: {
                             PhIcon(icon, tab == k ? Palette.navy : Palette.textSecondary, 20)
                                 .frame(width: 46, height: 34)
-                                .background(RoundedRectangle(cornerRadius: 9).fill(tab == k ? Color.white : Color.clear))
+                                .background(RoundedRectangle(cornerRadius: 9).fill(tab == k ? SegOnBg : Color.clear))
                         }
                     }
                 }
@@ -856,7 +856,7 @@ private struct GalleryTile: View {
             PhotoGallery.shared.full(asset) { if let img = $0 { onPick(img) } }
         } label: {
             ZStack {
-                Color.white
+                CardBg
                 if let img = image { Image(uiImage: img).resizable().scaledToFill() }
             }
             .frame(height: 78).frame(maxWidth: .infinity)

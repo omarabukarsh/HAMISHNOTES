@@ -711,7 +711,7 @@ struct AutoFontSheet: View {
                             }
                             Text(sample).font(store.font(af.font, size: 30) ?? Fonts.sans(30)).foregroundColor(Palette.textPrimary).lineLimit(1)
                                 .frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.vertical, 14)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: 0xFFF7F8FA)))
+                                .background(RoundedRectangle(cornerRadius: 14).fill(ThemeState.light ? Color(hex: 0xFFF7F8FA) : Color(hex: 0xFF22262E)))
                                 .padding(.horizontal, 16).padding(.bottom, 14)
                                 .task(id: af.font) { await store.ensure(af.font) }
                             if ink {
@@ -852,7 +852,7 @@ struct FontPickerSheet: View {
                 TextField(L("ابحث في \(store.catalog.count) خطاً", "Search \(store.catalog.count) fonts"), text: $query).font(Fonts.sans(15))
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: 0xFFE6E8EC)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(ThemeState.light ? Color(hex: 0xFFE6E8EC) : Color(hex: 0xFF2A2E37)))
             .padding(.horizontal, 16)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -860,7 +860,7 @@ struct FontPickerSheet: View {
                         let sel = tab == k && query.isEmpty
                         Button { tab = k; query = "" } label: {
                             Text(label).font(Fonts.sans(14, sel ? .semibold : .regular)).foregroundColor(sel ? .white : Palette.textPrimary)
-                                .padding(.horizontal, 14).padding(.vertical, 7).background(Capsule().fill(sel ? Palette.navy : Color.white))
+                                .padding(.horizontal, 14).padding(.vertical, 7).background(Capsule().fill(sel ? Palette.navy : CardBg))
                         }
                     }
                 }
@@ -917,7 +917,7 @@ struct FontPickerSheet: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(sel ? Color(hex: 0xFFF1F4FA) : Color.clear)
+            .background(sel ? (ThemeState.light ? Color(hex: 0xFFF1F4FA) : Palette.navySoft) : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

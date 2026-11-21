@@ -33,6 +33,7 @@ private final class TouchOriginRecognizer: UIGestureRecognizer, UIGestureRecogni
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         if let t = touches.first, let v = view { TouchOrigin.record(t.location(in: v)) }
+        if touches.contains(where: { $0.type == .pencil }) { PalmGuard.notePencil() }
         state = .failed
     }
 
@@ -262,5 +263,88 @@ extension AnyTransition {
     static var selectionMark: AnyTransition {
         let m = AnyTransition.scale(scale: 0.2).combined(with: .opacity)
         return .asymmetric(insertion: m.animation(Motion.grow), removal: m.animation(Motion.soft))
+    }
+}
+
+// MARK: - الخروج من حافة الزر (EdgeMenu في أندرويد)
+
+/// عرض الفتحة نسبة إلى عرض الزر: أضيق منه كي تبدو النافذة كأنها تدخل فيه فعلًا.
+let edgeSlitRatio: CGFloat = 0.4
+
+enum EdgeMotion {
+    /// الفتح: تسارع ثم تباطؤ قوي (EmphasizedDecelerate) في 420ms.
+    static let open = Animation.timingCurve(0.05, 0.7, 0.1, 1, duration: 0.42)
+    /// الانثناء بزمن خطي في 520ms؛ منحنيات المرحلتين تُحسب في الرسم كي لا تتوقف الحركة بينهما.
+    static let closeDuration: Double = 0.52
+    static let close = Animation.linear(duration: closeDuration)
+}
+
+/// نافذة تخرج من فتحة في حافتها العليا وتكبر، وعند الإغلاق تنثني كالقمع وتُسحب داخل الفتحة.
+/// الرسم كله على معالج الرسوميات (EdgeFold.metal): لا شرائح ولا لقطات، والحواف منحنيات ناعمة.
+/// p: تقدّم الفتح، c: تقدّم الانثناء. الفتحة إما بإحداثيات النافذة (localX) أو بإحداثيات الشاشة (globalX).
+struct EdgeFold: ViewModifier, Animatable {
+    var p: CGFloat
+    var c: CGFloat
+    var localX: CGFloat? = nil
+    var globalX: CGFloat? = nil
+    var slitWidth: CGFloat = 18
+    var radius: CGFloat = 18
+    /// ظل النافذة يُرسم هنا ويظهر فقط في آخر الفتح (ظل شكلٍ يتغير في كل إطار مكلف).
+    var shadow = true
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(p, c) }
+        set { p = newValue.first; c = newValue.second }
+    }
+
+    func body(content: Content) -> some View {
+        let active = !(p >= 0.999 && c <= 0.0001)
+        let pp = Float(min(1, max(0, p)))
+        let cc = Float(min(1, max(0, c)))
+        let lx = localX
+        let gx = globalX
+        let half = slitWidth / 2
+        let rad = Float(radius)
+        let shadowAlpha = (shadow && c <= 0.0001) ? 0.16 * Double(min(1, max(0, (p - 0.85) / 0.15))) : 0
+        return content
+            .visualEffect { v, g in
+                let w = g.size.width
+                let f = g.frame(in: .global)
+                let center = lx ?? (gx.map { $0 - f.minX } ?? w / 2)
+                let cx = min(max(center, half), max(half, w - half))
+                return v.distortionEffect(
+                    ShaderLibrary.edgeFold(.float2(g.size), .float(cx - half), .float(cx + half), .float(pp), .float(cc), .float(rad)),
+                    maxSampleOffset: g.size,
+                    isEnabled: active
+                )
+            }
+            .shadow(color: .black.opacity(shadowAlpha), radius: 14, y: 6)
+    }
+}
+
+/// المحتوى يظهر بعد أن يتسع إطار النافذة، ويبقى كما هو أثناء الانثناء.
+struct EdgeContentFade: ViewModifier, Animatable {
+    var p: CGFloat
+    var c: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(p, c) }
+        set { p = newValue.first; c = newValue.second }
+    }
+
+    func body(content: Content) -> some View {
+        content.opacity(c > 0 ? 1 : Double(min(1, max(0, (p - 0.3) / 0.4))))
+    }
+}
+
+extension AnyTransition {
+    /// نافذة الصور والملصقات: تخرج من فتحة في حافتها العليا عند الزر، وتنثني عائدة إليها.
+    static func edgeTray(_ point: CGPoint?) -> AnyTransition {
+        let x = point?.x
+        let open = AnyTransition.modifier(active: EdgeFold(p: 0, c: 0, globalX: x, radius: 22, shadow: false),
+                                          identity: EdgeFold(p: 1, c: 0, globalX: x, radius: 22, shadow: false))
+        let close = AnyTransition.modifier(active: EdgeFold(p: 1, c: 1, globalX: x, radius: 22, shadow: false),
+                                           identity: EdgeFold(p: 1, c: 0, globalX: x, radius: 22, shadow: false))
+        return .asymmetric(insertion: open.animation(EdgeMotion.open), removal: close.animation(EdgeMotion.close))
     }
 }

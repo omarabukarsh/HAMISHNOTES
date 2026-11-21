@@ -82,13 +82,13 @@ private struct ReaderContent: View {
                     .animation(Motion.enter, value: s.drawerOpen)
                     .animation(Motion.enter, value: s.summaryOpen)
                     .animation(Motion.enter, value: s.pageMenuOpen)
-                    // نافذة الصور والملصقات تكبر من زرها وتنكمش إليه
+                    // نافذة الصور والملصقات تخرج من فتحة عند زرها وتنثني عائدة إليها (مثل نوافذ الشريط)
                     let photosFrom = trayOrigins.point("photos", shown: s.trayMode == "photos")
                     let stickersFrom = trayOrigins.point("stickers", shown: s.trayMode == "stickers")
                     ZStack {
                         if let mode = s.trayMode {
                             SideTray(session: s, mode: mode).id(mode)
-                                .transition(.tray(mode == "photos" ? photosFrom : stickersFrom))
+                                .transition(.edgeTray(mode == "photos" ? photosFrom : stickersFrom))
                         }
                     }
                     .animation(Motion.enter, value: s.trayMode)
@@ -439,7 +439,7 @@ private struct ReaderTopBar: View {
                                 app.say(.tip, L("أحِط بالقلم حول ما تريد تحديده، ونقرة ثانية على الزر لإعداداته", "Draw around what you want to select; tap the button again for options"))
                             }
                         }) { PhIcon(app.lassoRect ? "ph_select_rect" : "ph_lasso", chromeTint(app.lassoActive)) }
-                        .dropdown(isPresented: $lassoMenu) {
+                        .dropdown(isPresented: $lassoMenu, fromEdge: true) {
                             LassoMenuContent(session: s, sheet: $sheet, onClose: { lassoMenu = false }, onOff: { lassoMenu = false; app.lassoActive = false; s.lassoSel = nil }).environmentObject(app)
                         }
                     }
@@ -511,7 +511,7 @@ private struct ReaderTopBar: View {
                                 app.say(.tip, L("انقر على الصفحة حيث تريد الكتابة، ونقرة ثانية على الزر لإعدادات النص", "Tap the page where you want to type; tap the button again for text options"))
                             }
                         }) { PhIcon("ph_text", chromeTint(on)) }
-                        .dropdown(isPresented: $textMenu) {
+                        .dropdown(isPresented: $textMenu, fromEdge: true) {
                             TextToolWindow(session: s, onTurnOff: { textMenu = false; app.textActive = false; s.finishInlineEdit() })
                                 .environmentObject(app)
                         }
@@ -630,7 +630,7 @@ private struct ReaderTopBar: View {
         TBtn(selected: selected, action: {
             if selected { settingsFor = id } else { app.selectToolWithHint(t) }
         }) { ToolGlyph(tool: t, selected: selected) }
-        .dropdown(isPresented: Binding(get: { settingsFor == id && selected }, set: { if !$0 { settingsFor = nil } })) {
+        .dropdown(isPresented: Binding(get: { settingsFor == id && selected }, set: { if !$0 { settingsFor = nil } }), fromEdge: true) {
             ToolSettingsPanel(onCustomColor: { settingsFor = nil; sheet = .colorPicker })
                 .environmentObject(app)
         }
@@ -682,7 +682,7 @@ private struct PenBar: View {
             ForEach([inkPen, .pencil, .highlighter], id: \.self) { pt in
                 let sel = pt == t
                 TBtn(selected: sel, action: { if sel { more = true } else { app.pickLeft(); app.shapeActive = false; app.selectTool(pt) } }) { ToolGlyph(tool: pt, selected: sel) }
-                    .dropdown(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } })) {
+                    .dropdown(isPresented: Binding(get: { more && sel }, set: { if !$0 { more = false } }), fromEdge: true) {
                         ToolSettingsPanel(onCustomColor: { more = false; sheet = .colorPicker })
                             .environmentObject(app)
                     }
@@ -796,7 +796,7 @@ struct ColorDots: View {
             }
             Button { allOpen = true } label: { PhIcon("ph_plus", Palette.chromeMuted, 18, L("كل الألوان", "All colors")).frame(width: 42, height: 42).contentShape(Rectangle()) }
                 .padding(.horizontal, 2)
-                .popover(isPresented: $allOpen) {
+                .dropdown(isPresented: $allOpen, fromEdge: true) {
                     VStack(alignment: .leading, spacing: 12) {
                         LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 14), count: 6), spacing: 12) {
                             ForEach(all, id: \.self) { col in
@@ -812,7 +812,6 @@ struct ColorDots: View {
                         }
                     }
                     .padding(16)
-                    .presentationCompactAdaptation(.popover)
                 }
         }
     }
@@ -869,7 +868,7 @@ struct SizeSlots: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(sel ? Palette.navySoft : Color.clear))
                         .padding(.horizontal, 2)
                 }
-                .dropdown(isPresented: Binding(get: { editing == i }, set: { if !$0 { editing = nil } })) {
+                .dropdown(isPresented: Binding(get: { editing == i }, set: { if !$0 { editing = nil } }), fromEdge: true) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(L("الحجم \(i + 1)", "Size \(i + 1)")).font(Fonts.sans(15, .bold)).foregroundColor(Palette.textPrimary)
@@ -948,7 +947,7 @@ private struct ShapeBar: View {
                 .padding(.horizontal, 2)
             }
             .buttonStyle(PressScale())
-            .dropdown(isPresented: $settings) {
+            .dropdown(isPresented: $settings, fromEdge: true) {
                 ShapeSettingsWindow(onClose: { settings = false }, onCustom: { settings = false; picker = true }).environmentObject(app)
             }
             ToolbarSep()
@@ -1471,7 +1470,7 @@ private struct LinkSheet: View {
                 if sel { PhIcon("ph_check", Palette.navy, 16) }
             }
             .padding(10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navySoft : Color.white))
+            .background(RoundedRectangle(cornerRadius: 10).fill(sel ? Palette.navySoft : CardBg))
         }
     }
 }

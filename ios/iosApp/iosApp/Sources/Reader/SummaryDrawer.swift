@@ -48,7 +48,7 @@ struct SummaryDrawer: View {
                         Text(L("خريطة", "Map")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
                     }
                     .padding(.horizontal, 11).padding(.vertical, 6)
-                    .background(Capsule().fill(LinearGradient(colors: [Color(hex: 0xFFFFF6DD), Palette.goldSoft], startPoint: .leading, endPoint: .trailing)))
+                    .background(Capsule().fill(LinearGradient(colors: [ThemeState.light ? Color(hex: 0xFFFFF6DD) : Palette.goldSoft, Palette.goldSoft], startPoint: .leading, endPoint: .trailing)))
                     .overlay(Capsule().stroke(Palette.gold, lineWidth: 1))
                 }
                 Button { app.openDeck = "doc:" + s.id } label: {
@@ -87,7 +87,7 @@ struct SummaryDrawer: View {
                                     Text(app.labelOf(col)).font(Fonts.sans(13)).foregroundColor(sel ? .white : Palette.textPrimary).lineLimit(1).fixedSize()
                                 }
                                 .padding(.horizontal, 12).padding(.vertical, 7)
-                                .background(Capsule().fill(sel ? Palette.navy : Color.white))
+                                .background(Capsule().fill(sel ? Palette.navy : CardBg))
                                 .overlay(Capsule().stroke(sel ? Palette.navy : Palette.divider, lineWidth: 1))
                             }
                         }

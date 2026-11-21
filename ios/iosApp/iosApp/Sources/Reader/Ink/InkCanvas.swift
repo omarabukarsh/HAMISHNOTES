@@ -52,6 +52,7 @@ final class InkInput: UIGestureRecognizer {
         }
         guard let t = picked else { return }
         touch = t
+        if t.type == .pencil { PalmGuard.pencil(down: true) }
         c.beginStroke(t, event)
         state = .began
     }
@@ -69,6 +70,7 @@ final class InkInput: UIGestureRecognizer {
             return
         }
         canvas?.endStroke(t, event)
+        if t.type == .pencil { PalmGuard.pencil(down: false) }
         touch = nil
         state = .ended
     }
@@ -76,6 +78,7 @@ final class InkInput: UIGestureRecognizer {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let t = touch, touches.contains(t) else { return }
         canvas?.cancelStroke()
+        if t.type == .pencil { PalmGuard.pencil(down: false) }
         touch = nil
         state = .cancelled
     }
@@ -492,4 +495,25 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
         staticView.strokes = cur
         redraw(dirty)
     }
+}
+
+/// راحة اليد على الشاشة أثناء الكتابة بالقلم (PalmGuard في أندرويد): لا يفتح الضغط المطوّل نافذة دون قصد
+/// ما دام القلم يكتب أو استُخدم في آخر ثانية ونصف، أو كانت اللمسة واسعة كراحة اليد.
+enum PalmGuard {
+    private(set) static var pencilDown = false
+    private static var lastPencil: CFTimeInterval = 0
+
+    static func pencil(down: Bool) {
+        pencilDown = down
+        lastPencil = CACurrentMediaTime()
+    }
+
+    static func notePencil() { lastPencil = CACurrentMediaTime() }
+
+    static func pencilRecently(_ seconds: CFTimeInterval = 1.5) -> Bool {
+        pencilDown || CACurrentMediaTime() - lastPencil < seconds
+    }
+
+    /// لمسة أعرض من 18 مم تقريبًا (نصف قطرها أكبر من 40 نقطة): راحة يد لا إصبع.
+    static func palmLike(_ t: UITouch) -> Bool { t.majorRadius > 40 }
 }

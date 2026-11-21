@@ -3,10 +3,15 @@ import SwiftUI
 // عناصر نوافذ الأدوات بتصميم البطاقات (نفس BeautifySettings.kt وToolWindows.kt في أندرويد 1.0.271):
 // خلفية رمادية فاتحة، بطاقات بيضاء بحواف 18، عناوين صغيرة رمادية، مفاتيح وشرائح اختيار.
 
-let SheetBg = Color(hex: 0xFFF2F3F6)
-let CardBg = Color.white
-let RowDividerColor = Color(hex: 0xFFE9EBEF)
-let Muted = Color(hex: 0xFF8A919E)
+// ألوان نوافذ الأدوات: فاتحة في المظهر الفاتح، وداكنة في الوضع الليلي (لا نوافذ بيضاء ليلًا)
+var SheetBg: Color { ThemeState.light ? Color(hex: 0xFFF2F3F6) : Color(hex: 0xFF1E2128) }
+var CardBg: Color { ThemeState.light ? Color.white : Color(hex: 0xFF272B34) }
+var RowDividerColor: Color { ThemeState.light ? Color(hex: 0xFFE9EBEF) : Color(hex: 0xFF343843) }
+var Muted: Color { ThemeState.light ? Color(hex: 0xFF8A919E) : Color(hex: 0xFF9AA3B2) }
+/// مسار المفاتيح والأزرار المقسّمة.
+var TrackBg: Color { ThemeState.light ? Color(hex: 0xFFEEF0F3) : Color(hex: 0xFF181B21) }
+/// الخيار المختار داخل مسار مقسّم.
+var SegOnBg: Color { ThemeState.light ? Color.white : Palette.navySoft }
 
 struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
@@ -106,7 +111,7 @@ struct CardSegmented<T: Hashable>: View {
             }
         }
         .padding(3)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: 0xFFEEF0F3)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(TrackBg))
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
 }
@@ -141,7 +146,7 @@ struct RoundButton: View {
     var body: some View {
         Button(action: action) {
             Text(label).font(.system(size: 18)).foregroundColor(Palette.navy)
-                .frame(width: 30, height: 30).background(Circle().fill(Color(hex: 0xFFEEF0F3)))
+                .frame(width: 30, height: 30).background(Circle().fill(TrackBg))
         }
         .buttonStyle(PressScale())
     }

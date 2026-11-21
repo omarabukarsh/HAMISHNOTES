@@ -280,9 +280,9 @@ private let mapPalette: [UInt32] = [0xFF1B365D, 0xFF2E7D5B, 0xFF8C6A1F, 0xFF2F5F
 func mapBranchColor(_ i: Int) -> Color { Color(hex: mapPalette[((i % mapPalette.count) + mapPalette.count) % mapPalette.count]) }
 private let mapCenterTop = Color(hex: 0xFF2C4F80)
 private let mapCenterDeep = Color(hex: 0xFF0D1D35)
-private let mapDot = Color(hex: 0xFFE4DFD3)
-private let ghostBg = Color(hex: 0xFFFFF8E6)
-private let ghostInk = Color(hex: 0xFF6B5418)
+private var mapDot: Color { ThemeState.light ? Color(hex: 0xFFE4DFD3) : Color(hex: 0xFF3A3F4B) }
+private var ghostBg: Color { ThemeState.light ? Color(hex: 0xFFFFF8E6) : Palette.goldSoft }
+private var ghostInk: Color { ThemeState.light ? Color(hex: 0xFF6B5418) : Palette.goldDeep }
 private let barDark = Color(hex: 0xFF1A2230)
 let freeInk = Color(hex: 0xFF6D4AC2)
 
@@ -523,12 +523,12 @@ private struct MapCanvas: View {
     private func branchNode(_ n: MapNode, col: Color, right: Bool, ghost: Bool, ts: CGSize) -> some View {
         let sel = selectedKey == n.key
         return ZStack(alignment: right ? .topTrailing : .topLeading) {
-            nodeText(n.text, Fonts.display(15), lineHeight: 23, base: 15, color: ghost ? ghostInk : Palette.navy)
+            nodeText(n.text, Fonts.display(15), lineHeight: 23, base: 15, color: ghost ? ghostInk : (ThemeState.light ? Palette.navy : Palette.textPrimary))
                 .frame(width: ts.width, alignment: .leading)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 16).fill(ghost ? ghostBg : Color.white)
+                    RoundedRectangle(cornerRadius: 16).fill(ghost ? ghostBg : CardBg)
                         .shadow(color: .black.opacity(ghost ? 0 : 0.12), radius: 5, y: 2)
                 )
                 .overlay(alignment: right ? .leading : .trailing) {
@@ -558,7 +558,7 @@ private struct MapCanvas: View {
             .frame(width: ts.width, alignment: .leading)
             .padding(.horizontal, 12).padding(.vertical, 7)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12).fill(ghost ? ghostBg : (kid || sel ? Color.white : col.opacity(0.08))))
+            .background(RoundedRectangle(cornerRadius: 12).fill(ghost ? ghostBg : (kid || sel ? CardBg : col.opacity(0.08))))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(ghost ? Palette.gold : (sel ? Palette.gold : (n.isFree ? freeInk : col.opacity(0.22))),
@@ -581,7 +581,7 @@ private struct MapCanvas: View {
         }
         .padding(.leading, 4).padding(.trailing, e.label != nil ? 12 : 4).padding(.vertical, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Capsule().fill(on ? Palette.gold : Color.white))
+        .background(Capsule().fill(on ? Palette.gold : CardBg))
         .overlay(Capsule().stroke(on ? Palette.goldDeep : Color(hex: 0xFFB8A36A), style: StrokeStyle(lineWidth: 1.5, dash: on ? [] : [6, 4])))
         .contentShape(Capsule())
         .onTapGesture { if let t = e.target { onTarget(t) } }
@@ -789,13 +789,13 @@ struct MindMapView: View {
                         Text(L("تصدير", "Export")).font(Fonts.sans(13, .bold)).foregroundColor(Palette.goldDeep)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(LinearGradient(colors: [Color(hex: 0xFFFFF6DD), Palette.goldSoft], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    .background(RoundedRectangle(cornerRadius: 12).fill(LinearGradient(colors: [ThemeState.light ? Color(hex: 0xFFFFF6DD) : Palette.goldSoft, Palette.goldSoft], startPoint: .topLeading, endPoint: .bottomTrailing)))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.gold, lineWidth: 1))
                 }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .background(Color.white)
+        .background(Palette.surface)
     }
 
     private var addTextHeader: some View {
@@ -809,7 +809,7 @@ struct MindMapView: View {
             cancelButton { addingFree = false; fitted = false }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(Color(hex: 0xFFF1ECFF))
+        .background(ThemeState.light ? Color(hex: 0xFFF1ECFF) : Color(hex: 0xFF2A2440))
     }
 
     private func placingHeader(_ texts: [MindMap.Item]) -> some View {
@@ -828,20 +828,20 @@ struct MindMapView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                .background(RoundedRectangle(cornerRadius: 12).fill(CardBg))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.gold, style: StrokeStyle(lineWidth: 2, dash: [8, 6])))
             }
             cancelButton { cancelPlacing() }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(LinearGradient(colors: [Color(hex: 0xFFFFF6DD), Palette.goldSoft], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(LinearGradient(colors: [ThemeState.light ? Color(hex: 0xFFFFF6DD) : Palette.goldSoft, Palette.goldSoft], startPoint: .topLeading, endPoint: .bottomTrailing))
     }
 
     private func cancelButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(L("إلغاء", "Cancel")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.navy)
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                .background(RoundedRectangle(cornerRadius: 12).fill(CardBg))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
         }
     }
@@ -873,7 +873,7 @@ struct MindMapView: View {
     private func hint(_ t: String) -> some View {
         Text(t).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 12).fill(CardBg))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.divider, lineWidth: 1))
     }
 
@@ -942,7 +942,7 @@ struct MindMapView: View {
     private var emptyMap: some View {
         VStack(spacing: 6) {
             PhIcon("ph_mindmap", Palette.gold, 56)
-            Text(L("خريطتك فارغة", "Your map is empty")).font(Fonts.display(20)).foregroundColor(Palette.navy).padding(.top, 6)
+            Text(L("خريطتك فارغة", "Your map is empty")).font(Fonts.display(20)).foregroundColor(ThemeState.light ? Palette.navy : Palette.textPrimary).padding(.top, 6)
             Text(standalone ? L("اكتب أول فرع في خريطتك.", "Write the first branch of your map.")
                  : L("من الملخصات ← «كما التُقط»: اضغط نصًا واختر «ضعه في الخريطة»، أو اكتب نصًا حرًا هنا.",
                      "In Summaries → “As captured”: tap a text and choose “Place on the map”, or write a free text here."))

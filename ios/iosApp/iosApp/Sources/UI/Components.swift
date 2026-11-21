@@ -74,7 +74,7 @@ struct ChoiceChip: View {
                 .foregroundColor(selected ? .white : Palette.textPrimary)
                 .lineLimit(1).fixedSize()
                 .padding(.horizontal, 15).padding(.vertical, 7)
-                .background(Capsule().fill(selected ? Palette.navy : Color.white))
+                .background(Capsule().fill(selected ? Palette.navy : CardBg))
                 .overlay(Capsule().stroke(selected ? Palette.navy : Palette.divider, lineWidth: 1))
         }
         .buttonStyle(PressScale())
@@ -118,7 +118,7 @@ struct CloseButton: View {
         Button(action: action) {
             PhIcon("ph_close", Palette.textSecondary, 16, L("إغلاق", "Close"))
                 .frame(width: 34, height: 34)
-                .background(Circle().fill(Color(hex: 0xFFE8EBF0)))
+                .background(Circle().fill(ThemeState.light ? Color(hex: 0xFFE8EBF0) : TrackBg))
         }
         .buttonStyle(PressScale())
     }
@@ -362,6 +362,20 @@ struct ToastView: View {
 }
 
 /// نافذة كبيرة في وسط الشاشة (مثل نوافذ أندرويد: 94% من العرض حتى 900 نقطة).
+/// ظل النافذة الكبيرة: يظهر في آخر الفتح فقط، ويختفي فور بدء الإغلاق.
+private struct RestShadow: ViewModifier, Animatable {
+    var p: CGFloat
+
+    var animatableData: CGFloat {
+        get { p }
+        set { p = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.shadow(color: .black.opacity(0.25 * Double(min(1, max(0, (p - 0.92) / 0.08)))), radius: 30, y: 10)
+    }
+}
+
 struct BigSheet<C: View>: ViewModifier {
     @Binding var isPresented: Bool
     /// نسبة العرض والارتفاع من الشاشة (كما في نوافذ أندرويد: fillMaxWidth / fillMaxHeight).
@@ -403,7 +417,8 @@ struct BigSheet<C: View>: ViewModifier {
                         }
                     }
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
+                        // الظل الكبير يُرسم عند الاستقرار فقط: ظل نافذة تكبر يُعاد حسابه في كل إطار وهو مكلف
+                        .modifier(RestShadow(p: p))
                         // تخرج من الزر الذي فُتحت منه وتكبر بنابض (OriginDialog في أندرويد)
                         .modifier(originReveal(p, origin))
                         .position(x: g.size.width / 2, y: g.size.height / 2)
@@ -411,7 +426,8 @@ struct BigSheet<C: View>: ViewModifier {
             }
             .environment(\.colorScheme, .light)
             .presentationBackground(.clear)
-            .onAppear { withAnimation(Motion.origin) { p = 1 } }
+            // الإطار الأول يبني محتوى النافذة الثقيل (مثل الإعدادات) ثم تبدأ الحركة: لا تسقط أول إطاراتها
+            .onAppear { DispatchQueue.main.async { withAnimation(Motion.origin) { p = 1 } } }
             .onDisappear { p = 0 }
         }
         // تظهر النافذة بحركتها الخاصة في مكانها، لا بانزلاق النوافذ الكاملة من الأسفل

@@ -279,7 +279,7 @@ struct TextToolWindow: View {
                     }
                 }
                 .padding(2).frame(height: 42)
-                .background(RoundedRectangle(cornerRadius: 11).fill(Color(hex: 0xFFEEF0F3)))
+                .background(RoundedRectangle(cornerRadius: 11).fill(TrackBg))
                 .padding(.horizontal, 14).padding(.vertical, 12)
                 Text(tp.align == 1 ? L("المحاذاة: الوسط", "Alignment: center") : (tp.align == 2 ? L("المحاذاة: النهاية", "Alignment: end") : L("المحاذاة: البداية", "Alignment: start")))
                     .font(Fonts.sans(12)).foregroundColor(Muted).padding(.horizontal, 16).padding(.bottom, 12)

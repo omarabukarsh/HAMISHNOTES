@@ -209,6 +209,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         press.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         press.delegate = self
         addGestureRecognizer(press)
+        pressRecognizer = press
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(onTap(_:)))
         tap.delegate = self
@@ -426,6 +427,8 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         if touch.view is UIControl { return false }
+        // الضغط المطوّل على الصفحة: لا يبدأ من راحة اليد أثناء الكتابة بالقلم
+        if g === pressRecognizer && (PalmGuard.pencilRecently() || PalmGuard.palmLike(touch)) { return false }
         if let t = g as? UITapGestureRecognizer, t.numberOfTouchesRequired == 1 { lastTouchType = touch.type }
         if g.numberOfTouches > 1 || (g as? UITapGestureRecognizer)?.numberOfTouchesRequired ?? 1 > 1 {
             return AppController.shared.fingerUndo && touch.type == .direct
@@ -958,7 +961,16 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
 
     private var selAnchor: CGPoint?
 
+    /// الضغط المطوّل على الصفحة (تحديد النص أو فقاعة اللصق).
+    private weak var pressRecognizer: UILongPressGestureRecognizer?
+
     @objc private func onPress(_ g: UILongPressGestureRecognizer) {
+        // القلم بدأ يكتب أثناء انتظار الضغط المطوّل (راحة اليد على الشاشة): يُلغى دون أي نافذة
+        if g.state == .began && PalmGuard.pencilRecently() {
+            g.isEnabled = false
+            g.isEnabled = true
+            return
+        }
         guard let s = session, let page = page, let pt = toPdf(g.location(in: content)) else { return }
         // الإصبع يكتب: الضغط المطوّل للكتابة لا للتحديد
         if AppController.shared.fingerWrites && AppController.shared.tool.isWriting { return }

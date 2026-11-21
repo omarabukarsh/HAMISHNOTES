@@ -433,9 +433,9 @@ struct TapeBar: View {
             TBtn(selected: true, action: { app.tapeMenuOpen = true }) {
                 PhIcon("ph_tape", Palette.chromeAccent, 22, L("إعدادات الشريط اللاصق", "Tape settings"))
             }
-            .popover(isPresented: $app.tapeMenuOpen) {
+            // نافذة الإعدادات تخرج من حافة الزر وتنثني إليه (مثل باقي نوافذ الشريط)
+            .dropdown(isPresented: $app.tapeMenuOpen, fromEdge: true) {
                 TapeMenu(session: session).environmentObject(app)
-                    .presentationCompactAdaptation(.popover)
             }
             ToolbarSep()
             ForEach(0..<TapeTool.widths.count, id: \.self) { i in

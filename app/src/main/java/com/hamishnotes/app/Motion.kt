@@ -24,6 +24,8 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.unit.Density
@@ -448,6 +450,7 @@ internal fun Modifier.edgeWindow(fx: EdgeFx, shape: Shape, elevation: Dp): Modif
     val snapshot = rememberGraphicsLayer()
     fx.layer = snapshot
     val mesh = remember { FloatArray((MESH_ROWS + 1) * (MESH_COLS + 1) * 2) }
+    val clipCache = remember { OutlineCache() }
     val density = LocalDensity.current
     val r0 = with(density) { 6.dp.toPx() }
     val r1 = with(density) { 18.dp.toPx() }
@@ -476,8 +479,11 @@ internal fun Modifier.edgeWindow(fx: EdgeFx, shape: Shape, elevation: Dp): Modif
             val p = fx.close.value
             val img = fx.image
             if (p <= 0f || g == null || img == null) {
-                // الرسم العادي عبر تسجيل محفوظ: منه تُلتقط صورة النافذة لحظة الإغلاق
-                snapshot.record { this@drawWithContent.drawContent() }
+                // الرسم العادي عبر تسجيل محفوظ: منه تُلتقط صورة النافذة لحظة الإغلاق.
+                // الزوايا المستديرة تُقص داخل التسجيل نفسه: خلفيات النوافذ مستطيلة وتعتمد على قص الإطار،
+                // وصورة النافذة لا تأخذ ذلك القص، فتظهر زواياها حادة لحظة الانثناء دونه
+                val outlinePath = clipCache.pathFor(size, shape, layoutDirection, this)
+                snapshot.record { clipPath(outlinePath) { this@drawWithContent.drawContent() } }
                 if (p > 0f && g != null) {
                     // الصورة لم تجهز بعد (أو تعذّرت): تلاشٍ سريع
                     drawLayer(snapshot.also { it.alpha = (1f - p * 2f).coerceIn(0f, 1f) })
@@ -518,6 +524,23 @@ internal fun Modifier.edgeWindow(fx: EdgeFx, shape: Shape, elevation: Dp): Modif
             }
             drawIntoCanvas { it.nativeCanvas.drawBitmapMesh(img, MESH_COLS, MESH_ROWS, verts, 0, null, 0, meshPaint) }
         }
+}
+
+/** مسار حدود النافذة (شكلها بزواياه المستديرة)، يُحسب مرة لكل حجم. */
+private class OutlineCache {
+    private var size = Size.Unspecified
+    private var shape: Shape? = null
+    private val path = androidx.compose.ui.graphics.Path()
+
+    fun pathFor(s: Size, sh: Shape, dir: LayoutDirection, d: Density): androidx.compose.ui.graphics.Path {
+        if (s != size || sh != shape) {
+            size = s
+            shape = sh
+            path.reset()
+            path.addOutline(sh.createOutline(s, dir, d))
+        }
+        return path
+    }
 }
 
 private const val MESH_ROWS = 48

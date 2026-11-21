@@ -504,18 +504,13 @@ internal fun Modifier.edgeWindow(fx: EdgeFx, shape: Shape, elevation: Dp): Modif
             val verts = mesh
             for (r in 0..MESH_ROWS) {
                 val dst = r * h / MESH_ROWS - pull * h
-                val y: Float
-                val left: Float
-                val right: Float
-                if (dst <= 0f) {
-                    // ما دخل في الفتحة ينطوي على خطها
-                    y = 0f; left = g.left; right = g.right
-                } else {
-                    val d = smooth5((dst / h).coerceIn(0f, 1f))
-                    y = dst
-                    left = lerpF(0f, lerpF(g.left, 0f, d), bend)
-                    right = lerpF(w, lerpF(g.right, w, d), bend)
-                }
+                // ما دخل في الفتحة (فوق خطها) ينطوي على الخط نفسه بعرض القمع عنده في هذه اللحظة.
+                // الصف الأول (على الخط تمامًا) صف عادي: لو ضُغط إلى عرض الفتحة لانحرفت حافة النافذة
+                // العليا وضاعت زواياها المستديرة في أول الإغلاق.
+                val d = smooth5((dst / h).coerceIn(0f, 1f))
+                val y = maxOf(dst, 0f)
+                val left = lerpF(0f, lerpF(g.left, 0f, d), bend)
+                val right = lerpF(w, lerpF(g.right, w, d), bend)
                 for (c in 0..MESH_COLS) {
                     val i = (r * (MESH_COLS + 1) + c) * 2
                     verts[i] = left + (right - left) * c / MESH_COLS
@@ -543,7 +538,7 @@ private class OutlineCache {
     }
 }
 
-private const val MESH_ROWS = 48
+private const val MESH_ROWS = 64
 private const val MESH_COLS = 2
 private val meshPaint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG)
 

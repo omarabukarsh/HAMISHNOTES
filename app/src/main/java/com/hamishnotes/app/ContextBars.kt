@@ -73,16 +73,25 @@ internal fun CtxBar(content: @Composable RowScope.() -> Unit) {
 internal val LocalCtxReveal = androidx.compose.runtime.staticCompositionLocalOf<() -> Float> { { 1f } }
 
 /**
- * حركة «قطرة الماء»: تنبع قطرة صغيرة من رأس السهم، ترتفع وتتمدد إلى الشريط مع ارتداد خفيف.
- * p من 0 إلى 1 → (عرض، ارتفاع، إزاحة رأسية بوحدات dp، شفافية).
+ * حركة «قطرة الماء» (كفيديو التصميم drop_animation): نقطة صغيرة عند رأس السهم تتمدد بسرعة إلى شريط فارغ
+ * بعرضه الكامل مع ارتداد خفيف، ويبقى فارغًا لحظة، ثم تظهر الأزرار، ثم السهم. بلا حركة رأسية تُذكر.
+ * p من 0 إلى 1 (750ms خطيًا) → (عرض، ارتفاع، إزاحة رأسية بوحدات dp، شفافية).
  */
 private val dropKeys = arrayOf(
-    floatArrayOf(0f, 0.04f, 0.30f, 6f, 0f),
-    floatArrayOf(0.35f, 0.07f, 0.60f, 0f, 1f),
-    floatArrayOf(0.72f, 1.06f, 0.86f, 4f, 1f),
-    floatArrayOf(0.88f, 0.98f, 1.04f, -1f, 1f),
+    floatArrayOf(0f, 0.03f, 0.25f, 0f, 0f),
+    floatArrayOf(0.05f, 0.05f, 0.40f, 0f, 1f),
+    floatArrayOf(0.12f, 0.42f, 0.85f, 0f, 1f),
+    floatArrayOf(0.20f, 1.04f, 0.95f, 0f, 1f),
+    floatArrayOf(0.27f, 0.99f, 1.02f, 0f, 1f),
+    floatArrayOf(0.33f, 1f, 1f, 0f, 1f),
     floatArrayOf(1f, 1f, 1f, 0f, 1f)
 )
+
+/** الأزرار تظهر بعد أن يبقى الشريط فارغًا لحظة (62%..85% من الحركة). */
+internal fun dropReveal(p: Float): Float = ((p - 0.62f) / 0.23f).coerceIn(0f, 1f)
+
+/** السهم آخر شيء (82%..100%). */
+internal fun dropArrow(p: Float): Float = ((p - 0.82f) / 0.18f).coerceIn(0f, 1f)
 
 internal fun dropAt(p: Float): FloatArray {
     val q = p.coerceIn(0f, 1f)
@@ -168,7 +177,7 @@ internal fun AnchoredBar(
         if (visible) {
             // يظهر بعد اكتمال التحديد بلحظة قصيرة
             if (prog.value == 0f) kotlinx.coroutines.delay(120)
-            prog.animateTo(1f, androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+            prog.animateTo(1f, androidx.compose.animation.core.tween(750, easing = androidx.compose.animation.core.LinearEasing))
         } else {
             prog.animateTo(0f, androidx.compose.animation.core.tween(200, easing = androidx.compose.animation.core.FastOutLinearInEasing))
         }
@@ -176,7 +185,7 @@ internal fun AnchoredBar(
     val visible = s.listState.layoutInfo.visibleItemsInfo.any { it.index == page }
     var down by remember { mutableStateOf(true) }
     if (!visible && prog.value == 0f) return
-    val reveal = remember { { ((prog.value - 0.7f) / 0.3f).coerceIn(0f, 1f) } }
+    val reveal = remember { { dropReveal(prog.value) } }
     Layout(
         content = {
             Box(Modifier.size(width = 16.dp, height = 8.dp).background(Palette.ChromeBg, arrowShape(down)))
@@ -221,8 +230,8 @@ internal fun AnchoredBar(
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(ox, if (useBelow) 0f else 1f)
             }
             a.placeWithLayer(ax.roundToInt(), ay.roundToInt(), zIndex = 1f) {
-                alpha = reveal()
-                scaleY = 0.4f + 0.6f * reveal()
+                alpha = dropArrow(prog.value)
+                scaleY = 0.4f + 0.6f * dropArrow(prog.value)
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, if (useBelow) 1f else 0f)
             }
         }

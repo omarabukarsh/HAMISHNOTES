@@ -24,6 +24,17 @@ val storeKeyFile: File? = when {
 }
 val storeBuild = storeKeyFile != null
 
+// صور المتجر من التطبيق نفسه (app/src/test/.../store): تُرسم بالبكسلات الحقيقية على الحاسوب
+val storeShots = setting("storeShots").equals("true", ignoreCase = true)
+tasks.withType<Test>().configureEach {
+    systemProperty("storeShots", storeShots.toString())
+    systemProperty("storeShotsDir", setting("storeShotsDir"))
+    systemProperty("storeShotsInput", setting("storeShotsInput"))
+    if (storeShots) maxHeapSize = "6g"
+    // without the native graphics runtime Robolectric cannot even start this class
+    else filter { excludeTestsMatching("com.hamishnotes.app.store.*"); isFailOnNoMatchingTests = false }
+}
+
 /** بصمة SHA-256 لشهادة المفتاح، ليتحقق التطبيق وقت التشغيل أنه لم يُعَد توقيعه. */
 fun certSha256(file: File, password: String, alias: String): String {
     val ks = KeyStore.getInstance(file, password.toCharArray())
@@ -156,8 +167,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // اختبارات الواجهة على الحاسوب (سحب العناصر من النافذة إلى الصفحة) بلا جهاز
     testImplementation("org.robolectric:robolectric:4.14.1") {
-        // مكتبة الرسم الأصلية (≈160MB) غير لازمة: الاختبارات تقيس المواضع لا البكسلات
-        exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
+        // مكتبة الرسم الأصلية (≈160MB) غير لازمة: الاختبارات تقيس المواضع لا البكسلات.
+        // صور المتجر (StoreScreenshots) وحدها تحتاجها: ./gradlew -PstoreShots=true ...
+        if (!storeShots) exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
     }
     testImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")

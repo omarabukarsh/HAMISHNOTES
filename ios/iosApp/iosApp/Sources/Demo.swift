@@ -186,12 +186,15 @@ enum Demo {
                 c.tapeActive = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { c.tapeMenuOpen = true }
             // الشريط الذي يظهر بضغطة مطوّلة على مكان فارغ في الصفحة (لصق / صورة / …)
+            // على الصفحة الظاهرة (المستند يُفتح على آخر صفحة قُرئت، لا على الأولى)، في مكان فارغ أعلاها
             case "paste":
-                let sz = s.pageSize(0)
-                s.pasteAt = PastePoint(page: 0, at: CGPoint(x: sz.width * 0.5, y: sz.height * 0.52))
+                let pg = s.currentPage
+                let sz = s.pageSize(pg)
+                s.pasteAt = PastePoint(page: pg, at: CGPoint(x: sz.width * 0.5, y: sz.height * 0.06))
             case "anim-paste":
-                let sz = s.pageSize(0)
-                loop(open: { s.pasteAt = PastePoint(page: 0, at: CGPoint(x: sz.width * 0.5, y: sz.height * 0.52)) }, close: { s.pasteAt = nil })
+                let pg = s.currentPage
+                let sz = s.pageSize(pg)
+                loop(open: { s.pasteAt = PastePoint(page: pg, at: CGPoint(x: sz.width * 0.5, y: sz.height * 0.06)) }, close: { s.pasteAt = nil })
             case "anim-stickers": loop(open: { s.trayMode = "stickers" }, close: { s.trayMode = nil })
             case "anim-tape":
                 c.tapeActive = true

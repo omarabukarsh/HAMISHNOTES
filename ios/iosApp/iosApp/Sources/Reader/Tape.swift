@@ -496,7 +496,7 @@ private struct TapeMenu: View {
             Toggle(isOn: $app.tapeStraight) {
                 Text(L("شريط مستقيم", "Straight tape")).font(Fonts.sans(14)).foregroundColor(Palette.textPrimary)
             }
-            .tint(Palette.navy)
+            .toggleStyle(DrawnSwitch())
             menuRow("ph_eye", anyHidden ? L("كشف كل أشرطة الصفحة", "Reveal all tape on the page") : L("إخفاء كل أشرطة الصفحة", "Hide all tape on the page"),
                     Palette.textPrimary, enabled: !list.isEmpty) { session.revealAllTapes(page: pid, anyHidden); app.tapeMenuOpen = false }
             menuRow("ph_trash", L("إزالة كل الأشرطة من الصفحة", "Remove all tape from the page"), Palette.danger, enabled: !list.isEmpty) {

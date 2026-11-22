@@ -189,6 +189,33 @@ struct VReveal: ViewModifier, Animatable {
     }
 }
 
+/// مفتاح مرسوم بـ SwiftUI بشكل مفتاح النظام: يُرسم داخل حركة انثناء النوافذ (EdgeFold)،
+/// أما مفتاح النظام (UISwitch) فيظهر مكانه رمز 🚫 أثناء الحركة.
+struct DrawnSwitch: ToggleStyle {
+    var scale: CGFloat = 1
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.label
+            Spacer(minLength: 0)
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Capsule().fill(configuration.isOn ? Palette.navy : Color.gray.opacity(0.32))
+                Circle().fill(.white).padding(2).shadow(color: .black.opacity(0.18), radius: 1.5, y: 1)
+            }
+            .frame(width: 51, height: 31)
+            .environment(\.layoutDirection, .leftToRight)
+            .scaleEffect(scale)
+            .frame(width: 51 * scale, height: 31 * scale)
+            .animation(Motion.press, value: configuration.isOn)
+            .contentShape(Rectangle())
+            .onTapGesture { configuration.isOn.toggle() }
+            .accessibilityElement()
+            .accessibilityAddTraits(.isButton)
+            .accessibilityValue(configuration.isOn ? "1" : "0")
+        }
+    }
+}
+
 /// كشف شريط عائم من حافته العليا إلى الأسفل (expandVertically في أندرويد) بقناع فقط:
 /// لا يتغير حجمه ولا مكانه أثناء الحركة. f = 0 مخفي، 1 ظاهر كاملًا.
 struct BarReveal: ViewModifier, Animatable {

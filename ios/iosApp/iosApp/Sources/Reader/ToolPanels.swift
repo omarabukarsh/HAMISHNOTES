@@ -16,7 +16,7 @@ struct PanelSwitch: View {
                 if let i = icon { PhIcon(i, Palette.textPrimary, 16) }
                 Text(label).font(Fonts.sans(13)).foregroundColor(Palette.textPrimary).lineLimit(2)
                     .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
-                Toggle("", isOn: $isOn).labelsHidden().tint(Palette.navy).scaleEffect(0.72).frame(width: 40, height: 26)
+                Toggle("", isOn: $isOn).labelsHidden().toggleStyle(DrawnSwitch(scale: 0.72)).frame(width: 40, height: 26)
             }
             .frame(minHeight: 36)
             .contentShape(Rectangle())

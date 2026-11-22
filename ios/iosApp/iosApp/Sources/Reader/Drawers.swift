@@ -557,6 +557,35 @@ private struct ClearItemsSheet: View {
 
 // ---------------------------------------------------------------- درج الملصقات والصور
 
+/// أماكن زرَّي الصور والملصقات على الشاشة: تُفتح النافذة تحت زرها وتخرج منه وتعود إليه.
+enum TrayAnchors {
+    static var rects: [String: CGRect] = [:]
+}
+
+/// النافذة تحت زرها: وسطها على الزر، داخل الشاشة بهامش 12. بلا زر معروف: أعلى اليمين (كما في أندرويد).
+struct TrayPlacement: ViewModifier {
+    let anchor: CGRect?
+    @Environment(\.layoutDirection) private var dir
+
+    func body(content: Content) -> some View {
+        GeometryReader { g in
+            let f = g.frame(in: .global)
+            let w = 290 * Fonts.base
+            let margin: CGFloat = 12
+            let ax = anchor.map { $0.midX - f.minX } ?? (g.size.width - margin - w / 2)
+            let x = min(max(ax - w / 2, margin), max(margin, g.size.width - w - margin))
+            let y = anchor.map { max(margin, $0.maxY - f.minY + 8) } ?? margin
+            content
+                .environment(\.layoutDirection, dir)
+                .frame(maxHeight: max(160, g.size.height - y - margin), alignment: .top)
+                .offset(x: x, y: y)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        // الإزاحة بإحداثيات الشاشة نفسها (لا تنعكس في العربية)
+        .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
 struct SideTray: View {
     @ObservedObject var session: DocSession
     @EnvironmentObject var app: AppController
@@ -637,8 +666,6 @@ struct SideTray: View {
         .frame(maxHeight: 520)
         .background(RoundedRectangle(cornerRadius: 22).fill(Palette.drawerBg))
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .onAppear { TrayDrag.shared.session = session }
         .alert(L("حذف الملصق؟", "Delete sticker?"), isPresented: Binding(get: { deleteSticker != nil }, set: { if !$0 { deleteSticker = nil } })) {
             Button(L("حذف", "Delete"), role: .destructive) { if let f = deleteSticker { StickerStore.shared.delete(f) }; deleteSticker = nil }

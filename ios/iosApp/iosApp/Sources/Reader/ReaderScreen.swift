@@ -42,6 +42,8 @@ private struct ReaderContent: View {
     @State private var pdfPicker = false
     @State private var pdfAfter = 0
     @State private var trayOrigins = OriginMemo()
+    /// آخر نافذة صور/ملصقات فُتحت: تبقى في مكانها أثناء انثنائها بعد الإغلاق
+    @State private var lastTray = "stickers"
 
     var body: some View {
         let s = session
@@ -83,15 +85,19 @@ private struct ReaderContent: View {
                     .animation(Motion.enter, value: s.summaryOpen)
                     .animation(Motion.enter, value: s.pageMenuOpen)
                     // نافذة الصور والملصقات تخرج من فتحة عند زرها وتنثني عائدة إليها (مثل نوافذ الشريط)
-                    let photosFrom = trayOrigins.point("photos", shown: s.trayMode == "photos")
-                    let stickersFrom = trayOrigins.point("stickers", shown: s.trayMode == "stickers")
+                    // تخرج من زرها (أسفل وسطه)، وإن لم يُعرف مكانه فمن مكان اللمسة
+                    let photosFrom = TrayAnchors.rects["photos"].map { CGPoint(x: $0.midX, y: $0.maxY) } ?? trayOrigins.point("photos", shown: s.trayMode == "photos")
+                    let stickersFrom = TrayAnchors.rects["stickers"].map { CGPoint(x: $0.midX, y: $0.maxY) } ?? trayOrigins.point("stickers", shown: s.trayMode == "stickers")
+                    // النافذة وحدها هي التي تنثني (لا الشاشة كلها)، ومكانها تحت زرها (trayPlacement في أندرويد)
                     ZStack {
                         if let mode = s.trayMode {
                             SideTray(session: s, mode: mode).id(mode)
                                 .transition(.edgeTray(mode == "photos" ? photosFrom : stickersFrom))
                         }
                     }
+                    .modifier(TrayPlacement(anchor: TrayAnchors.rects[s.trayMode ?? lastTray]))
                     .animation(Motion.enter, value: s.trayMode)
+                    .onChange(of: s.trayMode) { _, m in if let m { lastTray = m } }
                     // الأشرطة العائمة فوق الصفحة: لا تدفعها للأسفل، ولا تحجب منها إلا حدودها
                     if !app.focusMode {
                         VStack(spacing: 0) {
@@ -492,11 +498,13 @@ private struct ReaderTopBar: View {
                         TBtn(selected: s.trayMode == "photos", action: { openTray("photos") }) {
                             PhIcon("ph_image", chromeTint(s.trayMode == "photos"))
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { TrayAnchors.rects["photos"] = $0 }
                     }
                     if v("stickers") {
                         TBtn(selected: s.trayMode == "stickers", action: { openTray("stickers") }) {
                             PhIcon("ph_sticker", chromeTint(s.trayMode == "stickers"))
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { TrayAnchors.rects["stickers"] = $0 }
                     }
                     if v("text") {
                         // نقرة تفعّل أداة النص، ونقرة ثانية (أو أثناء الكتابة في مربع) تفتح نافذة مربع النص

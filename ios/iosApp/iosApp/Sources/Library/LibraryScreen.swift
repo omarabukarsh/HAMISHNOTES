@@ -37,9 +37,6 @@ struct LibraryScreen: View {
     /// ملاحظة من الصور: منتقي الصور (بترتيب الاختيار) ثم نافذة المراجعة
     @State private var photoPicking = false
     @State private var photoPicks: [PhotosPickerItem] = []
-    /// نافذة المراجعة (صور أو عدة ملفات PDF). الطلب يبقى حتى يُستبدل كي لا تفرغ النافذة أثناء انكماشها.
-    @State private var compose: ComposeRequest? = nil
-    @State private var composeOpen = false
 
     private var query: String { app.libraryQuery.trimmingCharacters(in: .whitespaces) }
 
@@ -126,7 +123,7 @@ struct LibraryScreen: View {
             // عدة ملفات PDF: نافذة تسأل مستند واحد أم كل ملف وحده؛ ملف واحد يُستورد مباشرة كما كان
             let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
             if pdfs.count > 1 && pdfs.count == urls.count {
-                openCompose(ComposeRequest(pdf: true, items: pdfs.map { ComposeItem(url: $0) }))
+                app.openCompose(ComposeRequest(pdf: true, items: pdfs.map { ComposeItem(url: $0) }))
             } else {
                 app.importDocuments(urls)
             }
@@ -138,8 +135,8 @@ struct LibraryScreen: View {
             photoPicks = []
             loadPhotos(picks)
         }
-        .bigSheet(isPresented: $composeOpen, width: 0.94, height: 0.9, maxHeight: 900, maxWidth: 640) {
-            if let r = compose {
+        .bigSheet(isPresented: $app.composeOpen, width: 0.94, height: 0.9, maxHeight: 900, maxWidth: 640) {
+            if let r = app.compose {
                 ComposeReviewView(request: r, initialFolder: app.libraryFolder ?? "")
                     .environmentObject(app).id(r.id)
             }
@@ -168,11 +165,6 @@ struct LibraryScreen: View {
         }
     }
 
-    private func openCompose(_ r: ComposeRequest) {
-        compose = r
-        composeOpen = true
-    }
-
     /// يقرأ الصور المختارة بترتيب اختيارها ثم يفتح نافذة المراجعة.
     private func loadPhotos(_ picks: [PhotosPickerItem]) {
         app.importing = true
@@ -190,7 +182,7 @@ struct LibraryScreen: View {
                     if loaded.count < picks.count {
                         app.say(.error, L("تعذرت قراءة \(picks.count - loaded.count) من الصور", "\(picks.count - loaded.count) photos could not be read"))
                     }
-                    openCompose(ComposeRequest(pdf: false, items: loaded))
+                    app.openCompose(ComposeRequest(pdf: false, items: loaded))
                 }
             }
         }

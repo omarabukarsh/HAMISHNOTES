@@ -4,15 +4,22 @@ import PDFKit
 /// وضع العرض التجريبي (لقطات المحاكي في CI فقط):
 ///   -hamishDemo /path/file.pdf   يستورد الملف ويملؤه بأمثلة (كتابة، تظليل، ملاحظة، نص، ملصق، مواد، بطاقات، خريطة)
 ///   -hamishScreen <name>         يفتح شاشة معيّنة لالتقاط صورتها
+///   -hamishDark / -hamishLight    الثيم الداكن أو الفاتح
+///   شاشات anim-*: تفتح نافذة وتغلقها مرتين بعد 6 ثوانٍ (لتسجيل فيديو الحركة)
 enum Demo {
+    private static var path = ""
+
     static func run(args: [String]) {
         guard let i = args.firstIndex(of: "-hamishDemo"), i + 1 < args.count else { return }
         let path = args[i + 1]
+        Demo.path = path
         let screen = args.firstIndex(of: "-hamishScreen").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "reader"
         let c = AppController.shared
         c.skipLogin()
-        if args.contains("-hamishEnglish") { c.setEnglish(true) }
+        // اللغة لكل تشغيل: الإنجليزية بالوسيط، وإلا العربية (لا تبقى لغة تشغيل سابق)
+        c.setEnglish(args.contains("-hamishEnglish"))
         if args.contains("-hamishLight") { c.setTheme(.light) }
+        if args.contains("-hamishDark") { c.setTheme(.navy) }
         UserDefaults.standard.set(true, forKey: "test_premium")
         Task { await Premium.shared.refresh() }
 
@@ -129,8 +136,13 @@ enum Demo {
         c.penBarOpen = false
         c.shapeActive = false
         c.selectTool(.fountain)
-        if ["library", "subject", "cards", "stats", "settings", "paywall", "signin"].contains(screen) { c.activate(nil) }
+        if ["library", "subject", "cards", "stats", "settings", "paywall", "signin", "compose",
+            "anim-settings", "anim-stats", "anim-compose"].contains(screen) { c.activate(nil) }
         if screen == "library" { return }
+        if screen == "compose" { c.openCompose(demoCompose()); return }
+        if screen == "anim-settings" { loop(open: { c.settingsOpen = true }, close: { c.settingsOpen = false }); return }
+        if screen == "anim-stats" { loop(open: { c.statsOpen = true }, close: { c.statsOpen = false }); return }
+        if screen == "anim-compose" { loop(open: { c.openCompose(demoCompose()) }, close: { c.composeOpen = false }); return }
         if screen == "signin" { c.loginSeen = false; return }
         if screen == "settings" { c.settingsOpen = true; return }
         if screen == "stats" { c.statsOpen = true; return }
@@ -168,8 +180,37 @@ enum Demo {
             case "shapes": c.selectTool(.ballpoint); c.shapeActive = true
             case "focus": c.focusMode = true
             case "night": c.nightPages = true
+            case "anim-stickers": loop(open: { s.trayMode = "stickers" }, close: { s.trayMode = nil })
+            case "anim-tape":
+                c.tapeActive = true
+                loop(open: { c.tapeMenuOpen = true }, close: { c.tapeMenuOpen = false })
+            case "anim-penbar": loop(open: { c.penBarOpen = true }, close: { c.penBarOpen = false })
             default: break
             }
         }
+    }
+
+    /// يفتح النافذة ويغلقها مرتين: أول فتح بعد start ثانية، وتبقى مفتوحة hold ثانية.
+    private static func loop(start: Double = 6, times: Int = 2, hold: Double = 2.6, gap: Double = 1.6,
+                             open: @escaping () -> Void, close: @escaping () -> Void) {
+        for k in 0..<times {
+            let t = start + Double(k) * (hold + gap)
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { open() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + t + hold) { close() }
+        }
+    }
+
+    /// نافذة استيراد عدة ملفات PDF بثلاث نسخ من ملف العرض بأسماء مختلفة.
+    private static func demoCompose() -> ComposeRequest {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("demo-compose", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let names = I18n.english ? ["Lecture 1", "Lecture 2", "Lecture 3"] : ["المحاضرة ١", "المحاضرة ٢", "المحاضرة ٣"]
+        let urls: [URL] = names.map { n in
+            let u = dir.appendingPathComponent(n + ".pdf")
+            if !fm.fileExists(atPath: u.path) { try? fm.copyItem(at: URL(fileURLWithPath: path), to: u) }
+            return u
+        }
+        return ComposeRequest(pdf: true, items: urls.map { ComposeItem(url: $0) })
     }
 }

@@ -43,6 +43,14 @@ final class AppController: ObservableObject {
     @Published var toastAction: (String, () -> Void)? = nil
     @Published var openDeck: String? = nil   // "*" = كل البطاقات
     @Published var statsOpen = false
+    /// نافذة المراجعة (ملاحظة من الصور، أو عدة ملفات PDF). الطلب يبقى حتى يُستبدل كي لا تفرغ النافذة أثناء انكماشها.
+    @Published var compose: ComposeRequest? = nil
+    @Published var composeOpen = false
+
+    func openCompose(_ r: ComposeRequest) {
+        compose = r
+        composeOpen = true
+    }
     private var toastWork: DispatchWorkItem?
 
     // ---------- الحساب ----------

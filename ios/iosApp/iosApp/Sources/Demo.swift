@@ -181,6 +181,10 @@ enum Demo {
             case "shapes": c.selectTool(.ballpoint); c.shapeActive = true
             case "focus": c.focusMode = true
             case "night": c.nightPages = true
+            case "photos": s.trayMode = "photos"
+            case "tapemenu":
+                c.tapeActive = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { c.tapeMenuOpen = true }
             case "anim-stickers": loop(open: { s.trayMode = "stickers" }, close: { s.trayMode = nil })
             case "anim-tape":
                 c.tapeActive = true

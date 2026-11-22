@@ -105,7 +105,17 @@ jobs:
           shot 30-reader-dark penbar -hamishDark
           shot 31-settings-dark settings -hamishDark
           shot 32-stats-dark stats -hamishDark
-          # تقارير الانهيار إن وُجدت
+          # نوافذ الأدوات في مكانها (بعد انتهاء حركتها)
+          shot 33-photos-tray photos -hamishDark
+          shot 34-stickers-tray stickers -hamishDark
+          shot 35-tape-window tapemenu -hamishDark
+          shot 36-tape-window-light tapemenu -hamishLight
+          shot 37-stickers-tray-light stickers -hamishLight
+          shot 38-highlighter-settings highlighter -hamishDark
+          shot 39-page-menu menu -hamishDark
+          shot 40-pages-drawer pages -hamishDark
+          shot 41-summaries summary -hamishDark
+                    # تقارير الانهيار إن وُجدت
           cp ~/Library/Logs/DiagnosticReports/*Hamish* shots/ 2>/dev/null || true
           xcrun simctl spawn "$UDID" log show --last 15m --predicate 'process == "Hamish"' --style compact > shots/system.log 2>&1 || true
           ls -la shots

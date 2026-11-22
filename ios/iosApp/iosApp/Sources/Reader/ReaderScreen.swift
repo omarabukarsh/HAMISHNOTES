@@ -109,6 +109,9 @@ private struct ReaderContent: View {
                             if app.stickyActive { StickyBar(session: s).transition(.barExpand) }
                             if app.tapeActive { TapeBar(session: s).transition(.barExpand) }
                         }
+                        // عرض ثابت بعرض الشاشة: كان عرض الحاوية يتغير من صفر (في الوسط) إلى العرض الكامل مع الحركة،
+                        // فيدخل الشريط منزلقًا من الجانب ويخرج إليه. الآن يظهر في مكانه وينزل من أعلاه فقط
+                        .frame(maxWidth: .infinity, alignment: .top)
                         .padding(.top, 10)
                         .scaleEffect(app.toolbarScale, anchor: .top)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

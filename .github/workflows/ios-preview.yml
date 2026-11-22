@@ -3,6 +3,15 @@ name: iPad preview (simulator screenshots)
 # لا يعمل تلقائيًا: يُشغَّل يدويًا فقط عند الحاجة (التجربة تكون على الجهاز مباشرة)
 on:
   workflow_dispatch:
+    inputs:
+      shots:
+        description: "التقاط الصور الثابتة (true/false)"
+        required: false
+        default: "true"
+      videos:
+        description: "الفيديوهات المطلوبة فقط، مفصولة بمسافات (مثل: v8-pen-bar v9-long-press-bar)، أو all"
+        required: false
+        default: "all"
 
 concurrency:
   group: ios-preview-${{ github.ref }}
@@ -67,6 +76,7 @@ jobs:
             -e 'delay 1' \
             -e 'tell application "System Events" to key code 124 using command down' || echo "rotate failed"
           sleep 5
+          if [ "${{ inputs.shots }}" != "false" ]; then
           # 0) شاشة تسجيل الدخول (أول فتح)
           xcrun simctl launch "$UDID" $BID || true
           sleep 12
@@ -115,8 +125,9 @@ jobs:
           shot 39-page-menu menu -hamishDark
           shot 40-pages-drawer pages -hamishDark
           shot 41-summaries summary -hamishDark
-                    shot 42-paste-bar paste -hamishDark
+          shot 42-paste-bar paste -hamishDark
           shot 43-paste-bar-light paste -hamishLight
+          fi
           # تقارير الانهيار إن وُجدت
           cp ~/Library/Logs/DiagnosticReports/*Hamish* shots/ 2>/dev/null || true
           xcrun simctl spawn "$UDID" log show --last 15m --predicate 'process == "Hamish"' --style compact > shots/system.log 2>&1 || true
@@ -131,7 +142,11 @@ jobs:
           print([x for r in d.values() for x in r][0]['udid'])")
           BID=com.omarabukarsh.hamish
           DATA=$(xcrun simctl get_app_container "$UDID" $BID data)
+          VIDEOS="${{ inputs.videos }}"
+          # فيديو مطلوب؟ (all = كلها)
+          want() { [ -z "$VIDEOS" ] || [ "$VIDEOS" = "all" ] || [[ " $VIDEOS " == *" $1 "* ]]; }
           rec() {
+            want "$1" || return 0
             # $1 = اسم الفيديو، $2 = الشاشة (anim-*)، والباقي وسائط إضافية.
             # الشاشة تفتح النافذة وتغلقها مرتين بعد 6 ثوانٍ من التشغيل
             local name=$1; local screen=$2; shift 2

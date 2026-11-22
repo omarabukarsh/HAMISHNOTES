@@ -50,11 +50,13 @@ extension EnvironmentValues {
     }
 }
 
-/// حركة «قطرة الماء»: تنبع قطرة صغيرة من رأس السهم، ترتفع وتتمدد إلى الشريط مع ارتداد خفيف.
-/// p من 0 إلى 1 → (عرض، ارتفاع، إزاحة رأسية، شفافية).
+/// حركة «قطرة الماء» (كفيديو التصميم drop_animation): نقطة صغيرة عند رأس السهم تتمدد بسرعة إلى شريط فارغ
+/// بعرضه الكامل مع ارتداد خفيف، ويبقى فارغًا لحظة، ثم تظهر الأزرار، ثم السهم. بلا حركة رأسية تُذكر.
+/// p من 0 إلى 1 (750ms خطيًا) → (عرض، ارتفاع، إزاحة رأسية، شفافية).
 func dropAt(_ p: CGFloat) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
     let keys: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-        (0, 0.04, 0.30, 6, 0), (0.35, 0.07, 0.60, 0, 1), (0.72, 1.06, 0.86, 4, 1), (0.88, 0.98, 1.04, -1, 1), (1, 1, 1, 0, 1)
+        (0, 0.03, 0.25, 0, 0), (0.05, 0.05, 0.40, 0, 1), (0.12, 0.42, 0.85, 0, 1),
+        (0.20, 1.04, 0.95, 0, 1), (0.27, 0.99, 1.02, 0, 1), (0.33, 1, 1, 0, 1), (1, 1, 1, 0, 1)
     ]
     let q = min(max(p, 0), 1)
     for i in 1..<keys.count {
@@ -66,6 +68,11 @@ func dropAt(_ p: CGFloat) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
     }
     return (1, 1, 0, 1)
 }
+
+/// الأزرار تظهر بعد أن يبقى الشريط فارغًا لحظة (62%..85% من الحركة).
+func dropReveal(_ p: CGFloat) -> CGFloat { min(max((p - 0.62) / 0.23, 0), 1) }
+/// السهم آخر شيء (82%..100%).
+func dropArrow(_ p: CGFloat) -> CGFloat { min(max((p - 0.82) / 0.18, 0), 1) }
 
 /// يطبّق شكل القطرة في كل إطار من الحركة (p قابل للتحريك).
 private struct DropEffect: ViewModifier, Animatable {
@@ -79,7 +86,7 @@ private struct DropEffect: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         let d = dropAt(p)
         content
-            .environment(\.ctxReveal, min(max((p - 0.7) / 0.3, 0), 1))
+            .environment(\.ctxReveal, dropReveal(p))
             .scaleEffect(x: d.0, y: d.1, anchor: anchor)
             .offset(y: below ? -d.2 : d.2)
             .opacity(d.3)
@@ -191,8 +198,8 @@ struct AnchoredBar<Bar: View>: View {
                         .allowsHitTesting(prog > 0.5)
                     BarArrow(down: spot.down).fill(Palette.chromeBg)
                         .frame(width: 16, height: 8)
-                        .scaleEffect(x: 1, y: 0.4 + 0.6 * min(max((prog - 0.7) / 0.3, 0), 1), anchor: spot.down ? .top : .bottom)
-                        .opacity(min(max((prog - 0.7) / 0.3, 0), 1))
+                        .scaleEffect(x: 1, y: 0.4 + 0.6 * dropArrow(prog), anchor: spot.down ? .top : .bottom)
+                        .opacity(dropArrow(prog))
                         .offset(x: spot.ax, y: spot.ay)
                         .allowsHitTesting(false)
                 }
@@ -205,7 +212,7 @@ struct AnchoredBar<Bar: View>: View {
     /// يظهر بعد اكتمال التحديد بلحظة قصيرة كقطرة، ويرجع قطرةً عند الإخفاء.
     private func show(_ v: Bool) {
         if v {
-            withAnimation(.timingCurve(0.25, 0.8, 0.3, 1, duration: 0.52).delay(prog == 0 ? 0.12 : 0)) { prog = 1 }
+            withAnimation(.linear(duration: 0.75).delay(prog == 0 ? 0.12 : 0)) { prog = 1 }
         } else {
             withAnimation(.timingCurve(0.5, 0, 0.75, 0, duration: 0.2)) { prog = 0 }
         }

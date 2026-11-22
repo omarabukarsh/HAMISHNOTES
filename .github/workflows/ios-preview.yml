@@ -115,7 +115,9 @@ jobs:
           shot 39-page-menu menu -hamishDark
           shot 40-pages-drawer pages -hamishDark
           shot 41-summaries summary -hamishDark
-                    # تقارير الانهيار إن وُجدت
+                    shot 42-paste-bar paste -hamishDark
+          shot 43-paste-bar-light paste -hamishLight
+          # تقارير الانهيار إن وُجدت
           cp ~/Library/Logs/DiagnosticReports/*Hamish* shots/ 2>/dev/null || true
           xcrun simctl spawn "$UDID" log show --last 15m --predicate 'process == "Hamish"' --style compact > shots/system.log 2>&1 || true
           ls -la shots
@@ -150,6 +152,8 @@ jobs:
           rec v6-stickers-tray anim-stickers -hamishDark
           rec v7-tape-window anim-tape -hamishDark
           rec v8-pen-bar anim-penbar -hamishDark
+          rec v9-long-press-bar anim-paste -hamishDark
+          rec v10-long-press-bar-light anim-paste -hamishLight
           ls -la shots
       - uses: actions/upload-artifact@v4
         if: always()

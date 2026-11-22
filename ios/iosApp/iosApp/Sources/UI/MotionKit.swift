@@ -230,11 +230,12 @@ struct BarReveal: ViewModifier, Animatable {
         let k = min(1, max(0, f))
         return content.mask {
             GeometryReader { g in
-                // هامش 40 فوق وأسفل وجانبًا للظل؛ الجزء المكشوف ينمو من الأعلى
-                let full = g.size.height + 80
+                // كـ AnimatedVisibility في أندرويد: الحافة السفلية للجزء المكشوف عند h×k تمامًا (يُقص الظل معها أثناء
+                // الحركة)، وفوقه وجانبيه هامش للظل. عند الاكتمال لا قص في الأسفل فيبقى الظل حرًا
+                let bottom = k >= 0.999 ? g.size.height + 60 : g.size.height * k
                 Rectangle()
-                    .frame(width: g.size.width + 160, height: max(0, full * k))
-                    .position(x: g.size.width / 2, y: -40 + full * k / 2)
+                    .frame(width: g.size.width + 160, height: max(0, 40 + bottom))
+                    .position(x: g.size.width / 2, y: (-40 + bottom) / 2)
             }
             .environment(\.layoutDirection, .leftToRight)
         }
@@ -280,7 +281,8 @@ extension AnyTransition {
         let m = AnyTransition.modifier(active: BarReveal(f: 0), identity: BarReveal(f: 1))
         return .asymmetric(
             insertion: m.animation(Motion.std(0.30)).combined(with: AnyTransition.opacity.animation(Motion.std(0.22))),
-            removal: m.animation(Motion.std(0.20)).combined(with: AnyTransition.opacity.animation(Motion.std(0.16))))
+            // shrinkVertically(tween 200, FastOutLinearIn) + fadeOut(tween 160) كما في Motion.barExit
+            removal: m.animation(Motion.acc(0.20)).combined(with: AnyTransition.opacity.animation(Motion.std(0.16))))
     }
 
     /// صفوف تظهر مع مفتاحها (AnimatedVisibility الافتراضي): تمدد وتلاشٍ بنابض ناعم.

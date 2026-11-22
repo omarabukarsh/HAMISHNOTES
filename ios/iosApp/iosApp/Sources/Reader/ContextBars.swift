@@ -214,7 +214,7 @@ struct AnchoredBar<Bar: View>: View {
         if v {
             withAnimation(.linear(duration: 0.75).delay(prog == 0 ? 0.12 : 0)) { prog = 1 }
         } else {
-            withAnimation(.timingCurve(0.5, 0, 0.75, 0, duration: 0.2)) { prog = 0 }
+            withAnimation(Motion.acc(0.2)) { prog = 0 }   // tween(200, FastOutLinearIn) كما في أندرويد
         }
     }
 

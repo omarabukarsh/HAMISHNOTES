@@ -102,17 +102,18 @@ private struct ReaderContent: View {
                     if !app.focusMode {
                         VStack(spacing: 0) {
                             if app.toolbarStyle == .penBar && app.penBarOpen && !app.lassoActive && !app.shapeActive && !app.tapeActive && app.tool.isWriting {
-                                PenBar(sheet: $sheet).transition(.barExpand)
+                                PenBar(sheet: $sheet).padding(.top, 10).transition(.barExpand)
                             }
                             // كل شريط يتمدد من الأعلى ويدفع ما تحته بنعومة (Motion.barEnter/barExit في أندرويد)
-                            if app.shapeActive && !app.lassoActive { ShapeBar().transition(.barExpand) }
-                            if app.stickyActive { StickyBar(session: s).transition(.barExpand) }
-                            if app.tapeActive { TapeBar(session: s).transition(.barExpand) }
+                            if app.shapeActive && !app.lassoActive { ShapeBar().padding(.top, 10).transition(.barExpand) }
+                            if app.stickyActive { StickyBar(session: s).padding(.top, 10).transition(.barExpand) }
+                            if app.tapeActive { TapeBar(session: s).padding(.top, 10).transition(.barExpand) }
                         }
                         // عرض ثابت بعرض الشاشة: كان عرض الحاوية يتغير من صفر (في الوسط) إلى العرض الكامل مع الحركة،
                         // فيدخل الشريط منزلقًا من الجانب ويخرج إليه. الآن يظهر في مكانه وينزل من أعلاه فقط
+                        // هامش 10 فوق كل شريط جزء منه (كما في أندرويد: padding(top = 10.dp) داخل الشريط)،
+                        // فيُكشف مع الشريط ويظهر الشريط بعده بلحظة، وبين شريطين متتاليين 10 أيضًا
                         .frame(maxWidth: .infinity, alignment: .top)
-                        .padding(.top, 10)
                         .scaleEffect(app.toolbarScale, anchor: .top)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         // تتوسط المساحة المتبقية للصفحة فقط: لا تظهر فوق لوحة الصفحات أو الملخصات أو خيارات الصفحة

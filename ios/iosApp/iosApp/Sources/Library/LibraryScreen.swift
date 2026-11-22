@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 import VisionKit
 
@@ -33,6 +34,12 @@ struct LibraryScreen: View {
     @State private var selected: Set<String> = []
     @State private var deleteTarget: [DocEntry] = []
     @State private var confirmDelete = false
+    /// ملاحظة من الصور: منتقي الصور (بترتيب الاختيار) ثم نافذة المراجعة
+    @State private var photoPicking = false
+    @State private var photoPicks: [PhotosPickerItem] = []
+    /// نافذة المراجعة (صور أو عدة ملفات PDF). الطلب يبقى حتى يُستبدل كي لا تفرغ النافذة أثناء انكماشها.
+    @State private var compose: ComposeRequest? = nil
+    @State private var composeOpen = false
 
     private var query: String { app.libraryQuery.trimmingCharacters(in: .whitespaces) }
 
@@ -115,7 +122,27 @@ struct LibraryScreen: View {
         }
         .background(Lib.bg.ignoresSafeArea())
         .fileImporter(isPresented: $importing, allowedContentTypes: OfficeConverter.types, allowsMultipleSelection: true) { r in
-            if case .success(let urls) = r { app.importDocuments(urls) }
+            guard case .success(let urls) = r else { return }
+            // عدة ملفات PDF: نافذة تسأل مستند واحد أم كل ملف وحده؛ ملف واحد يُستورد مباشرة كما كان
+            let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+            if pdfs.count > 1 && pdfs.count == urls.count {
+                openCompose(ComposeRequest(pdf: true, items: pdfs.map { ComposeItem(url: $0) }))
+            } else {
+                app.importDocuments(urls)
+            }
+        }
+        .photosPicker(isPresented: $photoPicking, selection: $photoPicks, maxSelectionCount: nil,
+                      selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .compatible)
+        .onChange(of: photoPicks) { _, picks in
+            guard !picks.isEmpty else { return }
+            photoPicks = []
+            loadPhotos(picks)
+        }
+        .bigSheet(isPresented: $composeOpen, width: 0.94, height: 0.9, maxHeight: 900, maxWidth: 640) {
+            if let r = compose {
+                ComposeReviewView(request: r, initialFolder: app.libraryFolder ?? "")
+                    .environmentObject(app).id(r.id)
+            }
         }
         // ملاحظة جديدة: منتقي الورق الكبير؛ والأسماء (مادة جديدة، إعادة تسمية) في نافذة حوار مثل أندرويد
         .bigSheet(isPresented: Binding(get: { sheet?.id == "newNote" }, set: { if !$0 { sheet = nil } }),
@@ -141,6 +168,34 @@ struct LibraryScreen: View {
         }
     }
 
+    private func openCompose(_ r: ComposeRequest) {
+        compose = r
+        composeOpen = true
+    }
+
+    /// يقرأ الصور المختارة بترتيب اختيارها ثم يفتح نافذة المراجعة.
+    private func loadPhotos(_ picks: [PhotosPickerItem]) {
+        app.importing = true
+        Task {
+            var items: [ComposeItem] = []
+            for p in picks {
+                if let d = try? await p.loadTransferable(type: Data.self) { items.append(ComposeItem(image: d)) }
+            }
+            let loaded = items
+            await MainActor.run {
+                app.importing = false
+                if loaded.isEmpty {
+                    app.say(.error, L("تعذرت قراءة الصور", "Could not read the photos"))
+                } else {
+                    if loaded.count < picks.count {
+                        app.say(.error, L("تعذرت قراءة \(picks.count - loaded.count) من الصور", "\(picks.count - loaded.count) photos could not be read"))
+                    }
+                    openCompose(ComposeRequest(pdf: false, items: loaded))
+                }
+            }
+        }
+    }
+
     private func endSelect() {
         selected.removeAll()
         withAnimation(Motion.enter) { selecting = false }
@@ -160,7 +215,8 @@ struct LibraryScreen: View {
                 if !wide { IconCircleButton(icon: "ph_sliders", label: L("الإعدادات", "Settings")) { app.settingsOpen = true } }
                 IconCircleButton(icon: "ph_check", label: L("تحديد", "Select")) { withAnimation(Motion.enter) { selecting = true } }
                 NewMenuButton(onNewNote: { sheet = .newNote }, onImport: { importing = true },
-                              onScan: { sheet = .scan }, onNewMap: { sheet = .newMap }, onNewCard: { sheet = .newCard })
+                              onScan: { sheet = .scan }, onNewMap: { sheet = .newMap }, onNewCard: { sheet = .newCard },
+                              onPhotoNote: { photoPicking = true })
             }
             HStack(spacing: 10) {
                 SearchField(value: $app.libraryQuery)
@@ -188,7 +244,7 @@ struct LibraryScreen: View {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if app.library.isEmpty {
             EmptyLibrary(onNewNote: { sheet = .newNote }, onImport: { importing = true }, onScan: { sheet = .scan },
-                         onNewMap: { sheet = .newMap }, onNewCard: { sheet = .newCard })
+                         onNewMap: { sheet = .newMap }, onNewCard: { sheet = .newCard }, onPhotoNote: { photoPicking = true })
         } else if docs.isEmpty {
             Text(app.libraryFilter == .favorites && query.isEmpty
                  ? L("لا توجد مستندات مفضلة بعد. اختر «إضافة إلى المفضلة» من قائمة أي مستند.", "No favorites yet. Choose “Add to favorites” from any document’s menu.")
@@ -574,10 +630,12 @@ struct NewMenuButton: View {
     var onScan: () -> Void = {}
     var onNewMap: () -> Void = {}
     var onNewCard: () -> Void = {}
+    var onPhotoNote: () -> Void = {}
 
     var body: some View {
         Menu {
             Button(action: onNewNote) { Label { Text(L("ملاحظة جديدة", "New note")) } icon: { Image("ph_note") } }
+            Button(action: onPhotoNote) { Label { Text(L("ملاحظة من الصور", "Note from photos")) } icon: { Image("ph_image") } }
             Button(action: onImport) { Label { Text(L("استيراد PDF", "Import PDF")) } icon: { Image("ph_export") } }
             Button(action: onNewMap) { Label { Text(L("خريطة ذهنية جديدة", "New mind map")) } icon: { Image("ph_mindmap") } }
             Button(action: onNewCard) { Label { Text(L("بطاقة جديدة", "New card")) } icon: { Image("ph_cards") } }
@@ -977,6 +1035,7 @@ private struct EmptyLibrary: View {
     let onScan: () -> Void
     let onNewMap: () -> Void
     let onNewCard: () -> Void
+    var onPhotoNote: () -> Void = {}
     var body: some View {
         VStack(spacing: 0) {
             Art(name: "ic_resume_notebook", size: 150)
@@ -986,7 +1045,7 @@ private struct EmptyLibrary: View {
             Text(L("استورد محاضرة أو كتابًا بصيغة PDF لتقرأه وتكتب عليه بالقلم،\nأو أنشئ ملاحظة فارغة.", "Import a lecture or book as PDF to read and write on it with your pen,\nor create a blank note."))
                 .font(Fonts.sans(15)).lineSpacing(6).foregroundColor(Palette.textSecondary).multilineTextAlignment(.center)
             Spacer().frame(height: 20)
-            NewMenuButton(onNewNote: onNewNote, onImport: onImport, onScan: onScan, onNewMap: onNewMap, onNewCard: onNewCard)
+            NewMenuButton(onNewNote: onNewNote, onImport: onImport, onScan: onScan, onNewMap: onNewMap, onNewCard: onNewCard, onPhotoNote: onPhotoNote)
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

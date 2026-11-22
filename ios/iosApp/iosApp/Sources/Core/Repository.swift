@@ -338,6 +338,97 @@ final class Repository {
         return importPDF(from: tmp, name: name, folder: folder)
     }
 
+    /// أطول ضلع لصورة تصبح صفحة (بكسل): واضحة للقراءة والكتابة عليها دون ملف ضخم (كما في أندرويد).
+    static let imagePageMax: CGFloat = 2200
+
+    /// ملاحظة من صور (كما في أندرويد): كل صورة صفحة على مقاسها، العرض عرض A4 والارتفاع حسب الصورة.
+    /// الصورة تُضمَّن JPEG كما هي فيبقى الملف صغيرًا. progress(رقم الصورة) قبل كل صورة.
+    /// يعيد (المستند أو nil، عدد الصور التي تعذرت قراءتها). خارج الخيط الرئيسي.
+    func createNoteFromImages(_ images: [Data], name: String, folder: String,
+                              progress: ((Int) -> Void)? = nil, cancelled: (() -> Bool)? = nil) -> (DocEntry?, Int) {
+        var failed = 0
+        var pages: [(CGImage, CGSize)] = []
+        for (i, d) in images.enumerated() {
+            if cancelled?() == true { return (nil, failed) }
+            progress?(i)
+            guard let p = Repository.pageJPEG(d) else { failed += 1; continue }
+            pages.append(p)
+        }
+        guard !pages.isEmpty else { return (nil, failed) }
+        let pw: CGFloat = 595
+        let r = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pw, height: 842))
+        let data = r.pdfData { ctx in
+            for (img, size) in pages {
+                // صورة بانورامية أو طويلة جدًا: نحد شكل الصفحة ونضع الصورة في وسطها
+                let ph = min(max(pw * size.height / size.width, pw / 4), pw * 4)
+                let k = min(pw / size.width, ph / size.height)
+                let dw = size.width * k, dh = size.height * k
+                ctx.beginPage(withBounds: CGRect(x: 0, y: 0, width: pw, height: ph), pageInfo: [:])
+                UIImage(cgImage: img).draw(in: CGRect(x: (pw - dw) / 2, y: (ph - dh) / 2, width: dw, height: dh))
+            }
+        }
+        if cancelled?() == true { return (nil, failed) }
+        let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
+        guard (try? data.write(to: tmp)) != nil else { return (nil, failed) }
+        defer { try? fm.removeItem(at: tmp) }
+        let n = name.trimmingCharacters(in: .whitespaces).isEmpty ? L("ملاحظة من الصور", "Photo note") : name
+        guard var e = importPDF(from: tmp, name: n, folder: folder) else { return (nil, failed) }
+        e.isNote = true
+        return (e, failed)
+    }
+
+    /// يقرأ صورة لتصبح صفحة: باتجاهها الصحيح، أطول ضلع لها imagePageMax على الأكثر، ومضغوطة JPEG
+    /// (الشفافية تصير بيضاء). الصورة الناتجة مبنية على بيانات JPEG فيضمّنها ملف PDF كما هي.
+    static func pageJPEG(_ data: Data) -> (CGImage, CGSize)? {
+        guard let src = UIImage(data: data), src.size.width > 0, src.size.height > 0 else { return nil }
+        let px = CGSize(width: src.size.width * src.scale, height: src.size.height * src.scale)
+        let k = min(1, imagePageMax / max(px.width, px.height))
+        let out = CGSize(width: max(1, (px.width * k).rounded()), height: max(1, (px.height * k).rounded()))
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = true
+        // الرسم يطبّق اتجاه الصورة (EXIF) ويصغّرها ويجعل الشفافية بيضاء
+        let flat = UIGraphicsImageRenderer(size: out, format: fmt).image { c in
+            UIColor.white.setFill()
+            c.fill(CGRect(origin: .zero, size: out))
+            src.draw(in: CGRect(origin: .zero, size: out))
+        }
+        guard let jpeg = flat.jpegData(compressionQuality: 0.9),
+              let provider = CGDataProvider(data: jpeg as CFData),
+              let cg = CGImage(jpegDataProviderSource: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        return (cg, out)
+    }
+
+    /// يجمع عدة ملفات PDF في مستند واحد بترتيبها (كما في أندرويد).
+    /// progress(رقم الملف، النسبة، المرحلة). يعيد (المستند أو nil، عدد الملفات التي تعذرت). خارج الخيط الرئيسي.
+    func importMerged(_ urls: [URL], name: String, folder: String,
+                      progress: ((Int, Double, String) -> Void)? = nil, cancelled: (() -> Bool)? = nil) -> (DocEntry?, Int) {
+        let merged = PDFDocument()
+        var failed = 0
+        var firstName: String? = nil
+        for (i, u) in urls.enumerated() {
+            if cancelled?() == true { return (nil, failed) }
+            progress?(i, 0.3, L("قراءة الصفحات…", "Reading the pages…"))
+            let scoped = u.startAccessingSecurityScopedResource()
+            defer { if scoped { u.stopAccessingSecurityScopedResource() } }
+            guard let doc = PDFDocument(url: u), doc.pageCount > 0, !doc.isLocked else { failed += 1; continue }
+            if firstName == nil { firstName = u.deletingPathExtension().lastPathComponent }
+            for k in 0..<doc.pageCount {
+                if let page = doc.page(at: k)?.copy() as? PDFPage { merged.insert(page, at: merged.pageCount) }
+            }
+            progress?(i, 1, L("تم", "Done"))
+        }
+        guard merged.pageCount > 0, cancelled?() != true else { return (nil, failed) }
+        let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
+        guard merged.write(to: tmp) else { return (nil, failed) }
+        defer { try? fm.removeItem(at: tmp) }
+        let n = name.trimmingCharacters(in: .whitespaces).isEmpty ? (firstName ?? L("مستند", "Document")) : name
+        let last = max(0, urls.count - 1)
+        let e = importPDF(from: tmp, name: n, folder: folder, progress: { f, ph in progress?(last, f, ph) }, cancelled: cancelled)
+        return (e, failed)
+    }
+
     /// ملاحظة جديدة: صفحة واحدة بالقالب المختار.
     func createNote(name: String, choice: PaperChoice, folder: String) -> DocEntry? {
         let id = UUID().uuidString

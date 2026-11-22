@@ -400,8 +400,8 @@ private struct ImportProgressOverlay: View {
                 Color.black.opacity(0.25).ignoresSafeArea()
                 VStack(spacing: 0) {
                     ProgressView().controlSize(.large).tint(Palette.navy)
-                    Text(p.count > 1 ? L("جارٍ إضافة الملفات (\(p.index + 1) من \(p.count))…", "Adding files (\(p.index + 1) of \(p.count))…")
-                                     : L("جارٍ إضافة الملف…", "Adding the file…"))
+                    Text(p.title ?? (p.count > 1 ? L("جارٍ إضافة الملفات (\(p.index + 1) من \(p.count))…", "Adding files (\(p.index + 1) of \(p.count))…")
+                                     : L("جارٍ إضافة الملف…", "Adding the file…")))
                         .font(Fonts.sans(17, .bold)).foregroundColor(Palette.textPrimary).padding(.top, 12)
                     Text(p.name).font(Fonts.sans(13)).foregroundColor(Palette.textSecondary).lineLimit(1).padding(.top, 4)
                     ProgressView(value: p.fraction).tint(Palette.navy).padding(.top, 14)

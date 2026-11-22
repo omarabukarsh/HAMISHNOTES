@@ -19,7 +19,8 @@ final class AppController: ObservableObject {
     @Published var libraryLoaded = false
     @Published var importing = false
     /// نافذة إضافة الملف: الاسم والنسبة والمرحلة (nil = لا نافذة).
-    struct ImportProgress: Equatable { var name: String; var fraction: Double; var phase: String; var index: Int; var count: Int }
+    /// title: عنوان النافذة بدل «جارٍ إضافة الملفات» (مثل إنشاء ملاحظة من الصور).
+    struct ImportProgress: Equatable { var name: String; var fraction: Double; var phase: String; var index: Int; var count: Int; var title: String? = nil }
     @Published var importProgress: ImportProgress? = nil
     var importCancel = false
     @Published var libraryFilter: LibraryFilter = .recent
@@ -532,7 +533,8 @@ final class AppController: ObservableObject {
         say(.done, L("تم حذف المستند", "Document deleted"))
     }
 
-    func importDocuments(_ urls: [URL]) {
+    /// folder: مادة المستندات المستوردة (nil = المادة المفتوحة في المكتبة).
+    func importDocuments(_ urls: [URL], folder: String? = nil) {
         // عروض الباوربوينت ومستندات Word وKeynote: تُحوَّل إلى PDF أولًا
         let office = urls.filter { OfficeConverter.handles($0) }
         if !office.isEmpty {
@@ -549,7 +551,7 @@ final class AppController: ObservableObject {
                     left -= 1
                     if left == 0 {
                         self.importing = false
-                        if !converted.isEmpty || !rest.isEmpty { self.importDocuments(rest + converted) }
+                        if !converted.isEmpty || !rest.isEmpty { self.importDocuments(rest + converted, folder: folder) }
                     }
                 }
             }
@@ -563,7 +565,7 @@ final class AppController: ObservableObject {
         guard Premium.shared.canAdd(pdfs.count) else { return }
         importing = true
         importCancel = false
-        let folder = libraryFolder ?? ""
+        let folder = folder ?? libraryFolder ?? ""
         importProgress = ImportProgress(name: pdfs[0].deletingPathExtension().lastPathComponent, fraction: 0,
                                         phase: L("بدء الإضافة…", "Starting…"), index: 0, count: pdfs.count)
         DispatchQueue.global(qos: .userInitiated).async {
@@ -601,6 +603,70 @@ final class AppController: ObservableObject {
                     self.say(.done, auto ? L("تم استيراد \(added.count) مستندات، ويُقرأ نصها تلقائيًا", "Imported \(added.count) documents; their text is read automatically")
                                          : L("تم استيراد \(added.count) مستندات", "Imported \(added.count) documents"))
                 }
+            }
+        }
+    }
+
+    /// يجمع عدة ملفات PDF في مستند واحد بالترتيب المعطى، ثم يفتحه (كما في أندرويد).
+    func importMerged(_ urls: [URL], name: String, folder: String) {
+        guard !urls.isEmpty, Premium.shared.canAdd() else { return }
+        importing = true
+        importCancel = false
+        let names = urls.map { $0.deletingPathExtension().lastPathComponent }
+        importProgress = ImportProgress(name: names[0], fraction: 0, phase: L("بدء الإضافة…", "Starting…"), index: 0, count: urls.count)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let (e, failed) = self.repo.importMerged(urls, name: name, folder: folder, progress: { i, f, ph in
+                DispatchQueue.main.async { self.importProgress = ImportProgress(name: names[min(i, names.count - 1)], fraction: f, phase: ph, index: i, count: urls.count) }
+            }, cancelled: { self.importCancel })
+            DispatchQueue.main.async {
+                self.importing = false
+                self.importProgress = nil
+                guard let e else {
+                    if self.importCancel { self.say(.tip, L("أُلغيت إضافة الملفات", "Adding the files was cancelled")) }
+                    else { self.say(.error, L("تعذر الاستيراد. تأكد أن الملفات PDF سليمة.", "Import failed. Make sure the files are valid PDFs.")) }
+                    return
+                }
+                if !folder.isEmpty { self.addFolder(folder) }
+                self.library.append(e)
+                self.saveLibrary()
+                self.openDocument(e.id)
+                self.say(failed == 0 ? .done : .error, failed == 0
+                    ? L("جُمعت الملفات في مستند واحد (\(e.pageCount) صفحة)", "Combined the files into one document (\(e.pageCount) pages)")
+                    : L("جُمعت الملفات (\(e.pageCount) صفحة)، وتعذرت إضافة \(failed) من \(urls.count)", "Combined \(urls.count - failed) files (\(e.pageCount) pages); \(failed) could not be added"))
+            }
+        }
+    }
+
+    /// ملاحظة جديدة من صور: كل صورة صفحة بالترتيب المعطى، ثم تُفتح (كما في أندرويد).
+    func createImageNote(_ images: [Data], name: String, folder: String) {
+        guard !images.isEmpty, Premium.shared.canAdd() else { return }
+        importing = true
+        importCancel = false
+        let title = L("جارٍ إنشاء الملاحظة…", "Creating the note…")
+        func step(_ i: Int) -> ImportProgress {
+            ImportProgress(name: name, fraction: Double(i) / Double(images.count),
+                           phase: L("الصورة \(i + 1) من \(images.count)", "Photo \(i + 1) of \(images.count)"), index: 0, count: 1, title: title)
+        }
+        importProgress = step(0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let (e, failed) = self.repo.createNoteFromImages(images, name: name, folder: folder, progress: { i in
+                DispatchQueue.main.async { self.importProgress = step(i) }
+            }, cancelled: { self.importCancel })
+            DispatchQueue.main.async {
+                self.importing = false
+                self.importProgress = nil
+                guard let e else {
+                    if self.importCancel { self.say(.tip, L("أُلغي إنشاء الملاحظة", "Creating the note was cancelled")) }
+                    else { self.say(.error, L("تعذر إنشاء الملاحظة من الصور", "Could not create the note from the photos")) }
+                    return
+                }
+                if !folder.isEmpty { self.addFolder(folder) }
+                self.library.append(e)
+                self.saveLibrary()
+                self.openDocument(e.id)
+                self.say(failed == 0 ? .done : .error, failed == 0
+                    ? L("أُنشئت الملاحظة من الصور (\(e.pageCount) صفحة)", "Created the note from your photos (\(e.pageCount) pages)")
+                    : L("أُنشئت الملاحظة (\(e.pageCount) صفحة)، وتعذرت قراءة \(failed) من \(images.count)", "Created the note (\(e.pageCount) pages); \(failed) photos could not be read"))
             }
         }
     }

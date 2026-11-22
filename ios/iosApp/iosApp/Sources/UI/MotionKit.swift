@@ -189,6 +189,31 @@ struct VReveal: ViewModifier, Animatable {
     }
 }
 
+/// كشف شريط عائم من حافته العليا إلى الأسفل (expandVertically في أندرويد) بقناع فقط:
+/// لا يتغير حجمه ولا مكانه أثناء الحركة. f = 0 مخفي، 1 ظاهر كاملًا.
+struct BarReveal: ViewModifier, Animatable {
+    var f: CGFloat
+
+    var animatableData: CGFloat {
+        get { f }
+        set { f = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let k = min(1, max(0, f))
+        return content.mask {
+            GeometryReader { g in
+                // هامش 40 فوق وأسفل وجانبًا للظل؛ الجزء المكشوف ينمو من الأعلى
+                let full = g.size.height + 80
+                Rectangle()
+                    .frame(width: g.size.width + 160, height: max(0, full * k))
+                    .position(x: g.size.width / 2, y: -40 + full * k / 2)
+            }
+            .environment(\.layoutDirection, .leftToRight)
+        }
+    }
+}
+
 /// إزاحة عمودية بنسبة من ارتفاع العنصر نفسه (slideInVertically { -it / 4 }).
 struct SlideFraction: ViewModifier, Animatable {
     var f: CGFloat
@@ -223,8 +248,9 @@ extension AnyTransition {
     }
 
     /// شريط عائم: يتمدد من الأعلى 300ms مع تلاشٍ 220ms، وينطوي 200ms مع تلاشٍ 160ms.
+    /// الكشف بقناع فقط: عرض الشريط ومكانه ثابتان طوال الحركة (كان يتغير تخطيطه فينزلق من الجانب).
     static var barExpand: AnyTransition {
-        let m = AnyTransition.modifier(active: VReveal(f: 0), identity: VReveal(f: 1))
+        let m = AnyTransition.modifier(active: BarReveal(f: 0), identity: BarReveal(f: 1))
         return .asymmetric(
             insertion: m.animation(Motion.std(0.30)).combined(with: AnyTransition.opacity.animation(Motion.std(0.22))),
             removal: m.animation(Motion.std(0.20)).combined(with: AnyTransition.opacity.animation(Motion.std(0.16))))
@@ -297,15 +323,26 @@ struct EdgeFold: ViewModifier, Animatable {
         set { p = newValue.first; c = newValue.second }
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
         let active = !(p >= 0.999 && c <= 0.0001)
+        let shadowAlpha = (shadow && c <= 0.0001) ? 0.16 * Double(min(1, max(0, (p - 0.85) / 0.15))) : 0
+        // في السكون تُعرض النافذة بلا أي تأثير رسومي: الشيدر (حتى وهو معطّل) يُخفي المحتوى المبني على UIKit
+        // مثل ScrollView (أيقونات الملصقات، وصفوف النوافذ الطويلة)، فكانت النوافذ تظهر فارغة
+        if active {
+            folding(content).shadow(color: .black.opacity(shadowAlpha), radius: 14, y: 6)
+        } else {
+            content.shadow(color: .black.opacity(shadowAlpha), radius: 14, y: 6)
+        }
+    }
+
+    private func folding(_ content: Content) -> some View {
         let pp = Float(min(1, max(0, p)))
         let cc = Float(min(1, max(0, c)))
         let lx = localX
         let gx = globalX
         let half = slitWidth / 2
         let rad = Float(radius)
-        let shadowAlpha = (shadow && c <= 0.0001) ? 0.16 * Double(min(1, max(0, (p - 0.85) / 0.15))) : 0
         return content
             .visualEffect { v, g in
                 let w = g.size.width
@@ -314,11 +351,9 @@ struct EdgeFold: ViewModifier, Animatable {
                 let cx = min(max(center, half), max(half, w - half))
                 return v.distortionEffect(
                     ShaderLibrary.edgeFold(.float2(g.size), .float(cx - half), .float(cx + half), .float(pp), .float(cc), .float(rad)),
-                    maxSampleOffset: g.size,
-                    isEnabled: active
+                    maxSampleOffset: g.size
                 )
             }
-            .shadow(color: .black.opacity(shadowAlpha), radius: 14, y: 6)
     }
 }
 

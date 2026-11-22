@@ -140,9 +140,10 @@ enum Demo {
             "anim-settings", "anim-stats", "anim-compose"].contains(screen) { c.activate(nil) }
         if screen == "library" { return }
         if screen == "compose" { c.openCompose(demoCompose()); return }
-        if screen == "anim-settings" { loop(open: { c.settingsOpen = true }, close: { c.settingsOpen = false }); return }
-        if screen == "anim-stats" { loop(open: { c.statsOpen = true }, close: { c.statsOpen = false }); return }
-        if screen == "anim-compose" { loop(open: { c.openCompose(demoCompose()) }, close: { c.composeOpen = false }); return }
+        // كأن إصبعًا نقر الزر: تخرج النافذة منه وتعود إليه (أماكن الأزرار في iPad Pro 13 بالعرض)
+        if screen == "anim-settings" { loop(open: { TouchOrigin.record(CGPoint(x: 89, y: 418)); c.settingsOpen = true }, close: { c.settingsOpen = false }); return }
+        if screen == "anim-stats" { loop(open: { TouchOrigin.record(CGPoint(x: 131, y: 953)); c.statsOpen = true }, close: { c.statsOpen = false }); return }
+        if screen == "anim-compose" { loop(open: { TouchOrigin.record(CGPoint(x: 1292, y: 120)); c.openCompose(demoCompose()) }, close: { c.composeOpen = false }); return }
         if screen == "signin" { c.loginSeen = false; return }
         if screen == "settings" { c.settingsOpen = true; return }
         if screen == "stats" { c.statsOpen = true; return }

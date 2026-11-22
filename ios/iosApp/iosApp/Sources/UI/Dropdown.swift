@@ -115,6 +115,18 @@ private struct DropdownLayer: View {
 }
 
 private struct DropdownPanel: View {
+    private func panelContent(_ edge: Bool) -> some View {
+        item.content()
+            .modifier(EdgeContentFade(p: edge ? p : 1, c: edge ? c : 0))
+            .frame(width: item.width)
+            .fixedSize(horizontal: item.width == nil, vertical: true)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { size = g.size }
+                    .onChange(of: g.size) { _, v in size = v }
+            })
+    }
+
     let item: DropdownItem
     let rect: CGRect
     let area: CGSize
@@ -140,19 +152,15 @@ private struct DropdownPanel: View {
             Color.black.opacity(0.001)
                 .contentShape(Rectangle())
                 .onTapGesture { item.dismiss() }
-            ScrollView(.vertical, showsIndicators: false) {
-                item.content()
-                    .modifier(EdgeContentFade(p: edge ? p : 1, c: edge ? c : 0))
-                    .frame(width: item.width)
-                    .fixedSize(horizontal: item.width == nil, vertical: true)
-                    .background(GeometryReader { g in
-                        Color.clear
-                            .onAppear { size = g.size }
-                            .onChange(of: g.size) { _, v in size = v }
-                    })
+            // التمرير فقط حين لا يتسع المحتوى: ScrollView مبني على UIKit فلا يُرسم داخل حركة الانثناء (الشيدر)
+            Group {
+                if size.height > maxH + 0.5 {
+                    ScrollView(.vertical, showsIndicators: false) { panelContent(edge) }
+                } else {
+                    panelContent(edge)
+                }
             }
-            .scrollDisabled(size.height <= maxH)
-            .frame(width: w > 0 ? w : nil, height: size.height > 0 ? h : nil)
+            .frame(width: w > 0 ? w : nil, height: size.height > 0 ? h : nil, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.surface))
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.divider.opacity(0.6), lineWidth: 0.5))

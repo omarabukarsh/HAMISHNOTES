@@ -111,14 +111,15 @@ struct SettingsView: View {
                     if let email = app.accountEmail {
                         Avatar(name: app.accountName ?? email, size: 38)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(app.accountName ?? email).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary).lineLimit(1)
-                            Text(email).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary).lineLimit(1)
+                            Text(app.accountName ?? email).font(Fonts.sans(14, .bold)).foregroundColor(Color(hex: 0xFF1E2A44)).lineLimit(1)
+                            Text(email).font(Fonts.sans(11)).foregroundColor(Color(hex: 0xFF6B7280)).lineLimit(1)
                         }
                     } else {
                         IconTile(icon: "ph_user", color: Palette.navy, size: 38)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(L("تسجيل الدخول", "Sign in")).font(Fonts.sans(14, .bold)).foregroundColor(Palette.textPrimary)
-                            Text((GoogleAuth.shared.configured ? L("اربط حسابك في Google أو Apple", "Link your Google or Apple account") : L("اربط حسابك في Apple", "Link your Apple account"))).font(Fonts.sans(11)).foregroundColor(Palette.textSecondary)
+                            // البطاقة فاتحة في الثيمين، فالنص داكن دائمًا (كان أبيض على أصفر في الداكن فلا يُقرأ)
+                            Text(L("تسجيل الدخول", "Sign in")).font(Fonts.sans(14, .bold)).foregroundColor(Color(hex: 0xFF1E2A44))
+                            Text((GoogleAuth.shared.configured ? L("اربط حسابك في Google أو Apple", "Link your Google or Apple account") : L("اربط حسابك في Apple", "Link your Apple account"))).font(Fonts.sans(11)).foregroundColor(Color(hex: 0xFF6B7280))
                         }
                     }
                     Spacer(minLength: 0)

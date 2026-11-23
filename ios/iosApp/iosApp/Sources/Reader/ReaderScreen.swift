@@ -853,7 +853,8 @@ struct ColorSwatch: View {
 struct SizeSlots: View {
     @EnvironmentObject var app: AppController
     let tool: Tool
-    @State private var editing: Int? = nil
+    // وسيط -hamishSizePopup لقطات المحاكي في CI فقط: يفتح نافذة الحجم رقم 2 عند التشغيل
+    @State private var editing: Int? = CommandLine.arguments.contains("-hamishSizePopup") ? 1 : nil
 
     static func slots(_ t: Tool) -> [Int] {
         if let s = UserDefaults.standard.array(forKey: "slots_" + t.rawValue) as? [Int], s.count == 3 { return s }
@@ -887,10 +888,10 @@ struct SizeSlots: View {
                             Spacer()
                             Text(String(format: "%.2f mm", Double(Sizes.width(tool, Self.slots(tool)[i]) / 600 * 210))).font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
                         }
-                        Slider(value: Binding(get: { Double(Self.slots(tool)[i]) }, set: { v in
+                        DrawnSlider(value: Binding(get: { Double(Self.slots(tool)[i]) }, set: { v in
                             Self.setSlot(tool, i, Int(v.rounded()))
                             app.setSize(Int(v.rounded()))
-                        }), in: 0...Double(Sizes.count - 1), step: 1).tint(Palette.navy)
+                        }), range: 0...Double(Sizes.count - 1), step: 1)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 12)
                     .frame(width: 260)

@@ -38,9 +38,9 @@ struct PercentSlider: View {
                 Text("\(Int((value * 100).rounded()))%").font(Fonts.sans(12)).foregroundColor(Palette.textSecondary)
             }
             if steps > 0 {
-                Slider(value: $value, in: 0...1, step: 1 / Double(steps + 1)).tint(Palette.navy)
+                DrawnSlider(value: $value, range: 0...1, step: 1 / Double(steps + 1))
             } else {
-                Slider(value: $value, in: 0...1).tint(Palette.navy)
+                DrawnSlider(value: $value, range: 0...1)
             }
         }
     }

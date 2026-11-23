@@ -212,8 +212,8 @@ struct SizeSliderRow: View {
                 Spacer()
                 Text(valueText).font(Fonts.sans(14, .semibold)).foregroundColor(Palette.navy)
             }
-            Slider(value: Binding(get: { Double(index) }, set: { onChange(min(max(Int($0.rounded()), 0), Sizes.count - 1)) }),
-                   in: 0...Double(Sizes.count - 1), step: 1).tint(Palette.navy)
+            DrawnSlider(value: Binding(get: { Double(index) }, set: { onChange(min(max(Int($0.rounded()), 0), Sizes.count - 1)) }),
+                        range: 0...Double(Sizes.count - 1), step: 1)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
     }

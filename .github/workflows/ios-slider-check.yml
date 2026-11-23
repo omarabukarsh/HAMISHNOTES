@@ -6,6 +6,9 @@ on:
     branches: [ios-app]
     paths: [".github/workflows/ios-slider-check.yml"]
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: macos-15
@@ -74,3 +77,11 @@ jobs:
         with:
           name: slider-check
           path: shots/
+      - name: Publish screenshots to branch ci-shots
+        if: always()
+        shell: bash
+        run: |
+          rm -rf /tmp/pub && mkdir /tmp/pub && cp shots/*.png /tmp/pub/ || true
+          cd /tmp/pub && git init -q && git checkout -q -b ci-shots
+          git add -A && git -c user.name=ci -c user.email=ci@example.com commit -q -m "slider check screenshots" || exit 0
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-shots

@@ -199,6 +199,10 @@ enum Demo {
             case "anim-tape":
                 c.tapeActive = true
                 loop(open: { c.tapeMenuOpen = true }, close: { c.tapeMenuOpen = false })
+            case "anim-sizepopup":
+                c.selectTool(.fountain); c.penBarOpen = true
+                loop(open: { NotificationCenter.default.post(name: .demoSizePopup, object: 1) },
+                     close: { NotificationCenter.default.post(name: .demoSizePopup, object: nil) })
             case "anim-penbar": loop(open: { c.penBarOpen = true }, close: { c.penBarOpen = false })
             default: break
             }
@@ -229,3 +233,5 @@ enum Demo {
         return ComposeRequest(pdf: true, items: urls.map { ComposeItem(url: $0) })
     }
 }
+
+extension Notification.Name { static let demoSizePopup = Notification.Name("demoSizePopup") }

@@ -899,6 +899,8 @@ struct SizeSlots: View {
                 }
             }
         }
+        // لقطات المحاكي في CI فقط: يفتح نافذة الحجم ويغلقها بإشعار من Demo
+        .onReceive(NotificationCenter.default.publisher(for: .demoSizePopup)) { n in editing = n.object as? Int }
     }
 }
 

@@ -71,6 +71,15 @@ jobs:
           shot size-popup-light penbar -hamishLight -hamishSizePopup
           shot size-popup-dark penbar -hamishDark -hamishSizePopup
           shot size-popup-english penbar -hamishEnglish -hamishLight -hamishSizePopup
+          # فيديو: نافذة الحجم تفتح وتغلق (الشيدر فعّال أثناء الحركة)
+          xcrun simctl terminate "$UDID" $BID 2>/dev/null || true
+          xcrun simctl launch "$UDID" $BID -hamishDemo "$DATA/Documents/demo.pdf" -hamishScreen anim-sizepopup -hamishEnglish -hamishLight
+          sleep 4
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force "shots/anim-size-popup.mp4" &
+          pid=$!
+          sleep 15
+          kill -INT $pid || true
+          wait $pid || true
           ls -la shots
       - uses: actions/upload-artifact@v4
         if: always()
@@ -81,7 +90,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf /tmp/pub && mkdir /tmp/pub && cp shots/*.png /tmp/pub/ || true
+          rm -rf /tmp/pub && mkdir /tmp/pub && cp shots/*.png shots/*.mp4 /tmp/pub/ || true
           cd /tmp/pub && git init -q && git checkout -q -b ci-shots
           git add -A && git -c user.name=ci -c user.email=ci@example.com commit -q -m "slider check screenshots" || exit 0
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-shots

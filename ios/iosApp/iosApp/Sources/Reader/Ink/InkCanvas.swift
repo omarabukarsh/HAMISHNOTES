@@ -199,6 +199,9 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
             l.actions = ["path": NSNull(), "opacity": NSNull(), "strokeColor": NSNull(), "fillColor": NSNull(), "lineWidth": NSNull()]
             layer.addSublayer(l)
         }
+        // الخروج من التطبيق والقلم على الشاشة قد لا يوصل «انتهت اللمسة»: نصفّر حالة الكتابة العالقة
+        NotificationCenter.default.addObserver(self, selector: #selector(resetInput), name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resetInput), name: UIApplication.didBecomeActiveNotification, object: nil)
         input.canvas = self
         input.delegate = self
         input.cancelsTouchesInView = false
@@ -223,6 +226,14 @@ final class InkCanvas: UIView, UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    /// يلغي خطًّا عالقًا ويعيد التقاط القلم (يُستدعى عند ترك التطبيق أو الرجوع إليه).
+    @objc func resetInput() {
+        cancelStroke()
+        input.isEnabled = false
+        input.isEnabled = true
+        PalmGuard.pencil(down: false)
+    }
 
     // ---------------------------------------------------------------- الحبر
 

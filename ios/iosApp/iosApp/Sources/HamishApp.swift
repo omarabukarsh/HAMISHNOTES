@@ -31,7 +31,15 @@ struct HamishApp: App {
                 }
         }
         .onChange(of: phase) { _, p in
-            app.setVisible(p == .active)
+            // الحفظ عند الذهاب للخلفية فقط (لا عند «غير نشط» العابر)، مع طلب وقت من النظام كي لا يُقتل أثناءه
+            if p == .background {
+                var bg = UIBackgroundTaskIdentifier.invalid
+                bg = UIApplication.shared.beginBackgroundTask { UIApplication.shared.endBackgroundTask(bg) }
+                app.setVisible(false, save: true)
+                if bg != .invalid { UIApplication.shared.endBackgroundTask(bg) }
+            } else {
+                app.setVisible(p == .active)
+            }
             if p != .active { WidgetBridge.update(force: true) }
         }
     }

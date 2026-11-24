@@ -729,6 +729,11 @@ final class AppController: ObservableObject {
         }
         if tabs.first(where: { $0.id == id }) == nil {
             let s = DocSession(entry: e)
+            // ملف تعذّر فتحه: رسالة بدل شاشة بيضاء
+            if !e.isMap && s.pdf == nil {
+                say(.error, L("تعذّر فتح «\(e.name)»", "Couldn’t open “\(e.name)”"))
+                return
+            }
             if !openAsTabs, let cur = activeId, let i = tabs.firstIndex(where: { $0.id == cur }) {
                 tabs[i].finishInlineEdit()
                 tabs[i].flush()
@@ -1007,9 +1012,9 @@ final class AppController: ObservableObject {
 
     func noteInteraction() { lastInteraction = nowMs() }
 
-    func setVisible(_ v: Bool) {
+    func setVisible(_ v: Bool, save: Bool = false) {
         visible = v
-        if !v { flush() }
+        if save { flush() }
     }
 
     private func startReadTimer() {

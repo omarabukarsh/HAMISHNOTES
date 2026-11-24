@@ -885,6 +885,7 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
         }
         if s.pageMenuOpen { s.pageMenuOpen = false }
         // نقرة تلغي تحديد نص الكتاب
+        if pressSelActive { return }
         if s.textSel != nil || s.wordSel != nil { s.textSel = nil; s.wordSel = nil; return }
         // نقرة على شريط لاصق تكشف ما تحته أو تخفيه: بالإصبع مع أي أداة، وبالقلم مع أداة الشريط
         if lastTouchType == .direct || c.tapeActive, s.toggleTape(at: pp, page: pageId) { return }
@@ -964,7 +965,14 @@ final class PageOverlayView: UIView, UIGestureRecognizerDelegate {
     /// الضغط المطوّل على الصفحة (تحديد النص أو فقاعة اللصق).
     private weak var pressRecognizer: UILongPressGestureRecognizer?
 
+    /// تحديد أنشأه الضغط المطوّل الحالي: النقرة التي ترافق رفع الإصبع لا تمسحه.
+    private var pressSelActive = false
+
     @objc private func onPress(_ g: UILongPressGestureRecognizer) {
+        if g.state == .ended || g.state == .cancelled || g.state == .failed {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.pressSelActive = false }
+        }
+        defer { if g.state == .began { pressSelActive = (session?.textSel != nil || session?.wordSel != nil) } }
         // القلم بدأ يكتب أثناء انتظار الضغط المطوّل (راحة اليد على الشاشة): يُلغى دون أي نافذة
         if g.state == .began && PalmGuard.pencilRecently() {
             g.isEnabled = false

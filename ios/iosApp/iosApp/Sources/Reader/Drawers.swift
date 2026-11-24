@@ -7,10 +7,17 @@ import Photos
 
 /// صورة مصغّرة لصفحة مع حبرها.
 struct PageThumb: View {
-    @ObservedObject var session: DocSession
+    /// لا نراقب الجلسة هنا (كانت كل خلية تُعاد عند أي تغيير)؛ التغيير يصل عبر `version` من الدرج.
+    let session: DocSession
     let index: Int
     var width: CGFloat = 150
+    var version: String = ""
     @State private var image: UIImage? = nil
+
+    /// ذاكرة مؤقتة للصور المصغّرة: الفتح الثاني فوري ولا يُعاد الرسم.
+    private static let cache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>(); c.countLimit = 200; return c
+    }()
 
     var body: some View {
         let size = session.pageSize(index)
@@ -22,12 +29,17 @@ struct PageThumb: View {
         .frame(width: width, height: h)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
-        .task(id: "\(index)-\(session.pagesVersion)-\(session.inkVersion)-\(session.dataVersion)") { await render() }
+        .task(id: "\(index)-\(version)") { await render() }
     }
 
     /// الرسم في الخلفية حتى لا تتقطع الكتابة والدرج مفتوح.
     private func render() async {
         guard let page = session.pdf?.page(at: index), let pid = session.pageId(index) else { return }
+        let key = "\(session.id)|\(pid)|\(version)|\(Int(width))" as NSString
+        if let hit = Self.cache.object(forKey: key) { image = hit; return }
+        // لا نرسم أثناء حركة فتح الدرج (≈0.33 ث) حتى لا تتقطع
+        if image == nil { try? await Task.sleep(nanoseconds: 380_000_000) }
+        if Task.isCancelled { return }
         let size = session.pageSize(index)
         let scale: CGFloat = 2
         let tw = width * scale
@@ -50,7 +62,7 @@ struct PageThumb: View {
                 c.restoreGState()
             }
         }.value
-        if !Task.isCancelled { image = img }
+        if !Task.isCancelled { Self.cache.setObject(img, forKey: key); image = img }
     }
 }
 
@@ -187,7 +199,7 @@ struct PagesDrawer: View {
                         let isPicked = picked.contains(i)
                         VStack(spacing: 2) {
                             ZStack(alignment: .topTrailing) {
-                                PageThumb(session: s, index: i, width: w)
+                                PageThumb(session: s, index: i, width: w, version: "\(s.pagesVersion)-\(s.inkVersion)-\(s.dataVersion)")
                                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(selecting && isPicked ? Palette.navy : (!selecting && cur ? Color(hex: 0xFF3B82F6) : Palette.divider),
                                                                                       lineWidth: (selecting && isPicked) || (!selecting && cur) ? 3 : 1))
                                 Button { if !selecting { s.toggleBookmark(i) } } label: {

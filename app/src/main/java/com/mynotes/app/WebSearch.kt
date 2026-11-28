@@ -38,12 +38,12 @@ object WebSearch {
     }
 
     /** مفتاح Brave Search الاختياري (يضعه المستخدم في الإعدادات). */
-    var key by mutableStateOf(prefs().getString("brave_key", "") ?: "")
+    var braveKey by mutableStateOf(prefs().getString("brave_key", "") ?: "")
         private set
 
-    fun setKey(k: String) {
-        key = k.trim()
-        prefs().edit().putString("brave_key", key).apply()
+    fun saveBraveKey(k: String) {
+        braveKey = k.trim()
+        prefs().edit().putString("brave_key", braveKey).apply()
     }
 
     private fun dir() = File(AppController.appContext.filesDir, "ai/web/q").also { it.mkdirs() }
@@ -118,10 +118,10 @@ object WebSearch {
     }
 
     private fun brave(q: String): List<Hit> {
-        if (key.isBlank()) return emptyList()
+        if (braveKey.isBlank()) return emptyList()
         val s = http(
             "https://api.search.brave.com/res/v1/web/search?count=6&q=${URLEncoder.encode(q, "UTF-8")}",
-            mapOf("X-Subscription-Token" to key, "Accept" to "application/json")
+            mapOf("X-Subscription-Token" to braveKey, "Accept" to "application/json")
         ) ?: return emptyList()
         return try {
             val a = JSONObject(s).optJSONObject("web")?.optJSONArray("results") ?: return emptyList()

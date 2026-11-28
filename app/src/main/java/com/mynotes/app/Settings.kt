@@ -1855,6 +1855,9 @@ private fun AiSettings() {
         AiToggle(L("بطاقات مراجعة تلقائية", "Automatic review cards"), AiOrganizer.autoCards) {
             AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards)
         }
+        AiToggle(L("خريطة ذهنية تلقائية لما في الملخصات", "Automatic mind map of the summaries"), AiOrganizer.autoMindMap) {
+            AiOrganizer.toggleAutoMindMap(!AiOrganizer.autoMindMap)
+        }
         AiToggle(L("مراجعة ذاتية لما يكتبه الذكاء", "Self-review of what the AI writes"), AiOrganizer.selfReview) {
             AiOrganizer.toggleSelfReview(!AiOrganizer.selfReview)
         }
@@ -1868,6 +1871,26 @@ private fun AiSettings() {
         AiToggle(L("استعن بالإنترنت لترتيب العناوين", "Use the internet to order headings"), WebOutline.enabled) {
             WebOutline.toggle(!WebOutline.enabled)
         }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+        Text(L("الإنترنت لتصحيح الملخص وشرح النص (اختياري)", "Internet to correct the summary and explain text (optional)"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+        Text(
+            L("في «رتّب الملخص»: يُدقَّق كل قسم بمصادر معتمدة (ويكيبيديا، مواقع علمية وجامعية وحكومية)، فتُصحَّح الكلمات والأسماء والأرقام الخاطئة فقط دون إضافة معلومات، وتُعرض التصحيحات بمصادرها. في «اشرح»: يضيف الذكاء معلومات من المصادر خارج نصك تحت عنوان «إضافة من مصدر» مع روابطها. الخريطة الذهنية والبطاقات تُبنى من الملخص بعد تصحيحه. يُرسل للإنترنت نص البحث فقط (اسم الموضوع وعنوان القسم، أو كلمات النص الذي تشرحه)، لا ملفاتك. إن فشل البحث يبقى الملخص كما هو.",
+                "In “Organize summary”, each section is checked against reliable sources (Wikipedia, scientific, university and government sites): only wrong words, names and numbers are corrected, nothing is added, and corrections are listed with their sources. In “Explain”, the AI adds facts from the sources beyond your text under “Added from sources”, with links. The mind map and cards are built from the corrected summary. Only the search text is sent (topic name and section title, or words of the text you explain), never your files. If search fails, the summary stays as is."),
+            fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
+        )
+        AiToggle(L("الإنترنت للتصحيح والشرح", "Internet for corrections and explanations"), WebSearch.enabled) {
+            WebSearch.toggle(!WebSearch.enabled)
+        }
+        var braveText by remember { mutableStateOf(WebSearch.braveKey) }
+        Text(
+            L("مفتاح Brave Search (اختياري، لنتائج أدق؛ بدونه يُستعمل DuckDuckGo وويكيبيديا)", "Brave Search key (optional, for better results; without it DuckDuckGo and Wikipedia are used)"),
+            fontSize = 12.sp, lineHeight = 17.sp, color = Palette.TextSecondary
+        )
+        androidx.compose.material3.OutlinedTextField(
+            value = braveText, onValueChange = { braveText = it; WebSearch.saveBraveKey(it) },
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("BSA…") }
+        )
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         Text(L("اختبار قراءة الصور", "Image reading test"), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
         Text(

@@ -347,6 +347,25 @@ Tables: one row per line, cells separated by " | ", first row is the header."""
         private set
     fun toggleAutoCards(on: Boolean) { autoCards = on; prefs().edit().putBoolean("auto_cards", on).apply() }
 
+    /** خريطة ذهنية تلقائية: تُبنى وتُحفظ بعد كل ترتيب أو إكمال للملخص (الأقسام الجديدة فقط). */
+    var autoMindMap by mutableStateOf(prefs().getBoolean("auto_mindmap", false))
+        private set
+    fun toggleAutoMindMap(on: Boolean) { autoMindMap = on; prefs().edit().putBoolean("auto_mindmap", on).apply() }
+
+    /** بصمات نقاط الملخص التي صُنعت لها بطاقات: لا تُصنع لها بطاقات ثانية عند إضافة تظليل جديد. */
+    private fun cardedFile(docId: String) = File(File(AppController.appContext.filesDir, "ai/cards").also { it.mkdirs() }, "$docId.txt")
+    private fun loadCarded(docId: String): MutableSet<String> = try {
+        val f = cardedFile(docId)
+        if (f.exists()) f.readLines().filter { it.isNotBlank() }.toMutableSet() else HashSet()
+    } catch (t: Throwable) {
+        HashSet()
+    }
+    private fun saveCarded(docId: String, set: Set<String>) {
+        try { cardedFile(docId).writeText(set.joinToString("\n")) } catch (t: Throwable) {}
+    }
+    private fun pointKey(line: String): String =
+        AiStructure.hash(line.replace("**", "").lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim())
+
     private fun prefs() = AppController.appContext.getSharedPreferences("mynotes_ai", Context.MODE_PRIVATE)
 
     const val CARDS_SYSTEM = """You write exam flashcards from part of a student's study summary (any subject).
@@ -541,6 +560,14 @@ A: بسرعة ثابتة"""
             val cards = ArrayList<Pair<String, String>>()
             // ذاكرة الأجزاء: ما لم يتغير لا يُعاد إرساله للنموذج
             val memo = withContext(Dispatchers.IO) { loadMemo(docId) }
+            // نقاط سبق أن صُنعت لها بطاقات (إكمال الملخص لا يعيد صنعها)؛ الترتيب الكامل من جديد يبدأ بذاكرة فارغة
+            val carded = withContext(Dispatchers.IO) { if (append) loadCarded(docId) else HashSet() }
+            val webFixes = ArrayList<WebFix.Fix>()
+            if (!append) {
+                // ما يُحفظ أثناء الكتابة ملخص ناقص إن أُغلق التطبيق: لا إكمال عليه، بل يُعاد الترتيب (والذاكرة تجعله سريعًا)
+                setProcessed(docId, emptyMap())
+                WebFix.clear(docId)
+            }
             val model = (if (selfReview) "r|" else "") + Ai.selected.id
             fun shown(extra: Triple<String?, String?, String>? = null): String {
                 val cur = AiStructure.assemble(if (extra == null) done else done + extra)
@@ -668,7 +695,7 @@ A: بسرعة ثابتة"""
                         else -> L("جارٍ الترتيب: ${p.sub ?: p.title ?: "…"} (${i + 1} من ${parts.size})", "Organizing: ${p.sub ?: p.title ?: "…"} (${i + 1} of ${parts.size})")
                     }
                     val key = AiStructure.cacheKey(p, model)
-                    val body = AiStructure.emphasize(
+                    val body0 = AiStructure.emphasize(
                         p.table ?: memo[key] ?: if (AiStructure.trivial(p)) AiStructure.fallback(p.notes) else {
                             val draft = AiStructure.body(
                                 p,
@@ -689,15 +716,28 @@ A: بسرعة ثابتة"""
                         },
                         p.emphasis
                     )
+                    // تصحيح بالإنترنت بلا زيادة: كلمات أو أسماء أو أرقام خاطئة فقط، وبمصدر يراجعه المستخدم
+                    val body = if (explicit && WebSearch.enabled) {
+                        stepText = L("تدقيق بالإنترنت: ${p.sub ?: p.title ?: "…"}", "Checking online: ${p.sub ?: p.title ?: "…"}")
+                        val (fixed, applied) = WebFix.correct(docId, WebOutline.topicFrom(s.title), p.sub ?: p.title, body0, memo)
+                        webFixes.addAll(applied)
+                        fixed
+                    } else body0
                     done.add(Triple(p.title, p.sub, body))
                     partial = shown()
+                    // حفظ تدريجي: ما كتبه الذكاء يبقى إن أُغلق التطبيق في منتصف العمل
+                    save(docId, partial)
+                    withContext(Dispatchers.IO) { saveMemo(docId, memo) }
                     // البطاقات لكل عنوان رئيسي (حدود ثابتة فتنفع ذاكرة البطاقات بعد أي تعديل)
                     if (i > 0 && parts[i - 1].title != p.title) flushCards(true)
                     val topic = p.sub ?: p.title
                     if (p.table != null) {
-                        cardTables.addAll(AiStructure.tableCards(p.table, p.headed, topic))
+                        val tc = AiStructure.tableCards(p.table, p.headed, topic).filter { (q, a) -> pointKey("$q|$a") !in carded }
+                        carded.addAll(tc.map { (q, a) -> pointKey("$q|$a") })
+                        cardTables.addAll(tc)
                     } else {
-                        val all = body.lines().filter { it.isNotBlank() }
+                        val all = body.lines().filter { it.isNotBlank() && pointKey(it) !in carded }
+                        carded.addAll(all.map { pointKey(it) })
                         // نقاط «بند: تفصيل» بطاقات بالكود، والباقي للنموذج
                         val pts = ArrayList<String>()
                         for (l in all) {
@@ -713,6 +753,7 @@ A: بسرعة ثابتة"""
                     flushCards(false)
                 }
                 flushCards(true)
+                if (autoCards) withContext(Dispatchers.IO) { saveCarded(docId, carded) }
                 val finalCards = AiStructure.dedupeCards(cards)
                 cards.clear()
                 cards.addAll(finalCards)
@@ -721,6 +762,21 @@ A: بسرعة ثابتة"""
                 setProcessed(docId, if (append) processed(docId) + snapshot else snapshot)
                 if (autoCards) s.putAiCards(cards, replace = !append)
                 refreshPending(s)
+                WebFix.add(docId, webFixes)
+                // خريطة ذهنية تلقائية: تُبنى وتُحفظ الآن (الأقسام التي تغيرت فقط)، فتفتح فورًا
+                if (autoMindMap) {
+                    stepText = L("جارٍ بناء الخريطة الذهنية…", "Building the mind map…")
+                    try {
+                        MindMapAi.build(docId, s.title, result(docId) ?: "", onlyCached = false)
+                        AppController.messages.tryEmit(L("الخريطة الذهنية جاهزة", "Mind map is ready"))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                    }
+                }
+                if (webFixes.isNotEmpty()) AppController.messages.tryEmit(
+                    L("صُحّح ${webFixes.size} موضع من مصادر الإنترنت؛ راجعها في «تصحيحات الإنترنت»", "${webFixes.size} spots corrected from online sources; review them in “Online corrections”")
+                )
                 if (explicit && WebOutline.enabled) AppController.messages.tryEmit(
                     if (web.isNotEmpty()) L("استُعملت بنية الموضوع «${WebOutline.lastTopic ?: ""}» من ويكيبيديا لترتيب العناوين", "Used the outline of “${WebOutline.lastTopic ?: ""}” from Wikipedia to order headings")
                     else L("لم تُوجد بنية للموضوع في الإنترنت (أو لا اتصال)؛ رُتّب من الملف وحده", "No online outline found (or no connection); organized from the file only")
@@ -895,6 +951,12 @@ Output only the edited summary, no introduction or closing remarks."""
 
     // ---------- شرح نص محدد ----------
 
+    /** شرح بمصادر الإنترنت: شرح للنص المحدد أولًا، ثم «إضافة من مصدر» بمعلومات من المصادر فقط وبأرقامها. */
+    fun explainWebSystem(): String = if (I18n.english)
+        "You are a helpful tutor for any subject. Part 1: explain the given text simply (max 6 short lines) using the CONTEXT and SOURCES. Part 2: a line \"Added from sources:\" then up to 4 short extra useful facts that appear in the SOURCES, each ending with its source number like [1]. Never state a fact that is not in the text or the SOURCES. Keep technical terms."
+    else
+        "You are a helpful tutor for any subject. Part 1: explain the given text simply in Arabic (max 6 short lines) using the CONTEXT and SOURCES. Part 2: a line \"إضافة من مصدر:\" then up to 4 short extra useful facts that appear in the SOURCES, each ending with its source number like [1]. Never state a fact that is not in the text or the SOURCES. Keep English names and technical terms as they are."
+
     fun explainSystem(): String = if (I18n.english)
         "You are a helpful tutor for any subject. Explain the given text simply and briefly (max 8 short lines). Keep technical terms. Do not invent numbers or facts."
     else
@@ -979,6 +1041,7 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
     val busyElsewhere = AiOrganizer.runningDoc != null && !running
     val saved = AiOrganizer.result(s.id)
     var editing by remember { mutableStateOf(false) }
+    var showFixes by remember { mutableStateOf(false) }
     var readPage by remember { mutableStateOf<Int?>(null) }
     var mindMap by remember { mutableStateOf(false) }
     var tablePick by remember { mutableStateOf(false) }
@@ -1099,11 +1162,41 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.Ivory)
                             .padding(14.dp)
                     ) { AiSummaryText(saved) }
+                    val fx = WebFix.forDoc(s.id)
+                    if (fx.isNotEmpty()) TextButton(onClick = { showFixes = true }) {
+                        Text(L("تصحيحات الإنترنت (${fx.size})", "Online corrections (${fx.size})"), color = Palette.GoldDeep)
+                    }
                 }
             }
         }
     }
     readPage?.let { p -> AiPageDialog(s, p) { readPage = null } }
+    if (showFixes) {
+        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+        AlertDialog(
+            onDismissRequest = { showFixes = false },
+            title = { Text(L("تصحيحات الإنترنت", "Online corrections")) },
+            text = {
+                Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        L("استُبدل فقط ما يخالف المصدر؛ لم تُضف معلومات. راجع كل تصحيح، وإن لم يعجبك عدّله من زر التحرير.",
+                            "Only what contradicts the source was replaced; nothing was added. Check each one, and edit with the edit button if you disagree."),
+                        fontSize = 12.sp, color = Palette.TextSecondary
+                    )
+                    WebFix.forDoc(s.id).forEach { f ->
+                        Spacer(Modifier.height(10.dp))
+                        Text("«${f.old}»  ←  «${f.new}»", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                        val url = f.source.substringAfter(" — http", "").let { if (it.isEmpty()) null else "http$it" }
+                        Text(
+                            f.source, fontSize = 11.sp, color = Palette.Navy,
+                            modifier = Modifier.clickable(enabled = url != null) { try { uri.openUri(url!!) } catch (t: Throwable) {} }
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showFixes = false }) { Text(L("إغلاق", "Close")) } }
+        )
+    }
     if (mindMap && (saved != null || s.mindNotes.isNotEmpty())) AiMindMapDialog(s.id, s.title, saved ?: "", s.mindNotes) { mindMap = false }
     if (aiSettings) {
         AlertDialog(
@@ -1138,6 +1231,14 @@ fun AiSummaryPanel(s: DocSession, notes: String, modifier: Modifier = Modifier) 
                         L("بطاقات مراجعة تلقائية (تظهر في «بطاقات»)", "Automatic review cards (shown in “Cards”)"),
                         AiOrganizer.autoCards
                     ) { AiOrganizer.toggleAutoCards(!AiOrganizer.autoCards) }
+                    AiToggle(
+                        L("خريطة ذهنية تلقائية لما في الملخصات (تُحفظ وتفتح فورًا)", "Automatic mind map of the summaries (saved, opens instantly)"),
+                        AiOrganizer.autoMindMap
+                    ) { AiOrganizer.toggleAutoMindMap(!AiOrganizer.autoMindMap) }
+                    AiToggle(
+                        L("الإنترنت: تصحيح الملخص وشرح النص بمصادر معتمدة", "Internet: correct the summary and explain text with reliable sources"),
+                        WebSearch.enabled
+                    ) { WebSearch.toggle(!WebSearch.enabled) }
                 }
             },
             confirmButton = { TextButton(onClick = { aiSettings = false }) { Text(L("تم", "Done")) } }
@@ -1200,6 +1301,9 @@ fun AiExplainDialog(text: String, context: String = "", onDismiss: () -> Unit) {
     var answer by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var done by remember { mutableStateOf(false) }
+    var sources by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
     DisposableEffect(text) {
         val j = AppController.scope.launch {
             try {
@@ -1208,10 +1312,19 @@ fun AiExplainDialog(text: String, context: String = "", onDismiss: () -> Unit) {
                     return@launch
                 }
                 AiExplain.running = true
+                // الإنترنت (إن فُعّل): مصادر معتمدة تُعطى للنموذج، ويُسمح له بإضافة معلومات منها خارج النص المحدد
+                var ev = WebSearch.Evidence("", emptyList())
+                if (WebSearch.enabled) {
+                    searching = true
+                    ev = try { WebSearch.evidence(text.split(Regex("\\s+")).take(14).joinToString(" "), 2200, pages = 2) } catch (e: CancellationException) { throw e } catch (t: Throwable) { ev }
+                    searching = false
+                    sources = ev.sources
+                }
                 // سياق من قراءة المستند (إن قُرئت الصفحة) ليكون الشرح مرتبطًا بالمحاضرة نفسها
-                val prompt = if (context.isBlank()) text
-                else "CONTEXT (from the same lecture page, reference only):\n$context\n\nEXPLAIN THIS TEXT:\n$text"
-                val r = Ai.generate(AiOrganizer.explainSystem(), prompt) { answer = AiOrganizer.clean(it) }
+                val web = if (ev.empty) "" else "SOURCES (internet, numbered):\n${ev.text}\n\n"
+                val prompt = (if (context.isBlank()) "" else "CONTEXT (from the same lecture page, reference only):\n$context\n\n") + web +
+                    (if (context.isBlank() && web.isEmpty()) text else "EXPLAIN THIS TEXT:\n$text")
+                val r = Ai.generate(if (ev.empty) AiOrganizer.explainSystem() else AiOrganizer.explainWebSystem(), prompt) { answer = AiOrganizer.clean(it) }
                 answer = AiOrganizer.clean(r)
                 done = true
             } catch (e: CancellationException) {
@@ -1235,9 +1348,19 @@ fun AiExplainDialog(text: String, context: String = "", onDismiss: () -> Unit) {
                     answer.isBlank() -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text(Ai.engineStatus.ifEmpty { L("يفكر…", "Thinking…") }, fontSize = 14.sp)
+                        Text(if (searching) L("جارٍ البحث في الإنترنت…", "Searching the web…") else Ai.engineStatus.ifEmpty { L("يفكر…", "Thinking…") }, fontSize = 14.sp)
                     }
                     else -> AiSummaryText(answer)
+                }
+                if (sources.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(L("المصادر", "Sources"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Palette.Navy)
+                    sources.forEachIndexed { i, (title, url) ->
+                        Text(
+                            "[${i + 1}] $title", fontSize = 12.sp, color = Palette.Navy,
+                            modifier = Modifier.clickable { try { uri.openUri(url) } catch (t: Throwable) {} }.padding(vertical = 3.dp)
+                        )
+                    }
                 }
                 if (done) {
                     Spacer(Modifier.height(8.dp))

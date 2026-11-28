@@ -102,7 +102,13 @@ fun LibraryScreen() {
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris: List<Uri> -> c.importDocuments(uris) }
+    ) { uris: List<Uri> ->
+        // ملف واحد يُستورد مباشرة؛ عدة ملفات تفتح نافذة: مستند واحد أم كل ملف وحده
+        when {
+            uris.size > 1 -> ComposeImport.pdfs = uris
+            uris.isNotEmpty() -> c.importDocuments(uris)
+        }
+    }
     val mimes = remember {
         DocType.values().filter { it.supported }.map { it.mime }.toTypedArray()
     }
@@ -217,11 +223,7 @@ fun LibraryScreen() {
                                         L("المستندات", "Documents"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
                                         fontSize = 22.sp, color = Lib.text, modifier = Modifier.weight(1f)
                                     )
-                                    if (c.libraryFilter == LibraryFilter.RECENT) {
-                                        Text(L("حسب آخر فتح", "Sorted by last opened"), fontSize = 13.sp, color = Lib.muted)
-                                    } else {
-                                        SortMenu(c.librarySort) { c.librarySort = it }
-                                    }
+                                    if (c.libraryFilter != LibraryFilter.RECENT) SortMenu(c.librarySort) { c.librarySort = it }
                                 }
                             }
                             items(docs, key = { it.id }) { e ->
@@ -274,6 +276,7 @@ fun LibraryScreen() {
         )
     }
 
+    ComposeImportHost(initialFolder = c.libraryFolder.orEmpty())
     if (showNewMap) NewMapDialog(initialFolder = c.libraryFolder.orEmpty()) { showNewMap = false }
     if (showNewCard) NewLooseCardDialog(initialFolder = c.libraryFolder.orEmpty()) { showNewCard = false }
     CardDeck.openDeck?.let { d -> DeckDialog(if (d == CardDeck.ALL) null else d) { CardDeck.openDeck = null } }
@@ -380,7 +383,6 @@ private fun pagesCount(n: Int): String = when {
 private fun Spine() {
     val c = AppController
     val favCount = c.library.count { it.favorite }
-    val pages = c.library.sumOf { it.pageCount }
     Column(
         Modifier.width(248.dp).fillMaxHeight().background(Lib.side)
             .padding(horizontal = 16.dp, vertical = 22.dp)
@@ -393,7 +395,7 @@ private fun Spine() {
             Column {
                 Text(
                     "HAMISH PRO", color = Lib.text, fontFamily = Fonts.Display,
-                    fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = 28.sp
+                    fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 28.sp
                 )
                 Text(L("مكتبة الدراسة", "Study library"), color = Lib.muted, fontSize = 12.sp, lineHeight = 16.sp)
             }
@@ -422,10 +424,6 @@ private fun Spine() {
         }
 
         StudyCard()
-        Spacer(Modifier.height(14.dp))
-        Text(docsCount(c.library.size) + " · " + pagesCount(pages), color = Lib.muted, fontSize = 12.sp)
-        Spacer(Modifier.height(10.dp))
-        ThemeSwitch()
     }
 }
 
@@ -857,40 +855,6 @@ private fun StudyCard() {
     if (open) StatsDialog(onDismiss = { open = false })
 }
 
-@Composable
-private fun ThemeSwitch() {
-    val c = AppController
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Lib.line.copy(alpha = 0.6f)).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        listOf(
-            AppTheme.NAVY to L("داكن", "Dark"),
-            AppTheme.LIGHT to L("فاتح", "Light")
-        ).forEach { (t, label) ->
-            val sel = ThemeState.theme == t
-            val bg by androidx.compose.animation.animateColorAsState(
-                if (sel) Lib.card else Color.Transparent, androidx.compose.animation.core.tween(Motion.ENTER), label = "theme"
-            )
-            Row(
-                Modifier.weight(1f).clip(RoundedCornerShape(11.dp)).background(bg)
-                    .clickable { c.setTheme(t) }
-                    .padding(horizontal = 10.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    Modifier.size(12.dp).clip(CircleShape)
-                        .background(if (t == AppTheme.NAVY) Color(0xFF111111) else Lib.accent)
-                        .border(1.dp, Lib.line, CircleShape)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(label, fontSize = 14.sp, color = Lib.text, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------- الترويسة والتصفية
 
 @Composable
@@ -931,8 +895,6 @@ private fun LibraryHeader(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
                 UnderlinedTitle(title, if (wide) 40 else 30)
-                Spacer(Modifier.width(12.dp))
-                ScriptLabel(docsCount(shown), Lib.muted, 15)
             }
             PomodoroControl(showStartLabel = false)
             if (!wide) {
@@ -1263,7 +1225,7 @@ private fun DocCard(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    (if (entry.isMap) L("خريطة ذهنية", "Mind map") else pagesCount(entry.pageCount)) + " · " + (
+                    (if (entry.isMap) L("خريطة ذهنية", "Mind map") + " · " else "") + (
                         if (entry.lastOpened > 0L) L("فُتح ", "Opened ") + formatRelative(entry.lastOpened)
                         else L("أُضيف ", "Added ") + formatRelative(entry.addedAt)
                         ),
@@ -1313,10 +1275,7 @@ private fun DocCard(
             if (coverOpen) CoverDialog(entry) { coverOpen = false }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                formatSize(entry.sizeBytes), fontSize = 11.sp,
-                color = Lib.muted.copy(alpha = 0.8f), modifier = Modifier.weight(1f)
-            )
+            Spacer(Modifier.weight(1f))
             if (entry.readMs >= 60_000L) ReadingTimeBadge(entry.readMs, Lib.accentDeep, 11, showIcon = false)
         }
     }

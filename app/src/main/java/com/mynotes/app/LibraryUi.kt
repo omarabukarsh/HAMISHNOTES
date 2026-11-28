@@ -208,7 +208,7 @@ fun IconCircleButton(icon: Int, description: String, selected: Boolean = false, 
     ) { PhIcon(icon, Lib.text, 20.dp, description) }
 }
 
-/** زر «جديد» الأصفر: ملاحظة جديدة أو استيراد PDF. */
+/** زر «جديد» الأصفر: ملاحظة جديدة، ملاحظة من الصور، أو استيراد PDF (ملف أو أكثر). */
 @Composable
 fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit, onNewMap: () -> Unit = {}, onNewCard: () -> Unit = {}) {
     var open by remember { mutableStateOf(false) }
@@ -230,6 +230,11 @@ fun NewMenuButton(onNewNote: () -> Unit, onImport: () -> Unit, onNewMap: () -> U
                 text = { Text(L("ملاحظة جديدة", "New note"), color = Lib.text) },
                 leadingIcon = { PhIcon(R.drawable.ph_note, Lib.accentDeep, 20.dp) },
                 onClick = { open = false; onNewNote() }
+            )
+            DropdownMenuItem(
+                text = { Text(L("ملاحظة من الصور", "Note from photos"), color = Lib.text) },
+                leadingIcon = { PhIcon(R.drawable.ph_image, Lib.accentDeep, 20.dp) },
+                onClick = { open = false; ComposeImport.photoPick = true }
             )
             DropdownMenuItem(
                 text = { Text(L("استيراد PDF", "Import PDF"), color = Lib.text) },

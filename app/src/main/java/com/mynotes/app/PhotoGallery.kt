@@ -152,11 +152,14 @@ fun PhotoGalleryDialog(multi: Boolean, title: String, onPicked: (List<Uri>) -> U
         access = PhotoLibrary.access(ctx)
         refresh++
     }
+    // الإغلاق بحركة النافذة نفسها (تنكمش إلى الزر الذي فتحها)؛ يُضبط عند بناء النافذة
+    val closeRef = remember { arrayOf(onDismiss) }
+    val close: () -> Unit = { closeRef[0]() }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) onPicked(if (multi) uris else uris.take(1))
-        onDismiss()
+        close()
     }
     LaunchedEffect(Unit) {
         if (access == 0 && !asked) {
@@ -179,8 +182,10 @@ fun PhotoGalleryDialog(multi: Boolean, title: String, onPicked: (List<Uri>) -> U
         else -> all.filter { it.bucket == tab }
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth(0.96f).height(620.dp), shape = RoundedCornerShape(22.dp), color = Color.White) {
+    // نفس حركة نافذة الإعدادات: تخرج من الزر الذي فُتحت منه وتعود إليه
+    OriginDialog(onDismiss = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) { closeAnimated ->
+        closeRef[0] = closeAnimated
+        Surface(Modifier.fillMaxWidth(0.96f).height(620.dp), shape = RoundedCornerShape(22.dp), color = Palette.Surface) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 19.sp, color = Palette.Navy, modifier = Modifier.weight(1f))
@@ -190,11 +195,11 @@ fun PhotoGalleryDialog(multi: Boolean, title: String, onPicked: (List<Uri>) -> U
                             L("إضافة ${picked.size}", "Add ${picked.size}"), fontSize = 14.sp, fontWeight = FontWeight.Bold,
                             color = Color.White.copy(alpha = if (picked.isEmpty()) 0.6f else 1f),
                             modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.Navy.copy(alpha = if (picked.isEmpty()) 0.4f else 1f))
-                                .clickable(enabled = picked.isNotEmpty()) { onPicked(picked); onDismiss() }
+                                .clickable(enabled = picked.isNotEmpty()) { onPicked(picked); close() }
                                 .padding(horizontal = 14.dp, vertical = 8.dp)
                         )
                     }
-                    TextButton(onClick = onDismiss) { Text("✕", color = Palette.TextSecondary) }
+                    TextButton(onClick = { close() }) { Text("✕", color = Palette.TextSecondary) }
                 }
                 if (access == 1) {
                     Row(
@@ -246,7 +251,7 @@ fun PhotoGalleryDialog(multi: Boolean, title: String, onPicked: (List<Uri>) -> U
                             GalleryCell(p.uri, n) {
                                 if (!multi) {
                                     onPicked(listOf(p.uri))
-                                    onDismiss()
+                                    close()
                                 } else {
                                     picked = if (n >= 0) picked - p.uri else picked + p.uri
                                 }

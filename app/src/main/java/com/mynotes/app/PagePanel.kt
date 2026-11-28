@@ -62,9 +62,10 @@ fun PagePanel(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     fun go(p: Int) = scope.launch { s.listState.scrollToItem(p.coerceIn(0, maxOf(0, s.pdf?.count?.minus(1) ?: 0))) }
 
     Surface(
-        modifier.fillMaxHeight().width(380.dp),
-        color = Palette.DrawerBg,
-        shadowElevation = 14.dp
+        modifier.fillMaxHeight().padding(end = 12.dp, top = 4.dp, bottom = 12.dp).width(380.dp),
+        shape = ChromeShape,
+        color = Palette.Surface,
+        shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Row(
@@ -246,7 +247,7 @@ private fun Group(content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp).padding(top = 12.dp)
-            .clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+            .clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
     ) { content() }
 }
 

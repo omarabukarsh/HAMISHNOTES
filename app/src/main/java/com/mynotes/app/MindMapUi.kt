@@ -91,9 +91,9 @@ fun mapBranchColor(i: Int): Color = MapPalette[((i % MapPalette.size) + MapPalet
 
 private val MapCenterTop = Color(0xFF2C4F80)
 private val MapCenterDeep = Color(0xFF0D1D35)
-private val MapDot = Color(0xFFE4DFD3)
-private val GhostBg = Color(0xFFFFF8E6)
-private val GhostInk = Color(0xFF6B5418)
+private val MapDot: Color get() = if (ThemeState.light) Color(0xFFE4DFD3) else Color(0xFF3A3F4B)
+private val GhostBg: Color get() = if (ThemeState.light) Color(0xFFFFF8E6) else Palette.GoldSoft
+private val GhostInk: Color get() = if (ThemeState.light) Color(0xFF6B5418) else Palette.GoldDeep
 private val BarDark = Color(0xFF1A2230)
 
 // ---------------------------------------------------------------- درج الملخصات
@@ -139,7 +139,7 @@ val FreeInk = Color(0xFF6D4AC2)
 @Composable
 private fun AddTextHeader(onCancel: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(Color(0xFFF1ECFF)).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().background(if (ThemeState.light) Color(0xFFF1ECFF) else Color(0xFF2A2440)).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -152,7 +152,7 @@ private fun AddTextHeader(onCancel: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Text(
             L("إلغاء", "Cancel"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, Palette.Divider, RoundedCornerShape(12.dp))
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(CardBg).border(1.dp, Palette.Divider, RoundedCornerShape(12.dp))
                 .clickable(onClick = onCancel).padding(horizontal = 14.dp, vertical = 9.dp)
         )
     }
@@ -222,7 +222,7 @@ fun CardRoleBar(titles: Int, contents: Int, onBack: () -> Unit, onNext: () -> Un
 @Composable
 fun CardRoleChips(title: Boolean, onSelect: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.shadow(2.dp, RoundedCornerShape(9.dp)).clip(RoundedCornerShape(9.dp)).background(Color.White).padding(2.dp),
+        modifier.shadow(2.dp, RoundedCornerShape(9.dp)).clip(RoundedCornerShape(9.dp)).background(SegOnBg).padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         listOf(true to L("عنوان", "Title"), false to L("محتوى", "Content")).forEach { (v, label) ->
@@ -583,7 +583,7 @@ private fun describe(model: MindMapModel, t: MapTarget): String {
 @Composable
 private fun PlacingHeader(texts: List<MindMap.Item>, onCancel: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFFFFF6DD), Palette.GoldSoft)))
+        Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(if (ThemeState.light) Color(0xFFFFF6DD) else Palette.GoldSoft, Palette.GoldSoft)))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -595,7 +595,7 @@ private fun PlacingHeader(texts: List<MindMap.Item>, onCancel: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             val shape = RoundedCornerShape(12.dp)
             Column(
-                Modifier.fillMaxWidth().clip(shape).background(Color.White)
+                Modifier.fillMaxWidth().clip(shape).background(CardBg)
                     .drawBehind { dashedBorder(Palette.Gold, 12.dp.toPx(), 2.dp.toPx()) }
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
@@ -615,7 +615,7 @@ private fun PlacingHeader(texts: List<MindMap.Item>, onCancel: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Text(
             L("إلغاء", "Cancel"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Navy,
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, Palette.Divider, RoundedCornerShape(12.dp))
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(CardBg).border(1.dp, Palette.Divider, RoundedCornerShape(12.dp))
                 .clickable(onClick = onCancel).padding(horizontal = 14.dp, vertical = 9.dp)
         )
     }
@@ -634,7 +634,7 @@ private fun MapTopBar(
     onExport: (Int) -> Unit,
     onAddText: () -> Unit = {}
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth().background(Color.White)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().background(Palette.Surface)) {
         val compact = maxWidth < 600.dp
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -664,7 +664,7 @@ private fun MapTopBar(
                 Box {
                     Row(
                         Modifier.clip(RoundedCornerShape(12.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFFFFF6DD), Palette.GoldSoft)))
+                            .background(Brush.linearGradient(listOf(if (ThemeState.light) Color(0xFFFFF6DD) else Palette.GoldSoft, Palette.GoldSoft)))
                             .border(1.dp, Palette.Gold, RoundedCornerShape(12.dp))
                             .clickable { onExportMenu(true) }.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -697,7 +697,7 @@ private fun TopAction(icon: Int, desc: String, onClick: () -> Unit) {
 private fun HintChip(text: String, modifier: Modifier) {
     Text(
         text, fontSize = 12.sp, color = Palette.TextSecondary,
-        modifier = modifier.clip(RoundedCornerShape(12.dp)).background(Color.White)
+        modifier = modifier.clip(RoundedCornerShape(12.dp)).background(CardBg)
             .border(1.dp, Palette.Divider, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
@@ -730,7 +730,7 @@ private fun EmptyMap(standalone: Boolean = false, onAdd: () -> Unit = {}) {
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         PhIcon(R.drawable.ph_mindmap, Palette.Gold, 56.dp)
         Spacer(Modifier.height(12.dp))
-        Text(L("خريطتك فارغة", "Your map is empty"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.Navy)
+        Text(L("خريطتك فارغة", "Your map is empty"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = if (ThemeState.light) Palette.Navy else Palette.TextPrimary)
         Text(
             if (standalone) L("اكتب أول فرع في خريطتك.", "Write the first branch of your map.")
             else L("من الملخصات ← «كما التُقط»: اضغط نصًا واختر «ضعه في الخريطة»، أو اكتب نصًا حرًا هنا.",
@@ -1032,10 +1032,10 @@ private fun BranchNode(n: MapNode, col: Color, right: Boolean, ghost: Boolean, s
     Box {
         Text(
             n.text, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 15.sp, lineHeight = 23.sp,
-            color = if (ghost) GhostInk else Palette.Navy,
+            color = if (ghost) GhostInk else if (ThemeState.light) Palette.Navy else Palette.TextPrimary,
             modifier = Modifier.padding(top = 6.dp)
                 .let { if (ghost) it else it.shadow(6.dp, shape) }
-                .clip(shape).background(if (ghost) GhostBg else Color.White)
+                .clip(shape).background(if (ghost) GhostBg else CardBg)
                 .let {
                     if (ghost) it.drawBehind { dashedBorder(Palette.Gold, 16.dp.toPx(), 2.dp.toPx()) }
                     else it.border(if (selected) 2.dp else if (n.isFree) 1.5.dp else 1.dp, if (selected) Palette.Gold else if (n.isFree) FreeInk else Palette.Divider, shape)
@@ -1072,7 +1072,7 @@ private fun PointNode(n: MapNode, col: Color, depth: Int, ghost: Boolean, select
             .background(
                 when {
                     ghost -> GhostBg
-                    kid || selected -> Color.White
+                    kid || selected -> CardBg
                     else -> col.copy(alpha = 0.08f)
                 }
             )
@@ -1090,7 +1090,7 @@ private fun PointNode(n: MapNode, col: Color, depth: Int, ghost: Boolean, select
 private fun PlusChip(label: String?, big: Boolean, on: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
     Row(
-        Modifier.clip(shape).background(if (on) Palette.Gold else Color.White)
+        Modifier.clip(shape).background(if (on) Palette.Gold else CardBg)
             .let { if (on) it.border(1.5.dp, Palette.GoldDeep, shape) else it.drawBehind { dashedBorder(Color(0xFFB8A36A), size.height / 2, 1.5.dp.toPx()) } }
             .clickable(onClick = onClick)
             .padding(start = 4.dp, end = if (label != null) 12.dp else 4.dp, top = 4.dp, bottom = 4.dp),

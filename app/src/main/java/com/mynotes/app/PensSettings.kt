@@ -268,7 +268,7 @@ fun PensSection() {
     PenGroup {
         Row(
             Modifier.fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFF1EEE7)).padding(4.dp),
+                .background(if (ThemeState.light) Color(0xFFF1EEE7) else TrackBg).padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             ModeOption(Modifier.weight(1f), R.drawable.ph_pen_nib, L("القلم فقط", "Pen only"), !PenInput.fingerWrites) {
@@ -486,7 +486,7 @@ private fun TryPenPad() {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(12.dp).height(140.dp)) {
             val shape = RoundedCornerShape(14.dp)
             Canvas(
-                Modifier.matchParentSize().clip(shape).background(Color.White)
+                Modifier.matchParentSize().clip(shape).background(CardBg)
                     .border(1.dp, Palette.Divider, shape)
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
@@ -521,7 +521,7 @@ private fun TryPenPad() {
                 // أسطر خفيفة كالورق
                 var y = 28.dp.toPx()
                 while (y < size.height) {
-                    drawLine(Color(0xFFEEF1F6), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                    drawLine(RowDivider, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
                     y += 28.dp.toPx()
                 }
                 val ink = Palette.Navy
@@ -560,7 +560,7 @@ private fun Meter(modifier: Modifier, label: String, value: String, frac: Float)
         Text(label, fontSize = 11.sp, color = Palette.TextSecondary)
         Text(value, fontFamily = Fonts.Display, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Palette.Navy)
         Spacer(Modifier.height(5.dp))
-        Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFFEFE7D4))) {
+        Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(if (ThemeState.light) Color(0xFFEFE7D4) else Palette.Divider)) {
             Box(
                 Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).height(5.dp)
                     .background(Brush.horizontalGradient(listOf(Palette.GoldDeep, Palette.Gold)))
@@ -597,12 +597,12 @@ private fun PenLabel(text: String) {
 @Composable
 private fun PenGroup(content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
-    Column(Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)) { content() }
+    Column(Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)) { content() }
 }
 
 @Composable
 private fun PenDivider() {
-    Box(Modifier.fillMaxWidth().padding(start = 60.dp).height(1.dp).background(Color(0xFFF1EEE7)))
+    Box(Modifier.fillMaxWidth().padding(start = 60.dp).height(1.dp).background(if (ThemeState.light) Color(0xFFF1EEE7) else RowDivider))
 }
 
 @Composable

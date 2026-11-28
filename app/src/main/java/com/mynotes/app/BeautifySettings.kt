@@ -70,10 +70,15 @@ import androidx.compose.ui.layout.onSizeChanged
  * والخط يُختار من نافذة مستقلة تُفتح من صف «خط الكتابة».
  */
 
-internal val SheetBg = Color(0xFFF2F3F6)
-internal val CardBg = Color.White
-internal val RowDivider = Color(0xFFE9EBEF)
-internal val Muted = Color(0xFF8A919E)
+// ألوان نوافذ الأدوات: فاتحة في المظهر الفاتح، وداكنة في الوضع الليلي (لا نوافذ بيضاء ليلًا)
+internal val SheetBg: Color get() = if (ThemeState.light) Color(0xFFF2F3F6) else Color(0xFF1E2128)
+internal val CardBg: Color get() = if (ThemeState.light) Color.White else Color(0xFF272B34)
+internal val RowDivider: Color get() = if (ThemeState.light) Color(0xFFE9EBEF) else Color(0xFF343843)
+/** مسار المفاتيح والأزرار المقسّمة. */
+internal val TrackBg: Color get() = if (ThemeState.light) Color(0xFFEEF0F3) else Color(0xFF181B21)
+/** الخيار المختار داخل مسار مقسّم. */
+internal val SegOnBg: Color get() = if (ThemeState.light) Color.White else Palette.NavySoft
+internal val Muted: Color get() = if (ThemeState.light) Color(0xFF8A919E) else Color(0xFF9AA3B2)
 
 @Composable
 internal fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
@@ -109,7 +114,7 @@ internal fun SwitchRow(title: String, subtitle: String? = null, checked: Boolean
             checked = checked, onCheckedChange = onChange, enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = Palette.Navy, checkedThumbColor = Color.White,
-                uncheckedTrackColor = Color(0xFFE3E6EB), uncheckedThumbColor = Color.White, uncheckedBorderColor = Color.Transparent
+                uncheckedTrackColor = if (ThemeState.light) Color(0xFFE3E6EB) else Palette.Divider, uncheckedThumbColor = Color.White, uncheckedBorderColor = Color.Transparent
             )
         )
     }
@@ -142,13 +147,13 @@ internal fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect
     val density = LocalDensity.current
     Box(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
-            .clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEF0F3)).padding(3.dp)
+            .clip(RoundedCornerShape(12.dp)).background(TrackBg).padding(3.dp)
             .onSizeChanged { widthPx = it.width }
     ) {
         if (widthPx > 0) {
             Box(
                 Modifier.offset { IntOffset(off.roundToInt(), 0) }.width(with(density) { segPx.toDp() }).height(36.dp)
-                    .shadow(2.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp)).background(Color.White)
+                    .shadow(2.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp)).background(SegOnBg)
             )
         }
         Row(Modifier.fillMaxWidth().height(36.dp)) {
@@ -186,7 +191,7 @@ internal fun StepperRow(title: String, value: Float, range: ClosedFloatingPointR
 @Composable
 internal fun RoundButton(label: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(30.dp).clip(CircleShape).background(Color(0xFFEEF0F3)).clickable(onClick = onClick),
+        Modifier.size(30.dp).clip(CircleShape).background(TrackBg).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { Text(label, fontSize = 18.sp, color = Palette.Navy) }
 }
@@ -250,7 +255,7 @@ fun AutoFontDialog(onDismiss: () -> Unit) {
                                 fontSize = 30.sp, lineHeight = 40.sp, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 14.dp)
-                                    .clip(RoundedCornerShape(14.dp)).background(Color(0xFFF7F8FA)).padding(horizontal = 12.dp, vertical = 14.dp)
+                                    .clip(RoundedCornerShape(14.dp)).background(if (ThemeState.light) Color(0xFFF7F8FA) else Color(0xFF22262E)).padding(horizontal = 12.dp, vertical = 14.dp)
                             )
                             if (ink) {
                                 RowDividerLine()
@@ -404,7 +409,7 @@ fun FontPickerSheet(current: String, lang: Int, onPick: (String) -> Unit, onDism
                 }
                 // البحث
                 Row(
-                    Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFE6E8EC))
+                    Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (ThemeState.light) Color(0xFFE6E8EC) else Color(0xFF2A2E37))
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -433,7 +438,7 @@ fun FontPickerSheet(current: String, lang: Int, onPick: (String) -> Unit, onDism
                         Text(
                             label, fontSize = 14.sp, color = if (sel) Color.White else Palette.TextPrimary,
                             fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sel) Palette.Navy else Color.White)
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sel) Palette.Navy else CardBg)
                                 .clickable { tab = k; query = "" }.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
                     }
@@ -478,7 +483,7 @@ private fun FontRow(e: FontEntry, sample: String, selected: Boolean, auto: Boole
     if (auto && !ready) LaunchedEffect(e.name) { FontStore.ensure(e.name, retryFailed = false) }
     val fam = if (ready) FontStore.family(e.name) else null
     Row(
-        Modifier.fillMaxWidth().background(if (selected) Color(0xFFF1F4FA) else Color.Transparent)
+        Modifier.fillMaxWidth().background(if (selected) (if (ThemeState.light) Color(0xFFF1F4FA) else Palette.NavySoft) else Color.Transparent)
             .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

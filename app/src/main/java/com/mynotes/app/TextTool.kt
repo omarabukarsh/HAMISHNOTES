@@ -86,7 +86,7 @@ private fun StyleToggle(on: Boolean, modifier: Modifier, onClick: () -> Unit, co
     Box(
         modifier.fillMaxHeight().padding(2.dp)
             .then(if (on) Modifier.shadow(2.dp, RoundedCornerShape(9.dp)) else Modifier)
-            .clip(RoundedCornerShape(9.dp)).background(if (on) Color.White else Color.Transparent)
+            .clip(RoundedCornerShape(9.dp)).background(if (on) (if (ThemeState.light) Color.White else Palette.NavySoft) else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { content() }
@@ -149,7 +149,7 @@ internal fun TextToolWindow(s: DocSession, onTurnOff: () -> Unit) {
         SettingsCard {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp).height(42.dp)
-                    .clip(RoundedCornerShape(11.dp)).background(Color(0xFFEEF0F3)).padding(2.dp)
+                    .clip(RoundedCornerShape(11.dp)).background(TrackBg).padding(2.dp)
             ) {
                 StyleToggle(TextPrefs.bold, Modifier.weight(1f), { TextPrefs.changeBold(!TextPrefs.bold); apply() }) {
                     Text("B", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = if (TextPrefs.bold) Palette.Navy else Muted)

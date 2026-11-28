@@ -58,6 +58,12 @@ object AppController {
     var importing by mutableStateOf(false)
         private set
 
+    /** نافذة إضافة الملف: الاسم والنسبة والمرحلة (null = لا نافذة). */
+    /** title: عنوان النافذة بدل «جارٍ إضافة الملفات» (مثل إنشاء ملاحظة من الصور). */
+    class ImportProgress(val name: String, val fraction: Float, val phase: String, val index: Int, val count: Int, val title: String? = null)
+    var importProgress by mutableStateOf<ImportProgress?>(null)
+    @Volatile var importCancel = false
+
     var libraryFilter by mutableStateOf(LibraryFilter.RECENT)
 
     // ---------- المواد (مجلدات المكتبة) ----------
@@ -239,6 +245,7 @@ object AppController {
 
     fun selectTool(t: Tool) {
         lassoActive = false
+        TapeTool.active = false
         PenPrefs.shapeActive = false
         PenPrefs.noteInkPen(t)
         tool = t
@@ -246,9 +253,20 @@ object AppController {
         if (t.isPen() || t == Tool.HIGHLIGHTER) lastWriting = t
     }
 
+    /** المظهر يتبع مظهر الجهاز (داكن/فاتح) ويتغير وحده معه. */
+    var themeFollowsSystem by mutableStateOf(false); private set
+
     fun setTheme(t: AppTheme) {
         ThemeState.theme = t
-        prefs.edit().putString("theme", t.name).apply()
+        themeFollowsSystem = false
+        prefs.edit().putString("theme", t.name).putBoolean("theme_system", false).apply()
+    }
+
+    /** يجعل المظهر يتبع الجهاز؛ dark = مظهر الجهاز الآن. */
+    fun setThemeSystem(dark: Boolean) {
+        themeFollowsSystem = true
+        ThemeState.theme = if (dark) AppTheme.NAVY else AppTheme.LIGHT
+        prefs.edit().putBoolean("theme_system", true).apply()
     }
 
     // ---------- وضع التركيز ومؤقت الدراسة (25 دقيقة دراسة ثم 5 راحة) ----------
@@ -672,6 +690,32 @@ object AppController {
         sizeOf[tool] = i.coerceIn(0, Sizes.COUNT - 1)
     }
 
+    /** آخر الألوان المختارة (الأحدث أولًا): منها تُختار الألوان الخمسة الظاهرة في شريط القلم. */
+    val recentColors = mutableStateListOf<Color>()
+
+    fun noteRecentColor(c: Color) {
+        recentColors.remove(c)
+        recentColors.add(0, c)
+        while (recentColors.size > 12) recentColors.removeAt(recentColors.lastIndex)
+        prefs.edit()
+            .putString("recent_colors", recentColors.joinToString(",") { it.toArgb().toString() })
+            .apply()
+    }
+
+    /**
+     * الألوان الظاهرة في شريط القلم (5): اللون الحالي وآخر ما استُخدم من ألوان هذه الأداة، وتكمّلها ألوان اللوحة.
+     * تُعرض بترتيب لوحة الألوان (لا بترتيب الاستخدام) حتى لا يتحرك اللون تحت الإصبع عند اختياره.
+     */
+    fun shownColors(t: Tool, count: Int = 5): List<Color> {
+        val all = paletteFor(t) + customColors.filter { it !in paletteFor(t) }
+        val current = colorFor(t)
+        val pick = LinkedHashSet<Color>()
+        if (current in all) pick.add(current)
+        recentColors.filter { it in all }.forEach { if (pick.size < count) pick.add(it) }
+        all.forEach { if (pick.size < count) pick.add(it) }
+        return all.filter { it in pick }
+    }
+
     fun addCustomColor(c: Color) {
         customColors.remove(c)
         customColors.add(0, c)
@@ -709,6 +753,10 @@ object AppController {
             .split(",")
             .mapNotNull { it.toIntOrNull() }
             .forEach { customColors.add(Color(it)) }
+        (prefs.getString("recent_colors", "") ?: "")
+            .split(",")
+            .mapNotNull { it.toIntOrNull() }
+            .forEach { recentColors.add(Color(it)) }
         highlightSnap = prefs.getBoolean("hl_snap", false)
         highlightToSummary = prefs.getBoolean("hl_summary", true)
         shapeSnap = prefs.getBoolean("shape_snap", true)
@@ -769,6 +817,7 @@ object AppController {
         } catch (e: Throwable) {
             AppTheme.NAVY
         }
+        themeFollowsSystem = prefs.getBoolean("theme_system", false)
         laserMode = try {
             LaserMode.valueOf(prefs.getString("laser_mode", "DOT") ?: "DOT")
         } catch (e: Throwable) {
@@ -1192,9 +1241,10 @@ object AppController {
         val snap = Exporter.snapshotOf(s) ?: throw IllegalStateException("not ready")
         val total = snap.pages.size
         val data = if (editable) repo.docDataJson(
-            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes, s.mindNotes)
+            DocData(s.annotations, s.images, s.marks, s.texts, s.summaryEdits, s.customCards, s.starred, s.bookmarks, s.notes, s.tapes, s.mindNotes)
         ) else null
         val imgs = if (editable) s.images.values.flatten().map { repo.imageFile(s.id, it.file) } else emptyList()
+        val extras = if (editable) repo.extrasDir(s.id).listFiles()?.toList() ?: emptyList() else emptyList()
         return withContext(Dispatchers.IO) {
             val entry = library.firstOrNull { it.id == s.id }
             val partsDir = repo.partsDir(s.id)
@@ -1206,7 +1256,7 @@ object AppController {
                         src.startsWith("part:") -> File(partsDir, src.removePrefix("part:"))
                         else -> null
                     }
-                }, uri, { i -> exporting = L("جارٍ تجهيز PDF: صفحة ${i + 1} من $total", "Preparing PDF: page ${i + 1} of $total") }, data, imgs)
+                }, uri, { i -> exporting = L("جارٍ تجهيز PDF: صفحة ${i + 1} من $total", "Preparing PDF: page ${i + 1} of $total") }, data, imgs, extras)
                 true
             } catch (t: Throwable) {
                 // احتياط: صفحات كصور (نسخة نهائية فقط)
@@ -1482,25 +1532,47 @@ object AppController {
             .apply()
     }
 
-    fun importDocuments(uris: List<Uri>) {
+    /** اسم الملف كما يظهر للمستخدم (بلا الامتداد). */
+    private fun displayNameOf(u: Uri): String = try {
+        appContext.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (t: Throwable) { null }?.substringBeforeLast('.') ?: L("مستند", "Document")
+
+    /** folder: مادة المستندات المستوردة (null = بلا تغيير، أي بلا مادة). */
+    fun importDocuments(uris: List<Uri>, folder: String? = null) {
         if (uris.isEmpty()) return
         scope.launch {
             importing = true
+            importCancel = false
             var ok = 0
             var failed = 0
             val added = ArrayList<DocEntry>()
-            for (u in uris) {
+            for ((i, u) in uris.withIndex()) {
+                if (importCancel) break
+                val name = displayNameOf(u)
+                importProgress = ImportProgress(name, 0f, L("بدء الإضافة…", "Starting…"), i, uris.size)
                 try {
-                    val e = withContext(Dispatchers.IO) { repo.importFile(u) }
-                    library.add(0, e)
-                    added.add(e)
+                    val e = withContext(Dispatchers.IO) {
+                        repo.importFile(u, { f, ph ->
+                            scope.launch { importProgress = ImportProgress(name, f, ph, i, uris.size) }
+                        }, { importCancel })
+                    }
+                    val placed = if (folder != null) e.copy(folder = folder) else e
+                    library.add(0, placed)
+                    added.add(placed)
                     ok++
                 } catch (t: Throwable) {
-                    failed++
+                    if (!importCancel) failed++
                 }
             }
+            importProgress = null
             saveLibrary()
             importing = false
+            if (importCancel && ok == 0) {
+                say(MsgKind.TIP, L("أُلغيت إضافة الملف", "Adding the file was cancelled"))
+                return@launch
+            }
             val msg = when {
                 failed == 0 && ok == 1 -> L("تم استيراد المستند، وتبدأ قراءة نصه تلقائيًا", "Document imported; its text is read automatically")
                 failed == 0 -> L("تم استيراد $ok مستندات، وتبدأ قراءة نصوصها تلقائيًا", "Imported $ok documents; their text is read automatically")
@@ -1509,6 +1581,74 @@ object AppController {
             }
             say(MsgKind.DONE, msg)
             added.forEach { queueOcr(it) }
+        }
+    }
+
+    /** يجمع عدة ملفات PDF في مستند واحد بالترتيب المعطى، ثم يفتحه. */
+    fun importMerged(uris: List<Uri>, name: String, folder: String) {
+        if (uris.isEmpty()) return
+        scope.launch {
+            importing = true
+            importCancel = false
+            val names = withContext(Dispatchers.IO) { uris.map { displayNameOf(it) } }
+            importProgress = ImportProgress(names[0], 0f, L("بدء الإضافة…", "Starting…"), 0, uris.size)
+            try {
+                val (e, pages, failed) = withContext(Dispatchers.IO) {
+                    repo.importMerged(uris, name, folder, { i, f, ph ->
+                        scope.launch { importProgress = ImportProgress(names[i], f, ph, i, uris.size) }
+                    }, { importCancel })
+                }
+                repo.savePages(e.id, pages)
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+                val joined = uris.size - failed
+                say(
+                    MsgKind.DONE,
+                    if (failed == 0) L("جُمعت الملفات في مستند واحد (${pages.size} صفحة)", "Combined the files into one document (${pages.size} pages)")
+                    else L("جُمعت الملفات (${pages.size} صفحة)، وتعذرت إضافة $failed من ${uris.size}", "Combined $joined files (${pages.size} pages); $failed could not be added")
+                )
+            } catch (t: Throwable) {
+                if (importCancel) say(MsgKind.TIP, L("أُلغيت إضافة الملفات", "Adding the files was cancelled"))
+                else say(MsgKind.ERROR, L("تعذر الاستيراد. تأكد أن الملفات PDF سليمة.", "Import failed. Make sure the files are valid PDFs."))
+            } finally {
+                importing = false
+                importProgress = null
+            }
+        }
+    }
+
+    /** ملاحظة جديدة من صور: كل صورة صفحة بالترتيب المعطى، ثم تُفتح. */
+    fun createImageNote(uris: List<Uri>, name: String, folder: String) {
+        if (uris.isEmpty()) return
+        scope.launch {
+            importing = true
+            importCancel = false
+            val title = L("جارٍ إنشاء الملاحظة…", "Creating the note…")
+            fun step(i: Int) = ImportProgress(
+                name, i.toFloat() / uris.size,
+                L("الصورة ${i + 1} من ${uris.size}", "Photo ${i + 1} of ${uris.size}"), 0, 1, title
+            )
+            importProgress = step(0)
+            try {
+                val (e, failed) = withContext(Dispatchers.IO) {
+                    repo.createNoteFromImages(name, uris, folder, { i -> scope.launch { importProgress = step(i) } }, { importCancel })
+                }
+                library.add(0, e)
+                saveLibrary()
+                openDocument(e.id)
+                say(
+                    MsgKind.DONE,
+                    if (failed == 0) L("أُنشئت الملاحظة من الصور (${e.pageCount} صفحة)", "Created the note from your photos (${e.pageCount} pages)")
+                    else L("أُنشئت الملاحظة (${e.pageCount} صفحة)، وتعذرت قراءة $failed من ${uris.size}", "Created the note (${e.pageCount} pages); $failed photos could not be read")
+                )
+            } catch (t: Throwable) {
+                if (importCancel) say(MsgKind.TIP, L("أُلغي إنشاء الملاحظة", "Creating the note was cancelled"))
+                else say(MsgKind.ERROR, L("تعذر إنشاء الملاحظة من الصور", "Could not create the note from the photos"))
+            } finally {
+                importing = false
+                importProgress = null
+            }
         }
     }
 
@@ -1571,16 +1711,22 @@ object AppController {
                 return@launch
             }
             importing = true
+            importCancel = false
+            val name = displayNameOf(uri)
+            importProgress = ImportProgress(name, 0f, L("بدء الإضافة…", "Starting…"), 0, 1)
             try {
-                val e = withContext(Dispatchers.IO) { repo.importFile(uri) }
+                val e = withContext(Dispatchers.IO) {
+                    repo.importFile(uri, { f, ph -> scope.launch { importProgress = ImportProgress(name, f, ph, 0, 1) } }, { importCancel })
+                }
                 library.add(0, e)
                 saveLibrary()
                 openDocument(e.id)
                 queueOcr(e)
             } catch (t: Throwable) {
-                say(MsgKind.ERROR, L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
+                if (!importCancel) say(MsgKind.ERROR, L("تعذر فتح الملف. تأكد أنه PDF سليم.", "Could not open the file. Make sure it is a valid PDF."))
             } finally {
                 importing = false
+                importProgress = null
             }
         }
     }

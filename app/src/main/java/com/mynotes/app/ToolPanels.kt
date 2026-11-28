@@ -165,7 +165,7 @@ fun SizeSlots(t: Tool) {
             var edit by remember { mutableStateOf(false) }
             Box {
                 Box(
-                    Modifier.size(width = 46.dp, height = 40.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier.barItem().clip(RoundedCornerShape(12.dp))
                         .background(if (sel) Palette.NavySoft else Color.Transparent)
                         .clickable { if (sel) edit = true else c.setSize(sz) },
                     contentAlignment = Alignment.Center
@@ -174,12 +174,12 @@ fun SizeSlots(t: Tool) {
                     val thick = (2 + sz * 1.3f).dp
                     Box(
                         Modifier.width(26.dp).height(thick).clip(RoundedCornerShape(50))
-                            .background(if (sel) Palette.Navy else Palette.TextSecondary)
+                            .background(if (sel) Palette.Navy else Palette.ChromeMuted)
                     )
                 }
-                DropdownMenu(
+                DropdownMenu(fromEdge = true,
                     expanded = edit, onDismissRequest = { edit = false },
-                    shape = RoundedCornerShape(18.dp), containerColor = Color.White, shadowElevation = 12.dp
+                    shape = RoundedCornerShape(18.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                 ) {
                     Column(Modifier.width(260.dp).padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -309,8 +309,11 @@ fun LassoMenuContent(s: DocSession?, onOff: () -> Unit) {
                 LassoAction(L("إلى نص", "To text"), has, Modifier.weight(1f)) { toText = true }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LassoAction(L("نسخ", "Copy"), has, Modifier.weight(1f)) { s?.lassoCopy() }
+                LassoAction(L("تكرار", "Duplicate"), has, Modifier.weight(1f)) { s?.lassoDuplicate() }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LassoAction("☺ " + L("ملصق", "Sticker"), has, Modifier.weight(1f)) { s?.let { StickerStore.saveFromLasso(it) } }
-                LassoAction(L("نسخ", "Duplicate"), has, Modifier.weight(1f)) { s?.lassoDuplicate() }
                 LassoAction(L("حذف", "Delete"), has, Modifier.weight(1f), Color(0xFFC62828)) { s?.lassoDelete() }
             }
             // تلوين المحدد
@@ -360,32 +363,32 @@ private fun shapeIcon(k: ShapeKind): Int = when (k) {
 @Composable
 fun ShapeBar() {
     val c = AppController
-    val pill = RoundedCornerShape(26.dp)
+    val pill = BarShape
     var strokeMenu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.shadow(6.dp, pill).background(Color.White, pill).border(1.dp, Palette.Divider, pill).clip(pill)) {
+    Box(Modifier.fillMaxWidth().padding(start = 64.dp, end = 64.dp, top = 10.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.shadow(6.dp, pill).background(Palette.ChromeBg, pill).border(1.dp, Palette.ChromeLine, pill).clip(pill).blockTouches()) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // التعرّف على الأشكال المرسومة بالقلم
                 // «ارسم وأبقِ»: التعرّف على الشكل المرسوم بالقلم عند إبقائه ثابتًا
                 TBtn(selected = PenPrefs.drawAndHold, onClick = { PenPrefs.changeDrawAndHold(!PenPrefs.drawAndHold) }) {
-                    PhIcon(R.drawable.ph_shape_detect, tintFor(PenPrefs.drawAndHold))
+                    PhIcon(R.drawable.ph_shape_detect, chromeTint(PenPrefs.drawAndHold))
                 }
                 ToolbarSep()
                 ShapeKind.values().forEach { k ->
                     val sel = PenPrefs.shapeKind == k
-                    TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), tintFor(sel)) }
+                    TBtn(selected = sel, onClick = { PenPrefs.changeShapeKind(k) }) { PhIcon(shapeIcon(k), chromeTint(sel)) }
                 }
                 ToolbarSep()
                 // زر واحد (كبسولة): نمط الخط ولونه، ويفتح نافذة إعدادات الشكل كلها
                 Box {
                     Row(
-                        Modifier.padding(horizontal = 4.dp).height(40.dp).clip(RoundedCornerShape(20.dp))
+                        Modifier.padding(horizontal = 2.dp).height(42.dp).clip(RoundedCornerShape(12.dp))
                             .background(Palette.NavySoft.copy(alpha = 0.5f))
-                            .border(1.5.dp, Palette.Navy, RoundedCornerShape(20.dp))
+                            .border(1.5.dp, Palette.Navy, RoundedCornerShape(12.dp))
                             .clickable { strokeMenu = true }
                             .padding(start = 10.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -395,9 +398,9 @@ fun ShapeBar() {
                         Box(Modifier.size(18.dp).clip(CircleShape).background(Color(PenPrefs.shapeColor)).border(1.dp, Palette.Divider, CircleShape))
                         PhIcon(R.drawable.ph_caret_down, Palette.Navy, 12.dp)
                     }
-                    DropdownMenu(
+                    DropdownMenu(fromEdge = true,
                         expanded = strokeMenu, onDismissRequest = { strokeMenu = false },
-                        shape = RoundedCornerShape(20.dp), containerColor = Color.White, shadowElevation = 12.dp
+                        shape = RoundedCornerShape(20.dp), containerColor = Palette.Surface, shadowElevation = 12.dp
                     ) {
                         ShapeSettingsWindow(
                             onClose = { strokeMenu = false },
@@ -407,7 +410,7 @@ fun ShapeBar() {
                 }
                 ToolbarSep()
                 TBtn(onClick = { PenPrefs.shapeActive = false }) {
-                    PhIcon(R.drawable.ph_close, Palette.TextSecondary, 20.dp, L("إغلاق الأشكال", "Close shapes"))
+                    PhIcon(R.drawable.ph_close, Palette.ChromeMuted, 20.dp, L("إغلاق الأشكال", "Close shapes"))
                 }
             }
         }

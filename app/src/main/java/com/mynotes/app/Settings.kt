@@ -109,9 +109,10 @@ object ToolCatalog {
         ToolInfo("image", L("إضافة صورة", "Add image"), L("أضف صورة فوق الصفحة، ثم حرّكها وغيّر حجمها.", "Place an image on the page, then move and resize it."), R.drawable.ph_image, Demo.IMAGE),
         ToolInfo("stickers", L("الملصقات", "Stickers"), L("ضع ملصقًا جاهزًا على الصفحة، أو اصنع ملصقاتك من صورة أو من رسمك فتبقى محفوظة في التطبيق.", "Put a ready-made sticker on the page, or make your own from a photo or your drawing; they stay saved in the app."), R.drawable.ph_sticker, Demo.IMAGE),
         ToolInfo("lasso", L("التحديد الحر", "Lasso"), L("أحِط بالقلم حول كتابتك لتحديدها، ثم اسحبها أو كبّرها بالمقبض أو غيّر لونها أو انسخها أو حوّلها إلى نص مكتوب أو احذفها.", "Loop around your writing to select it, then drag it, resize with the handle, recolor, duplicate, convert to typed text or delete."), R.drawable.ph_lasso, Demo.LASSO),
-        ToolInfo("autofont", L("Aa تحويل الكتابة تلقائياً", "Aa Auto-convert handwriting"), L("اكتب بالقلم كالعادة؛ عند إنهاء الجملة تتحول في مكانها إلى الخط الذي تختاره، والتراجع يعيدها لخط يدك.", "Write as usual; when you finish a sentence it turns into the font you chose, in place. Undo brings your handwriting back."), R.drawable.ph_text, Demo.TEXT),
+        ToolInfo("autofont", L("Aa تحويل الكتابة تلقائياً", "Aa Auto-convert handwriting"), L("اكتب بالقلم كالعادة؛ عند إنهاء الجملة تتحول في مكانها إلى الخط الذي تختاره، والتراجع يعيدها لخط يدك.", "Write as usual; when you finish a sentence it turns into the font you chose, in place. Undo brings your handwriting back."), R.drawable.ph_beautify, Demo.TEXT),
         ToolInfo("shapetool", L("أداة الأشكال", "Shapes tool"), L("ارسم مستطيلًا أو دائرة أو مثلثًا أو معينًا أو خطًا أو سهمًا أو موصلًا بالسحب، مع نمط الخط وسماكته ورؤوس الأسهم.", "Drag to draw rectangles, circles, triangles, diamonds, lines, arrows or connectors, with line style, thickness and arrowheads."), R.drawable.ph_shapes, Demo.SHAPES),
         ToolInfo("sticky", L("ملاحظة لاصقة", "Sticky note"), L("اختر لونًا وانقر على الصفحة لتضع ملاحظة تكتب عليها بالقلم؛ اسحبها لتحريكها، ومن زاويتها لتكبيرها، واطوها لتصبح مربعًا صغيرًا.", "Pick a color and tap the page to place a note you write on with the pen; drag to move, drag its corner to resize, and collapse it to a small square."), R.drawable.ph_sticky_note, Demo.STICKY),
+        ToolInfo("tape", L("الشريط اللاصق", "Tape"), L("ضع شريطًا فوق الكلمات أو الإجابات لتخفيها، ثم انقر عليه لتكشف ما تحته وانقر مرة ثانية لتخفيه. مفيد للمراجعة واختبار نفسك.", "Put tape over words or answers to hide them, then tap it to reveal what is under it and tap again to hide it. Handy for review and self-testing."), R.drawable.ph_tape, Demo.STICKY),
         ToolInfo("link", L("رابط إلى صفحة", "Page link"), L("ضع على الصفحة رابطًا إلى صفحة أخرى أو مستند آخر (مثل «جدول المضادات ص 12»)؛ انقر عليه مرتين لتنتقل، ويظهر زر للرجوع.", "Place a link to another page or document (e.g. “antibiotics table p. 12”); tap it twice to jump, with a Back button."), R.drawable.ph_link, Demo.NAV),
         ToolInfo("record", L("تسجيل المحاضرة", "Lecture recording"), L("سجّل الصوت أثناء الكتابة؛ كل خط يُربط بلحظته، فتحدد الكتابة لاحقًا وتسمع ما قيل وقتها.", "Record audio while writing; every stroke is linked to its moment, so you can lasso writing later and hear what was said."), R.drawable.ph_mic, Demo.NAV),
         ToolInfo("split", L("مستندان جنبًا إلى جنب", "Split view"), L("اعرض مستندًا آخر بجانب الحالي (مثل الكتاب والملخص) واسحب الفاصل لتغيير العرض.", "Show another document next to this one (e.g. book and notes) and drag the divider to resize."), R.drawable.ph_split, Demo.NAV),
@@ -261,7 +262,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 @Composable
 private fun SettingsSidebar(selected: SettingsPage?, modifier: Modifier, onClose: (() -> Unit)?, onSelect: (SettingsPage) -> Unit) {
     val c = AppController
-    Column(modifier.background(Color.White).padding(horizontal = 12.dp, vertical = 16.dp)) {
+    Column(modifier.background(Palette.Surface).padding(horizontal = 12.dp, vertical = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 L("الإعدادات", "Settings"), fontFamily = Fonts.Display, fontWeight = FontWeight.Bold,
@@ -505,13 +506,17 @@ private fun SettingsPane(
                     GroupLabel(L("السمة", "Theme"))
                     SettingsGroup {
                         Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            ThemeCard(L("كحلي", "Navy"), ThemeState.theme == AppTheme.NAVY, AppTheme.NAVY, Modifier.weight(1f)) { c.setTheme(AppTheme.NAVY) }
-                            ThemeCard(L("فاتح", "Light"), ThemeState.theme == AppTheme.LIGHT, AppTheme.LIGHT, Modifier.weight(1f)) { c.setTheme(AppTheme.LIGHT) }
+                            val sysDark = androidx.compose.foundation.isSystemInDarkTheme()
+                            ThemeCard(L("داكن", "Dark"), !c.themeFollowsSystem && ThemeState.theme == AppTheme.NAVY, AppTheme.NAVY, Modifier.weight(1f)) { c.setTheme(AppTheme.NAVY) }
+                            ThemeCard(L("فاتح", "Light"), !c.themeFollowsSystem && ThemeState.theme == AppTheme.LIGHT, AppTheme.LIGHT, Modifier.weight(1f)) { c.setTheme(AppTheme.LIGHT) }
+                            // تلقائي: يتبع مظهر الجهاز ويتغير وحده معه
+                            ThemeCard(L("تلقائي", "System"), c.themeFollowsSystem, null, Modifier.weight(1f)) { c.setThemeSystem(sysDark) }
                         }
                     }
                     GroupLabel(L("الأحجام", "Sizes"))
                     SettingsGroup {
-                        val bars = listOf(0.85f, 1f, 1.15f, 1.3f)
+                        // صغير، متوسط (جديد بين الصغير والكبير)، كبير (المتوسط السابق)، أكبر
+                        val bars = listOf(0.85f, 0.92f, 1f, 1.15f)
                         GroupRow(R.drawable.ph_sliders, TileGray, L("حجم شريط الأدوات", "Toolbar size")) {
                             Segmented(
                                 listOf(L("صغير", "S"), L("عادي", "M"), L("كبير", "L"), L("أكبر", "XL")),
@@ -613,7 +618,7 @@ private fun GroupLabel(text: String) {
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
-    Column(Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)) { content() }
+    Column(Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)) { content() }
 }
 
 @Composable
@@ -674,7 +679,7 @@ private fun Segmented(options: List<String>, selected: Int, sizes: List<Int>? = 
             val on = i == selected
             Box(
                 Modifier.clip(RoundedCornerShape(9.dp))
-                    .let { if (on) it.shadow(1.dp, RoundedCornerShape(9.dp)).background(Color.White) else it }
+                    .let { if (on) it.shadow(1.dp, RoundedCornerShape(9.dp)).background(Palette.Surface) else it }
                     .clickable { onSelect(i) }.padding(horizontal = 12.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -689,14 +694,27 @@ private fun Segmented(options: List<String>, selected: Int, sizes: List<Int>? = 
 
 /** بطاقة سمة بمعاينة مصغّرة للشكل. */
 @Composable
-private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme, modifier: Modifier, onClick: () -> Unit) {
+private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme?, modifier: Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
-    val navy = theme == AppTheme.NAVY
     Column(
         modifier.clip(shape).border(2.dp, if (selected) Palette.Gold else Palette.Divider, shape)
             .clickable(onClick = onClick).padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // «تلقائي»: نصف المعاينة فاتح ونصفها داكن
+        if (theme == null) Row(Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(9.dp))) {
+            Box(Modifier.weight(1f).fillMaxHeight()) { ThemePreview(AppTheme.LIGHT) }
+            Box(Modifier.weight(1f).fillMaxHeight()) { ThemePreview(AppTheme.NAVY) }
+        } else ThemePreview(theme)
+        Spacer(Modifier.height(8.dp))
+        Text((if (selected) "✓ " else "") + label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+    }
+}
+
+@Composable
+private fun ThemePreview(theme: AppTheme) {
+    val navy = theme == AppTheme.NAVY
+    run {
         Row(Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(9.dp)).background(if (navy) Color(0xFFF3F5F8) else Color(0xFFFFFDF7))) {
             Box(Modifier.fillMaxHeight().weight(0.28f).background(if (navy) Palette.Navy else Color.White))
             Column(Modifier.weight(0.72f).padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -707,8 +725,6 @@ private fun ThemeCard(label: String, selected: Boolean, theme: AppTheme, modifie
                 Box(Modifier.fillMaxWidth(0.45f).height(6.dp).clip(CircleShape).background(Lib.accent))
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text((if (selected) "✓ " else "") + label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
     }
 }
 
@@ -718,7 +734,7 @@ private fun PenKeyLearnRow() {
     val c = AppController
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -766,7 +782,7 @@ private fun ToolbarCustomizeDialog(onDismiss: () -> Unit) {
         ) {
             Column(Modifier.fillMaxSize()) {
                 // الرأس: العنوان، الاستعادة، الإغلاق، والتبويبات
-                Column(Modifier.fillMaxWidth().background(Color.White).padding(start = 26.dp, end = 18.dp, top = 20.dp)) {
+                Column(Modifier.fillMaxWidth().background(Palette.Surface).padding(start = 26.dp, end = 18.dp, top = 20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -851,7 +867,7 @@ private fun ToolbarLivePreview() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
-            Modifier.shadow(6.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Color.White)
+            Modifier.shadow(6.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
                 .horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -885,7 +901,7 @@ private fun ToolGrid(tools: List<ToolInfo>, cols: Int, onInfo: (String) -> Unit,
                     val on = essential || c.toolVisible(t.id)
                     val shape = RoundedCornerShape(16.dp)
                     Row(
-                        Modifier.weight(1f).clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+                        Modifier.weight(1f).clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
                             .let { if (essential) it else it.clickable { c.setToolVisible(t.id, !on) } }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -931,7 +947,7 @@ private fun LearnTools(index: Int, wide: Boolean, onSelect: (Int) -> Unit) {
         val shape = RoundedCornerShape(18.dp)
         val state = rememberLazyListState(initialFirstVisibleItemIndex = (index - 2).coerceAtLeast(0))
         LazyColumn(
-            m.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape),
+            m.clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape),
             state = state,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)
         ) {
@@ -973,7 +989,7 @@ private fun ToolExplainer(index: Int, modifier: Modifier, onSelect: (Int) -> Uni
     val tools = ToolCatalog.tour
     val t = tools[index]
     val shape = RoundedCornerShape(18.dp)
-    Column(modifier.clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).verticalScroll(rememberScrollState()).padding(18.dp)) {
+    Column(modifier.clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape).verticalScroll(rememberScrollState()).padding(18.dp)) {
         ToolDemo(t.demo, Modifier.fillMaxWidth().height(220.dp))
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1022,7 +1038,7 @@ private fun RoundArrow(glyph: String, enabled: Boolean, onClick: () -> Unit) {
 private fun NavRow(title: String, desc: String, icon: Int, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1063,7 +1079,7 @@ private fun StyleOption(modifier: Modifier, style: ToolbarStyle, title: String, 
     val sel = c.toolbarStyle == style
     val shape = RoundedCornerShape(18.dp)
     Box(
-        modifier.clip(shape).background(Color.White)
+        modifier.clip(shape).background(Palette.Surface)
             .border(2.dp, if (sel) Palette.Gold else Palette.Divider, shape)
             .clickable { c.updateToolbarStyle(style) }
     ) {
@@ -1630,7 +1646,7 @@ private fun ReminderRow() {
     fun hhmm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape)
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1884,7 +1900,7 @@ private fun PomodoroSettings() {
     var custom by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(14.dp)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(Color.White).border(1.dp, Palette.Divider, shape).padding(14.dp),
+        Modifier.fillMaxWidth().clip(shape).background(Palette.Surface).border(1.dp, Palette.Divider, shape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(

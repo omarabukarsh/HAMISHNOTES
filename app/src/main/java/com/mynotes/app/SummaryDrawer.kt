@@ -117,9 +117,10 @@ fun SummaryDrawer(
     }
 
     Surface(
-        modifier.fillMaxHeight().width(420.dp),
-        color = Palette.DrawerBg,
-        shadowElevation = 14.dp
+        modifier.fillMaxHeight().padding(end = 12.dp, top = 4.dp, bottom = 12.dp).width(420.dp),
+        shape = ChromeShape,
+        color = Palette.Surface,
+        shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(
@@ -139,9 +140,9 @@ fun SummaryDrawer(
                 }
                 Row(
                     Modifier.clip(RoundedCornerShape(16.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFFFFF6DD), Palette.GoldSoft)))
+                        .background(Brush.linearGradient(listOf(if (ThemeState.light) Color(0xFFFFF6DD) else Palette.GoldSoft, Palette.GoldSoft)))
                         .border(1.dp, Palette.Gold, RoundedCornerShape(16.dp))
-                        .clickable(enabled = all.isNotEmpty()) { mapOpen = true }.padding(horizontal = 11.dp, vertical = 6.dp),
+                        .clickable { mapOpen = true }.padding(horizontal = 11.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PhIcon(R.drawable.ph_mindmap, Palette.GoldDeep, 16.dp)
@@ -195,7 +196,7 @@ fun SummaryDrawer(
                         val shape = RoundedCornerShape(18.dp)
                         Row(
                             Modifier.clip(shape)
-                                .background(if (sel) Palette.Navy else Color.White)
+                                .background(if (sel) Palette.Navy else Palette.Surface)
                                 .border(1.dp, if (sel) Palette.Navy else Palette.Divider, shape)
                                 .clickable { colorFilter = if (sel) null else argb }
                                 .padding(horizontal = 12.dp, vertical = 7.dp),

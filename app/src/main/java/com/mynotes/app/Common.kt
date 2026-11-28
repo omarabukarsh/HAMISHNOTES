@@ -27,7 +27,7 @@ fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     Box(
         Modifier.clip(shape)
-            .background(if (selected) Palette.Navy else Color.White)
+            .background(if (selected) Palette.Navy else CardBg)
             .border(1.dp, if (selected) Palette.Navy else Palette.Divider, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 15.dp, vertical = 7.dp)

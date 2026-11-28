@@ -152,9 +152,11 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
     }
 
     Surface(
-        modifier.fillMaxHeight().width(PAGES_PANEL_W.dp),
-        color = Palette.DrawerBg,
-        shadowElevation = 10.dp
+        // بطاقة بحواف ناعمة تبعد 12 عن الحواف وتبدأ تحت شريط الأدوات (B6)
+        modifier.fillMaxHeight().padding(start = 12.dp, top = 4.dp, bottom = 12.dp).width(PAGES_PANEL_W.dp),
+        shape = ChromeShape,
+        color = Palette.Surface,
+        shadowElevation = 4.dp
     ) {
         Column(Modifier.fillMaxSize()) {
             // ---- الرأس ----
@@ -180,7 +182,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                         val on = tab == k
                         Box(
                             Modifier.size(width = 46.dp, height = 34.dp).clip(RoundedCornerShape(9.dp))
-                                .background(if (on) Color.White else Color.Transparent)
+                                .background(if (on) Palette.Surface else Color.Transparent)
                                 .clickable {
                                     tab = k
                                     tabForFollow = k
@@ -353,7 +355,7 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                     Row(
                         Modifier.align(Alignment.BottomCenter).padding(12.dp)
                             .shadow(6.dp, RoundedCornerShape(16.dp))
-                            .background(Color.White, RoundedCornerShape(16.dp))
+                            .background(Palette.Surface, RoundedCornerShape(16.dp))
                             .padding(horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -365,6 +367,11 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
                             val allMarked = picked.all { it in s.bookmarks }
                             picked.toList().forEach { p -> if ((p in s.bookmarks) == allMarked) s.toggleBookmark(p) }
                         }) { PhIcon(R.drawable.ph_bookmark, Palette.Navy, 20.dp) }
+                        // تغيير قالب الصفحات المحددة معًا (صفحات الملاحظات فقط)
+                        TextButton(
+                            enabled = picked.isNotEmpty() && picked.all { isTemplatePage(pdf, it) },
+                            onClick = { TemplateChange.pages = picked.sorted() }
+                        ) { PhIcon(R.drawable.ph_pages, Palette.Navy, 20.dp, L("تغيير القالب", "Change template")) }
                         TextButton(enabled = picked.isNotEmpty() && picked.size < n, onClick = { confirmDelete = true }) {
                             PhIcon(R.drawable.ph_trash, Palette.Danger, 20.dp)
                         }
@@ -374,6 +381,8 @@ fun PagesDrawer(s: DocSession, pdf: PdfDoc, modifier: Modifier = Modifier) {
             }
         }
     }
+
+    TemplateChangeDialog(s, pdf)
 
     if (addPage) {
         TemplatePickerDialog(
@@ -468,16 +477,27 @@ private fun PageThumb(
 ) {
     val ref = pdf.pages.getOrNull(i)
     val ratio = pdf.ratio(i)
-    val bmp by produceState<Bitmap?>(pdf.cached(ref, 360), ref) {
-        value = pdf.cached(ref, 360) ?: withContext(Dispatchers.IO) {
+    // صورة مصغّرة واحدة جاهزة لكل طبقات الصفحة (حبر، نصوص، صور، ملاحظات، أشرطة):
+    // تُرسم في الخلفية مرة واحدة عند تغيّر الصفحة، فلا يُعاد رسم آلاف الخطوط في كل إطار.
+    val key = ThumbKey(
+        ref, s.annotations[i], s.marks[i], s.texts[i], s.images[i], s.notes[i], s.tapes[i]
+    )
+    val bmp by produceState(PageThumbs.get(s.id, i, key) ?: PageThumbs.stale(s.id, i), key) {
+        PageThumbs.get(s.id, i, key)?.let { value = it; return@produceState }
+        // الكتابة المستمرة على الصفحة لا تعيد الرسم مع كل خط
+        if (PageThumbs.stale(s.id, i) != null) delay(250)
+        val out = withContext(PageThumbs.dispatcher) {
             try {
-                pdf.render(ref, 360)
+                PageThumbs.render(s.id, pdf, key)
             } catch (t: Throwable) {
                 null
             }
         }
+        if (out != null) {
+            PageThumbs.put(s.id, i, key, out)
+            value = out
+        }
     }
-    val strokes = s.annotations[i] ?: emptyList()
     val shape = RoundedCornerShape(8.dp)
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -506,14 +526,6 @@ private fun PageThumb(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.FillBounds
                 )
-            }
-            Canvas(Modifier.fillMaxSize()) {
-                val w = size.width
-                (s.marks[i] ?: emptyList()).forEach { m ->
-                    val col = Exporter.markColor(m.color, strong = m.level >= 2)
-                    m.rects.forEach { r -> drawMarkRect(col, r, w) }
-                }
-                drawStack(strokes, { it.color })
             }
             // علامة الصفحة في الزاوية: تُضاف أو تُزال بالنقر
             Box(
@@ -588,7 +600,33 @@ private fun PageThumb(
     }
 }
 
-/** قائمة الصفحة: تحريك، نسخ، حذف. */
+/** صفحات يُغيَّر قالبها الآن (من قائمة الصورة المصغّرة أو من التحديد المتعدد). */
+object TemplateChange {
+    var pages by mutableStateOf<List<Int>?>(null)
+}
+
+/** صفحة ملاحظات (قالب) لا صفحة PDF: يمكن تغيير قالبها. */
+internal fun isTemplatePage(pdf: PdfDoc, i: Int): Boolean = pdf.pages.getOrNull(i)?.src?.startsWith("blank:") == true
+
+/** نافذة تغيير القالب لصفحة أو أكثر: كل ما كُتب على الصفحات يبقى، ويتغير الخلفية فقط. */
+@Composable
+private fun TemplateChangeDialog(s: DocSession, pdf: PdfDoc) {
+    val pages = TemplateChange.pages ?: return
+    val first = pdf.pages.getOrNull(pages.first()) ?: run { TemplateChange.pages = null; return }
+    val (kind, color) = Templates.parse(first.src)
+    TemplatePickerDialog(
+        mode = PickerMode.CHANGE,
+        initial = Templates.defaultChoice().copy(kind = kind, color = color, landscape = first.ratio > 1f),
+        sizeLocked = true,
+        onDismiss = { TemplateChange.pages = null },
+        onConfirm = { choice, _, _ ->
+            TemplateChange.pages = null
+            pages.forEach { p -> if (isTemplatePage(pdf, p)) s.setPageSrc(p, Templates.src(choice.kind, choice.color)) }
+        }
+    )
+}
+
+/** قائمة الصفحة: تحريك، نسخ، تغيير القالب، حذف. */
 @Composable
 private fun PageMenu(s: DocSession, pdf: PdfDoc, i: Int, open: Boolean, onClose: () -> Unit, onDelete: () -> Unit) {
     val n = pdf.count
@@ -613,6 +651,11 @@ private fun PageMenu(s: DocSession, pdf: PdfDoc, i: Int, open: Boolean, onClose:
         DropdownMenuItem(text = { Text(L("نسخ الصفحة", "Duplicate page")) }, onClick = {
             onClose()
             s.rearrangePages(order { add(i + 1, i) })
+        })
+        // تغيير القالب: لصفحات الملاحظات (ما كُتب عليها يبقى كما هو)
+        if (isTemplatePage(pdf, i)) DropdownMenuItem(text = { Text(L("تغيير القالب…", "Change template…")) }, onClick = {
+            onClose()
+            TemplateChange.pages = listOf(i)
         })
         if (n > 1) DropdownMenuItem(text = { Text(L("حذف الصفحة", "Delete page"), color = Color(0xFFC62828)) }, onClick = {
             onClose()
@@ -736,4 +779,48 @@ fun OutlineTitleDialog(title: String, initial: String, onDismiss: () -> Unit, on
         confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSave(text.trim()) }) { Text(L("حفظ", "Save")) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(L("إلغاء", "Cancel")) } }
     )
+}
+
+/** ما يُرسم في الصورة المصغّرة؛ يُقارن بالمرجع لأن قوائم الصفحة تُستبدل عند كل تعديل. */
+internal class ThumbKey(
+    val ref: PageRef?, val ink: List<Ink>?, val marks: List<TextMark>?, val texts: List<TextBox>?,
+    val images: List<ImageItem>?, val notes: List<StickyNote>?, val tapes: List<Tape>?
+) {
+    override fun equals(other: Any?) = other is ThumbKey && other.ref == ref && other.ink === ink &&
+        other.marks === marks && other.texts === texts && other.images === images &&
+        other.notes === notes && other.tapes === tapes
+
+    override fun hashCode() = System.identityHashCode(ink) * 31 + (ref?.hashCode() ?: 0)
+}
+
+/** الصور المصغّرة المركّبة للصفحات، محفوظة بين فتحات الدرج. */
+internal object PageThumbs {
+    const val WIDTH = 360
+    private class Entry(val key: ThumbKey, val bmp: Bitmap)
+    private val cache = object : android.util.LruCache<String, Entry>(24 * 1024 * 1024) {
+        override fun sizeOf(k: String, v: Entry) = v.bmp.byteCount
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val dispatcher = Dispatchers.Default.limitedParallelism(2)
+
+    fun get(doc: String, page: Int, key: ThumbKey): Bitmap? = cache.get("$doc/$page")?.takeIf { it.key == key }?.bmp
+
+    /** آخر صورة للصفحة حتى لو تغيّرت بعدها (تُعرض إلى أن تجهز الجديدة). */
+    fun stale(doc: String, page: Int): Bitmap? = cache.get("$doc/$page")?.bmp
+
+    fun put(doc: String, page: Int, key: ThumbKey, bmp: Bitmap) { cache.put("$doc/$page", Entry(key, bmp)) }
+
+    fun render(docId: String, pdf: PdfDoc, k: ThumbKey): Bitmap? {
+        val base = pdf.cached(k.ref, WIDTH) ?: pdf.render(k.ref, WIDTH) ?: return null
+        val out = base.copy(Bitmap.Config.ARGB_8888, true) ?: return null
+        val w = out.width.toFloat()
+        // الملاحظات اللاصقة كنص مقروء بعرض مناسب (كما في التصدير)
+        val texts = (k.texts ?: emptyList()).map { if (it.sticky) it.copy(w = 0.3f, x = it.x.coerceAtMost(0.68f)) else it }
+        Exporter.drawPageLayers(
+            android.graphics.Canvas(out), w, docId, k.marks ?: emptyList(), k.images ?: emptyList(),
+            k.ink ?: emptyList(), texts, k.notes ?: emptyList(), k.tapes ?: emptyList()
+        )
+        return out
+    }
 }

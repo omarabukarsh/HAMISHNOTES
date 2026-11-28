@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -744,37 +745,30 @@ fun AutoFontChip(s: DocSession) {
     val manual = AutoFont.on && AutoFont.delayMs == 0 && AutoFont.pendingCount > 0
     val ins = AutoFont.insertTarget?.takeIf { it.s === s }
     if (pv == null && last == null && !manual && ins == null) return
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 8.dp) {
-        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            when {
-                pv != null -> {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Palette.Navy)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "«${pv.text}» ← " + L("يتحول…", "converting…"),
-                        fontSize = 13.sp, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    TextButton(onClick = { AutoFont.cancelPreview() }) {
-                        Text("✕ " + L("إبقاء بخط يدي", "Keep handwriting"), color = Palette.Danger, fontSize = 13.sp)
-                    }
-                }
-                ins != null -> {
-                    Text("∧ " + L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box"), fontSize = 13.sp, color = Palette.Navy)
-                    TextButton(onClick = { AutoFont.cancelInsert() }) { Text(L("إلغاء", "Cancel"), color = Palette.TextSecondary) }
-                }
-                manual -> {
-                    TextButton(onClick = { AutoFont.flush() }) {
-                        Text("✓ " + L("حوّل إلى ${AutoFont.font}", "Convert to ${AutoFont.font}"), color = Palette.Navy, fontWeight = FontWeight.Bold)
-                    }
-                    TextButton(onClick = { AutoFont.discard() }) { Text(L("إبقاء بخط يدي", "Keep handwriting"), color = Palette.TextSecondary) }
-                }
-                else -> {
-                    Text("✓ " + L("تم التحويل", "Converted"), fontSize = 13.sp, color = Color(0xFF1F7A4D), fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { AutoFont.undoLast() }) {
-                        Text("↶ " + L("رجوع لخط يدي", "Back to handwriting"), color = Palette.Navy, fontSize = 13.sp)
-                    }
-                }
+    CtxBar {
+        when {
+            pv != null -> {
+                CircularProgressIndicator(Modifier.padding(start = 8.dp).size(16.dp), strokeWidth = 2.dp, color = Palette.Navy)
+                Text(
+                    "«${pv.text}» ← " + L("يتحول…", "converting…"),
+                    fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 260.dp).padding(horizontal = 7.dp)
+                )
+                CtxBtn(L("إبقاء بخط يدي", "Keep handwriting"), color = Palette.Danger) { AutoFont.cancelPreview() }
+            }
+            ins != null -> {
+                Text("∧ " + L("اكتب الإضافة في المربع المنقط", "Write the addition in the dotted box"), fontSize = 13.sp, color = Palette.Navy,
+                    modifier = Modifier.padding(horizontal = 11.dp))
+                CtxBtn(L("إلغاء", "Cancel")) { AutoFont.cancelInsert() }
+            }
+            manual -> {
+                CtxBtn("✓ " + L("حوّل إلى ${AutoFont.font}", "Convert to ${AutoFont.font}"), primary = true) { AutoFont.flush() }
+                CtxBtn(L("إبقاء بخط يدي", "Keep handwriting")) { AutoFont.discard() }
+            }
+            else -> {
+                Text("✓ " + L("تم التحويل", "Converted"), fontSize = 13.sp, color = Color(0xFF1F7A4D), fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 11.dp))
+                CtxBtn("↶ " + L("رجوع", "Undo")) { AutoFont.undoLast() }
             }
         }
     }

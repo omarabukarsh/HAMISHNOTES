@@ -358,8 +358,13 @@ fun InkLayer(
     // الجزء الظاهر يتغير مع التمرير دون إعادة تركيب
     val strokesNow by rememberUpdatedState(strokes)
     val nightNow by rememberUpdatedState(night)
-    LaunchedEffect(sharp) {
+    // الحجم يُعرف بعد أول قياس، وتغيّره لا يعيد تركيب هذه الدالة (layout لا يُقرأ أثناء التركيب).
+    // لذلك تُحدَّث الصورة الأساسية هنا أيضًا: بدونه تبقى الصفحة بلا صورة وتُرسم خطوطها كلها في كل إطار
+    // (بطء واضح في الصفحات المكتوبة بعد فتح التطبيق) حتى يعيد التركيبَ تغييرٌ آخر مثل كتابة خط جديد.
+    LaunchedEffect(base, sharp) {
         snapshotFlow { visible.value to layout }.collect { (vis, sz) ->
+            val bs = inkBitmapSize(sz.width, sz.height)
+            if (bs.width > 0) base.update(strokesNow, nightNow, Spec(bs.width, bs.height, bs.width.toFloat(), 0f, 0f))
             sharp.update(strokesNow, nightNow, sharpSpec(sz, vis))
         }
     }

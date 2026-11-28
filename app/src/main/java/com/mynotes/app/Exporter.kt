@@ -44,7 +44,9 @@ object Exporter {
         val marks: Map<Int, List<TextMark>>,
         val texts: Map<Int, List<TextBox>>,
         val docId: String,
-        val notes: Map<Int, List<StickyNote>> = emptyMap()
+        val notes: Map<Int, List<StickyNote>> = emptyMap(),
+        /** الأشرطة اللاصقة: المغطّية تُرسم فوق كل شيء، والمكشوفة لا تُرسم. */
+        val tapes: Map<Int, List<Tape>> = emptyMap()
     )
 
     fun snapshotOf(s: DocSession): Snapshot? {
@@ -53,7 +55,7 @@ object Exporter {
         val texts = s.texts.mapValues { (_, l) ->
             l.map { if (it.sticky) it.copy(w = 0.3f, x = it.x.coerceAtMost(0.68f)) else it }
         }
-        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id, s.notes)
+        return Snapshot(pdf, pdf.pages, s.annotations, s.images, s.marks, texts, s.id, s.notes, s.tapes)
     }
 
     /** يعيد عدد الصفحات المصدَّرة. */
@@ -66,23 +68,11 @@ object Exporter {
                 try {
                     val w = base.width.toFloat()
                     val c = Canvas(base)
-                    drawMarks(c, snap.marks[i] ?: emptyList(), w)
-                    drawImages(c, snap.docId, snap.images[i] ?: emptyList(), w)
-                    val pageInk = snap.ink[i] ?: emptyList()
-                    // الهايلايتر وملء الأشكال تحت النص والكتابة
-                    pageInk.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
-                    drawTexts(c, snap.texts[i] ?: emptyList(), w)
-                    pageInk.forEach { if (it.inOverlay()) drawInk(c, it, w) }
-                    // الملاحظات اللاصقة فوق الصفحة
-                    (snap.notes[i] ?: emptyList()).forEach { n ->
-                        val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
-                        val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
-                        c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
-                        val ni = n.pageInk()
-                        ni.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
-                        ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
-                        n.textBox()?.let { drawTexts(c, listOf(it), w) }
-                    }
+                    drawPageLayers(
+                        c, w, snap.docId, snap.marks[i] ?: emptyList(), snap.images[i] ?: emptyList(),
+                        snap.ink[i] ?: emptyList(), snap.texts[i] ?: emptyList(), snap.notes[i] ?: emptyList(),
+                        snap.tapes[i] ?: emptyList()
+                    )
 
                     val ph = max(1, (PDF_W / ref.ratio).toInt())
                     val page = out.startPage(PdfDocument.PageInfo.Builder(PDF_W, ph, i + 1).create())
@@ -116,10 +106,14 @@ object Exporter {
         onPage: (Int) -> Unit,
         /** بيانات النسخة القابلة للتعديل (null = نسخة نهائية). */
         editableData: String? = null,
-        editableImages: List<java.io.File> = emptyList()
+        editableImages: List<java.io.File> = emptyList(),
+        /** مرفقات الآيباد المحفوظة من الاستيراد: يُعاد إرفاقها كما هي. */
+        editableExtras: List<java.io.File> = emptyList()
     ): Int {
         val out = com.tom_roush.pdfbox.pdmodel.PDDocument()
         val counts = ArrayList<Int>()
+        val built = ArrayList<com.tom_roush.pdfbox.pdmodel.PDPage>()
+        var origFile: java.io.File? = null
         val sources = HashMap<String, com.tom_roush.pdfbox.pdmodel.PDDocument>()
         try {
             snap.pages.forEachIndexed { i, ref ->
@@ -157,10 +151,24 @@ object Exporter {
                         bmp.recycle()
                     }
                 }
+                built.add(page)
+            }
+            // النسخة القابلة للتعديل: الملف النظيف (قبل رسم التعليقات) يُرفق داخلها أصلًا للفتح
+            if (editableData != null) {
+                try {
+                    val f = java.io.File.createTempFile("hamish-orig", ".pdf", context.cacheDir)
+                    origFile = f
+                    out.save(f)
+                } catch (t: Throwable) {
+                    origFile?.delete()
+                    origFile = null
+                }
+            }
+            built.forEachIndexed { i, page ->
                 counts.add(EditablePdf.contentCount(page))
                 drawOverlay(out, page, snap, i)
             }
-            if (editableData != null) EditablePdf.embed(out, editableData, counts, editableImages)
+            if (editableData != null) EditablePdf.embed(out, editableData, counts, editableImages, origFile, editableExtras)
             val os = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("output")
             os.use { out.save(it) }
             return snap.pages.size
@@ -169,6 +177,7 @@ object Exporter {
                 out.close()
             } catch (e: Throwable) {
             }
+            origFile?.delete()
             sources.values.forEach {
                 try {
                     it.close()
@@ -197,7 +206,8 @@ object Exporter {
         val pageNotes = snap.notes[i] ?: emptyList()
         val ink = (snap.ink[i] ?: emptyList()) + pageNotes.flatMap { it.pageInk() }
         val texts = (snap.texts[i] ?: emptyList()) + pageNotes.mapNotNull { it.textBox() }
-        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty()) return
+        val pageTapes = (snap.tapes[i] ?: emptyList()).filter { !it.revealed && it.pts.size >= 4 }
+        if (marks.isEmpty() && images.isEmpty() && ink.isEmpty() && texts.isEmpty() && pageNotes.isEmpty() && pageTapes.isEmpty()) return
 
         com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
             doc, page, com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND, true, true
@@ -240,7 +250,12 @@ object Exporter {
             // الصور
             for (item in images) {
                 val f = AppController.repo.imageFile(snap.docId, item.file)
-                val bmp = BitmapFactory.decodeFile(f.absolutePath) ?: continue
+                val want = (item.w * w).toInt().coerceAtLeast(1)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.absolutePath, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= want) sample *= 2
+            val bmp = BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: continue
                 try {
                     val img = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bmp)
                     val h = item.w / item.aspect
@@ -357,6 +372,32 @@ object Exporter {
                 cs.restoreGraphicsState()
             }
             if (textAfter >= ordered.size) drawTextBoxes()
+            // الأشرطة اللاصقة المغطّية: فوق كل شيء، بلونها ونقشها
+            for (t in pageTapes) {
+                val col = androidx.compose.ui.graphics.Color(t.color)
+                val tw = t.width * w
+                fun tapeLine() {
+                    cs.moveTo(px(t.pts[0]), py(t.pts[1]))
+                    var j = 2
+                    while (j + 1 < t.pts.size) { cs.lineTo(px(t.pts[j]), py(t.pts[j + 1])); j += 2 }
+                }
+                cs.saveGraphicsState()
+                cs.setStrokingColor(col.red, col.green, col.blue)
+                cs.setLineCapStyle(0)
+                cs.setLineJoinStyle(1)
+                cs.setLineWidth(tw)
+                tapeLine()
+                cs.stroke()
+                val gs = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                gs.strokingAlphaConstant = 0.22f
+                cs.setGraphicsStateParameters(gs)
+                cs.setStrokingColor(1f, 1f, 1f)
+                cs.setLineWidth(tw * 0.62f)
+                cs.setLineDashPattern(floatArrayOf(tw * 0.28f, tw * 0.28f), 0f)
+                tapeLine()
+                cs.stroke()
+                cs.restoreGraphicsState()
+            }
         }
     }
 
@@ -379,6 +420,31 @@ object Exporter {
         cs.lineTo(x, y + rad)
         cs.curveTo(x, y + rad - k, x + rad - k, y, x + rad, y)
         cs.closePath()
+    }
+
+    /** كل طبقات الصفحة فوق صورتها بالترتيب نفسه الظاهر في القارئ (تُستعمل للتصدير وللصور المصغّرة). */
+    internal fun drawPageLayers(
+        c: Canvas, w: Float, docId: String, marks: List<TextMark>, images: List<ImageItem>,
+        ink: List<Ink>, texts: List<TextBox>, notes: List<StickyNote>, tapes: List<Tape>
+    ) {
+        drawMarks(c, marks, w)
+        drawImages(c, docId, images, w)
+        // الهايلايتر وملء الأشكال تحت النص والكتابة
+        ink.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
+        drawTexts(c, texts, w)
+        ink.forEach { if (it.inOverlay()) drawInk(c, it, w) }
+        // الملاحظات اللاصقة فوق الصفحة
+        notes.forEach { n ->
+            val nw = if (n.collapsed) NOTE_COLLAPSED else n.w
+            val nh = if (n.collapsed) NOTE_COLLAPSED else n.h
+            c.drawRect(n.x * w, n.y * w, (n.x + nw) * w, (n.y + nh) * w, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = n.color })
+            val ni = n.pageInk()
+            ni.forEach { if (it.inUnderlay()) drawUnder(c, it, w) }
+            ni.forEach { if (it.inOverlay()) drawInk(c, it, w) }
+            n.textBox()?.let { drawTexts(c, listOf(it), w) }
+        }
+        // الأشرطة اللاصقة المغطّية فوق كل شيء
+        drawTapesOn(c, tapes, w)
     }
 
     private fun drawMarks(c: Canvas, marks: List<TextMark>, w: Float) {
@@ -576,26 +642,26 @@ object Exporter {
         val bold = context.resources.getFont(R.font.almarai_extrabold)
 
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.Navy.toArgb(); textSize = 21f; typeface = bold
+            color = android.graphics.Color.rgb(0x1B, 0x36, 0x5D); textSize = 21f; typeface = bold
         }
         val headPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.Navy.toArgb(); textSize = 15f; typeface = bold
+            color = android.graphics.Color.rgb(0x1B, 0x36, 0x5D); textSize = 15f; typeface = bold
         }
         val sectionPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Palette.GoldDeep.toArgb(); textSize = 17f; typeface = bold
         }
         val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.TextPrimary.toArgb(); textSize = 11.5f; typeface = sans
+            color = android.graphics.Color.rgb(0x1A, 0x22, 0x30); textSize = 11.5f; typeface = sans
         }
         val cellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Palette.TextPrimary.toArgb(); textSize = 10f; typeface = sans
+            color = android.graphics.Color.rgb(0x1A, 0x22, 0x30); textSize = 10f; typeface = sans
         }
         val cellHeadPaint = TextPaint(cellPaint).apply { typeface = bold }
         val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Palette.Gold.toArgb(); strokeWidth = 1.2f }
         val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Palette.Divider.toArgb(); strokeWidth = 0.8f; style = Paint.Style.STROKE
         }
-        val headFill = Paint().apply { color = Palette.NavySoft.toArgb() }
+        val headFill = Paint().apply { color = android.graphics.Color.rgb(0xE8, 0xED, 0xF5) }
         val bg = Palette.Ivory.toArgb()
 
         val out = PdfDocument()
